@@ -152,7 +152,11 @@ def routing_packs(country, tile_sizes):
         if name not in tile_sizes:
             continue  # ocean, or nothing mapped there
         packs.append({
-            "id": "routing-%s" % name.lower(),
+            # The tile name IS the id, exactly as published, because the app
+            # saves a pack as "<id>.rd5" and the routing engine opens tiles by
+            # computing that name from a coordinate. Anything prettier here
+            # and a downloaded tile is a file the engine never looks for.
+            "id": name,
             "kind": "routing",
             "label": "Roads %s" % _tile_label(lon, lat),
             # The tile's own 5-degree box. Without it the app cannot tell
