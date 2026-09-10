@@ -24,9 +24,18 @@ ride. This data is guidance, not permission.
 ## Layout
 
 ```
-manifest.json          the index the app reads
+catalogue.json         the worldwide index the app reads
+manifest.json          the original Great Britain lane index (still read)
 packages/*.tbpack      sealed lane packages
 ```
+
+`catalogue.json` is schema 2: continent, then country, then area, with typed
+packs. It covers 41 countries across six continents — routing everywhere, and
+rights of way where an official register exists to draw them from.
+
+Routing packs point at the 5x5-degree tile scheme rather than being mirrored
+here. Nine gigabytes of tiles will not fit in a GitHub Pages site (1 GB), and
+a rider only ever needs the squares they ride in.
 
 `manifest.json` lists every package with its size, lane count, SHA-256 and the
 path to its file. The app fetches the index, verifies each download against the
