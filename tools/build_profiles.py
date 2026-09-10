@@ -48,20 +48,33 @@ CLASS_PENALTIES = {
         "living_street": 2.0,
         "service": 3.0,
     },
+    # Green lanes SEEK unsurfaced ways rather than merely tolerating them.
+    #
+    # The engine's cost is a penalty added to an energy model, so nothing can
+    # be made cheaper than free - a track is already 0. Preferring one
+    # therefore means charging for tarmac: every road class carries a penalty
+    # here, so a byway within reach wins on cost. The first version left
+    # tertiary and unclassified at 0 alongside tracks, which is why it
+    # behaved almost identically to Fun.
+    #
+    # Kept moderate on purpose. Distance still costs, so a big penalty buys
+    # absurd detours to reach one green lane rather than a sensible route that
+    # takes the ones on the way.
     "lanes": {
-        "motorway": 12,
-        "motorway_link": 12,
-        "trunk": 6,
-        "trunk_link": 6,
-        "primary": 2.0,
-        "primary_link": 2.0,
-        "secondary": 0.6,
-        "secondary_link": 0.6,
-        "tertiary": 0.0,
-        "tertiary_link": 0.0,
-        "unclassified": 0.0,
-        "residential": 0.6,
-        "service": 2.0,
+        "motorway": 14,
+        "motorway_link": 14,
+        "trunk": 8,
+        "trunk_link": 8,
+        "primary": 4.0,
+        "primary_link": 4.0,
+        "secondary": 2.4,
+        "secondary_link": 2.4,
+        "tertiary": 1.5,
+        "tertiary_link": 1.5,
+        "unclassified": 1.1,
+        "residential": 1.8,
+        "living_street": 2.4,
+        "service": 2.4,
     },
 }
 
