@@ -10,19 +10,24 @@ name: Refresh lane data
 on:
   schedule:
     - cron: '17 3 1 * *'   # 03:17 UTC on the 1st
-  workflow_dispatch:        # and on demand, from the Actions tab
+  workflow_dispatch:
     inputs:
       skip_fetch:
         description: 'Reuse the cached council data instead of re-fetching'
         type: boolean
         default: false
+      force:
+        description: 'Publish even if the safety checks object (read them first)'
+        type: boolean
+        default: false
 
 permissions:
-  contents: write           # to commit the rebuilt packages
+  contents: write   # to commit the rebuilt packages
+  issues: write     # to raise one when a run fails
 
 concurrency:
   group: refresh-data
-  cancel-in-progress: false # never interrupt a run mid-publish
+  cancel-in-progress: false   # never interrupt a run mid-publish
 
 jobs:
   refresh:
@@ -83,7 +88,22 @@ jobs:
             --base-url "https://lpsd-1.github.io/trailblazer-datasets/" \
             --out dist/catalogue.json
 
-      - name: Check the app could actually read it
+      # The important one. A crash stops the job on its own; what this catches
+      # is a build where every step SUCCEEDED and the data is quietly ruined -
+      # a half-down source, an area that vanished, a package the app cannot
+      # open. Local pack names carry no build date, so publishing one of those
+      # REPLACES the good copy already on every rider's phone.
+      - name: Would this build make things worse?
+        run: |
+          python tools/check_build.py \
+            --previous manifest.json \
+            --new dist/manifest.json \
+            --cache cache \
+            --dist dist/packages \
+            --key /tmp/dataset.key \
+            ${{ inputs.force && '--force' || '' }}
+
+      - name: Check the app could read the catalogue
         run: |
           python - <<'PY'
           import json, sys
@@ -113,6 +133,7 @@ jobs:
           print('catalogue OK: %d countries' % len(countries))
           PY
 
+      # Nothing below here runs unless every check above passed.
       - name: Publish
         run: |
           rm -rf packages
@@ -136,3 +157,43 @@ jobs:
           git commit -m "Refresh lane data: ${LANES} ways" \
                      -m "Rebuilt from local highway authority definitive maps via rowmaps.com."
           git push
+
+      # An email is easy to miss and impossible to reply to. An issue is
+      # visible, has the log linked, and can be closed when it is dealt with.
+      - name: Raise an issue if this run failed
+        if: failure()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          TITLE="Data refresh failed on $(date -u +%Y-%m-%d)"
+          BODY=$(cat <<EOF
+          The monthly data refresh did not complete, so **nothing was
+          published**. Every rider keeps the data they already have — this is
+          the safe outcome, not an outage.
+
+          Log: $RUN_URL
+
+          Most likely causes, in order:
+
+          - **rowmaps.com was down or slow.** The safety check refuses to
+            publish a partial map. Re-run the workflow when it is back.
+          - **DATASET_KEY_B64 is missing or wrong.** It must be the same key
+            the shipped app was built with.
+          - **A genuine large change in the data.** Read what the check
+            objected to. If the drop is real, re-run with \`force\` ticked.
+
+          Re-run from the Actions tab. Close this once it has gone green.
+          EOF
+          )
+          # One open issue at a time: a source down for three months should not
+          # produce three identical issues.
+          EXISTING=$(gh issue list --label data-refresh --state open \
+                       --json number --jq '.[0].number' 2>/dev/null || true)
+          if [ -n "$EXISTING" ]; then
+            gh issue comment "$EXISTING" --body "Failed again: $RUN_URL"
+          else
+            gh label create data-refresh --color B60205 \
+              --description "Automated data refresh problems" 2>/dev/null || true
+            gh issue create --title "$TITLE" --body "$BODY" --label data-refresh
+          fi
