@@ -1,0 +1,138 @@
+name: Refresh lane data
+
+# Free: GitHub Actions has no minute limit on public repositories, and this
+# repository is public because the app has to download from it without
+# credentials.
+#
+# Monthly, because that is roughly how often councils amend a definitive map.
+# Running it weekly would republish 100 MB of near-identical packages and make
+# every rider re-download them for nothing.
+on:
+  schedule:
+    - cron: '17 3 1 * *'   # 03:17 UTC on the 1st
+  workflow_dispatch:        # and on demand, from the Actions tab
+    inputs:
+      skip_fetch:
+        description: 'Reuse the cached council data instead of re-fetching'
+        type: boolean
+        default: false
+
+permissions:
+  contents: write           # to commit the rebuilt packages
+
+concurrency:
+  group: refresh-data
+  cancel-in-progress: false # never interrupt a run mid-publish
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    # The fetch alone is ~25 minutes across 149 authorities, paced so we are
+    # not hammering rowmaps.com. The default 6h ceiling is ample; this guards
+    # against a hung request holding a runner all day.
+    timeout-minutes: 120
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install --quiet cryptography
+
+      # The fetch is resumable and skips authorities it already has, so a
+      # cached copy turns a 25-minute step into seconds and only picks up
+      # what changed.
+      - name: Restore the council data cache
+        uses: actions/cache@v4
+        with:
+          path: cache
+          key: rowmaps-${{ github.run_id }}
+          restore-keys: rowmaps-
+
+      - name: Fetch rights of way
+        if: ${{ !inputs.skip_fetch }}
+        run: python tools/fetch_rights_of_way.py
+
+      - name: Write the packaging key
+        env:
+          # Repository secret. Public repositories do not expose secrets to
+          # forked pull requests, and nothing here runs on pull_request.
+          DATASET_KEY_B64: ${{ secrets.DATASET_KEY_B64 }}
+        run: |
+          if [ -z "$DATASET_KEY_B64" ]; then
+            echo "::error::DATASET_KEY_B64 is not set."
+            echo "Add it under Settings > Secrets and variables > Actions."
+            echo "It must be the same key the shipped app was built with, or"
+            echo "every rider's packages will stop opening."
+            exit 1
+          fi
+          printf '%s' "$DATASET_KEY_B64" > /tmp/dataset.key
+          # 32 bytes, base64 encoded, is 44 characters with padding.
+          test "$(wc -c < /tmp/dataset.key)" -ge 43
+
+      - name: Build the packages
+        run: python tools/build_packages.py --key /tmp/dataset.key
+
+      - name: Build the catalogue
+        run: |
+          python tools/build_catalogue.py \
+            --lanes dist/manifest.json \
+            --base-url "https://lpsd-1.github.io/trailblazer-datasets/" \
+            --out dist/catalogue.json
+
+      - name: Check the app could actually read it
+        run: |
+          python - <<'PY'
+          import json, sys
+
+          catalogue = json.load(open('dist/catalogue.json'))
+          if catalogue.get('schema') != 2:
+              sys.exit('catalogue is not schema 2')
+
+          countries = [c for cont in catalogue['continents']
+                       for c in cont['countries']]
+          if len(countries) < 20:
+              sys.exit('only %d countries; something went wrong upstream'
+                       % len(countries))
+
+          # Every pack must be checkable after download, or the app refuses it
+          # and a rider sees "could not be checked" instead of a map.
+          for country in countries:
+              for area in country['areas']:
+                  for pack in area['packs']:
+                      if not pack.get('sha256') and not pack.get('bytes'):
+                          sys.exit('unverifiable pack: %s' % pack['id'])
+
+          gb = [c for c in countries if c['code'] == 'GB']
+          if not gb or len(gb[0]['areas']) < 5:
+              sys.exit('Great Britain lost its regions')
+
+          print('catalogue OK: %d countries' % len(countries))
+          PY
+
+      - name: Publish
+        run: |
+          rm -rf packages
+          mv dist/packages packages
+          rm -f packages/*.sha256
+          mv dist/manifest.json manifest.json
+          mv dist/catalogue.json catalogue.json
+
+          git config user.name  'Trail Blazer data bot'
+          git config user.email 'noreply@github.com'
+          git add -A packages manifest.json catalogue.json
+
+          if git diff --cached --quiet; then
+            echo "Councils published nothing new. Leaving the last build in place."
+            exit 0
+          fi
+
+          # The lane count is the number worth seeing in the commit list: it is
+          # the one that moves when a council amends its map.
+          LANES=$(python -c "import json;print(sum(p['laneCount'] for p in json.load(open('manifest.json'))['packages']))")
+          git commit -m "Refresh lane data: ${LANES} ways" \
+                     -m "Rebuilt from local highway authority definitive maps via rowmaps.com."
+          git push
