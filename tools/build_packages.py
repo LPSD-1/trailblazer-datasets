@@ -11,7 +11,7 @@ One package per vehicle access type, because that is how a rider chooses: a
 motorcyclist has no use for 140,000 footpaths, and downloading them costs them
 data and storage for nothing.
 
-    python build_packages.py --key ../greenroadmap-keys/dataset-encryption-key-256.b64
+    python build_packages.py --key ../trailblazer-keys/dataset-encryption-key-256.b64
 
 The OGL attribution is carried on the collection AND on every feature. That is
 a licence condition, not decoration: strip it and we lose the right to use any

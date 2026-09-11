@@ -6,7 +6,8 @@ Open Government Licence, and republishes it as GeoJSON split by path type. That
 is the authoritative legal source for what is a right of way: it is the same
 record the council would produce in court.
 
-Nothing here touches the Green Road Map. This dataset is ours to use and to
+No part of this comes from any third-party green-laning service or from
+anybody's member account. It is public sector information, ours to use and to
 redistribute, provided the OGL attribution travels with it — which it does,
 carried on every feature and surfaced in the app.
 
