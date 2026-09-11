@@ -34,9 +34,10 @@ except ImportError:
     sys.exit("pip install cryptography")
 
 # ---- container format -------------------------------------------------------
-# Byte-compatible with the app's Grmpack reader (lib/data/crypto/grmpack.dart)
-# and with grm/pack_dataset.py. Do not change without changing all three.
-MAGIC = b"GRMP"
+# Byte-compatible with the app's Tbpack reader (lib/data/crypto/tbpack.dart).
+# Do not change one without changing the other, and republish: the magic is
+# written into every published pack.
+MAGIC = b"TBPK"
 VERSION = 1
 ALG_AES_GCM_256 = 1
 NONCE_LEN = 12
@@ -325,7 +326,7 @@ def normalise(feature, authority_code, authority_name, row_type):
     return {
         "type": "Feature",
         "properties": {
-            "grmuid": uid,
+            "lane_uid": uid,
             "class": rule["lane_class"],
             "county": authority_name,
             "name": name,
@@ -371,7 +372,7 @@ def load_all(authorities):
                 if lane is None:
                     skipped["bad geometry"] += 1
                     continue
-                uid = lane["properties"]["grmuid"]
+                uid = lane["properties"]["lane_uid"]
                 if uid in seen:
                     skipped["exact duplicate"] += 1
                     continue
@@ -432,10 +433,10 @@ def write_package(pkg_name, region_id, region_label, area_label, features,
         "%s-%s" % (region_id, slugify(area_label))
     shown = region_label if area_label is None else area_label
 
-    # The app dedupes on grmuid when it loads neighbouring areas together, so a
+    # The app dedupes on lane_uid when it loads neighbouring areas together, so a
     # non-unique id inside one package is data the rider will never see. This
     # cost us 38% of the Midlands once; it does not get to happen quietly again.
-    uids = [f["properties"]["grmuid"] for f in features]
+    uids = [f["properties"]["lane_uid"] for f in features]
     if len(set(uids)) != len(uids):
         dupes = Counter(uids)
         worst = [u for u, n in dupes.most_common(3) if n > 1]
@@ -524,7 +525,7 @@ def main():
             features = [f for f in pool if in_region(f, box)]
             if not features:
                 continue
-            placed.update(f["properties"]["grmuid"] for f in features)
+            placed.update(f["properties"]["lane_uid"] for f in features)
             for area_label, part in split_by_authority(features):
                 entry = write_package(pkg_name, region_id, region_label,
                                       area_label, part, key, stamp)
@@ -538,7 +539,7 @@ def main():
                          entry["plainBytes"] / 1048576, over))
 
         orphans.extend(
-            f for f in pool if f["properties"]["grmuid"] not in placed)
+            f for f in pool if f["properties"]["lane_uid"] not in placed)
 
     # A lane that fell outside every region box.
     #

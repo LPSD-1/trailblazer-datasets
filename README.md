@@ -77,7 +77,7 @@ footpaths are cut into authority-sized pieces — "Derbyshire", not "part 7 of
 `.tbpack` files are gzipped GeoJSON sealed with AES-256-GCM.
 
 ```
-"GRMP" (4) │ version (1) │ alg (1) │ nonce (12) │ ciphertext │ MAC (16)
+"TBPK" (4) │ version (1) │ alg (1) │ nonce (12) │ ciphertext │ MAC (16)
 ```
 
 The header and nonce are passed as GCM additional authenticated data, so the

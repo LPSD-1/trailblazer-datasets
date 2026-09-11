@@ -34,7 +34,7 @@ def lane(coords, authority="Somewhere", uid=None):
     return {
         "geometry": {"coordinates": coords},
         "properties": {
-            "grmuid": uid or ("u%d" % (len(coords) + hash(str(coords)) % 9999)),
+            "lane_uid": uid or ("u%d" % (len(coords) + hash(str(coords)) % 9999)),
             "authority": authority,
         },
     }
@@ -78,13 +78,13 @@ pool = [
 ]
 placed = set()
 for _region, _label, _box in build_packages.REGIONS:
-    placed.update(f["properties"]["grmuid"]
+    placed.update(f["properties"]["lane_uid"]
                   for f in pool if build_packages.in_region(f, _box))
-orphans = [f for f in pool if f["properties"]["grmuid"] not in placed]
+orphans = [f for f in pool if f["properties"]["lane_uid"] not in placed]
 
 check("exactly the uncovered lane is flagged",
-      [f["properties"]["grmuid"] for f in orphans],
-      [far_north["properties"]["grmuid"]])
+      [f["properties"]["lane_uid"] for f in orphans],
+      [far_north["properties"]["lane_uid"]])
 
 # It has to say WHERE, or the box cannot be fixed. This only has to not throw
 # and to name the authority; the exact wording is not the contract.

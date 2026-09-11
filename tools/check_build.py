@@ -147,7 +147,7 @@ def check_packages_readable(new, dist_dir, key_path, problems):
 
     try:
         prefix, body = blob[:18], blob[18:]
-        if prefix[:4] != b"GRMP":
+        if prefix[:4] != b"TBPK":
             raise ValueError("not a .tbpack")
         plain = gzip.decompress(AESGCM(key).decrypt(prefix[6:18], body, prefix))
         collection = json.loads(plain)
@@ -165,7 +165,7 @@ def check_packages_readable(new, dist_dir, key_path, problems):
     else:
         print("  opened %s: %d ways" % (os.path.basename(pkg["file"]), features))
 
-    ids = [f["properties"]["grmuid"] for f in collection.get("features", [])]
+    ids = [f["properties"]["lane_uid"] for f in collection.get("features", [])]
     if len(set(ids)) != len(ids):
         problems.append(
             "%s contains duplicate way ids; the app dedupes on them and would "
