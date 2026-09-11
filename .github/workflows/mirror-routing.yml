@@ -1,0 +1,183 @@
+name: Mirror routing tiles
+
+# Weekly, a handful of tiles at a time, until we host the lot.
+#
+# Every rider who plans a route offline in Britain currently pulls a 139 MB
+# tile from brouter.de — a volunteer-run service we have no agreement with and
+# no fallback for. Across the catalogue that is 7.9 GB of somebody else's
+# bandwidth, spent by an app that charges money. It will not fail by sending us
+# a bill; it will fail by being blocked, and then offline routing stops working
+# for every rider at once, on a moor, with the app reporting a download failure
+# it cannot explain.
+#
+# GitHub releases have no total size limit and no bandwidth limit, so hosting
+# it ourselves costs nothing and removes the dependency.
+#
+# Tiles covering countries where we publish LANES go first: those are the
+# riders we actually have. Until a tile is mirrored the catalogue keeps
+# pointing upstream, so the switchover is gradual and nothing breaks halfway.
+on:
+  schedule:
+    - cron: '23 4 * * 2'   # 04:23 UTC on Tuesdays
+  workflow_dispatch:
+    inputs:
+      budget:
+        description: 'Tiles to mirror this run'
+        type: string
+        default: '6'
+
+permissions:
+  contents: write
+  issues: write
+
+concurrency:
+  group: mirror-routing
+  cancel-in-progress: false
+
+jobs:
+  mirror:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Take our own copy
+        id: mirror
+        run: |
+          mkdir -p dist/routing
+          python tools/mirror_routing.py \
+            --catalogue catalogue.json \
+            --out dist/routing \
+            --index routing/index.json \
+            --budget "${{ inputs.budget || '6' }}" | tee /tmp/mirror.log
+
+          # Nothing new is an ordinary outcome, not a failure.
+          if grep -q '^nothing due' /tmp/mirror.log; then
+            echo "did=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "did=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Before anything is published: what we mirrored must be something the
+      # routing engine can actually open. A tile that transfers cleanly and
+      # will not parse is 139 MB a rider downloads and cannot use.
+      #
+      # The header is 25 big-endian longs: top 16 bits a lookup version, low
+      # 48 a file offset. The LAST offset is where the data ends, so it has to
+      # land inside the file — a login page or an error document fails that at
+      # once. And the version has to match the lookups.dat the app ships, or
+      # every rider gets "lookup version mismatch" the first time they ask for
+      # a route, having already paid for the download.
+      - name: Can the routing engine open it?
+        if: steps.mirror.outputs.did == 'true'
+        env:
+          EXPECTED_LOOKUP_VERSION: '11'
+        run: |
+          python - <<'PY'
+          import glob, os, struct, sys
+
+          expected = int(os.environ["EXPECTED_LOOKUP_VERSION"])
+          tiles = sorted(glob.glob("dist/routing/*.rd5"))
+          if not tiles:
+              sys.exit("nothing to check")
+
+          for path in tiles:
+              size = os.path.getsize(path)
+              name = os.path.basename(path)
+              if size < 200:
+                  sys.exit("%s is %d bytes; that is not a tile" % (name, size))
+              with open(path, "rb") as f:
+                  head = f.read(200)
+
+              index = []
+              for i in range(25):
+                  (lv,) = struct.unpack_from(">q", head, i * 8)
+                  index.append((lv >> 48, lv & 0xFFFFFFFFFFFF))
+
+              version = index[0][0]
+              if version != expected:
+                  sys.exit(
+                      "%s is lookup version %d, the app ships %d. Every rider "
+                      "would download it and be told 'lookup version mismatch' "
+                      "the first time they asked for a route."
+                      % (name, version, expected))
+
+              end = index[24][1]
+              if not (0 < end <= size):
+                  sys.exit("%s: data ends at %d in a %d byte file"
+                           % (name, end, size))
+              if any(index[i][1] > index[i + 1][1] for i in range(24)):
+                  sys.exit("%s: header offsets are not in order" % name)
+
+              print("%s OK (%.0f MB, lookup v%d)" % (name, size / 1e6, version))
+          PY
+
+      - name: Publish
+        if: steps.mirror.outputs.did == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release view routing >/dev/null 2>&1 || \
+            gh release create routing \
+              --title "Routing tiles" \
+              --notes "BRouter segment tiles, mirrored so riders download from us rather than from brouter.de. Data © OpenStreetMap contributors (ODbL); tiles built by the BRouter project." \
+              --latest=false
+
+          for tile in dist/routing/*.rd5; do
+            gh release upload routing "$tile" --clobber
+          done
+
+          python tools/build_catalogue.py \
+            --lanes manifest.json \
+            --base-url "https://lpsd-1.github.io/trailblazer-datasets/" \
+            --satellite satellite/index.json \
+            --routing-mirror routing/index.json \
+            --routing-mirror-base "${{ github.server_url }}/${{ github.repository }}/releases/download/routing/" \
+            --out dist/catalogue.json
+          mv dist/catalogue.json catalogue.json
+
+          git config user.name  'Trail Blazer data bot'
+          git config user.email 'noreply@github.com'
+          git add -A routing/index.json catalogue.json
+          if git diff --cached --quiet; then
+            echo "Nothing changed."
+            exit 0
+          fi
+          MIRRORED=$(python -c "import json;print(len(json.load(open('routing/index.json'))['tiles']))")
+          git commit -m "Mirror routing: ${MIRRORED} tiles now served by us" \
+                     -m "Riders no longer pull these from brouter.de."
+          git push
+
+      - name: Raise an issue if this run failed
+        if: failure()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          BODY=$(cat <<EOF
+          Mirroring routing tiles failed, so **nothing was published**. The
+          catalogue still points at whatever it pointed at before — riders are
+          unaffected either way.
+
+          Log: $RUN_URL
+
+          Most likely: brouter.de was slow, or its directory listing changed
+          format. The tool stops rather than publishing a tile it could not
+          verify.
+          EOF
+          )
+          EXISTING=$(gh issue list --label mirror --state open \
+                       --json number --jq '.[0].number' 2>/dev/null || true)
+          if [ -n "$EXISTING" ]; then
+            gh issue comment "$EXISTING" --body "Failed again: $RUN_URL"
+          else
+            gh label create mirror --color 0E8A16 \
+              --description "Mirroring third-party data" 2>/dev/null || true
+            gh issue create --title "Routing mirror failed on $(date -u +%Y-%m-%d)" \
+              --body "$BODY" --label mirror
+          fi

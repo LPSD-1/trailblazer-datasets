@@ -144,9 +144,29 @@ def routing_index():
     return sizes
 
 
-def routing_packs(country, tile_sizes):
+def mirrored_routing(path):
+    """Routing tiles we host ourselves, by tile name.
+
+    Riders pulling 139 MB each from a volunteer-run third party is a
+    dependency that fails by being blocked rather than by billing us, and it
+    takes offline routing down for everyone at once when it does. Anything in
+    here is served from our own release instead.
+    """
+    if not path or not os.path.exists(path):
+        return {}
+    try:
+        with open(path, encoding="utf-8") as f:
+            return json.load(f).get("tiles", {})
+    except (ValueError, OSError) as e:
+        print("warning: could not read %s (%s); routing falls back upstream"
+              % (path, e), file=sys.stderr)
+        return {}
+
+
+def routing_packs(country, tile_sizes, mirror=None, mirror_base=""):
     """Routing packs for one country, one per 5-degree tile it touches."""
     _, code, label, w, s, e, n = country
+    mirror = mirror or {}
     packs = []
     for name, lon, lat in tiles_covering(w, s, e, n):
         if name not in tile_sizes:
@@ -166,14 +186,22 @@ def routing_packs(country, tile_sizes):
                 "west": lon, "south": lat,
                 "east": lon + 5, "north": lat + 5,
             },
-            "file": ROUTING_INDEX + name + ".rd5",
-            # The tile index publishes no checksums. The exact byte length
-            # is recorded instead, and the app refuses anything that does not
-            # match it - which catches truncated transfers and captive
-            # portals, the failures that actually happen. It is weaker than a
-            # hash and is not pretended otherwise.
-            "sha256": "",
-            "bytes": tile_sizes[name],
+            # Ours where we have it. A tile we host does not move under us, so
+            # it carries a REAL hash - and the app can then check a routing
+            # download exactly, the way it checks a lane pack, instead of
+            # against a size that was a snapshot of a nightly rebuild.
+            **({
+                "file": mirror_base + name + ".rd5",
+                "sha256": mirror[name]["sha256"],
+                "bytes": mirror[name]["bytes"],
+            } if name in mirror else {
+                "file": ROUTING_INDEX + name + ".rd5",
+                # Upstream publishes no checksums and rebuilds nightly, so
+                # the length is all there is and it is a moving target. Every
+                # tile not yet mirrored is still in this position.
+                "sha256": "",
+                "bytes": tile_sizes[name],
+            }),
         })
     return packs
 
@@ -267,15 +295,20 @@ def satellite_packs(path):
     return by_area
 
 
-def build(lanes_manifest, base_url, stamp, satellite_index=None):
+def build(lanes_manifest, base_url, stamp, satellite_index=None,
+          routing_mirror_index=None, routing_mirror_base=""):
     tile_sizes = routing_index()
     gb_areas = lane_areas(lanes_manifest)
     imagery = satellite_packs(satellite_index)
+    mirror = mirrored_routing(routing_mirror_index)
+    if mirror:
+        print("  %d routing tiles served from our own mirror" % len(mirror))
 
     by_continent = {}
     for country in COUNTRIES:
         continent, code, label, w, s, e, n = country
-        routing = routing_packs(country, tile_sizes)
+        routing = routing_packs(country, tile_sizes, mirror,
+                                routing_mirror_base)
 
         areas = []
         if code == "gb" and gb_areas:
@@ -366,6 +399,11 @@ def main():
     ap.add_argument("--satellite", default="satellite/index.json",
                     help="record of published imagery packs; missing is fine "
                          "and simply means no imagery in this build")
+    ap.add_argument("--routing-mirror", default="routing/index.json",
+                    help="record of routing tiles we host; missing is fine "
+                         "and simply leaves them pointing upstream")
+    ap.add_argument("--routing-mirror-base", default="",
+                    help="where our mirrored tiles are served from")
     ap.add_argument("--out", default="dist/catalogue.json")
     args = ap.parse_args()
 
@@ -373,7 +411,9 @@ def main():
     stamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
     catalogue = build(args.lanes, args.base_url, stamp,
-                      satellite_index=args.satellite)
+                      satellite_index=args.satellite,
+                      routing_mirror_index=args.routing_mirror,
+                      routing_mirror_base=args.routing_mirror_base)
     os.makedirs(os.path.dirname(os.path.abspath(args.out)), exist_ok=True)
     with open(args.out, "w", encoding="utf8") as fh:
         json.dump(catalogue, fh, indent=1)
