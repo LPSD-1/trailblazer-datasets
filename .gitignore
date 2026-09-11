@@ -1,0 +1,13 @@
+# Python bytecode. Committed by accident once; it is build output, it is
+# platform- and version-specific, and a stale copy of it made a restored file
+# look like a mutated one for a whole test run.
+__pycache__/
+*.py[cod]
+
+# Build output. dist/ is assembled from the tools on every run and published
+# from there; nothing in it is a source.
+dist/
+
+# The rights-of-way cache. Tens of thousands of council records, refetched by
+# fetch_rights_of_way.py and cached by the workflow rather than by git.
+cache/

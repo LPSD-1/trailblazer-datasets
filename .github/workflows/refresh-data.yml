@@ -78,15 +78,83 @@ jobs:
           # 32 bytes, base64 encoded, is 44 characters with padding.
           test "$(wc -c < /tmp/dataset.key)" -ge 43
 
+      # The build now REFUSES to publish if any lane falls outside every
+      # region box. Such a lane is in the source data, in no package and on
+      # nobody's phone, and nothing used to say so.
       - name: Build the packages
-        run: python tools/build_packages.py --key /tmp/dataset.key
+        run: |
+          python tools/test_build_packages.py
+          python tools/build_packages.py --key /tmp/dataset.key
 
+      # Ready-made trips: anchors snapped to real byways in the data we
+      # have just built. It REFUSES to publish a trip whose anchors it
+      # cannot place on a motor-legal byway, so a transposed digit fails
+      # the build instead of sending a rider to the wrong valley.
+      - name: Build the ready-made trips
+        run: |
+          python tools/test_build_trips.py
+          python tools/build_trips.py --trips trips/gb.json --out trips
+
+      # Every index, not just the lanes.
+      #
+      # This rebuilds catalogue.json from scratch, so anything NOT passed here
+      # is dropped from it. Built with --lanes alone, the first monthly refresh
+      # after imagery or a mirrored routing tile was published would silently
+      # delete both: riders would lose satellite from the map and go back to
+      # pulling 139 MB tiles from brouter.de, with nothing in any log to say a
+      # thing had changed.
+      #
+      # The flags are conditional because the indexes do not exist until their
+      # own workflows have run once, and build_catalogue is entitled to object
+      # to a path that is not there.
       - name: Build the catalogue
         run: |
-          python tools/build_catalogue.py \
-            --lanes dist/manifest.json \
-            --base-url "https://lpsd-1.github.io/trailblazer-datasets/" \
-            --out dist/catalogue.json
+          REPO_URL="${{ github.server_url }}/${{ github.repository }}"
+          export REPO_URL
+          bash tools/rebuild_catalogue.sh dist/manifest.json dist/catalogue.json
+          # Refuses to publish a catalogue that lost something already
+          # published. The catalogue is rebuilt from scratch, so a job that
+          # forgets an index DELETES what another job published - silently, in
+          # a build that otherwise succeeds. It has happened three times.
+          python tools/verify_catalogue.py dist/catalogue.json
+
+      # And prove it, rather than trusting the flags above. A catalogue that
+      # lost every imagery pack is a build that "succeeded".
+      - name: Did the rebuild keep what the other workflows published?
+        run: |
+          python - <<'PY'
+          import json, os, sys
+
+          cat = json.load(open("dist/catalogue.json"))
+          kinds = {}
+          for cont in cat.get("continents", []):
+              for country in cont.get("countries", []):
+                  for area in country.get("areas", []):
+                      for pack in area.get("packs", []):
+                          kinds[pack.get("kind")] = kinds.get(pack.get("kind"), 0) + 1
+          print("rebuilt catalogue holds:", kinds)
+
+          def published(path, key):
+              if not os.path.exists(path):
+                  return 0
+              try:
+                  return len(json.load(open(path)).get(key, []) or [])
+              except (ValueError, OSError):
+                  return 0
+
+          want_sat = published("satellite/index.json", "packs")
+          if want_sat and not kinds.get("basemap"):
+              sys.exit("satellite/index.json lists %d packs and the rebuilt "
+                       "catalogue has none - riders would lose imagery" % want_sat)
+
+          if os.path.exists("routing/index.json"):
+              try:
+                  mirrored = json.load(open("routing/index.json")).get("tiles", {})
+              except (ValueError, OSError):
+                  mirrored = {}
+              if mirrored and not kinds.get("routing"):
+                  sys.exit("routing tiles vanished from the rebuilt catalogue")
+          PY
 
       # The important one. A crash stops the job on its own; what this catches
       # is a build where every step SUCCEEDED and the data is quietly ruined -
@@ -144,7 +212,7 @@ jobs:
 
           git config user.name  'Trail Blazer data bot'
           git config user.email 'noreply@github.com'
-          git add -A packages manifest.json catalogue.json
+          git add -A packages manifest.json catalogue.json trips/gb.tbtrips
 
           if git diff --cached --quiet; then
             echo "Councils published nothing new. Leaving the last build in place."

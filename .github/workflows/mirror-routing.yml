@@ -132,13 +132,14 @@ jobs:
             gh release upload routing "$tile" --clobber
           done
 
-          python tools/build_catalogue.py \
-            --lanes manifest.json \
-            --base-url "https://lpsd-1.github.io/trailblazer-datasets/" \
-            --satellite satellite/index.json \
-            --routing-mirror routing/index.json \
-            --routing-mirror-base "${{ github.server_url }}/${{ github.repository }}/releases/download/routing/" \
-            --out dist/catalogue.json
+          REPO_URL="${{ github.server_url }}/${{ github.repository }}"
+          export REPO_URL
+          bash tools/rebuild_catalogue.sh manifest.json dist/catalogue.json
+          # Refuses to publish a catalogue that lost something already
+          # published. The catalogue is rebuilt from scratch, so a job that
+          # forgets an index DELETES what another job published - silently, in
+          # a build that otherwise succeeds. It has happened three times.
+          python tools/verify_catalogue.py dist/catalogue.json
           mv dist/catalogue.json catalogue.json
 
           git config user.name  'Trail Blazer data bot'

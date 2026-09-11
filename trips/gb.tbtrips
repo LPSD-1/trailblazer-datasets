@@ -1,0 +1,243 @@
+{
+ "version": 1,
+ "country": "gb",
+ "attribution": "Routes computed on the device from local highway authority definitive maps via rowmaps.com, Open Government Licence v3.0.",
+ "trips": [
+  {
+   "id": "gb-strata-florida",
+   "name": "Strata Florida",
+   "region": "gb-wales",
+   "summary": "The best-known green lane in Britain, and the one people travel for. An old drovers' road over the Cambrian Mountains from the abbey ruins at Pontrhydfendigaid, with a string of river crossings that turn it from a ride into an event after rain.",
+   "days": 1,
+   "warning": "The river crossings are the whole point and also the danger. They rise fast and the bed moves; what was ankle deep in the morning is not in the afternoon.",
+   "stops": [
+    {
+     "name": "Pontrhydfendigaid",
+     "lat": 52.291,
+     "lon": -3.851,
+     "movedKm": null
+    },
+    {
+     "name": "Claerddu",
+     "lat": 52.303,
+     "lon": -3.776,
+     "movedKm": null
+    },
+    {
+     "name": "Cwmystwyth",
+     "lat": 52.358,
+     "lon": -3.774,
+     "movedKm": null
+    }
+   ]
+  },
+  {
+   "id": "gb-salisbury-plain",
+   "name": "Salisbury Plain",
+   "region": "gb-south-west",
+   "summary": "Hundreds of miles of legal byway over open chalk downland, and the biggest concentration of green lane in southern England. Fast, grassy and wide, with the abandoned village of Imber and the military ranges in the middle of it.",
+   "days": 1,
+   "warning": "Army ranges. Red flags mean the range is live and the byways through it are closed whatever the definitive map says.",
+   "stops": [
+    {
+     "name": "Tilshead",
+     "lat": 51.231,
+     "lon": -1.923,
+     "movedKm": null
+    },
+    {
+     "name": "Imber",
+     "lat": 51.242,
+     "lon": -2.053,
+     "movedKm": null
+    },
+    {
+     "name": "Chitterne",
+     "lat": 51.191,
+     "lon": -2.018,
+     "movedKm": null
+    },
+    {
+     "name": "Shrewton",
+     "lat": 51.196,
+     "lon": -1.897,
+     "movedKm": null
+    }
+   ]
+  },
+  {
+   "id": "gb-ridgeway",
+   "name": "The Ridgeway byways",
+   "region": "gb-south-east",
+   "summary": "Britain's oldest road, and the byway sections of it are still open to vehicles. Chalk track along the crest of the downs past Avebury and Barbury Castle, with views over half of Wiltshire and nothing modern in sight.",
+   "days": 1,
+   "warning": "Only parts of the Ridgeway are byway - the rest is bridleway and footpath, and the boundary is not obvious on the ground. Voluntary winter restraint is widely observed.",
+   "stops": [
+    {
+     "name": "Avebury",
+     "lat": 51.428,
+     "lon": -1.854,
+     "movedKm": null
+    },
+    {
+     "name": "Barbury Castle",
+     "lat": 51.489,
+     "lon": -1.79,
+     "movedKm": null
+    },
+    {
+     "name": "Ogbourne St George",
+     "lat": 51.487,
+     "lon": -1.709,
+     "movedKm": null
+    }
+   ]
+  },
+  {
+   "id": "gb-peak-district",
+   "name": "Peak District classics",
+   "region": "gb-midlands",
+   "summary": "The weekend that most people's green laning starts with. A compact circuit of gritstone and limestone lanes around Eyam and Hathersage, close enough together that a day takes in half a dozen and short enough that nothing is committing.",
+   "days": 1,
+   "warning": "The most heavily TRO'd area in the country, and orders change often. Several famous Peak lanes are now closed to vehicles permanently.",
+   "stops": [
+    {
+     "name": "Eyam",
+     "lat": 53.284,
+     "lon": -1.674,
+     "movedKm": null
+    },
+    {
+     "name": "Hathersage",
+     "lat": 53.328,
+     "lon": -1.65,
+     "movedKm": null
+    },
+    {
+     "name": "Houndkirk Moor",
+     "lat": 53.32,
+     "lon": -1.585,
+     "movedKm": null
+    }
+   ]
+  },
+  {
+   "id": "gb-yorkshire-dales",
+   "name": "Yorkshire Dales byways",
+   "region": "gb-north",
+   "summary": "The best long-distance green laning in England. Roman road and drovers' track over the high limestone between Ribblehead and Wensleydale, miles at a time above the walls with the Three Peaks in view.",
+   "days": 2,
+   "warning": "Exposed and high. Weather closes in quickly and there is no shelter on the tops.",
+   "stops": [
+    {
+     "name": "Settle",
+     "lat": 54.069,
+     "lon": -2.278,
+     "movedKm": null
+    },
+    {
+     "name": "Ribblehead",
+     "lat": 54.208,
+     "lon": -2.366,
+     "movedKm": null
+    },
+    {
+     "name": "Bainbridge",
+     "lat": 54.309,
+     "lon": -2.102,
+     "movedKm": null
+    },
+    {
+     "name": "Hawes",
+     "lat": 54.303,
+     "lon": -2.196,
+     "movedKm": null
+    }
+   ]
+  },
+  {
+   "id": "gb-north-wales",
+   "name": "North Wales and the Berwyn",
+   "region": "gb-wales",
+   "summary": "Steep, rocky and properly remote for somewhere this close to the border. The pass over the Berwyn between the Ceiriog and Dee valleys is the one people come for, with the Wayfarer memorial at the top of it.",
+   "days": 1,
+   "warning": "Rock steps and loose surface on the climb. Not a first green lane, and not one to ride alone.",
+   "stops": [
+    {
+     "name": "Llanarmon Dyffryn Ceiriog",
+     "lat": 52.921,
+     "lon": -3.24,
+     "movedKm": null
+    },
+    {
+     "name": "Nant Rhyd Wilym",
+     "lat": 52.943,
+     "lon": -3.312,
+     "movedKm": null
+    },
+    {
+     "name": "Cynwyd",
+     "lat": 52.962,
+     "lon": -3.391,
+     "movedKm": null
+    }
+   ]
+  },
+  {
+   "id": "gb-forest-of-bowland",
+   "name": "Trough of Bowland",
+   "region": "gb-north",
+   "summary": "Quiet moorland between the Dales and the coast that most people ride past on their way somewhere else. Farm tracks and old packhorse routes around Slaidburn and Dunsop Bridge, and empty even in summer.",
+   "days": 1,
+   "warning": null,
+   "stops": [
+    {
+     "name": "Slaidburn",
+     "lat": 53.966,
+     "lon": -2.441,
+     "movedKm": null
+    },
+    {
+     "name": "Dunsop Bridge",
+     "lat": 53.943,
+     "lon": -2.512,
+     "movedKm": null
+    },
+    {
+     "name": "Trough of Bowland",
+     "lat": 53.951,
+     "lon": -2.57,
+     "movedKm": null
+    }
+   ]
+  },
+  {
+   "id": "gb-mid-wales",
+   "name": "Mid Wales mountain roads",
+   "region": "gb-wales",
+   "summary": "The long way across the Cambrian Mountains, linking the reservoirs above Rhayader with the coast. The classic Welsh green lane holiday: a full day of unsurfaced mountain road with almost nothing on it.",
+   "days": 2,
+   "warning": "Long stretches with no fuel, no phone signal and no traffic. Go in company and carry more fuel than the distance suggests.",
+   "stops": [
+    {
+     "name": "Rhayader",
+     "lat": 52.3,
+     "lon": -3.512,
+     "movedKm": null
+    },
+    {
+     "name": "Claerwen",
+     "lat": 52.264,
+     "lon": -3.629,
+     "movedKm": null
+    },
+    {
+     "name": "Devil's Bridge",
+     "lat": 52.377,
+     "lon": -3.85,
+     "movedKm": null
+    }
+   ]
+  }
+ ]
+}

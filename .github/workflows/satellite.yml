@@ -191,14 +191,23 @@ jobs:
             --area "${{ steps.plan.outputs.area }}" \
             --index satellite/index.json
 
-          # The catalogue is rebuilt so riders see it without waiting for the
-          # monthly lane refresh. It reads satellite/index.json, so the lane
-          # refresh will not lose this next time it runs.
-          python tools/build_catalogue.py \
-            --lanes manifest.json \
-            --base-url "https://lpsd-1.github.io/trailblazer-datasets/" \
-            --satellite satellite/index.json \
-            --out dist/catalogue.json
+          # The catalogue is rebuilt so riders see imagery without waiting for
+          # the monthly lane refresh.
+          #
+          # The lane refresh keeps it because IT passes --satellite too, and it
+          # verifies afterwards that the packs survived. That was not always
+          # true: this comment used to claim the refresh "reads
+          # satellite/index.json" when its build_catalogue call had no such
+          # flag, so the first monthly refresh would have deleted every imagery
+          # pack from the catalogue and nothing would have said so.
+          REPO_URL="${{ github.server_url }}/${{ github.repository }}"
+          export REPO_URL
+          bash tools/rebuild_catalogue.sh manifest.json dist/catalogue.json
+          # Refuses to publish a catalogue that lost something already
+          # published. The catalogue is rebuilt from scratch, so a job that
+          # forgets an index DELETES what another job published - silently, in
+          # a build that otherwise succeeds. It has happened three times.
+          python tools/verify_catalogue.py dist/catalogue.json
           mv dist/catalogue.json catalogue.json
 
           git config user.name  'Trail Blazer data bot'

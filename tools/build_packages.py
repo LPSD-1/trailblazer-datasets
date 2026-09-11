@@ -93,15 +93,37 @@ PACKAGES = {
     },
 }
 
+# These boxes must TILE England and Wales with no hole between them.
+#
+# They did not. Measured against real places on 2026-09-11, five towns fell
+# outside every box, so every right of way in them was published in no package
+# at all - present in the source data, absent from the product, and nothing
+# anywhere said so:
+#
+#     Gloucester, Stroud, Cirencester   between South West (north 51.55),
+#                                       Wales (east -2.60) and Midlands
+#                                       (south 51.90) - the Cotswolds, which
+#                                       is as green-lane as England gets
+#     Aylesbury                         between South East (north 51.80) and
+#                                       Midlands (south 51.90)
+#     Skegness and the Lincolnshire     east of The North (east 0.20) and
+#     coast                             north of East Anglia (north 53.00)
+#
+# The edges now meet or overlap on every seam. Overlap is harmless - in_region
+# publishes a straddling lane in both packages and the app dedupes on id - so
+# when in doubt, overlap. test_build_packages.py checks real towns against
+# these, and build_packages refuses to publish if any lane lands outside them.
+#
 # Must match lib/features/regions/region_providers.dart exactly: the app asks
-# for packages by region id, and a mismatch means a silent 404.
+# for packages by region id, and a mismatch means a silent 404. The same holes
+# were in the app's copy, so a rider standing in Gloucester matched no region.
 REGIONS = [
-    ("south-west", "South West", (-6.45, 49.85, -1.95, 51.55)),
-    ("south-east", "South East", (-1.85, 50.50, 1.45, 51.80)),
-    ("east-anglia", "East Anglia", (-0.40, 51.50, 1.80, 53.00)),
+    ("south-west", "South West", (-6.45, 49.85, -1.85, 51.95)),
+    ("south-east", "South East", (-1.85, 50.50, 1.45, 51.95)),
+    ("east-anglia", "East Anglia", (-0.40, 51.50, 1.85, 53.05)),
     ("midlands", "Midlands", (-3.25, 51.90, 0.15, 53.60)),
     ("wales", "Wales", (-5.35, 51.35, -2.60, 53.45)),
-    ("north", "The North", (-3.70, 53.00, 0.20, 55.85)),
+    ("north", "The North", (-3.70, 53.00, 1.85, 55.90)),
 ]
 
 OGL = ("Contains public sector information licensed under the Open Government "
@@ -167,7 +189,7 @@ def split_by_authority(features):
         owned = by_authority[name]
         size = sum(feature_bytes(f) for f in owned)
         if size <= MAX_PLAIN_BYTES:
-            pieces.append(([name], owned, size))
+            pieces.append(([(name, len(owned))], owned, size))
             continue
         # One county too big by itself. Numbered slices are worse to read than
         # a county name, but they are still a place the rider can point at.
@@ -177,7 +199,7 @@ def split_by_authority(features):
             slice_ = owned[i * per:(i + 1) * per]
             if slice_:
                 pieces.append((
-                    ["%s (%d of %d)" % (name, i + 1, parts)],
+                    [("%s (%d of %d)" % (name, i + 1, parts), len(slice_))],
                     slice_,
                     sum(feature_bytes(f) for f in slice_),
                 ))
@@ -195,10 +217,23 @@ def split_by_authority(features):
 
     out = []
     for names, feats, _ in merged:
-        if len(names) <= 2:
-            label = " and ".join(names)
+        # Named after the authority with the MOST lanes in the chunk, not the
+        # alphabetically first.
+        #
+        # `sorted(by_authority)` put "Bath and North East Somerset" at the
+        # front of every chunk it appeared in, and in_region deliberately
+        # pulls in lanes that straddle a boundary - so the published Wales
+        # index carried an area called "Bath and North East Somerset and 25
+        # more" on the strength of a handful of border lanes. A rider looking
+        # for Welsh byways cannot be expected to recognise that, and an area
+        # named after somewhere 80 miles inside another country reads as a
+        # bug in the data rather than a label.
+        ranked = sorted(names, key=lambda nc: (-nc[1], nc[0]))
+        shown = [n for n, _ in ranked]
+        if len(shown) <= 2:
+            label = " and ".join(shown)
         else:
-            label = "%s and %d more" % (names[0], len(names) - 1)
+            label = "%s and %d more" % (shown[0], len(shown) - 1)
         out.append((label, feats))
     return out
 
@@ -348,6 +383,28 @@ def load_all(authorities):
     return by_type
 
 
+def report_orphans(orphans):
+    """Say WHERE the uncovered lanes are, so the boxes can be fixed."""
+    west = min(lon for f in orphans for lon, _ in f["geometry"]["coordinates"])
+    east = max(lon for f in orphans for lon, _ in f["geometry"]["coordinates"])
+    south = min(lat for f in orphans for _, lat in f["geometry"]["coordinates"])
+    north = max(lat for f in orphans for _, lat in f["geometry"]["coordinates"])
+
+    by_authority = {}
+    for f in orphans:
+        name = f["properties"].get("authority") or "Unknown"
+        by_authority[name] = by_authority.get(name, 0) + 1
+
+    print("\n%d lanes matched no region." % len(orphans))
+    print("  they span  west %.2f  south %.2f  east %.2f  north %.2f"
+          % (west, south, east, north))
+    print("  by authority:")
+    for name, n in sorted(by_authority.items(), key=lambda kv: -kv[1])[:15]:
+        print("    %-40s %d" % (name, n))
+    if len(by_authority) > 15:
+        print("    ... and %d more authorities" % (len(by_authority) - 15))
+
+
 def in_region(feature, box):
     """A lane belongs to a region if ANY of it is inside.
 
@@ -435,6 +492,8 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--key", required=True, help="base64 32-byte key file")
     ap.add_argument("--only", help="comma-separated package names")
+    ap.add_argument("--allow-orphans", action="store_true",
+                    help="publish even though some lanes match no region")
     args = ap.parse_args()
 
     key = load_key(args.key)
@@ -451,6 +510,7 @@ def main():
         else list(PACKAGES)
 
     entries = []
+    orphans = []
     print("\nbuilding packages (vehicle x region)...")
     for pkg_name in wanted:
         pool = []
@@ -459,10 +519,12 @@ def main():
         if not pool:
             print("  %-9s SKIPPED - nothing to package" % pkg_name)
             continue
+        placed = set()
         for region_id, region_label, box in REGIONS:
             features = [f for f in pool if in_region(f, box)]
             if not features:
                 continue
+            placed.update(f["properties"]["grmuid"] for f in features)
             for area_label, part in split_by_authority(features):
                 entry = write_package(pkg_name, region_id, region_label,
                                       area_label, part, key, stamp)
@@ -474,6 +536,26 @@ def main():
                       % (pkg_name, entry["area"], entry["laneCount"],
                          entry["bytes"] / 1048576,
                          entry["plainBytes"] / 1048576, over))
+
+        orphans.extend(
+            f for f in pool if f["properties"]["grmuid"] not in placed)
+
+    # A lane that fell outside every region box.
+    #
+    # There was no check at all here, and REGIONS is six hand-written boxes
+    # covering an island with a very awkward shape. Anything they miss is
+    # simply not published: it is in the source data, it is in no package, no
+    # rider ever sees it, and the build prints a page of healthy-looking
+    # numbers either way. That is the worst kind of data bug - the product is
+    # quietly smaller than it claims and nothing says so.
+    if orphans:
+        report_orphans(orphans)
+        if not args.allow_orphans:
+            sys.exit(
+                "refusing to publish: %d lanes belong to no region. Widen the "
+                "boxes in REGIONS to cover them, or pass --allow-orphans if "
+                "they are genuinely outside the area this dataset serves."
+                % len(orphans))
 
     manifest = {
         "schema": 1,

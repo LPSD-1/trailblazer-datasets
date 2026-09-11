@@ -16,10 +16,12 @@ beside this file, because GitHub Pages caps a site at 1 GB and the routing
 tiles alone are 9.3 GB.
 """
 import argparse
+import hashlib
 import json
 import math
 import os
 import sys
+import urllib.parse
 import urllib.request
 
 # Countries we can say something useful about, with the boxes used to decide
@@ -295,11 +297,63 @@ def satellite_packs(path):
     return by_area
 
 
+def _sha256_of(path):
+    """The hash the app checks a download against."""
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def trips_pack(path, base_url):
+    """The published trips pack, if the trips job has written one.
+
+    One pack per country and a tiny one - a name, a description and the points
+    each route passes through, never a line. It rides along with the lane data
+    for the first area of that country so a rider who downloads the ground
+    also gets the days out over it, without a separate thing to find.
+    """
+    if not path or not os.path.exists(path):
+        # Loudly. The satellite index prints a warning when it cannot be read
+        # and this said nothing at all - which is why a whole workflow quietly
+        # publishing a catalogue with no trips in it left no trace anywhere.
+        print("warning: %s is missing; NO ready-made trips in this build"
+              % path, file=sys.stderr)
+        return None
+    try:
+        size = os.path.getsize(path)
+        with open(path, encoding="utf-8") as f:
+            doc = json.load(f)
+    except (ValueError, OSError) as e:
+        print("warning: could not read %s (%s); no trips in this build"
+              % (path, e), file=sys.stderr)
+        return None
+
+    count = len(doc.get("trips", []))
+    if not count:
+        return None
+
+    name = os.path.basename(path)
+    country = doc.get("country", "gb")
+    print("  %d ready-made trips (%d bytes)" % (count, size))
+    return {
+        "id": "%s-trips" % country,
+        "kind": "trips",
+        "label": "Ready-made trips",
+        "file": urllib.parse.urljoin(base_url, "trips/%s" % name),
+        "sha256": _sha256_of(path),
+        "bytes": size,
+    }
+
+
 def build(lanes_manifest, base_url, stamp, satellite_index=None,
-          routing_mirror_index=None, routing_mirror_base=""):
+          routing_mirror_index=None, routing_mirror_base="",
+          trips_index=None):
     tile_sizes = routing_index()
     gb_areas = lane_areas(lanes_manifest)
     imagery = satellite_packs(satellite_index)
+    trips = trips_pack(trips_index, base_url)
     mirror = mirrored_routing(routing_mirror_index)
     if mirror:
         print("  %d routing tiles served from our own mirror" % len(mirror))
@@ -321,6 +375,20 @@ def build(lanes_manifest, base_url, stamp, satellite_index=None,
                 for pack in imagery.get(area["id"], []):
                     area.setdefault("packs", []).append(pack)
                 areas.append(area)
+
+            # Into EVERY area, not one of them.
+            #
+            # Trips cover the whole country, so the tempting thing is to list
+            # the pack once. That leaves a rider who downloads only Wales
+            # without the Welsh trips, because the pack went to whichever area
+            # sorted first - which is exactly the failure the geographic join
+            # in PackSelection exists to prevent for routing.
+            #
+            # Duplicating costs nothing real: it is seven kilobytes, the app
+            # dedupes downloads by local name, and a selection counts it once.
+            if trips:
+                for area in areas:
+                    area.setdefault("packs", []).append(trips)
 
         if routing:
             areas.append({
@@ -396,6 +464,8 @@ def main():
     ap.add_argument("--lanes", default="dist/manifest.json",
                     help="the Great Britain lane manifest")
     ap.add_argument("--base-url", default="", help="where packs are hosted")
+    ap.add_argument("--trips", default="trips/gb.tbtrips",
+                    help="the built trips pack; missing is fine")
     ap.add_argument("--satellite", default="satellite/index.json",
                     help="record of published imagery packs; missing is fine "
                          "and simply means no imagery in this build")
@@ -412,6 +482,7 @@ def main():
 
     catalogue = build(args.lanes, args.base_url, stamp,
                       satellite_index=args.satellite,
+                      trips_index=args.trips,
                       routing_mirror_index=args.routing_mirror,
                       routing_mirror_base=args.routing_mirror_base)
     os.makedirs(os.path.dirname(os.path.abspath(args.out)), exist_ok=True)
