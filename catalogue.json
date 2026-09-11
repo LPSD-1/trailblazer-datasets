@@ -1,8 +1,14 @@
 {
  "schema": 2,
- "generated": "2026-09-10T18:15:20Z",
+ "generated": "2026-09-11T22:40:02Z",
  "attribution": "Map and routing data (c) OpenStreetMap contributors, ODbL. United Kingdom rights of way contain public sector information licensed under the Open Government Licence v3.0, via rowmaps.com.",
  "baseUrl": "https://lpsd-1.github.io/trailblazer-datasets/",
+ "updates": {
+  "lanes": "monthly",
+  "routing": "monthly",
+  "basemap": "monthly",
+  "gpx": "weekly"
+ },
  "continents": [
   {
    "id": "europe",
@@ -40,7 +46,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E5_N45.rd5",
          "sha256": "",
-         "bytes": 252076552
+         "bytes": 252102192
         },
         {
          "id": "E10_N45",
@@ -54,7 +60,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E10_N45.rd5",
          "sha256": "",
-         "bytes": 198401602
+         "bytes": 198433809
         },
         {
          "id": "E15_N45",
@@ -68,7 +74,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E15_N45.rd5",
          "sha256": "",
-         "bytes": 129596569
+         "bytes": 129614250
         }
        ]
       }
@@ -106,7 +112,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E0_N45.rd5",
          "sha256": "",
-         "bytes": 127034395
+         "bytes": 127049653
         },
         {
          "id": "E5_N45",
@@ -120,7 +126,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E5_N45.rd5",
          "sha256": "",
-         "bytes": 252076552
+         "bytes": 252102192
         },
         {
          "id": "E0_N50",
@@ -134,7 +140,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E0_N50.rd5",
          "sha256": "",
-         "bytes": 79324136
+         "bytes": 79335236
         },
         {
          "id": "E5_N50",
@@ -148,7 +154,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E5_N50.rd5",
          "sha256": "",
-         "bytes": 182212164
+         "bytes": 182228028
         }
        ]
       }
@@ -186,7 +192,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E10_N40.rd5",
          "sha256": "",
-         "bytes": 79951771
+         "bytes": 79965399
         },
         {
          "id": "E15_N40",
@@ -200,7 +206,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E15_N40.rd5",
          "sha256": "",
-         "bytes": 54724066
+         "bytes": 54735801
         },
         {
          "id": "E10_N45",
@@ -214,7 +220,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E10_N45.rd5",
          "sha256": "",
-         "bytes": 198401602
+         "bytes": 198433809
         },
         {
          "id": "E15_N45",
@@ -228,7 +234,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E15_N45.rd5",
          "sha256": "",
-         "bytes": 129596569
+         "bytes": 129614250
         }
        ]
       }
@@ -266,7 +272,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E10_N45.rd5",
          "sha256": "",
-         "bytes": 198401602
+         "bytes": 198433809
         },
         {
          "id": "E15_N45",
@@ -280,7 +286,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E15_N45.rd5",
          "sha256": "",
-         "bytes": 129596569
+         "bytes": 129614250
         },
         {
          "id": "E10_N50",
@@ -294,7 +300,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E10_N50.rd5",
          "sha256": "",
-         "bytes": 124934342
+         "bytes": 124947282
         },
         {
          "id": "E15_N50",
@@ -308,7 +314,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E15_N50.rd5",
          "sha256": "",
-         "bytes": 89926458
+         "bytes": 89944784
         }
        ]
       }
@@ -346,7 +352,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E20_N55.rd5",
          "sha256": "",
-         "bytes": 22088136
+         "bytes": 22090704
         },
         {
          "id": "E25_N55",
@@ -360,7 +366,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E25_N55.rd5",
          "sha256": "",
-         "bytes": 23669076
+         "bytes": 23670462
         },
         {
          "id": "E30_N55",
@@ -374,7 +380,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E30_N55.rd5",
          "sha256": "",
-         "bytes": 17588924
+         "bytes": 17591657
         },
         {
          "id": "E20_N60",
@@ -388,7 +394,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E20_N60.rd5",
          "sha256": "",
-         "bytes": 38131840
+         "bytes": 38134847
         },
         {
          "id": "E25_N60",
@@ -402,7 +408,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E25_N60.rd5",
          "sha256": "",
-         "bytes": 38306343
+         "bytes": 38310361
         },
         {
          "id": "E30_N60",
@@ -416,7 +422,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E30_N60.rd5",
          "sha256": "",
-         "bytes": 11716773
+         "bytes": 11716890
         },
         {
          "id": "E20_N65",
@@ -430,7 +436,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E20_N65.rd5",
          "sha256": "",
-         "bytes": 10773039
+         "bytes": 10773196
         },
         {
          "id": "E25_N65",
@@ -444,7 +450,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E25_N65.rd5",
          "sha256": "",
-         "bytes": 9816808
+         "bytes": 9817156
         },
         {
          "id": "E30_N65",
@@ -458,7 +464,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E30_N65.rd5",
          "sha256": "",
-         "bytes": 4049126
+         "bytes": 4051291
         },
         {
          "id": "E20_N70",
@@ -486,7 +492,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E25_N70.rd5",
          "sha256": "",
-         "bytes": 1654505
+         "bytes": 1654506
         },
         {
          "id": "E30_N70",
@@ -538,7 +544,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W10_N40.rd5",
          "sha256": "",
-         "bytes": 76218133
+         "bytes": 76228989
         },
         {
          "id": "W5_N40",
@@ -552,7 +558,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W5_N40.rd5",
          "sha256": "",
-         "bytes": 91445328
+         "bytes": 91457880
         },
         {
          "id": "E0_N40",
@@ -566,7 +572,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E0_N40.rd5",
          "sha256": "",
-         "bytes": 119447172
+         "bytes": 119459844
         },
         {
          "id": "E5_N40",
@@ -580,7 +586,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E5_N40.rd5",
          "sha256": "",
-         "bytes": 68967422
+         "bytes": 68974417
         },
         {
          "id": "W10_N45",
@@ -608,7 +614,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W5_N45.rd5",
          "sha256": "",
-         "bytes": 64113590
+         "bytes": 64121646
         },
         {
          "id": "E0_N45",
@@ -622,7 +628,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E0_N45.rd5",
          "sha256": "",
-         "bytes": 127034395
+         "bytes": 127049653
         },
         {
          "id": "E5_N45",
@@ -636,7 +642,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E5_N45.rd5",
          "sha256": "",
-         "bytes": 252076552
+         "bytes": 252102192
         },
         {
          "id": "W10_N50",
@@ -650,7 +656,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W10_N50.rd5",
          "sha256": "",
-         "bytes": 42975335
+         "bytes": 42983303
         },
         {
          "id": "W5_N50",
@@ -664,7 +670,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W5_N50.rd5",
          "sha256": "",
-         "bytes": 138731113
+         "bytes": 138743863
         },
         {
          "id": "E0_N50",
@@ -678,7 +684,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E0_N50.rd5",
          "sha256": "",
-         "bytes": 79324136
+         "bytes": 79335236
         },
         {
          "id": "E5_N50",
@@ -692,7 +698,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E5_N50.rd5",
          "sha256": "",
-         "bytes": 182212164
+         "bytes": 182228028
         }
        ]
       }
@@ -730,7 +736,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E5_N45.rd5",
          "sha256": "",
-         "bytes": 252076552
+         "bytes": 252102192
         },
         {
          "id": "E10_N45",
@@ -744,7 +750,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E10_N45.rd5",
          "sha256": "",
-         "bytes": 198401602
+         "bytes": 198433809
         },
         {
          "id": "E15_N45",
@@ -758,7 +764,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E15_N45.rd5",
          "sha256": "",
-         "bytes": 129596569
+         "bytes": 129614250
         },
         {
          "id": "E5_N50",
@@ -772,7 +778,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E5_N50.rd5",
          "sha256": "",
-         "bytes": 182212164
+         "bytes": 182228028
         },
         {
          "id": "E10_N50",
@@ -786,7 +792,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E10_N50.rd5",
          "sha256": "",
-         "bytes": 124934342
+         "bytes": 124947282
         },
         {
          "id": "E15_N50",
@@ -800,7 +806,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E15_N50.rd5",
          "sha256": "",
-         "bytes": 89926458
+         "bytes": 89944784
         },
         {
          "id": "E5_N55",
@@ -814,7 +820,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E5_N55.rd5",
          "sha256": "",
-         "bytes": 33651307
+         "bytes": 33652606
         },
         {
          "id": "E10_N55",
@@ -828,7 +834,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E10_N55.rd5",
          "sha256": "",
-         "bytes": 64383889
+         "bytes": 64390407
         },
         {
          "id": "E15_N55",
@@ -842,7 +848,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E15_N55.rd5",
          "sha256": "",
-         "bytes": 27966068
+         "bytes": 27966480
         }
        ]
       }
@@ -894,7 +900,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E20_N30.rd5",
          "sha256": "",
-         "bytes": 2564229
+         "bytes": 2564312
         },
         {
          "id": "E25_N30",
@@ -908,7 +914,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E25_N30.rd5",
          "sha256": "",
-         "bytes": 2877191
+         "bytes": 2877294
         },
         {
          "id": "E15_N35",
@@ -922,7 +928,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E15_N35.rd5",
          "sha256": "",
-         "bytes": 13937402
+         "bytes": 13938082
         },
         {
          "id": "E20_N35",
@@ -936,7 +942,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E20_N35.rd5",
          "sha256": "",
-         "bytes": 45890063
+         "bytes": 45891034
         },
         {
          "id": "E25_N35",
@@ -950,7 +956,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E25_N35.rd5",
          "sha256": "",
-         "bytes": 27169866
+         "bytes": 27173213
         },
         {
          "id": "E15_N40",
@@ -964,7 +970,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E15_N40.rd5",
          "sha256": "",
-         "bytes": 54724066
+         "bytes": 54735801
         },
         {
          "id": "E20_N40",
@@ -978,7 +984,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E20_N40.rd5",
          "sha256": "",
-         "bytes": 66294452
+         "bytes": 66300783
         },
         {
          "id": "E25_N40",
@@ -992,7 +998,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E25_N40.rd5",
          "sha256": "",
-         "bytes": 37706436
+         "bytes": 37714238
         }
        ]
       }
@@ -1086,7 +1092,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W20_N65.rd5",
          "sha256": "",
-         "bytes": 1538828
+         "bytes": 1538764
         },
         {
          "id": "W15_N65",
@@ -1152,7 +1158,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W10_N50.rd5",
          "sha256": "",
-         "bytes": 42975335
+         "bytes": 42983303
         },
         {
          "id": "W10_N55",
@@ -1166,7 +1172,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W10_N55.rd5",
          "sha256": "",
-         "bytes": 5501898
+         "bytes": 5502441
         }
        ]
       }
@@ -1204,7 +1210,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E5_N35.rd5",
          "sha256": "",
-         "bytes": 20640688
+         "bytes": 20643953
         },
         {
          "id": "E10_N35",
@@ -1218,7 +1224,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E10_N35.rd5",
          "sha256": "",
-         "bytes": 19721982
+         "bytes": 19723654
         },
         {
          "id": "E15_N35",
@@ -1232,7 +1238,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E15_N35.rd5",
          "sha256": "",
-         "bytes": 13937402
+         "bytes": 13938082
         },
         {
          "id": "E5_N40",
@@ -1246,7 +1252,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E5_N40.rd5",
          "sha256": "",
-         "bytes": 68967422
+         "bytes": 68974417
         },
         {
          "id": "E10_N40",
@@ -1260,7 +1266,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E10_N40.rd5",
          "sha256": "",
-         "bytes": 79951771
+         "bytes": 79965399
         },
         {
          "id": "E15_N40",
@@ -1274,7 +1280,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E15_N40.rd5",
          "sha256": "",
-         "bytes": 54724066
+         "bytes": 54735801
         },
         {
          "id": "E5_N45",
@@ -1288,7 +1294,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E5_N45.rd5",
          "sha256": "",
-         "bytes": 252076552
+         "bytes": 252102192
         },
         {
          "id": "E10_N45",
@@ -1302,7 +1308,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E10_N45.rd5",
          "sha256": "",
-         "bytes": 198401602
+         "bytes": 198433809
         },
         {
          "id": "E15_N45",
@@ -1316,7 +1322,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E15_N45.rd5",
          "sha256": "",
-         "bytes": 129596569
+         "bytes": 129614250
         }
        ]
       }
@@ -1354,7 +1360,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E0_N50.rd5",
          "sha256": "",
-         "bytes": 79324136
+         "bytes": 79335236
         },
         {
          "id": "E5_N50",
@@ -1368,7 +1374,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E5_N50.rd5",
          "sha256": "",
-         "bytes": 182212164
+         "bytes": 182228028
         }
        ]
       }
@@ -1420,7 +1426,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E5_N55.rd5",
          "sha256": "",
-         "bytes": 33651307
+         "bytes": 33652606
         },
         {
          "id": "E10_N55",
@@ -1434,7 +1440,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E10_N55.rd5",
          "sha256": "",
-         "bytes": 64383889
+         "bytes": 64390407
         },
         {
          "id": "E15_N55",
@@ -1448,7 +1454,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E15_N55.rd5",
          "sha256": "",
-         "bytes": 27966068
+         "bytes": 27966480
         },
         {
          "id": "E20_N55",
@@ -1462,7 +1468,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E20_N55.rd5",
          "sha256": "",
-         "bytes": 22088136
+         "bytes": 22090704
         },
         {
          "id": "E25_N55",
@@ -1476,7 +1482,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E25_N55.rd5",
          "sha256": "",
-         "bytes": 23669076
+         "bytes": 23670462
         },
         {
          "id": "E30_N55",
@@ -1490,7 +1496,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E30_N55.rd5",
          "sha256": "",
-         "bytes": 17588924
+         "bytes": 17591657
         },
         {
          "id": "E0_N60",
@@ -1518,7 +1524,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E5_N60.rd5",
          "sha256": "",
-         "bytes": 25998161
+         "bytes": 25999529
         },
         {
          "id": "E10_N60",
@@ -1532,7 +1538,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E10_N60.rd5",
          "sha256": "",
-         "bytes": 28922888
+         "bytes": 28924953
         },
         {
          "id": "E15_N60",
@@ -1546,7 +1552,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E15_N60.rd5",
          "sha256": "",
-         "bytes": 17678833
+         "bytes": 17680203
         },
         {
          "id": "E20_N60",
@@ -1560,7 +1566,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E20_N60.rd5",
          "sha256": "",
-         "bytes": 38131840
+         "bytes": 38134847
         },
         {
          "id": "E25_N60",
@@ -1574,7 +1580,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E25_N60.rd5",
          "sha256": "",
-         "bytes": 38306343
+         "bytes": 38310361
         },
         {
          "id": "E30_N60",
@@ -1588,7 +1594,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E30_N60.rd5",
          "sha256": "",
-         "bytes": 11716773
+         "bytes": 11716890
         },
         {
          "id": "E10_N65",
@@ -1602,7 +1608,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E10_N65.rd5",
          "sha256": "",
-         "bytes": 4911979
+         "bytes": 4913702
         },
         {
          "id": "E15_N65",
@@ -1616,7 +1622,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E15_N65.rd5",
          "sha256": "",
-         "bytes": 8955131
+         "bytes": 8955442
         },
         {
          "id": "E20_N65",
@@ -1630,7 +1636,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E20_N65.rd5",
          "sha256": "",
-         "bytes": 10773039
+         "bytes": 10773196
         },
         {
          "id": "E25_N65",
@@ -1644,7 +1650,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E25_N65.rd5",
          "sha256": "",
-         "bytes": 9816808
+         "bytes": 9817156
         },
         {
          "id": "E30_N65",
@@ -1658,7 +1664,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E30_N65.rd5",
          "sha256": "",
-         "bytes": 4049126
+         "bytes": 4051291
         },
         {
          "id": "E15_N70",
@@ -1700,7 +1706,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E25_N70.rd5",
          "sha256": "",
-         "bytes": 1654505
+         "bytes": 1654506
         },
         {
          "id": "E30_N70",
@@ -1752,7 +1758,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E10_N45.rd5",
          "sha256": "",
-         "bytes": 198401602
+         "bytes": 198433809
         },
         {
          "id": "E15_N45",
@@ -1766,7 +1772,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E15_N45.rd5",
          "sha256": "",
-         "bytes": 129596569
+         "bytes": 129614250
         },
         {
          "id": "E20_N45",
@@ -1780,7 +1786,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E20_N45.rd5",
          "sha256": "",
-         "bytes": 67350695
+         "bytes": 67354277
         },
         {
          "id": "E10_N50",
@@ -1794,7 +1800,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E10_N50.rd5",
          "sha256": "",
-         "bytes": 124934342
+         "bytes": 124947282
         },
         {
          "id": "E15_N50",
@@ -1808,7 +1814,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E15_N50.rd5",
          "sha256": "",
-         "bytes": 89926458
+         "bytes": 89944784
         },
         {
          "id": "E20_N50",
@@ -1822,7 +1828,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E20_N50.rd5",
          "sha256": "",
-         "bytes": 68411316
+         "bytes": 68421772
         }
        ]
       }
@@ -1860,7 +1866,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W10_N35.rd5",
          "sha256": "",
-         "bytes": 46005419
+         "bytes": 46015645
         },
         {
          "id": "W10_N40",
@@ -1874,7 +1880,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W10_N40.rd5",
          "sha256": "",
-         "bytes": 76218133
+         "bytes": 76228989
         }
        ]
       }
@@ -1912,7 +1918,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E20_N40.rd5",
          "sha256": "",
-         "bytes": 66294452
+         "bytes": 66300783
         },
         {
          "id": "E25_N40",
@@ -1926,7 +1932,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E25_N40.rd5",
          "sha256": "",
-         "bytes": 37706436
+         "bytes": 37714238
         },
         {
          "id": "E20_N45",
@@ -1940,7 +1946,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E20_N45.rd5",
          "sha256": "",
-         "bytes": 67350695
+         "bytes": 67354277
         },
         {
          "id": "E25_N45",
@@ -1954,7 +1960,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E25_N45.rd5",
          "sha256": "",
-         "bytes": 40779904
+         "bytes": 40781177
         }
        ]
       }
@@ -1992,7 +1998,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W10_N35.rd5",
          "sha256": "",
-         "bytes": 46005419
+         "bytes": 46015645
         },
         {
          "id": "W5_N35",
@@ -2006,7 +2012,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W5_N35.rd5",
          "sha256": "",
-         "bytes": 61776943
+         "bytes": 61807499
         },
         {
          "id": "E0_N35",
@@ -2020,7 +2026,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E0_N35.rd5",
          "sha256": "",
-         "bytes": 16897862
+         "bytes": 16899608
         },
         {
          "id": "W10_N40",
@@ -2034,7 +2040,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W10_N40.rd5",
          "sha256": "",
-         "bytes": 76218133
+         "bytes": 76228989
         },
         {
          "id": "W5_N40",
@@ -2048,7 +2054,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W5_N40.rd5",
          "sha256": "",
-         "bytes": 91445328
+         "bytes": 91457880
         },
         {
          "id": "E0_N40",
@@ -2062,7 +2068,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E0_N40.rd5",
          "sha256": "",
-         "bytes": 119447172
+         "bytes": 119459844
         }
        ]
       }
@@ -2100,7 +2106,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E10_N55.rd5",
          "sha256": "",
-         "bytes": 64383889
+         "bytes": 64390407
         },
         {
          "id": "E15_N55",
@@ -2114,7 +2120,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E15_N55.rd5",
          "sha256": "",
-         "bytes": 27966068
+         "bytes": 27966480
         },
         {
          "id": "E20_N55",
@@ -2128,7 +2134,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E20_N55.rd5",
          "sha256": "",
-         "bytes": 22088136
+         "bytes": 22090704
         },
         {
          "id": "E10_N60",
@@ -2142,7 +2148,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E10_N60.rd5",
          "sha256": "",
-         "bytes": 28922888
+         "bytes": 28924953
         },
         {
          "id": "E15_N60",
@@ -2156,7 +2162,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E15_N60.rd5",
          "sha256": "",
-         "bytes": 17678833
+         "bytes": 17680203
         },
         {
          "id": "E20_N60",
@@ -2170,7 +2176,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E20_N60.rd5",
          "sha256": "",
-         "bytes": 38131840
+         "bytes": 38134847
         },
         {
          "id": "E10_N65",
@@ -2184,7 +2190,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E10_N65.rd5",
          "sha256": "",
-         "bytes": 4911979
+         "bytes": 4913702
         },
         {
          "id": "E15_N65",
@@ -2198,7 +2204,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E15_N65.rd5",
          "sha256": "",
-         "bytes": 8955131
+         "bytes": 8955442
         },
         {
          "id": "E20_N65",
@@ -2212,7 +2218,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E20_N65.rd5",
          "sha256": "",
-         "bytes": 10773039
+         "bytes": 10773196
         }
        ]
       }
@@ -2250,7 +2256,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E5_N45.rd5",
          "sha256": "",
-         "bytes": 252076552
+         "bytes": 252102192
         },
         {
          "id": "E10_N45",
@@ -2264,7 +2270,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E10_N45.rd5",
          "sha256": "",
-         "bytes": 198401602
+         "bytes": 198433809
         }
        ]
       }
@@ -2415,6 +2421,31 @@
          "legalBasis": "official",
          "note": "Every recorded right of way.",
          "generated": "2026-09-10T14:40:52Z"
+        },
+        {
+         "id": "gb-east-anglia-satellite",
+         "kind": "basemap",
+         "label": "Satellite - East Anglia",
+         "file": "https://github.com/LPSD-1/trailblazer-datasets/releases/download/satellite/gb-east-anglia-satellite.pmtiles",
+         "sha256": "80b239f000ac21cb4724a976e69d151d87ecbd364bf22b210b4bbe8151667e17",
+         "bytes": 53984634,
+         "bounds": {
+          "west": -0.4,
+          "south": 51.5,
+          "east": 1.8,
+          "north": 53.0
+         },
+         "note": "Sentinel-2 cloudless 2024 by EOX IT Services GmbH, CC BY 4.0. Contains modified Copernicus Sentinel data 2024.",
+         "maxZoom": 13,
+         "generated": "2026-09-11T22:40:02Z"
+        },
+        {
+         "id": "gb-trips",
+         "kind": "trips",
+         "label": "Ready-made trips",
+         "file": "https://lpsd-1.github.io/trailblazer-datasets/trips/gb.tbtrips",
+         "sha256": "e3c05ef5662c16d1bcd14dc47f362c76273468a8240373ea454afb5963a23114",
+         "bytes": 6764
         }
        ]
       },
@@ -2749,6 +2780,14 @@
          "legalBasis": "official",
          "note": "Every recorded right of way.",
          "generated": "2026-09-10T14:40:52Z"
+        },
+        {
+         "id": "gb-trips",
+         "kind": "trips",
+         "label": "Ready-made trips",
+         "file": "https://lpsd-1.github.io/trailblazer-datasets/trips/gb.tbtrips",
+         "sha256": "e3c05ef5662c16d1bcd14dc47f362c76273468a8240373ea454afb5963a23114",
+         "bytes": 6764
         }
        ]
       },
@@ -2943,6 +2982,14 @@
          "legalBasis": "official",
          "note": "Every recorded right of way.",
          "generated": "2026-09-10T14:40:52Z"
+        },
+        {
+         "id": "gb-trips",
+         "kind": "trips",
+         "label": "Ready-made trips",
+         "file": "https://lpsd-1.github.io/trailblazer-datasets/trips/gb.tbtrips",
+         "sha256": "e3c05ef5662c16d1bcd14dc47f362c76273468a8240373ea454afb5963a23114",
+         "bytes": 6764
         }
        ]
       },
@@ -3137,6 +3184,14 @@
          "legalBasis": "official",
          "note": "Every recorded right of way.",
          "generated": "2026-09-10T14:40:52Z"
+        },
+        {
+         "id": "gb-trips",
+         "kind": "trips",
+         "label": "Ready-made trips",
+         "file": "https://lpsd-1.github.io/trailblazer-datasets/trips/gb.tbtrips",
+         "sha256": "e3c05ef5662c16d1bcd14dc47f362c76273468a8240373ea454afb5963a23114",
+         "bytes": 6764
         }
        ]
       },
@@ -3443,6 +3498,14 @@
          "legalBasis": "official",
          "note": "Every recorded right of way.",
          "generated": "2026-09-10T14:40:52Z"
+        },
+        {
+         "id": "gb-trips",
+         "kind": "trips",
+         "label": "Ready-made trips",
+         "file": "https://lpsd-1.github.io/trailblazer-datasets/trips/gb.tbtrips",
+         "sha256": "e3c05ef5662c16d1bcd14dc47f362c76273468a8240373ea454afb5963a23114",
+         "bytes": 6764
         }
        ]
       },
@@ -3679,6 +3742,14 @@
          "legalBasis": "official",
          "note": "Every recorded right of way.",
          "generated": "2026-09-10T14:40:52Z"
+        },
+        {
+         "id": "gb-trips",
+         "kind": "trips",
+         "label": "Ready-made trips",
+         "file": "https://lpsd-1.github.io/trailblazer-datasets/trips/gb.tbtrips",
+         "sha256": "e3c05ef5662c16d1bcd14dc47f362c76273468a8240373ea454afb5963a23114",
+         "bytes": 6764
         }
        ]
       },
@@ -3718,7 +3789,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W5_N45.rd5",
          "sha256": "",
-         "bytes": 64113590
+         "bytes": 64121646
         },
         {
          "id": "E0_N45",
@@ -3732,7 +3803,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E0_N45.rd5",
          "sha256": "",
-         "bytes": 127034395
+         "bytes": 127049653
         },
         {
          "id": "W10_N50",
@@ -3746,7 +3817,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W10_N50.rd5",
          "sha256": "",
-         "bytes": 42975335
+         "bytes": 42983303
         },
         {
          "id": "W5_N50",
@@ -3760,7 +3831,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W5_N50.rd5",
          "sha256": "",
-         "bytes": 138731113
+         "bytes": 138743863
         },
         {
          "id": "E0_N50",
@@ -3774,7 +3845,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E0_N50.rd5",
          "sha256": "",
-         "bytes": 79324136
+         "bytes": 79335236
         },
         {
          "id": "W10_N55",
@@ -3788,7 +3859,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W10_N55.rd5",
          "sha256": "",
-         "bytes": 5501898
+         "bytes": 5502441
         },
         {
          "id": "W5_N55",
@@ -3802,7 +3873,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W5_N55.rd5",
          "sha256": "",
-         "bytes": 26304068
+         "bytes": 26308441
         },
         {
          "id": "E0_N55",
@@ -3902,7 +3973,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W125_N40.rd5",
          "sha256": "",
-         "bytes": 37687780
+         "bytes": 37689021
         },
         {
          "id": "W120_N40",
@@ -3916,7 +3987,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W120_N40.rd5",
          "sha256": "",
-         "bytes": 21201296
+         "bytes": 21204943
         },
         {
          "id": "W115_N40",
@@ -3930,7 +4001,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W115_N40.rd5",
          "sha256": "",
-         "bytes": 31257235
+         "bytes": 31259139
         },
         {
          "id": "W110_N40",
@@ -3944,7 +4015,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W110_N40.rd5",
          "sha256": "",
-         "bytes": 20373002
+         "bytes": 20374335
         },
         {
          "id": "W105_N40",
@@ -3958,7 +4029,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W105_N40.rd5",
          "sha256": "",
-         "bytes": 13409900
+         "bytes": 13416083
         },
         {
          "id": "W100_N40",
@@ -3972,7 +4043,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W100_N40.rd5",
          "sha256": "",
-         "bytes": 22057787
+         "bytes": 22059096
         },
         {
          "id": "W95_N40",
@@ -3986,7 +4057,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W95_N40.rd5",
          "sha256": "",
-         "bytes": 39524970
+         "bytes": 39533751
         },
         {
          "id": "W90_N40",
@@ -4000,7 +4071,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W90_N40.rd5",
          "sha256": "",
-         "bytes": 78737293
+         "bytes": 78755037
         },
         {
          "id": "W85_N40",
@@ -4014,7 +4085,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W85_N40.rd5",
          "sha256": "",
-         "bytes": 75360696
+         "bytes": 75369414
         },
         {
          "id": "W80_N40",
@@ -4028,7 +4099,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W80_N40.rd5",
          "sha256": "",
-         "bytes": 76926369
+         "bytes": 76933178
         },
         {
          "id": "W75_N40",
@@ -4042,7 +4113,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W75_N40.rd5",
          "sha256": "",
-         "bytes": 119286228
+         "bytes": 119297023
         },
         {
          "id": "W70_N40",
@@ -4056,7 +4127,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W70_N40.rd5",
          "sha256": "",
-         "bytes": 5268399
+         "bytes": 5268551
         },
         {
          "id": "W65_N40",
@@ -4070,7 +4141,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W65_N40.rd5",
          "sha256": "",
-         "bytes": 2734040
+         "bytes": 2734505
         },
         {
          "id": "W60_N40",
@@ -4112,7 +4183,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W125_N45.rd5",
          "sha256": "",
-         "bytes": 66648248
+         "bytes": 66655725
         },
         {
          "id": "W120_N45",
@@ -4126,7 +4197,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W120_N45.rd5",
          "sha256": "",
-         "bytes": 28488387
+         "bytes": 28492743
         },
         {
          "id": "W115_N45",
@@ -4140,7 +4211,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W115_N45.rd5",
          "sha256": "",
-         "bytes": 16642029
+         "bytes": 16643992
         },
         {
          "id": "W110_N45",
@@ -4168,7 +4239,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W105_N45.rd5",
          "sha256": "",
-         "bytes": 12314068
+         "bytes": 12314769
         },
         {
          "id": "W100_N45",
@@ -4182,7 +4253,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W100_N45.rd5",
          "sha256": "",
-         "bytes": 15188125
+         "bytes": 15189546
         },
         {
          "id": "W95_N45",
@@ -4196,7 +4267,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W95_N45.rd5",
          "sha256": "",
-         "bytes": 20413845
+         "bytes": 20416157
         },
         {
          "id": "W90_N45",
@@ -4210,7 +4281,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W90_N45.rd5",
          "sha256": "",
-         "bytes": 10898665
+         "bytes": 10899635
         },
         {
          "id": "W85_N45",
@@ -4224,7 +4295,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W85_N45.rd5",
          "sha256": "",
-         "bytes": 8660180
+         "bytes": 8661815
         },
         {
          "id": "W80_N45",
@@ -4238,7 +4309,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W80_N45.rd5",
          "sha256": "",
-         "bytes": 14823442
+         "bytes": 14824731
         },
         {
          "id": "W75_N45",
@@ -4252,7 +4323,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W75_N45.rd5",
          "sha256": "",
-         "bytes": 29840666
+         "bytes": 29845564
         },
         {
          "id": "W70_N45",
@@ -4266,7 +4337,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W70_N45.rd5",
          "sha256": "",
-         "bytes": 12325777
+         "bytes": 12334001
         },
         {
          "id": "W65_N45",
@@ -4280,7 +4351,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W65_N45.rd5",
          "sha256": "",
-         "bytes": 6462224
+         "bytes": 6463736
         },
         {
          "id": "W60_N45",
@@ -4322,7 +4393,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W135_N50.rd5",
          "sha256": "",
-         "bytes": 310378
+         "bytes": 310497
         },
         {
          "id": "W130_N50",
@@ -4336,7 +4407,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W130_N50.rd5",
          "sha256": "",
-         "bytes": 3393939
+         "bytes": 3394168
         },
         {
          "id": "W125_N50",
@@ -4350,7 +4421,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W125_N50.rd5",
          "sha256": "",
-         "bytes": 6280595
+         "bytes": 6281427
         },
         {
          "id": "W120_N50",
@@ -4364,7 +4435,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W120_N50.rd5",
          "sha256": "",
-         "bytes": 8702717
+         "bytes": 8703081
         },
         {
          "id": "W115_N50",
@@ -4378,7 +4449,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W115_N50.rd5",
          "sha256": "",
-         "bytes": 15268396
+         "bytes": 15277666
         },
         {
          "id": "W110_N50",
@@ -4392,7 +4463,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W110_N50.rd5",
          "sha256": "",
-         "bytes": 4609352
+         "bytes": 4609577
         },
         {
          "id": "W105_N50",
@@ -4406,7 +4477,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W105_N50.rd5",
          "sha256": "",
-         "bytes": 3542596
+         "bytes": 3542659
         },
         {
          "id": "W100_N50",
@@ -4420,7 +4491,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W100_N50.rd5",
          "sha256": "",
-         "bytes": 2036165
+         "bytes": 2036356
         },
         {
          "id": "W95_N50",
@@ -4504,7 +4575,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W70_N50.rd5",
          "sha256": "",
-         "bytes": 992309
+         "bytes": 992432
         },
         {
          "id": "W65_N50",
@@ -4560,7 +4631,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W140_N55.rd5",
          "sha256": "",
-         "bytes": 366069
+         "bytes": 366071
         },
         {
          "id": "W135_N55",
@@ -4602,7 +4673,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W125_N55.rd5",
          "sha256": "",
-         "bytes": 2018783
+         "bytes": 2019515
         },
         {
          "id": "W120_N55",
@@ -4798,7 +4869,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W145_N60.rd5",
          "sha256": "",
-         "bytes": 580205
+         "bytes": 580252
         },
         {
          "id": "W140_N60",
@@ -4812,7 +4883,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W140_N60.rd5",
          "sha256": "",
-         "bytes": 971217
+         "bytes": 971433
         },
         {
          "id": "W135_N60",
@@ -4882,7 +4953,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W115_N60.rd5",
          "sha256": "",
-         "bytes": 421545
+         "bytes": 424010
         },
         {
          "id": "W110_N60",
@@ -5522,7 +5593,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W95_N10.rd5",
          "sha256": "",
-         "bytes": 7466971
+         "bytes": 7467291
         },
         {
          "id": "W90_N10",
@@ -5536,7 +5607,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W90_N10.rd5",
          "sha256": "",
-         "bytes": 20523373
+         "bytes": 20527338
         },
         {
          "id": "W115_N15",
@@ -5592,7 +5663,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W100_N15.rd5",
          "sha256": "",
-         "bytes": 40896601
+         "bytes": 40897720
         },
         {
          "id": "W95_N15",
@@ -5606,7 +5677,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W95_N15.rd5",
          "sha256": "",
-         "bytes": 16194301
+         "bytes": 16194462
         },
         {
          "id": "W90_N15",
@@ -5620,7 +5691,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W90_N15.rd5",
          "sha256": "",
-         "bytes": 7976311
+         "bytes": 7980248
         },
         {
          "id": "W115_N20",
@@ -5662,7 +5733,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W105_N20.rd5",
          "sha256": "",
-         "bytes": 26341663
+         "bytes": 26341791
         },
         {
          "id": "W100_N20",
@@ -5676,7 +5747,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W100_N20.rd5",
          "sha256": "",
-         "bytes": 14484459
+         "bytes": 14484492
         },
         {
          "id": "W95_N20",
@@ -5704,7 +5775,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W90_N20.rd5",
          "sha256": "",
-         "bytes": 3423877
+         "bytes": 3424662
         },
         {
          "id": "W120_N25",
@@ -5760,7 +5831,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W105_N25.rd5",
          "sha256": "",
-         "bytes": 11525639
+         "bytes": 11526130
         },
         {
          "id": "W100_N25",
@@ -5774,7 +5845,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W100_N25.rd5",
          "sha256": "",
-         "bytes": 35124416
+         "bytes": 35142829
         },
         {
          "id": "W95_N25",
@@ -5788,7 +5859,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W95_N25.rd5",
          "sha256": "",
-         "bytes": 3043594
+         "bytes": 3043742
         },
         {
          "id": "W90_N25",
@@ -5802,7 +5873,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W90_N25.rd5",
          "sha256": "",
-         "bytes": 366519
+         "bytes": 366502
         },
         {
          "id": "W120_N30",
@@ -5816,7 +5887,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W120_N30.rd5",
          "sha256": "",
-         "bytes": 53161192
+         "bytes": 53166440
         },
         {
          "id": "W115_N30",
@@ -5830,7 +5901,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W115_N30.rd5",
          "sha256": "",
-         "bytes": 33079349
+         "bytes": 33081156
         },
         {
          "id": "W110_N30",
@@ -5844,7 +5915,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W110_N30.rd5",
          "sha256": "",
-         "bytes": 15805836
+         "bytes": 15810952
         },
         {
          "id": "W105_N30",
@@ -5858,7 +5929,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W105_N30.rd5",
          "sha256": "",
-         "bytes": 19155045
+         "bytes": 19178729
         },
         {
          "id": "W100_N30",
@@ -5872,7 +5943,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W100_N30.rd5",
          "sha256": "",
-         "bytes": 63815681
+         "bytes": 63821310
         },
         {
          "id": "W95_N30",
@@ -5886,7 +5957,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W95_N30.rd5",
          "sha256": "",
-         "bytes": 33680800
+         "bytes": 33683290
         },
         {
          "id": "W90_N30",
@@ -5900,7 +5971,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W90_N30.rd5",
          "sha256": "",
-         "bytes": 41707781
+         "bytes": 41716326
         }
        ]
       }
@@ -5966,7 +6037,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W105_N20.rd5",
          "sha256": "",
-         "bytes": 26341663
+         "bytes": 26341791
         },
         {
          "id": "W100_N20",
@@ -5980,7 +6051,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W100_N20.rd5",
          "sha256": "",
-         "bytes": 14484459
+         "bytes": 14484492
         },
         {
          "id": "W95_N20",
@@ -6008,7 +6079,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W90_N20.rd5",
          "sha256": "",
-         "bytes": 3423877
+         "bytes": 3424662
         },
         {
          "id": "W85_N20",
@@ -6022,7 +6093,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W85_N20.rd5",
          "sha256": "",
-         "bytes": 3617301
+         "bytes": 3617329
         },
         {
          "id": "W80_N20",
@@ -6036,7 +6107,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W80_N20.rd5",
          "sha256": "",
-         "bytes": 4987804
+         "bytes": 4987833
         },
         {
          "id": "W75_N20",
@@ -6106,7 +6177,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W105_N25.rd5",
          "sha256": "",
-         "bytes": 11525639
+         "bytes": 11526130
         },
         {
          "id": "W100_N25",
@@ -6120,7 +6191,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W100_N25.rd5",
          "sha256": "",
-         "bytes": 35124416
+         "bytes": 35142829
         },
         {
          "id": "W95_N25",
@@ -6134,7 +6205,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W95_N25.rd5",
          "sha256": "",
-         "bytes": 3043594
+         "bytes": 3043742
         },
         {
          "id": "W90_N25",
@@ -6148,7 +6219,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W90_N25.rd5",
          "sha256": "",
-         "bytes": 366519
+         "bytes": 366502
         },
         {
          "id": "W85_N25",
@@ -6162,7 +6233,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W85_N25.rd5",
          "sha256": "",
-         "bytes": 52841279
+         "bytes": 52857607
         },
         {
          "id": "W80_N25",
@@ -6176,7 +6247,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W80_N25.rd5",
          "sha256": "",
-         "bytes": 741300
+         "bytes": 741316
         },
         {
          "id": "W125_N30",
@@ -6204,7 +6275,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W120_N30.rd5",
          "sha256": "",
-         "bytes": 53161192
+         "bytes": 53166440
         },
         {
          "id": "W115_N30",
@@ -6218,7 +6289,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W115_N30.rd5",
          "sha256": "",
-         "bytes": 33079349
+         "bytes": 33081156
         },
         {
          "id": "W110_N30",
@@ -6232,7 +6303,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W110_N30.rd5",
          "sha256": "",
-         "bytes": 15805836
+         "bytes": 15810952
         },
         {
          "id": "W105_N30",
@@ -6246,7 +6317,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W105_N30.rd5",
          "sha256": "",
-         "bytes": 19155045
+         "bytes": 19178729
         },
         {
          "id": "W100_N30",
@@ -6260,7 +6331,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W100_N30.rd5",
          "sha256": "",
-         "bytes": 63815681
+         "bytes": 63821310
         },
         {
          "id": "W95_N30",
@@ -6274,7 +6345,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W95_N30.rd5",
          "sha256": "",
-         "bytes": 33680800
+         "bytes": 33683290
         },
         {
          "id": "W90_N30",
@@ -6288,7 +6359,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W90_N30.rd5",
          "sha256": "",
-         "bytes": 41707781
+         "bytes": 41716326
         },
         {
          "id": "W85_N30",
@@ -6302,7 +6373,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W85_N30.rd5",
          "sha256": "",
-         "bytes": 69524823
+         "bytes": 69531231
         },
         {
          "id": "W80_N30",
@@ -6316,7 +6387,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W80_N30.rd5",
          "sha256": "",
-         "bytes": 8492856
+         "bytes": 8493551
         },
         {
          "id": "W125_N35",
@@ -6330,7 +6401,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W125_N35.rd5",
          "sha256": "",
-         "bytes": 55612147
+         "bytes": 55618249
         },
         {
          "id": "W120_N35",
@@ -6344,7 +6415,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W120_N35.rd5",
          "sha256": "",
-         "bytes": 31121225
+         "bytes": 31122409
         },
         {
          "id": "W115_N35",
@@ -6358,7 +6429,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W115_N35.rd5",
          "sha256": "",
-         "bytes": 17083839
+         "bytes": 17095112
         },
         {
          "id": "W110_N35",
@@ -6372,7 +6443,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W110_N35.rd5",
          "sha256": "",
-         "bytes": 36609102
+         "bytes": 36611178
         },
         {
          "id": "W105_N35",
@@ -6386,7 +6457,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W105_N35.rd5",
          "sha256": "",
-         "bytes": 21769089
+         "bytes": 21770674
         },
         {
          "id": "W100_N35",
@@ -6400,7 +6471,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W100_N35.rd5",
          "sha256": "",
-         "bytes": 32983685
+         "bytes": 32985995
         },
         {
          "id": "W95_N35",
@@ -6414,7 +6485,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W95_N35.rd5",
          "sha256": "",
-         "bytes": 56285758
+         "bytes": 56306249
         },
         {
          "id": "W90_N35",
@@ -6428,7 +6499,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W90_N35.rd5",
          "sha256": "",
-         "bytes": 61009486
+         "bytes": 61015642
         },
         {
          "id": "W85_N35",
@@ -6442,7 +6513,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W85_N35.rd5",
          "sha256": "",
-         "bytes": 100943726
+         "bytes": 100953378
         },
         {
          "id": "W80_N35",
@@ -6456,7 +6527,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W80_N35.rd5",
          "sha256": "",
-         "bytes": 114739906
+         "bytes": 114745883
         },
         {
          "id": "W75_N35",
@@ -6470,7 +6541,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W75_N35.rd5",
          "sha256": "",
-         "bytes": 3554693
+         "bytes": 3554756
         },
         {
          "id": "W125_N40",
@@ -6484,7 +6555,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W125_N40.rd5",
          "sha256": "",
-         "bytes": 37687780
+         "bytes": 37689021
         },
         {
          "id": "W120_N40",
@@ -6498,7 +6569,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W120_N40.rd5",
          "sha256": "",
-         "bytes": 21201296
+         "bytes": 21204943
         },
         {
          "id": "W115_N40",
@@ -6512,7 +6583,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W115_N40.rd5",
          "sha256": "",
-         "bytes": 31257235
+         "bytes": 31259139
         },
         {
          "id": "W110_N40",
@@ -6526,7 +6597,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W110_N40.rd5",
          "sha256": "",
-         "bytes": 20373002
+         "bytes": 20374335
         },
         {
          "id": "W105_N40",
@@ -6540,7 +6611,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W105_N40.rd5",
          "sha256": "",
-         "bytes": 13409900
+         "bytes": 13416083
         },
         {
          "id": "W100_N40",
@@ -6554,7 +6625,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W100_N40.rd5",
          "sha256": "",
-         "bytes": 22057787
+         "bytes": 22059096
         },
         {
          "id": "W95_N40",
@@ -6568,7 +6639,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W95_N40.rd5",
          "sha256": "",
-         "bytes": 39524970
+         "bytes": 39533751
         },
         {
          "id": "W90_N40",
@@ -6582,7 +6653,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W90_N40.rd5",
          "sha256": "",
-         "bytes": 78737293
+         "bytes": 78755037
         },
         {
          "id": "W85_N40",
@@ -6596,7 +6667,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W85_N40.rd5",
          "sha256": "",
-         "bytes": 75360696
+         "bytes": 75369414
         },
         {
          "id": "W80_N40",
@@ -6610,7 +6681,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W80_N40.rd5",
          "sha256": "",
-         "bytes": 76926369
+         "bytes": 76933178
         },
         {
          "id": "W75_N40",
@@ -6624,7 +6695,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W75_N40.rd5",
          "sha256": "",
-         "bytes": 119286228
+         "bytes": 119297023
         },
         {
          "id": "W70_N40",
@@ -6638,7 +6709,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W70_N40.rd5",
          "sha256": "",
-         "bytes": 5268399
+         "bytes": 5268551
         },
         {
          "id": "W125_N45",
@@ -6652,7 +6723,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W125_N45.rd5",
          "sha256": "",
-         "bytes": 66648248
+         "bytes": 66655725
         },
         {
          "id": "W120_N45",
@@ -6666,7 +6737,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W120_N45.rd5",
          "sha256": "",
-         "bytes": 28488387
+         "bytes": 28492743
         },
         {
          "id": "W115_N45",
@@ -6680,7 +6751,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W115_N45.rd5",
          "sha256": "",
-         "bytes": 16642029
+         "bytes": 16643992
         },
         {
          "id": "W110_N45",
@@ -6708,7 +6779,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W105_N45.rd5",
          "sha256": "",
-         "bytes": 12314068
+         "bytes": 12314769
         },
         {
          "id": "W100_N45",
@@ -6722,7 +6793,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W100_N45.rd5",
          "sha256": "",
-         "bytes": 15188125
+         "bytes": 15189546
         },
         {
          "id": "W95_N45",
@@ -6736,7 +6807,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W95_N45.rd5",
          "sha256": "",
-         "bytes": 20413845
+         "bytes": 20416157
         },
         {
          "id": "W90_N45",
@@ -6750,7 +6821,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W90_N45.rd5",
          "sha256": "",
-         "bytes": 10898665
+         "bytes": 10899635
         },
         {
          "id": "W85_N45",
@@ -6764,7 +6835,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W85_N45.rd5",
          "sha256": "",
-         "bytes": 8660180
+         "bytes": 8661815
         },
         {
          "id": "W80_N45",
@@ -6778,7 +6849,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W80_N45.rd5",
          "sha256": "",
-         "bytes": 14823442
+         "bytes": 14824731
         },
         {
          "id": "W75_N45",
@@ -6792,7 +6863,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W75_N45.rd5",
          "sha256": "",
-         "bytes": 29840666
+         "bytes": 29845564
         },
         {
          "id": "W70_N45",
@@ -6806,7 +6877,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W70_N45.rd5",
          "sha256": "",
-         "bytes": 12325777
+         "bytes": 12334001
         }
        ]
       }
@@ -6892,7 +6963,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W70_S55.rd5",
          "sha256": "",
-         "bytes": 1876975
+         "bytes": 1876947
         },
         {
          "id": "W65_S55",
@@ -6934,7 +7005,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W75_S50.rd5",
          "sha256": "",
-         "bytes": 3680477
+         "bytes": 3680926
         },
         {
          "id": "W70_S50",
@@ -6948,7 +7019,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W70_S50.rd5",
          "sha256": "",
-         "bytes": 4271875
+         "bytes": 4271784
         },
         {
          "id": "W75_S45",
@@ -6962,7 +7033,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W75_S45.rd5",
          "sha256": "",
-         "bytes": 8929420
+         "bytes": 8929457
         },
         {
          "id": "W70_S45",
@@ -7004,7 +7075,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W75_S40.rd5",
          "sha256": "",
-         "bytes": 21852250
+         "bytes": 21852398
         },
         {
          "id": "W70_S40",
@@ -7018,7 +7089,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W70_S40.rd5",
          "sha256": "",
-         "bytes": 3212252
+         "bytes": 3212387
         },
         {
          "id": "W65_S40",
@@ -7032,7 +7103,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W65_S40.rd5",
          "sha256": "",
-         "bytes": 3469173
+         "bytes": 3469371
         },
         {
          "id": "W60_S40",
@@ -7046,7 +7117,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W60_S40.rd5",
          "sha256": "",
-         "bytes": 3111589
+         "bytes": 3111769
         },
         {
          "id": "W55_S40",
@@ -7074,7 +7145,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W75_S35.rd5",
          "sha256": "",
-         "bytes": 15927260
+         "bytes": 15927811
         },
         {
          "id": "W70_S35",
@@ -7088,7 +7159,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W70_S35.rd5",
          "sha256": "",
-         "bytes": 6022905
+         "bytes": 6023080
         },
         {
          "id": "W65_S35",
@@ -7102,7 +7173,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W65_S35.rd5",
          "sha256": "",
-         "bytes": 11134086
+         "bytes": 11133400
         },
         {
          "id": "W60_S35",
@@ -7116,7 +7187,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W60_S35.rd5",
          "sha256": "",
-         "bytes": 14398164
+         "bytes": 14399093
         },
         {
          "id": "W55_S35",
@@ -7130,7 +7201,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W55_S35.rd5",
          "sha256": "",
-         "bytes": 6725807
+         "bytes": 6725848
         },
         {
          "id": "W75_S30",
@@ -7144,7 +7215,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W75_S30.rd5",
          "sha256": "",
-         "bytes": 2387631
+         "bytes": 2387837
         },
         {
          "id": "W70_S30",
@@ -7158,7 +7229,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W70_S30.rd5",
          "sha256": "",
-         "bytes": 5614001
+         "bytes": 5613977
         },
         {
          "id": "W65_S30",
@@ -7172,7 +7243,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W65_S30.rd5",
          "sha256": "",
-         "bytes": 3639508
+         "bytes": 3639517
         },
         {
          "id": "W60_S30",
@@ -7186,7 +7257,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W60_S30.rd5",
          "sha256": "",
-         "bytes": 11512893
+         "bytes": 11513387
         },
         {
          "id": "W55_S30",
@@ -7200,7 +7271,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W55_S30.rd5",
          "sha256": "",
-         "bytes": 37489624
+         "bytes": 37490112
         },
         {
          "id": "W75_S25",
@@ -7214,7 +7285,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W75_S25.rd5",
          "sha256": "",
-         "bytes": 1026042
+         "bytes": 1026175
         },
         {
          "id": "W70_S25",
@@ -7256,7 +7327,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W60_S25.rd5",
          "sha256": "",
-         "bytes": 5758677
+         "bytes": 5758709
         },
         {
          "id": "W55_S25",
@@ -7270,7 +7341,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W55_S25.rd5",
          "sha256": "",
-         "bytes": 20689514
+         "bytes": 20690868
         }
        ]
       }
@@ -7308,7 +7379,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W75_S35.rd5",
          "sha256": "",
-         "bytes": 15927260
+         "bytes": 15927811
         },
         {
          "id": "W70_S35",
@@ -7322,7 +7393,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W70_S35.rd5",
          "sha256": "",
-         "bytes": 6022905
+         "bytes": 6023080
         },
         {
          "id": "W65_S35",
@@ -7336,7 +7407,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W65_S35.rd5",
          "sha256": "",
-         "bytes": 11134086
+         "bytes": 11133400
         },
         {
          "id": "W60_S35",
@@ -7350,7 +7421,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W60_S35.rd5",
          "sha256": "",
-         "bytes": 14398164
+         "bytes": 14399093
         },
         {
          "id": "W55_S35",
@@ -7364,7 +7435,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W55_S35.rd5",
          "sha256": "",
-         "bytes": 6725807
+         "bytes": 6725848
         },
         {
          "id": "W75_S30",
@@ -7378,7 +7449,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W75_S30.rd5",
          "sha256": "",
-         "bytes": 2387631
+         "bytes": 2387837
         },
         {
          "id": "W70_S30",
@@ -7392,7 +7463,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W70_S30.rd5",
          "sha256": "",
-         "bytes": 5614001
+         "bytes": 5613977
         },
         {
          "id": "W65_S30",
@@ -7406,7 +7477,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W65_S30.rd5",
          "sha256": "",
-         "bytes": 3639508
+         "bytes": 3639517
         },
         {
          "id": "W60_S30",
@@ -7420,7 +7491,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W60_S30.rd5",
          "sha256": "",
-         "bytes": 11512893
+         "bytes": 11513387
         },
         {
          "id": "W55_S30",
@@ -7434,7 +7505,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W55_S30.rd5",
          "sha256": "",
-         "bytes": 37489624
+         "bytes": 37490112
         },
         {
          "id": "W50_S30",
@@ -7448,7 +7519,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W50_S30.rd5",
          "sha256": "",
-         "bytes": 16768249
+         "bytes": 16771279
         },
         {
          "id": "W75_S25",
@@ -7462,7 +7533,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W75_S25.rd5",
          "sha256": "",
-         "bytes": 1026042
+         "bytes": 1026175
         },
         {
          "id": "W70_S25",
@@ -7504,7 +7575,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W60_S25.rd5",
          "sha256": "",
-         "bytes": 5758677
+         "bytes": 5758709
         },
         {
          "id": "W55_S25",
@@ -7518,7 +7589,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W55_S25.rd5",
          "sha256": "",
-         "bytes": 20689514
+         "bytes": 20690868
         },
         {
          "id": "W50_S25",
@@ -7532,7 +7603,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W50_S25.rd5",
          "sha256": "",
-         "bytes": 52187564
+         "bytes": 52189319
         },
         {
          "id": "W45_S25",
@@ -7546,7 +7617,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W45_S25.rd5",
          "sha256": "",
-         "bytes": 32664645
+         "bytes": 32669326
         },
         {
          "id": "W75_S20",
@@ -7560,7 +7631,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W75_S20.rd5",
          "sha256": "",
-         "bytes": 6671883
+         "bytes": 6672961
         },
         {
          "id": "W70_S20",
@@ -7574,7 +7645,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W70_S20.rd5",
          "sha256": "",
-         "bytes": 25758804
+         "bytes": 25758128
         },
         {
          "id": "W65_S20",
@@ -7588,7 +7659,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W65_S20.rd5",
          "sha256": "",
-         "bytes": 12109121
+         "bytes": 12120605
         },
         {
          "id": "W60_S20",
@@ -7602,7 +7673,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W60_S20.rd5",
          "sha256": "",
-         "bytes": 3724819
+         "bytes": 3725581
         },
         {
          "id": "W55_S20",
@@ -7616,7 +7687,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W55_S20.rd5",
          "sha256": "",
-         "bytes": 8043275
+         "bytes": 8044196
         },
         {
          "id": "W50_S20",
@@ -7630,7 +7701,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W50_S20.rd5",
          "sha256": "",
-         "bytes": 21762513
+         "bytes": 21763590
         },
         {
          "id": "W45_S20",
@@ -7644,7 +7715,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W45_S20.rd5",
          "sha256": "",
-         "bytes": 28421474
+         "bytes": 28421833
         },
         {
          "id": "W40_S20",
@@ -7658,7 +7729,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W40_S20.rd5",
          "sha256": "",
-         "bytes": 3748604
+         "bytes": 3748647
         },
         {
          "id": "W75_S15",
@@ -7672,7 +7743,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W75_S15.rd5",
          "sha256": "",
-         "bytes": 17555104
+         "bytes": 17555116
         },
         {
          "id": "W70_S15",
@@ -7686,7 +7757,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W70_S15.rd5",
          "sha256": "",
-         "bytes": 4190688
+         "bytes": 4190762
         },
         {
          "id": "W65_S15",
@@ -7700,7 +7771,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W65_S15.rd5",
          "sha256": "",
-         "bytes": 3525975
+         "bytes": 3526043
         },
         {
          "id": "W60_S15",
@@ -7714,7 +7785,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W60_S15.rd5",
          "sha256": "",
-         "bytes": 3715203
+         "bytes": 3715707
         },
         {
          "id": "W55_S15",
@@ -7728,7 +7799,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W55_S15.rd5",
          "sha256": "",
-         "bytes": 3595395
+         "bytes": 3595431
         },
         {
          "id": "W50_S15",
@@ -7742,7 +7813,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W50_S15.rd5",
          "sha256": "",
-         "bytes": 6914203
+         "bytes": 6914199
         },
         {
          "id": "W45_S15",
@@ -7756,7 +7827,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W45_S15.rd5",
          "sha256": "",
-         "bytes": 13522922
+         "bytes": 13533108
         },
         {
          "id": "W40_S15",
@@ -7770,7 +7841,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W40_S15.rd5",
          "sha256": "",
-         "bytes": 14452403
+         "bytes": 14452827
         },
         {
          "id": "W75_S10",
@@ -7784,7 +7855,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W75_S10.rd5",
          "sha256": "",
-         "bytes": 2722173
+         "bytes": 2722153
         },
         {
          "id": "W70_S10",
@@ -7798,7 +7869,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W70_S10.rd5",
          "sha256": "",
-         "bytes": 1791751
+         "bytes": 1791748
         },
         {
          "id": "W65_S10",
@@ -7812,7 +7883,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W65_S10.rd5",
          "sha256": "",
-         "bytes": 2207135
+         "bytes": 2207182
         },
         {
          "id": "W60_S10",
@@ -7854,7 +7925,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W50_S10.rd5",
          "sha256": "",
-         "bytes": 7508050
+         "bytes": 7508764
         },
         {
          "id": "W45_S10",
@@ -7868,7 +7939,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W45_S10.rd5",
          "sha256": "",
-         "bytes": 12862980
+         "bytes": 12863079
         },
         {
          "id": "W40_S10",
@@ -7882,7 +7953,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W40_S10.rd5",
          "sha256": "",
-         "bytes": 34219008
+         "bytes": 34223845
         },
         {
          "id": "W35_S10",
@@ -7896,7 +7967,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W35_S10.rd5",
          "sha256": "",
-         "bytes": 2367811
+         "bytes": 2367944
         },
         {
          "id": "W75_S5",
@@ -7924,7 +7995,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W70_S5.rd5",
          "sha256": "",
-         "bytes": 1725468
+         "bytes": 1725706
         },
         {
          "id": "W65_S5",
@@ -7938,7 +8009,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W65_S5.rd5",
          "sha256": "",
-         "bytes": 1722213
+         "bytes": 1722206
         },
         {
          "id": "W60_S5",
@@ -7952,7 +8023,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W60_S5.rd5",
          "sha256": "",
-         "bytes": 1800992
+         "bytes": 1801028
         },
         {
          "id": "W55_S5",
@@ -7966,7 +8037,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W55_S5.rd5",
          "sha256": "",
-         "bytes": 2447307
+         "bytes": 2448152
         },
         {
          "id": "W50_S5",
@@ -7980,7 +8051,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W50_S5.rd5",
          "sha256": "",
-         "bytes": 6819792
+         "bytes": 6819868
         },
         {
          "id": "W45_S5",
@@ -7994,7 +8065,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W45_S5.rd5",
          "sha256": "",
-         "bytes": 9243333
+         "bytes": 9243372
         },
         {
          "id": "W40_S5",
@@ -8008,7 +8079,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W40_S5.rd5",
          "sha256": "",
-         "bytes": 5979885
+         "bytes": 5980887
         },
         {
          "id": "W35_S5",
@@ -8036,7 +8107,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W75_N0.rd5",
          "sha256": "",
-         "bytes": 10501563
+         "bytes": 10502356
         },
         {
          "id": "W70_N0",
@@ -8064,7 +8135,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W65_N0.rd5",
          "sha256": "",
-         "bytes": 3663488
+         "bytes": 3665111
         },
         {
          "id": "W60_N0",
@@ -8092,7 +8163,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W55_N0.rd5",
          "sha256": "",
-         "bytes": 2357510
+         "bytes": 2357514
         },
         {
          "id": "W50_N0",
@@ -8120,7 +8191,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W75_N5.rd5",
          "sha256": "",
-         "bytes": 21906750
+         "bytes": 21906779
         },
         {
          "id": "W70_N5",
@@ -8162,7 +8233,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W60_N5.rd5",
          "sha256": "",
-         "bytes": 1687142
+         "bytes": 1687199
         },
         {
          "id": "W55_N5",
@@ -8270,7 +8341,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W70_S55.rd5",
          "sha256": "",
-         "bytes": 1876975
+         "bytes": 1876947
         },
         {
          "id": "W80_S50",
@@ -8298,7 +8369,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W75_S50.rd5",
          "sha256": "",
-         "bytes": 3680477
+         "bytes": 3680926
         },
         {
          "id": "W70_S50",
@@ -8312,7 +8383,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W70_S50.rd5",
          "sha256": "",
-         "bytes": 4271875
+         "bytes": 4271784
         },
         {
          "id": "W75_S45",
@@ -8326,7 +8397,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W75_S45.rd5",
          "sha256": "",
-         "bytes": 8929420
+         "bytes": 8929457
         },
         {
          "id": "W70_S45",
@@ -8354,7 +8425,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W75_S40.rd5",
          "sha256": "",
-         "bytes": 21852250
+         "bytes": 21852398
         },
         {
          "id": "W70_S40",
@@ -8368,7 +8439,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W70_S40.rd5",
          "sha256": "",
-         "bytes": 3212252
+         "bytes": 3212387
         },
         {
          "id": "W80_S35",
@@ -8396,7 +8467,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W75_S35.rd5",
          "sha256": "",
-         "bytes": 15927260
+         "bytes": 15927811
         },
         {
          "id": "W70_S35",
@@ -8410,7 +8481,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W70_S35.rd5",
          "sha256": "",
-         "bytes": 6022905
+         "bytes": 6023080
         },
         {
          "id": "W75_S30",
@@ -8424,7 +8495,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W75_S30.rd5",
          "sha256": "",
-         "bytes": 2387631
+         "bytes": 2387837
         },
         {
          "id": "W70_S30",
@@ -8438,7 +8509,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W70_S30.rd5",
          "sha256": "",
-         "bytes": 5614001
+         "bytes": 5613977
         },
         {
          "id": "W75_S25",
@@ -8452,7 +8523,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W75_S25.rd5",
          "sha256": "",
-         "bytes": 1026042
+         "bytes": 1026175
         },
         {
          "id": "W70_S25",
@@ -8494,7 +8565,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W75_S20.rd5",
          "sha256": "",
-         "bytes": 6671883
+         "bytes": 6672961
         },
         {
          "id": "W70_S20",
@@ -8508,7 +8579,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W70_S20.rd5",
          "sha256": "",
-         "bytes": 25758804
+         "bytes": 25758128
         }
        ]
       }
@@ -8560,7 +8631,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W75_S20.rd5",
          "sha256": "",
-         "bytes": 6671883
+         "bytes": 6672961
         },
         {
          "id": "W70_S20",
@@ -8574,7 +8645,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W70_S20.rd5",
          "sha256": "",
-         "bytes": 25758804
+         "bytes": 25758128
         },
         {
          "id": "W80_S15",
@@ -8588,7 +8659,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W80_S15.rd5",
          "sha256": "",
-         "bytes": 12950082
+         "bytes": 12950126
         },
         {
          "id": "W75_S15",
@@ -8602,7 +8673,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W75_S15.rd5",
          "sha256": "",
-         "bytes": 17555104
+         "bytes": 17555116
         },
         {
          "id": "W70_S15",
@@ -8616,7 +8687,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W70_S15.rd5",
          "sha256": "",
-         "bytes": 4190688
+         "bytes": 4190762
         },
         {
          "id": "W85_S10",
@@ -8630,7 +8701,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W85_S10.rd5",
          "sha256": "",
-         "bytes": 1040374
+         "bytes": 1040300
         },
         {
          "id": "W80_S10",
@@ -8644,7 +8715,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W80_S10.rd5",
          "sha256": "",
-         "bytes": 19565630
+         "bytes": 19566760
         },
         {
          "id": "W75_S10",
@@ -8658,7 +8729,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W75_S10.rd5",
          "sha256": "",
-         "bytes": 2722173
+         "bytes": 2722153
         },
         {
          "id": "W70_S10",
@@ -8672,7 +8743,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W70_S10.rd5",
          "sha256": "",
-         "bytes": 1791751
+         "bytes": 1791748
         },
         {
          "id": "W85_S5",
@@ -8686,7 +8757,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W85_S5.rd5",
          "sha256": "",
-         "bytes": 5243848
+         "bytes": 5243844
         },
         {
          "id": "W80_S5",
@@ -8700,7 +8771,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W80_S5.rd5",
          "sha256": "",
-         "bytes": 20500379
+         "bytes": 20500965
         },
         {
          "id": "W75_S5",
@@ -8728,7 +8799,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W70_S5.rd5",
          "sha256": "",
-         "bytes": 1725468
+         "bytes": 1725706
         },
         {
          "id": "W85_N0",
@@ -8756,7 +8827,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W80_N0.rd5",
          "sha256": "",
-         "bytes": 18297659
+         "bytes": 18299061
         },
         {
          "id": "W75_N0",
@@ -8770,7 +8841,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W75_N0.rd5",
          "sha256": "",
-         "bytes": 10501563
+         "bytes": 10502356
         },
         {
          "id": "W70_N0",
@@ -8828,7 +8899,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E30_S5.rd5",
          "sha256": "",
-         "bytes": 65495815
+         "bytes": 65495863
         },
         {
          "id": "E35_S5",
@@ -8842,7 +8913,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E35_S5.rd5",
          "sha256": "",
-         "bytes": 34625316
+         "bytes": 34628170
         },
         {
          "id": "E40_S5",
@@ -8856,7 +8927,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E40_S5.rd5",
          "sha256": "",
-         "bytes": 2762148
+         "bytes": 2762195
         },
         {
          "id": "E30_N0",
@@ -8870,7 +8941,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E30_N0.rd5",
          "sha256": "",
-         "bytes": 40406095
+         "bytes": 40412271
         },
         {
          "id": "E35_N0",
@@ -8884,7 +8955,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E35_N0.rd5",
          "sha256": "",
-         "bytes": 9090228
+         "bytes": 9093775
         },
         {
          "id": "E40_N0",
@@ -8898,7 +8969,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E40_N0.rd5",
          "sha256": "",
-         "bytes": 14836452
+         "bytes": 14839367
         },
         {
          "id": "E30_N5",
@@ -8926,7 +8997,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E35_N5.rd5",
          "sha256": "",
-         "bytes": 13731294
+         "bytes": 13731746
         },
         {
          "id": "E40_N5",
@@ -8940,7 +9011,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E40_N5.rd5",
          "sha256": "",
-         "bytes": 4815097
+         "bytes": 4816697
         }
        ]
       }
@@ -8978,7 +9049,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W15_N25.rd5",
          "sha256": "",
-         "bytes": 2835434
+         "bytes": 2835444
         },
         {
          "id": "W10_N25",
@@ -8992,7 +9063,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W10_N25.rd5",
          "sha256": "",
-         "bytes": 3863916
+         "bytes": 3863914
         },
         {
          "id": "W5_N25",
@@ -9020,7 +9091,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W10_N30.rd5",
          "sha256": "",
-         "bytes": 34202452
+         "bytes": 34203718
         },
         {
          "id": "W5_N30",
@@ -9048,7 +9119,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W10_N35.rd5",
          "sha256": "",
-         "bytes": 46005419
+         "bytes": 46015645
         },
         {
          "id": "W5_N35",
@@ -9062,7 +9133,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/W5_N35.rd5",
          "sha256": "",
-         "bytes": 61776943
+         "bytes": 61807499
         }
        ]
       }
@@ -9128,7 +9199,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E20_S30.rd5",
          "sha256": "",
-         "bytes": 4263871
+         "bytes": 4263858
         },
         {
          "id": "E25_S30",
@@ -9142,7 +9213,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E25_S30.rd5",
          "sha256": "",
-         "bytes": 30818067
+         "bytes": 30821108
         },
         {
          "id": "E10_S25",
@@ -9156,7 +9227,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E10_S25.rd5",
          "sha256": "",
-         "bytes": 739527
+         "bytes": 740261
         },
         {
          "id": "E15_S25",
@@ -9170,7 +9241,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E15_S25.rd5",
          "sha256": "",
-         "bytes": 4818132
+         "bytes": 4818105
         },
         {
          "id": "E20_S25",
@@ -9198,7 +9269,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E25_S25.rd5",
          "sha256": "",
-         "bytes": 12733317
+         "bytes": 12733368
         },
         {
          "id": "E10_S20",
@@ -9212,7 +9283,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E10_S20.rd5",
          "sha256": "",
-         "bytes": 1939783
+         "bytes": 1939461
         },
         {
          "id": "E15_S20",
@@ -9226,7 +9297,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E15_S20.rd5",
          "sha256": "",
-         "bytes": 2346673
+         "bytes": 2346733
         },
         {
          "id": "E20_S20",
@@ -9254,7 +9325,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E25_S20.rd5",
          "sha256": "",
-         "bytes": 13277621
+         "bytes": 13277330
         }
        ]
       }
@@ -9292,7 +9363,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E15_S35.rd5",
          "sha256": "",
-         "bytes": 10618704
+         "bytes": 10621363
         },
         {
          "id": "E20_S35",
@@ -9306,7 +9377,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E20_S35.rd5",
          "sha256": "",
-         "bytes": 6812682
+         "bytes": 6812882
         },
         {
          "id": "E25_S35",
@@ -9320,7 +9391,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E25_S35.rd5",
          "sha256": "",
-         "bytes": 15352642
+         "bytes": 15353860
         },
         {
          "id": "E30_S35",
@@ -9362,7 +9433,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E20_S30.rd5",
          "sha256": "",
-         "bytes": 4263871
+         "bytes": 4263858
         },
         {
          "id": "E25_S30",
@@ -9376,7 +9447,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E25_S30.rd5",
          "sha256": "",
-         "bytes": 30818067
+         "bytes": 30821108
         },
         {
          "id": "E30_S30",
@@ -9390,7 +9461,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E30_S30.rd5",
          "sha256": "",
-         "bytes": 23474347
+         "bytes": 23475248
         },
         {
          "id": "E15_S25",
@@ -9404,7 +9475,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E15_S25.rd5",
          "sha256": "",
-         "bytes": 4818132
+         "bytes": 4818105
         },
         {
          "id": "E20_S25",
@@ -9432,7 +9503,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E25_S25.rd5",
          "sha256": "",
-         "bytes": 12733317
+         "bytes": 12733368
         },
         {
          "id": "E30_S25",
@@ -9446,7 +9517,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E30_S25.rd5",
          "sha256": "",
-         "bytes": 11871904
+         "bytes": 11874177
         }
        ]
       }
@@ -9504,7 +9575,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E75_N5.rd5",
          "sha256": "",
-         "bytes": 14787268
+         "bytes": 14787722
         },
         {
          "id": "E80_N5",
@@ -9518,7 +9589,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E80_N5.rd5",
          "sha256": "",
-         "bytes": 13148501
+         "bytes": 13149278
         },
         {
          "id": "E90_N5",
@@ -9546,7 +9617,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E95_N5.rd5",
          "sha256": "",
-         "bytes": 8542032
+         "bytes": 8542511
         },
         {
          "id": "E70_N10",
@@ -9560,7 +9631,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E70_N10.rd5",
          "sha256": "",
-         "bytes": 2231420
+         "bytes": 2231428
         },
         {
          "id": "E75_N10",
@@ -9574,7 +9645,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E75_N10.rd5",
          "sha256": "",
-         "bytes": 57427580
+         "bytes": 57430814
         },
         {
          "id": "E80_N10",
@@ -9588,7 +9659,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E80_N10.rd5",
          "sha256": "",
-         "bytes": 2992219
+         "bytes": 2992647
         },
         {
          "id": "E90_N10",
@@ -9630,7 +9701,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E70_N15.rd5",
          "sha256": "",
-         "bytes": 19581561
+         "bytes": 19586167
         },
         {
          "id": "E75_N15",
@@ -9644,7 +9715,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E75_N15.rd5",
          "sha256": "",
-         "bytes": 29804805
+         "bytes": 29805572
         },
         {
          "id": "E80_N15",
@@ -9658,7 +9729,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E80_N15.rd5",
          "sha256": "",
-         "bytes": 17883367
+         "bytes": 17883545
         },
         {
          "id": "E85_N15",
@@ -9686,7 +9757,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E90_N15.rd5",
          "sha256": "",
-         "bytes": 4176988
+         "bytes": 4177027
         },
         {
          "id": "E95_N15",
@@ -9700,7 +9771,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E95_N15.rd5",
          "sha256": "",
-         "bytes": 32342661
+         "bytes": 32344777
         },
         {
          "id": "E65_N20",
@@ -9714,7 +9785,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E65_N20.rd5",
          "sha256": "",
-         "bytes": 4921621
+         "bytes": 4924471
         },
         {
          "id": "E70_N20",
@@ -9728,7 +9799,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E70_N20.rd5",
          "sha256": "",
-         "bytes": 25467142
+         "bytes": 25481670
         },
         {
          "id": "E75_N20",
@@ -9742,7 +9813,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E75_N20.rd5",
          "sha256": "",
-         "bytes": 25388560
+         "bytes": 25389334
         },
         {
          "id": "E80_N20",
@@ -9756,7 +9827,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E80_N20.rd5",
          "sha256": "",
-         "bytes": 20628514
+         "bytes": 20631344
         },
         {
          "id": "E85_N20",
@@ -9770,7 +9841,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E85_N20.rd5",
          "sha256": "",
-         "bytes": 36966181
+         "bytes": 36968094
         },
         {
          "id": "E90_N20",
@@ -9784,7 +9855,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E90_N20.rd5",
          "sha256": "",
-         "bytes": 27353125
+         "bytes": 27443427
         },
         {
          "id": "E95_N20",
@@ -9798,7 +9869,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E95_N20.rd5",
          "sha256": "",
-         "bytes": 26736167
+         "bytes": 26745676
         },
         {
          "id": "E65_N25",
@@ -9812,7 +9883,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E65_N25.rd5",
          "sha256": "",
-         "bytes": 9277124
+         "bytes": 9277123
         },
         {
          "id": "E70_N25",
@@ -9826,7 +9897,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E70_N25.rd5",
          "sha256": "",
-         "bytes": 14252947
+         "bytes": 14253028
         },
         {
          "id": "E75_N25",
@@ -9840,7 +9911,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E75_N25.rd5",
          "sha256": "",
-         "bytes": 50052589
+         "bytes": 50058258
         },
         {
          "id": "E80_N25",
@@ -9854,7 +9925,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E80_N25.rd5",
          "sha256": "",
-         "bytes": 59745893
+         "bytes": 59755030
         },
         {
          "id": "E85_N25",
@@ -9868,7 +9939,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E85_N25.rd5",
          "sha256": "",
-         "bytes": 51610642
+         "bytes": 51613886
         },
         {
          "id": "E90_N25",
@@ -9882,7 +9953,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E90_N25.rd5",
          "sha256": "",
-         "bytes": 18182502
+         "bytes": 18183480
         },
         {
          "id": "E95_N25",
@@ -9910,7 +9981,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E65_N30.rd5",
          "sha256": "",
-         "bytes": 12721876
+         "bytes": 12722045
         },
         {
          "id": "E70_N30",
@@ -9924,7 +9995,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E70_N30.rd5",
          "sha256": "",
-         "bytes": 38609625
+         "bytes": 38623627
         },
         {
          "id": "E75_N30",
@@ -9938,7 +10009,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E75_N30.rd5",
          "sha256": "",
-         "bytes": 26953530
+         "bytes": 26953973
         },
         {
          "id": "E80_N30",
@@ -9980,7 +10051,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E90_N30.rd5",
          "sha256": "",
-         "bytes": 3011403
+         "bytes": 3011427
         },
         {
          "id": "E95_N30",
@@ -10008,7 +10079,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E65_N35.rd5",
          "sha256": "",
-         "bytes": 15504002
+         "bytes": 15528409
         },
         {
          "id": "E70_N35",
@@ -10022,7 +10093,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E70_N35.rd5",
          "sha256": "",
-         "bytes": 7727276
+         "bytes": 7730642
         },
         {
          "id": "E75_N35",
@@ -10036,7 +10107,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E75_N35.rd5",
          "sha256": "",
-         "bytes": 2632224
+         "bytes": 2632332
         },
         {
          "id": "E80_N35",
@@ -10172,7 +10243,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E120_S15.rd5",
          "sha256": "",
-         "bytes": 1434756
+         "bytes": 1434759
         },
         {
          "id": "E125_S15",
@@ -10200,7 +10271,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E130_S15.rd5",
          "sha256": "",
-         "bytes": 1658738
+         "bytes": 1658887
         },
         {
          "id": "E135_S15",
@@ -10256,7 +10327,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E105_S10.rd5",
          "sha256": "",
-         "bytes": 41551149
+         "bytes": 41551599
         },
         {
          "id": "E110_S10",
@@ -10270,7 +10341,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E110_S10.rd5",
          "sha256": "",
-         "bytes": 38258324
+         "bytes": 38260644
         },
         {
          "id": "E115_S10",
@@ -10284,7 +10355,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E115_S10.rd5",
          "sha256": "",
-         "bytes": 9967963
+         "bytes": 9971509
         },
         {
          "id": "E120_S10",
@@ -10298,7 +10369,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E120_S10.rd5",
          "sha256": "",
-         "bytes": 6347068
+         "bytes": 6347649
         },
         {
          "id": "E125_S10",
@@ -10354,7 +10425,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E140_S10.rd5",
          "sha256": "",
-         "bytes": 3963501
+         "bytes": 3963502
         },
         {
          "id": "E95_S5",
@@ -10382,7 +10453,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E100_S5.rd5",
          "sha256": "",
-         "bytes": 18744327
+         "bytes": 18744352
         },
         {
          "id": "E105_S5",
@@ -10424,7 +10495,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E115_S5.rd5",
          "sha256": "",
-         "bytes": 12158254
+         "bytes": 12159398
         },
         {
          "id": "E120_S5",
@@ -10438,7 +10509,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E120_S5.rd5",
          "sha256": "",
-         "bytes": 6285812
+         "bytes": 6286617
         },
         {
          "id": "E125_S5",
@@ -10480,7 +10551,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E135_S5.rd5",
          "sha256": "",
-         "bytes": 3441486
+         "bytes": 3441514
         },
         {
          "id": "E140_S5",
@@ -10508,7 +10579,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E95_N0.rd5",
          "sha256": "",
-         "bytes": 13661718
+         "bytes": 13661720
         },
         {
          "id": "E100_N0",
@@ -10522,7 +10593,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E100_N0.rd5",
          "sha256": "",
-         "bytes": 35224417
+         "bytes": 35232195
         },
         {
          "id": "E105_N0",
@@ -10536,7 +10607,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E105_N0.rd5",
          "sha256": "",
-         "bytes": 2294295
+         "bytes": 2294226
         },
         {
          "id": "E110_N0",
@@ -10550,7 +10621,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E110_N0.rd5",
          "sha256": "",
-         "bytes": 10713379
+         "bytes": 10713464
         },
         {
          "id": "E115_N0",
@@ -10564,7 +10635,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E115_N0.rd5",
          "sha256": "",
-         "bytes": 7186705
+         "bytes": 7186713
         },
         {
          "id": "E120_N0",
@@ -10620,7 +10691,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E95_N5.rd5",
          "sha256": "",
-         "bytes": 8542032
+         "bytes": 8542511
         },
         {
          "id": "E100_N5",
@@ -10634,7 +10705,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E100_N5.rd5",
          "sha256": "",
-         "bytes": 14927317
+         "bytes": 14930970
         },
         {
          "id": "E105_N5",
@@ -10648,7 +10719,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E105_N5.rd5",
          "sha256": "",
-         "bytes": 3791461
+         "bytes": 3791465
         },
         {
          "id": "E110_N5",
@@ -10676,7 +10747,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E115_N5.rd5",
          "sha256": "",
-         "bytes": 7416388
+         "bytes": 7417055
         },
         {
          "id": "E120_N5",
@@ -10690,7 +10761,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E120_N5.rd5",
          "sha256": "",
-         "bytes": 12597370
+         "bytes": 12604753
         },
         {
          "id": "E125_N5",
@@ -10704,7 +10775,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E125_N5.rd5",
          "sha256": "",
-         "bytes": 10470396
+         "bytes": 10470844
         },
         {
          "id": "E130_N5",
@@ -10784,7 +10855,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E125_N30.rd5",
          "sha256": "",
-         "bytes": 12569279
+         "bytes": 12570301
         },
         {
          "id": "E130_N30",
@@ -10798,7 +10869,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E130_N30.rd5",
          "sha256": "",
-         "bytes": 78814295
+         "bytes": 78818614
         },
         {
          "id": "E135_N30",
@@ -10812,7 +10883,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E135_N30.rd5",
          "sha256": "",
-         "bytes": 34432495
+         "bytes": 34432755
         },
         {
          "id": "E140_N30",
@@ -10840,7 +10911,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E125_N35.rd5",
          "sha256": "",
-         "bytes": 66851744
+         "bytes": 66865228
         },
         {
          "id": "E130_N35",
@@ -10854,7 +10925,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E130_N35.rd5",
          "sha256": "",
-         "bytes": 10328945
+         "bytes": 10329276
         },
         {
          "id": "E135_N35",
@@ -10868,7 +10939,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E135_N35.rd5",
          "sha256": "",
-         "bytes": 100339631
+         "bytes": 100347347
         },
         {
          "id": "E140_N35",
@@ -10882,7 +10953,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E140_N35.rd5",
          "sha256": "",
-         "bytes": 38275691
+         "bytes": 38276871
         },
         {
          "id": "E125_N40",
@@ -10896,7 +10967,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E125_N40.rd5",
          "sha256": "",
-         "bytes": 10692189
+         "bytes": 10700897
         },
         {
          "id": "E130_N40",
@@ -10910,7 +10981,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E130_N40.rd5",
          "sha256": "",
-         "bytes": 6415498
+         "bytes": 6415613
         },
         {
          "id": "E135_N40",
@@ -10938,7 +11009,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E140_N40.rd5",
          "sha256": "",
-         "bytes": 27946189
+         "bytes": 27953672
         },
         {
          "id": "E145_N40",
@@ -10980,7 +11051,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E130_N45.rd5",
          "sha256": "",
-         "bytes": 4310331
+         "bytes": 4310840
         },
         {
          "id": "E135_N45",
@@ -10994,7 +11065,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E135_N45.rd5",
          "sha256": "",
-         "bytes": 2545465
+         "bytes": 2545628
         },
         {
          "id": "E140_N45",
@@ -11008,7 +11079,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E140_N45.rd5",
          "sha256": "",
-         "bytes": 3211200
+         "bytes": 3211381
         },
         {
          "id": "E145_N45",
@@ -11060,7 +11131,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E95_N0.rd5",
          "sha256": "",
-         "bytes": 13661718
+         "bytes": 13661720
         },
         {
          "id": "E100_N0",
@@ -11074,7 +11145,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E100_N0.rd5",
          "sha256": "",
-         "bytes": 35224417
+         "bytes": 35232195
         },
         {
          "id": "E105_N0",
@@ -11088,7 +11159,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E105_N0.rd5",
          "sha256": "",
-         "bytes": 2294295
+         "bytes": 2294226
         },
         {
          "id": "E110_N0",
@@ -11102,7 +11173,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E110_N0.rd5",
          "sha256": "",
-         "bytes": 10713379
+         "bytes": 10713464
         },
         {
          "id": "E115_N0",
@@ -11116,7 +11187,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E115_N0.rd5",
          "sha256": "",
-         "bytes": 7186705
+         "bytes": 7186713
         },
         {
          "id": "E95_N5",
@@ -11130,7 +11201,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E95_N5.rd5",
          "sha256": "",
-         "bytes": 8542032
+         "bytes": 8542511
         },
         {
          "id": "E100_N5",
@@ -11144,7 +11215,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E100_N5.rd5",
          "sha256": "",
-         "bytes": 14927317
+         "bytes": 14930970
         },
         {
          "id": "E105_N5",
@@ -11158,7 +11229,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E105_N5.rd5",
          "sha256": "",
-         "bytes": 3791461
+         "bytes": 3791465
         },
         {
          "id": "E110_N5",
@@ -11186,7 +11257,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E115_N5.rd5",
          "sha256": "",
-         "bytes": 7416388
+         "bytes": 7417055
         }
        ]
       }
@@ -11224,7 +11295,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E115_N0.rd5",
          "sha256": "",
-         "bytes": 7186705
+         "bytes": 7186713
         },
         {
          "id": "E120_N0",
@@ -11266,7 +11337,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E115_N5.rd5",
          "sha256": "",
-         "bytes": 7416388
+         "bytes": 7417055
         },
         {
          "id": "E120_N5",
@@ -11280,7 +11351,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E120_N5.rd5",
          "sha256": "",
-         "bytes": 12597370
+         "bytes": 12604753
         },
         {
          "id": "E125_N5",
@@ -11294,7 +11365,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E125_N5.rd5",
          "sha256": "",
-         "bytes": 10470396
+         "bytes": 10470844
         },
         {
          "id": "E115_N10",
@@ -11322,7 +11393,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E120_N10.rd5",
          "sha256": "",
-         "bytes": 25690624
+         "bytes": 25691179
         },
         {
          "id": "E125_N10",
@@ -11336,7 +11407,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E125_N10.rd5",
          "sha256": "",
-         "bytes": 1109130
+         "bytes": 1109136
         },
         {
          "id": "E115_N15",
@@ -11364,7 +11435,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E120_N15.rd5",
          "sha256": "",
-         "bytes": 13926377
+         "bytes": 13927096
         },
         {
          "id": "E115_N20",
@@ -11378,7 +11449,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E115_N20.rd5",
          "sha256": "",
-         "bytes": 10808600
+         "bytes": 10813316
         },
         {
          "id": "E120_N20",
@@ -11392,7 +11463,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E120_N20.rd5",
          "sha256": "",
-         "bytes": 22084080
+         "bytes": 22084855
         },
         {
          "id": "E125_N20",
@@ -11444,7 +11515,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E95_N5.rd5",
          "sha256": "",
-         "bytes": 8542032
+         "bytes": 8542511
         },
         {
          "id": "E100_N5",
@@ -11458,7 +11529,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E100_N5.rd5",
          "sha256": "",
-         "bytes": 14927317
+         "bytes": 14930970
         },
         {
          "id": "E105_N5",
@@ -11472,7 +11543,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E105_N5.rd5",
          "sha256": "",
-         "bytes": 3791461
+         "bytes": 3791465
         },
         {
          "id": "E95_N10",
@@ -11500,7 +11571,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E100_N10.rd5",
          "sha256": "",
-         "bytes": 35756033
+         "bytes": 35763374
         },
         {
          "id": "E105_N10",
@@ -11514,7 +11585,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E105_N10.rd5",
          "sha256": "",
-         "bytes": 35471830
+         "bytes": 35474936
         },
         {
          "id": "E95_N15",
@@ -11528,7 +11599,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E95_N15.rd5",
          "sha256": "",
-         "bytes": 32342661
+         "bytes": 32344777
         },
         {
          "id": "E100_N15",
@@ -11542,7 +11613,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E100_N15.rd5",
          "sha256": "",
-         "bytes": 38070411
+         "bytes": 38071800
         },
         {
          "id": "E105_N15",
@@ -11556,7 +11627,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E105_N15.rd5",
          "sha256": "",
-         "bytes": 19377448
+         "bytes": 19377726
         },
         {
          "id": "E95_N20",
@@ -11570,7 +11641,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E95_N20.rd5",
          "sha256": "",
-         "bytes": 26736167
+         "bytes": 26745676
         },
         {
          "id": "E100_N20",
@@ -11598,7 +11669,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E105_N20.rd5",
          "sha256": "",
-         "bytes": 43465282
+         "bytes": 43469421
         }
        ]
       }
@@ -11636,7 +11707,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E50_N20.rd5",
          "sha256": "",
-         "bytes": 4338377
+         "bytes": 4338690
         },
         {
          "id": "E55_N20",
@@ -11650,7 +11721,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E55_N20.rd5",
          "sha256": "",
-         "bytes": 8115067
+         "bytes": 8115861
         },
         {
          "id": "E50_N25",
@@ -11664,7 +11735,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E50_N25.rd5",
          "sha256": "",
-         "bytes": 11385701
+         "bytes": 11385689
         },
         {
          "id": "E55_N25",
@@ -11678,7 +11749,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E55_N25.rd5",
          "sha256": "",
-         "bytes": 11703987
+         "bytes": 11703758
         }
        ]
       }
@@ -11716,7 +11787,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E100_N5.rd5",
          "sha256": "",
-         "bytes": 14927317
+         "bytes": 14930970
         },
         {
          "id": "E105_N5",
@@ -11730,7 +11801,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E105_N5.rd5",
          "sha256": "",
-         "bytes": 3791461
+         "bytes": 3791465
         },
         {
          "id": "E100_N10",
@@ -11744,7 +11815,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E100_N10.rd5",
          "sha256": "",
-         "bytes": 35756033
+         "bytes": 35763374
         },
         {
          "id": "E105_N10",
@@ -11758,7 +11829,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E105_N10.rd5",
          "sha256": "",
-         "bytes": 35471830
+         "bytes": 35474936
         },
         {
          "id": "E100_N15",
@@ -11772,7 +11843,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E100_N15.rd5",
          "sha256": "",
-         "bytes": 38070411
+         "bytes": 38071800
         },
         {
          "id": "E105_N15",
@@ -11786,7 +11857,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E105_N15.rd5",
          "sha256": "",
-         "bytes": 19377448
+         "bytes": 19377726
         },
         {
          "id": "E100_N20",
@@ -11814,7 +11885,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E105_N20.rd5",
          "sha256": "",
-         "bytes": 43465282
+         "bytes": 43469421
         }
        ]
       }
@@ -11872,7 +11943,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E145_S45.rd5",
          "sha256": "",
-         "bytes": 6270455
+         "bytes": 6270688
         },
         {
          "id": "E115_S40",
@@ -11900,7 +11971,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E135_S40.rd5",
          "sha256": "",
-         "bytes": 1914365
+         "bytes": 1914672
         },
         {
          "id": "E140_S40",
@@ -11914,7 +11985,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E140_S40.rd5",
          "sha256": "",
-         "bytes": 15396354
+         "bytes": 15396578
         },
         {
          "id": "E145_S40",
@@ -11928,7 +11999,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E145_S40.rd5",
          "sha256": "",
-         "bytes": 23117247
+         "bytes": 23118186
         },
         {
          "id": "E150_S40",
@@ -11970,7 +12041,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E115_S35.rd5",
          "sha256": "",
-         "bytes": 11970367
+         "bytes": 11971434
         },
         {
          "id": "E120_S35",
@@ -12026,7 +12097,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E135_S35.rd5",
          "sha256": "",
-         "bytes": 6417199
+         "bytes": 6419993
         },
         {
          "id": "E140_S35",
@@ -12040,7 +12111,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E140_S35.rd5",
          "sha256": "",
-         "bytes": 2668015
+         "bytes": 2668120
         },
         {
          "id": "E145_S35",
@@ -12054,7 +12125,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E145_S35.rd5",
          "sha256": "",
-         "bytes": 6242583
+         "bytes": 6242609
         },
         {
          "id": "E150_S35",
@@ -12068,7 +12139,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E150_S35.rd5",
          "sha256": "",
-         "bytes": 19519541
+         "bytes": 19524688
         },
         {
          "id": "E110_S30",
@@ -12180,7 +12251,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E145_S30.rd5",
          "sha256": "",
-         "bytes": 2168746
+         "bytes": 2168745
         },
         {
          "id": "E150_S30",
@@ -12194,7 +12265,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E150_S30.rd5",
          "sha256": "",
-         "bytes": 17545597
+         "bytes": 17546136
         },
         {
          "id": "E110_S25",
@@ -12264,7 +12335,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E130_S25.rd5",
          "sha256": "",
-         "bytes": 1041699
+         "bytes": 1041762
         },
         {
          "id": "E135_S25",
@@ -12306,7 +12377,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E145_S25.rd5",
          "sha256": "",
-         "bytes": 2426522
+         "bytes": 2426741
         },
         {
          "id": "E150_S25",
@@ -12418,7 +12489,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E145_S20.rd5",
          "sha256": "",
-         "bytes": 2631737
+         "bytes": 2631829
         },
         {
          "id": "E115_S15",
@@ -12446,7 +12517,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E120_S15.rd5",
          "sha256": "",
-         "bytes": 1434756
+         "bytes": 1434759
         },
         {
          "id": "E125_S15",
@@ -12474,7 +12545,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E130_S15.rd5",
          "sha256": "",
-         "bytes": 1658738
+         "bytes": 1658887
         },
         {
          "id": "E135_S15",
@@ -12582,7 +12653,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E170_S50.rd5",
          "sha256": "",
-         "bytes": 1045270
+         "bytes": 1045311
         },
         {
          "id": "E165_S45",
@@ -12610,7 +12681,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E170_S45.rd5",
          "sha256": "",
-         "bytes": 10102768
+         "bytes": 10103124
         },
         {
          "id": "E175_S45",
@@ -12624,7 +12695,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E175_S45.rd5",
          "sha256": "",
-         "bytes": 2619377
+         "bytes": 2619762
         },
         {
          "id": "E170_S40",
@@ -12638,7 +12709,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E170_S40.rd5",
          "sha256": "",
-         "bytes": 8421371
+         "bytes": 8421631
         },
         {
          "id": "E175_S40",
@@ -12652,7 +12723,7 @@
          },
          "file": "https://brouter.de/brouter/segments4/E175_S40.rd5",
          "sha256": "",
-         "bytes": 8951397
+         "bytes": 8952021
         },
         {
          "id": "E170_S35",
