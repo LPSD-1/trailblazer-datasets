@@ -78,6 +78,7 @@ jobs:
           echo "work=$(echo "$PLAN" | python -c 'import json,sys;print(str(json.load(sys.stdin).get("work",False)).lower())')" >> "$GITHUB_OUTPUT"
           echo "id=$(echo "$PLAN" | python -c 'import json,sys;print(json.load(sys.stdin).get("id",""))')" >> "$GITHUB_OUTPUT"
           echo "area=$(echo "$PLAN" | python -c 'import json,sys;print(json.load(sys.stdin).get("area",""))')" >> "$GITHUB_OUTPUT"
+          echo "month=$(date -u +%Y-%m)" >> "$GITHUB_OUTPUT"
 
       - name: Nothing to do
         if: steps.plan.outputs.work != 'true'
@@ -91,8 +92,14 @@ jobs:
         uses: actions/cache@v4
         with:
           path: staging
-          key: sat-${{ steps.plan.outputs.id }}-${{ github.run_id }}
-          restore-keys: sat-${{ steps.plan.outputs.id }}-
+          # Keyed by the MONTH, not the run. Keyed by run id every run wrote a
+          # fresh 70-240 MB entry, and a repository's cache is capped at 10 GB
+          # with least-recently-used eviction — so a daily job would have
+          # quietly evicted the lane refresh's council-data cache and turned
+          # its 25-minute fetch back on. Within a month a retry resumes; a new
+          # month re-fetches, which is the point of a rebuild.
+          key: sat-${{ steps.plan.outputs.id }}-${{ steps.plan.outputs.month }}
+          restore-keys: sat-${{ steps.plan.outputs.id }}-${{ steps.plan.outputs.month }}
 
       - name: Fetch and package
         if: steps.plan.outputs.work == 'true'
@@ -147,6 +154,17 @@ jobs:
           print("archive OK: %d tile entries, clustered, JPEG" % entries)
           PY
 
+      # Once a pack is written the staged tiles have done their job. Left in
+      # place, the NEXT monthly rebuild would find every tile already there,
+      # fetch nothing, and republish byte-identical imagery — so the refresh
+      # would run for ever and the pictures would never actually change. That
+      # is a correctness fault wearing the clothes of untidiness.
+      - name: Clear the staged tiles
+        if: steps.plan.outputs.work == 'true'
+        run: |
+          rm -rf "staging/${{ steps.plan.outputs.id }}"
+          echo "staged tiles cleared; next rebuild re-fetches"
+
       - name: Publish
         if: steps.plan.outputs.work == 'true'
         env:
@@ -194,6 +212,34 @@ jobs:
           git commit -m "Satellite: ${{ steps.plan.outputs.id }} (${SIZE})" \
                      -m "Sentinel-2 cloudless via EOX, CC BY 4.0."
           git push
+
+      # Anything we publish and no longer should. Nothing else removes
+      # anything: an entry is replaced when it is rebuilt, but a withdrawn
+      # area or a tile upstream stops publishing would be offered for ever,
+      # frozen at whenever it was last built, with nothing saying so.
+      #
+      # It refuses to act on an empty catalogue, because a build that failed
+      # looks exactly like one where everything was withdrawn and the second
+      # reading deletes the lot.
+      - name: Prune what is no longer published
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python tools/prune_published.py             --catalogue catalogue.json             --satellite satellite/index.json             --routing routing/index.json             --apply > /tmp/orphans.txt || exit 0
+
+          while read -r release asset; do
+            [ -n "$asset" ] || continue
+            echo "deleting $asset from the $release release"
+            gh release delete-asset "$release" "$asset" --yes || true
+          done < /tmp/orphans.txt
+
+          if [ -s /tmp/orphans.txt ]; then
+            git add -A satellite/index.json routing/index.json
+            git diff --cached --quiet || {
+              git commit -m "Prune withdrawn packs"
+              git push
+            }
+          fi
 
       - name: Raise an issue if this run failed
         if: failure()

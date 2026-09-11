@@ -153,6 +153,34 @@ jobs:
                      -m "Riders no longer pull these from brouter.de."
           git push
 
+      # Anything we publish and no longer should. Nothing else removes
+      # anything: an entry is replaced when it is rebuilt, but a withdrawn
+      # area or a tile upstream stops publishing would be offered for ever,
+      # frozen at whenever it was last built, with nothing saying so.
+      #
+      # It refuses to act on an empty catalogue, because a build that failed
+      # looks exactly like one where everything was withdrawn and the second
+      # reading deletes the lot.
+      - name: Prune what is no longer published
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python tools/prune_published.py             --catalogue catalogue.json             --satellite satellite/index.json             --routing routing/index.json             --apply > /tmp/orphans.txt || exit 0
+
+          while read -r release asset; do
+            [ -n "$asset" ] || continue
+            echo "deleting $asset from the $release release"
+            gh release delete-asset "$release" "$asset" --yes || true
+          done < /tmp/orphans.txt
+
+          if [ -s /tmp/orphans.txt ]; then
+            git add -A satellite/index.json routing/index.json
+            git diff --cached --quiet || {
+              git commit -m "Prune withdrawn packs"
+              git push
+            }
+          fi
+
       - name: Raise an issue if this run failed
         if: failure()
         env:
