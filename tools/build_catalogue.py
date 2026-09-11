@@ -234,9 +234,43 @@ def lane_areas(lanes_manifest):
     return areas
 
 
-def build(lanes_manifest, base_url, stamp):
+def satellite_packs(path):
+    """Imagery packs already published, keyed by the area they cover.
+
+    Read from a record the imagery job keeps, rather than carried in this
+    file, because the two jobs run on completely different clocks: lanes are
+    rebuilt monthly from council data, imagery an area at a time over the
+    weeks between. Without this the monthly lane refresh would rebuild the
+    catalogue from scratch and every satellite pack would vanish from every
+    rider's Downloads screen, with no code having changed.
+    """
+    if not path or not os.path.exists(path):
+        return {}
+    try:
+        with open(path, encoding="utf-8") as f:
+            index = json.load(f)
+    except (ValueError, OSError) as e:
+        # A broken record must not take the whole catalogue down with it: the
+        # lanes are what the app cannot work without.
+        print("warning: could not read %s (%s); no imagery in this build"
+              % (path, e), file=sys.stderr)
+        return {}
+
+    by_area = {}
+    for pack in index.get("packs", []):
+        area = pack.get("area")
+        if not area:
+            continue
+        by_area.setdefault(area, []).append({
+            k: v for k, v in pack.items() if k != "area"
+        })
+    return by_area
+
+
+def build(lanes_manifest, base_url, stamp, satellite_index=None):
     tile_sizes = routing_index()
     gb_areas = lane_areas(lanes_manifest)
+    imagery = satellite_packs(satellite_index)
 
     by_continent = {}
     for country in COUNTRIES:
@@ -248,7 +282,12 @@ def build(lanes_manifest, base_url, stamp):
             # Britain has real lane data, split by area. Routing tiles are
             # country-wide, so they sit in their own area rather than being
             # duplicated into every one.
-            areas.extend(sorted(gb_areas.values(), key=lambda a: a["label"]))
+            for area in sorted(gb_areas.values(), key=lambda a: a["label"]):
+                # Imagery goes in beside the lanes for the same ground, so a
+                # rider choosing "the area I am in" gets both.
+                for pack in imagery.get(area["id"], []):
+                    area.setdefault("packs", []).append(pack)
+                areas.append(area)
 
         if routing:
             areas.append({
@@ -312,13 +351,17 @@ def main():
     ap.add_argument("--lanes", default="dist/manifest.json",
                     help="the Great Britain lane manifest")
     ap.add_argument("--base-url", default="", help="where packs are hosted")
+    ap.add_argument("--satellite", default="satellite/index.json",
+                    help="record of published imagery packs; missing is fine "
+                         "and simply means no imagery in this build")
     ap.add_argument("--out", default="dist/catalogue.json")
     args = ap.parse_args()
 
     from datetime import datetime, timezone
     stamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
-    catalogue = build(args.lanes, args.base_url, stamp)
+    catalogue = build(args.lanes, args.base_url, stamp,
+                      satellite_index=args.satellite)
     os.makedirs(os.path.dirname(os.path.abspath(args.out)), exist_ok=True)
     with open(args.out, "w", encoding="utf8") as fh:
         json.dump(catalogue, fh, indent=1)

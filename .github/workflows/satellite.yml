@@ -1,0 +1,233 @@
+name: Build satellite imagery
+
+# Daily, and it decides for itself whether there is anything to do.
+#
+# One AREA per run. The Midlands is 6,859 tiles at z13 and the largest, the
+# North, is 13,682 — each a single polite run of under an hour. Six areas cover
+# Britain, so a full pass takes under a week and then the job idles until the
+# oldest pack is 25 days old, which lands the next release about a month later.
+#
+# Nothing here needs a human. It picks the area, fetches it, packages it,
+# publishes it, records it and stops. A run that finds nothing due exits in
+# seconds having spent no bandwidth.
+on:
+  schedule:
+    - cron: '41 2 * * *'   # 02:41 UTC daily, off the hour to be a good citizen
+  workflow_dispatch:
+    inputs:
+      area:
+        description: 'Force a particular area id (blank = whatever is due)'
+        type: string
+        default: ''
+      max_zoom:
+        description: 'Maximum zoom. 13 is Sentinel-2 native; 14 is 2x oversampled.'
+        type: string
+        default: '13'
+
+permissions:
+  contents: write   # to commit the record and upload the release asset
+  issues: write     # to raise one when a run fails
+
+concurrency:
+  group: satellite
+  cancel-in-progress: false   # never interrupt a run mid-publish
+
+jobs:
+  imagery:
+    runs-on: ubuntu-latest
+    # The North is ~14k tiles at three connections with backoff. Two hours is
+    # ample; this only guards against a hung request holding a runner all day.
+    timeout-minutes: 180
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install --quiet Pillow
+
+      # Which area, if any. The plan is derived from the catalogue's own
+      # areas, so adding a lane region adds an imagery region with no second
+      # list to keep in step.
+      - name: What is due?
+        id: plan
+        run: |
+          if [ -n "${{ inputs.area }}" ]; then
+            PLAN=$(python tools/satellite_plan.py --catalogue catalogue.json \
+                     --refresh-after-days 0 --max-zoom "${{ inputs.max_zoom }}")
+            PLAN=$(python - "$PLAN" "${{ inputs.area }}" <<'PY'
+          import json, sys
+          plan = json.loads(sys.argv[1])
+          # A forced run still goes through the planner, so the bounds and the
+          # ids come from the same place as an automatic one.
+          if plan.get("work") and not plan["id"].startswith(sys.argv[2]):
+              plan = {"work": False, "why": "forced area %s is not the one due"
+                                            % sys.argv[2]}
+          print(json.dumps(plan))
+          PY
+          )
+          else
+            PLAN=$(python tools/satellite_plan.py --catalogue catalogue.json \
+                     --max-zoom "${{ inputs.max_zoom }}")
+          fi
+          echo "$PLAN"
+          echo "plan=$PLAN" >> "$GITHUB_OUTPUT"
+          echo "work=$(echo "$PLAN" | python -c 'import json,sys;print(str(json.load(sys.stdin).get("work",False)).lower())')" >> "$GITHUB_OUTPUT"
+          echo "id=$(echo "$PLAN" | python -c 'import json,sys;print(json.load(sys.stdin).get("id",""))')" >> "$GITHUB_OUTPUT"
+          echo "area=$(echo "$PLAN" | python -c 'import json,sys;print(json.load(sys.stdin).get("area",""))')" >> "$GITHUB_OUTPUT"
+
+      - name: Nothing to do
+        if: steps.plan.outputs.work != 'true'
+        run: echo "Everything is current. No bandwidth spent."
+
+      # Survives a failed job, so a run that dies at tile 12,000 of 13,682
+      # resumes rather than starting again. Keyed by month as well as area, so
+      # a rebuild genuinely re-fetches rather than repackaging stale imagery.
+      - name: Restore the staged tiles
+        if: steps.plan.outputs.work == 'true'
+        uses: actions/cache@v4
+        with:
+          path: staging
+          key: sat-${{ steps.plan.outputs.id }}-${{ github.run_id }}
+          restore-keys: sat-${{ steps.plan.outputs.id }}-
+
+      - name: Fetch and package
+        if: steps.plan.outputs.work == 'true'
+        run: |
+          PLAN='${{ steps.plan.outputs.plan }}'
+          BBOX=$(echo "$PLAN" | python -c 'import json,sys;print(" ".join(str(v) for v in json.load(sys.stdin)["bbox"]))')
+          LABEL=$(echo "$PLAN" | python -c 'import json,sys;print(json.load(sys.stdin)["label"])')
+          MAXZ=$(echo "$PLAN" | python -c 'import json,sys;print(json.load(sys.stdin)["max_zoom"])')
+
+          mkdir -p dist/satellite
+          # A budget high enough to finish the largest area in one run, since
+          # the whole point of splitting by area was that each one fits.
+          python tools/build_satellite.py \
+            --bbox $BBOX \
+            --id "${{ steps.plan.outputs.id }}" \
+            --label "$LABEL" \
+            --max-zoom "$MAXZ" \
+            --sharpen \
+            --staging "staging/${{ steps.plan.outputs.id }}" \
+            --budget 40000 \
+            --package \
+            --out "dist/satellite/${{ steps.plan.outputs.id }}.pmtiles" \
+            --entry-out dist/satellite/entry.json
+
+      # The one check worth having: the app's own reader must be able to open
+      # it. A pack that packages cleanly and will not open is a pack every
+      # rider downloads hundreds of megabytes of and cannot use.
+      - name: Would the app be able to read it?
+        if: steps.plan.outputs.work == 'true'
+        run: |
+          python - <<'PY'
+          import json, struct, sys
+
+          path = "dist/satellite/${{ steps.plan.outputs.id }}.pmtiles"
+          with open(path, "rb") as f:
+              head = f.read(127)
+
+          if head[:7] != b"PMTiles":
+              sys.exit("not a PMTiles archive")
+          if head[7] != 3:
+              sys.exit("spec version %d, the app reads 3" % head[7])
+          # The reader refuses an unclustered archive outright. Nothing in the
+          # format documentation makes that obvious, and it is exactly the
+          # sort of thing that would ship.
+          if head[96] != 1:
+              sys.exit("archive is not clustered; the app will refuse it")
+          if head[99] != 3:
+              sys.exit("tiles are not JPEG (type %d)" % head[99])
+          entries = struct.unpack_from("<Q", head, 80)[0]
+          if entries < 100:
+              sys.exit("only %d tiles; something went wrong" % entries)
+          print("archive OK: %d tile entries, clustered, JPEG" % entries)
+          PY
+
+      - name: Publish
+        if: steps.plan.outputs.work == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          PACK="dist/satellite/${{ steps.plan.outputs.id }}.pmtiles"
+
+          # One long-lived release holds every imagery pack. They are hundreds
+          # of megabytes and cannot live beside the index on GitHub Pages,
+          # which caps a site at 1 GB — the same reason the routing tiles are
+          # addressed absolutely.
+          gh release view satellite >/dev/null 2>&1 || \
+            gh release create satellite \
+              --title "Satellite imagery" \
+              --notes "Sentinel-2 cloudless by EOX IT Services GmbH (CC BY 4.0). Contains modified Copernicus Sentinel data. Rebuilt one area at a time; see the dated asset list." \
+              --latest=false
+
+          gh release upload satellite "$PACK" --clobber
+
+          URL="${{ github.server_url }}/${{ github.repository }}/releases/download/satellite/${{ steps.plan.outputs.id }}.pmtiles"
+          python tools/record_satellite.py \
+            --entry dist/satellite/entry.json \
+            --url "$URL" \
+            --area "${{ steps.plan.outputs.area }}" \
+            --index satellite/index.json
+
+          # The catalogue is rebuilt so riders see it without waiting for the
+          # monthly lane refresh. It reads satellite/index.json, so the lane
+          # refresh will not lose this next time it runs.
+          python tools/build_catalogue.py \
+            --lanes manifest.json \
+            --base-url "https://lpsd-1.github.io/trailblazer-datasets/" \
+            --satellite satellite/index.json \
+            --out dist/catalogue.json
+          mv dist/catalogue.json catalogue.json
+
+          git config user.name  'Trail Blazer data bot'
+          git config user.email 'noreply@github.com'
+          git add -A satellite/index.json catalogue.json
+          if git diff --cached --quiet; then
+            echo "Nothing changed."
+            exit 0
+          fi
+          SIZE=$(python -c "import os;print('%.0f MB' % (os.path.getsize('$PACK')/1048576))")
+          git commit -m "Satellite: ${{ steps.plan.outputs.id }} (${SIZE})" \
+                     -m "Sentinel-2 cloudless via EOX, CC BY 4.0."
+          git push
+
+      - name: Raise an issue if this run failed
+        if: failure()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          TITLE="Satellite build failed on $(date -u +%Y-%m-%d)"
+          BODY=$(cat <<EOF
+          The imagery build did not complete, so **nothing was published**.
+          Riders keep whatever imagery they already have — this is the safe
+          outcome, not an outage.
+
+          Area: \`${{ steps.plan.outputs.id }}\`
+          Log: $RUN_URL
+
+          Most likely causes, in order:
+
+          - **EOX was slow or refusing.** The staged tiles are cached, so a
+            re-run picks up where this stopped rather than starting again. If
+            it keeps happening, we are asking too much of a free service —
+            talk to them about the offline mosaic.
+          - **The archive check objected.** Read what it said; a pack that
+            will not open is worse than no pack.
+
+          Re-run from the Actions tab. Close this once it has gone green.
+          EOF
+          )
+          EXISTING=$(gh issue list --label satellite --state open \
+                       --json number --jq '.[0].number' 2>/dev/null || true)
+          if [ -n "$EXISTING" ]; then
+            gh issue comment "$EXISTING" --body "Failed again: $RUN_URL"
+          else
+            gh label create satellite --color 1D76DB \
+              --description "Automated imagery build problems" 2>/dev/null || true
+            gh issue create --title "$TITLE" --body "$BODY" --label satellite
+          fi
