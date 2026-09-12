@@ -127,6 +127,29 @@ REGIONS = [
     ("north", "The North", (-3.70, 53.00, 1.85, 55.90)),
 ]
 
+# Ground this dataset knowingly does not serve.
+#
+# Scotland has no equivalent of the English and Welsh definitive map. The Land
+# Reform (Scotland) Act 2003 gives a general right of responsible access to
+# most land instead of recording individual rights of way, so the source
+# carries almost nothing north of the border - one lane, in Highland, at the
+# time of writing.
+#
+# Publishing a "Scotland" region out of that would be this app implying
+# knowledge it does not have, in the most damaging direction available: a rider
+# would download it, see a single lane, and conclude Scotland has nothing to
+# ride - when in fact it has the most generous access rights in Britain, and
+# the absence is in the RECORDING rather than on the ground.
+#
+# So it is excluded deliberately and by name rather than swept up with
+# --allow-orphans. Anything that falls outside every region and is NOT here
+# still fails the build, which is the entire value of the check: a genuine hole
+# opening up in England or Wales must never be hidden by a flag somebody added
+# once to get a release out.
+UNSERVED = [
+    ("Scotland", (-9.00, 55.90, 0.00, 61.00)),
+]
+
 OGL = ("Contains public sector information licensed under the Open Government "
        "Licence v3.0. Source: local highway authority definitive maps, via "
        "rowmaps.com.")
@@ -406,6 +429,16 @@ def report_orphans(orphans):
         print("    ... and %d more authorities" % (len(by_authority) - 15))
 
 
+def unserved(feature):
+    """Whether this lane is on ground the dataset knowingly does not cover.
+
+    Only ever asked of lanes that already matched no region, so "any part of it
+    is in an unserved box" is the right test: a lane straddling the border
+    would have been placed in The North and never reach here.
+    """
+    return any(in_region(feature, box) for _, box in UNSERVED)
+
+
 def in_region(feature, box):
     """A lane belongs to a region if ANY of it is inside.
 
@@ -550,13 +583,28 @@ def main():
     # numbers either way. That is the worst kind of data bug - the product is
     # quietly smaller than it claims and nothing says so.
     if orphans:
-        report_orphans(orphans)
-        if not args.allow_orphans:
-            sys.exit(
-                "refusing to publish: %d lanes belong to no region. Widen the "
-                "boxes in REGIONS to cover them, or pass --allow-orphans if "
-                "they are genuinely outside the area this dataset serves."
-                % len(orphans))
+        # Split the ones we have decided not to serve from the ones that are a
+        # genuine hole. Without this the monthly refresh would have failed on
+        # 1 October on a single Scottish lane and published nothing at all -
+        # and the obvious fix under time pressure is --allow-orphans, which
+        # would then have hidden every real hole afterwards.
+        known = {f["properties"]["lane_uid"] for f in orphans if unserved(f)}
+        genuine = [f for f in orphans
+                   if f["properties"]["lane_uid"] not in known]
+
+        if known:
+            print("\n%d lanes are on ground this dataset does not serve "
+                  "(see UNSERVED); left out deliberately." % len(known))
+
+        if genuine:
+            report_orphans(genuine)
+            if not args.allow_orphans:
+                sys.exit(
+                    "refusing to publish: %d lanes belong to no region. Widen "
+                    "the boxes in REGIONS to cover them, add them to UNSERVED "
+                    "if this dataset genuinely does not serve that ground, or "
+                    "pass --allow-orphans for a one-off."
+                    % len(genuine))
 
     manifest = {
         "schema": 1,

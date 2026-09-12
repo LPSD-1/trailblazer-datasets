@@ -198,6 +198,42 @@ for _r, _lab, (_w, _s, _e, _n) in build_packages.REGIONS:
     check_true("%s box is the right way round" % _r, _w < _e and _s < _n)
 
 
+# --- ground we knowingly do not serve ----------------------------------------
+
+# The monthly refresh calls build_packages with NO --allow-orphans, and it had
+# never run: on 1 October it would have met a single Scottish lane, refused to
+# publish, and shipped nothing at all. The obvious fix under time pressure is
+# to add the flag - which would then hide every REAL hole for ever after. So
+# Scotland is named, and everything else still fails the build.
+
+# Highland, which is what the live data actually contains.
+check_true("a Scottish lane is recognised as unserved",
+           build_packages.unserved(lane([(-4.05, 57.55), (-4.00, 57.60)])))
+
+# The cases that must NOT be swallowed: a hole anywhere the dataset claims to
+# cover. Each of these sits inside no region box.
+check("a gap in England is not excused as unserved",
+      build_packages.unserved(lane([(-2.00, 54.20), (-1.98, 54.22)])),
+      False)
+check("nor one in the far south west",
+      build_packages.unserved(lane([(-6.50, 49.90), (-6.48, 49.92)])),
+      False)
+check("nor one off the Welsh coast",
+      build_packages.unserved(lane([(-5.40, 52.00), (-5.38, 52.02)])),
+      False)
+
+# Northumberland reaches 55.8 and the border is not a straight line, so nothing
+# English may fall into the Scottish exclusion.
+check("Berwick-upon-Tweed is English and stays served",
+      build_packages.unserved(lane([(-2.00, 55.77), (-1.99, 55.78)])),
+      False)
+check_true("and it is placed in a region rather than orphaned",
+           placed_regions(lane([(-2.00, 55.77), (-1.99, 55.78)])))
+
+for _name, (_w, _s, _e, _n) in build_packages.UNSERVED:
+    check_true("%s box is the right way round" % _name, _w < _e and _s < _n)
+
+
 if FAILURES:
     print("FAILED (%d)\n" % len(FAILURES))
     for f in FAILURES:
