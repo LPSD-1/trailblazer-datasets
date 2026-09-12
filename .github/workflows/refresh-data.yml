@@ -265,25 +265,14 @@ jobs:
           LANES=$(python -c "import json;print(sum(p['laneCount'] for p in json.load(open('manifest.json'))['packages']))")
           git commit -m "Refresh lane data: ${LANES} ways" \
                      -m "Rebuilt from local highway authority definitive maps via rowmaps.com."
-          # PULL BEFORE PUSHING, or a long job loses everything it did.
+          # NO REBASE. A generated file does not merge, it has a recipe:
+          # catalogue.json is rebuilt whole by both sides, so rebasing it
+          # conflicts every time by construction, stops mid-way, and the retry
+          # then runs `git pull` into an unresolved conflict. That is how the
+          # satellite job turned a recoverable push race into a detached HEAD.
           #
-          # These jobs run for tens of minutes against a checkout taken at the
-          # start. Anything else committing to main in the meantime - another
-          # of these three workflows, or a person - makes the push a
-          # non-fast-forward, and the job fails AFTER uploading its release
-          # assets: the bytes are published and the index that points at them
-          # is not, so the catalogue never learns they exist.
-          #
-          # That is exactly what happened to the first South East imagery run:
-          # 47 minutes of fetching, 224 MB uploaded, and the record lost to
-          # five unrelated commits pushed while it worked. Rebase and retry -
-          # these jobs touch different files, so a rebase is the ordinary case
-          # rather than a conflict.
-          for attempt in 1 2 3; do
-            git pull --rebase --autostash origin main && break
-            echo "rebase attempt $attempt failed; retrying"
-            sleep $((attempt * 5))
-          done
+          # This job re-runs on its own clock and its work is idempotent, so a
+          # rejected push costs one cycle and nothing else. Say so and stop.
           git push
 
       # An email is easy to miss and impossible to reply to. An issue is

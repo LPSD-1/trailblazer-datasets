@@ -302,26 +302,49 @@ jobs:
           SIZE=$(python -c "import glob,os;print('%.0f MB' % (sum(os.path.getsize(p) for p in glob.glob('dist/satellite/*.pmtiles'))/1048576))")
           git commit -m "Satellite: ${{ steps.plan.outputs.id }} (${SIZE})" \
                      -m "Sentinel-2 cloudless via EOX, CC BY 4.0."
-          # PULL BEFORE PUSHING, or a long job loses everything it did.
+          # RE-DO THE RECORD ON TOP OF WHATEVER LANDED, rather than merge it.
           #
-          # These jobs run for tens of minutes against a checkout taken at the
-          # start. Anything else committing to main in the meantime - another
-          # of these three workflows, or a person - makes the push a
-          # non-fast-forward, and the job fails AFTER uploading its release
-          # assets: the bytes are published and the index that points at them
-          # is not, so the catalogue never learns they exist.
+          # These jobs run for over an hour against a checkout taken at the
+          # start. Anything else committing to main meanwhile - another of
+          # these workflows, or a person - makes the push a non-fast-forward,
+          # and the job fails AFTER uploading its release assets: the bytes are
+          # published, the index pointing at them is not, and the catalogue
+          # never learns they exist.
           #
-          # That is exactly what happened to the first South East imagery run:
-          # 47 minutes of fetching, 224 MB uploaded, and the record lost to
-          # five unrelated commits pushed while it worked. Rebase and retry -
-          # these jobs touch different files, so a rebase is the ordinary case
-          # rather than a conflict.
+          # The first attempt at this rebased, which was worse than doing
+          # nothing. `catalogue.json` is GENERATED and rebuilt whole by both
+          # sides, so it does not merge - it conflicts, every time, by
+          # construction. The rebase then stopped mid-way and the retry loop
+          # ran `git pull` again into an unresolved conflict ("Pulling is not
+          # possible because you have unmerged files") three times before
+          # pushing from a detached HEAD. It turned a recoverable race into a
+          # broken tree.
+          #
+          # A generated file has no merge: it has a recipe. So on a rejection,
+          # take the newest main, run the recipe again on top of it, and try
+          # once more. `dist/` is gitignored, so the entry file and the packed
+          # archives survive the reset - nothing is re-fetched, only re-recorded.
           for attempt in 1 2 3; do
-            git pull --rebase --autostash origin main && break
-            echo "rebase attempt $attempt failed; retrying"
+            if git push; then
+              break
+            fi
+            echo "push rejected; rebuilding the record on top of origin/main"
+            git fetch origin main
+            git reset --hard origin/main
+
+            python tools/record_satellite.py \n              --entry dist/satellite/entry.json \n              --url "$URL" \n              --area "${{ steps.plan.outputs.area }}" \n              --index satellite/index.json
+            bash tools/rebuild_catalogue.sh manifest.json dist/catalogue.json
+            python tools/verify_catalogue.py dist/catalogue.json
+            mv dist/catalogue.json catalogue.json
+
+            git add -A satellite/index.json catalogue.json
+            if git diff --cached --quiet; then
+              echo "somebody else recorded it; nothing left to do"
+              exit 0
+            fi
+            git commit -m "Satellite: ${{ steps.plan.outputs.id }} (${SIZE})" \n                       -m "Sentinel-2 cloudless via EOX, CC BY 4.0."
             sleep $((attempt * 5))
           done
-          git push
 
       # Anything we publish and no longer should. Nothing else removes
       # anything: an entry is replaced when it is rebuilt, but a withdrawn
@@ -347,12 +370,12 @@ jobs:
             git add -A satellite/index.json routing/index.json
             git diff --cached --quiet || {
               git commit -m "Prune withdrawn packs"
-              # Rebase first, for the reason given at the main push above.
-              for attempt in 1 2 3; do
-                git pull --rebase --autostash origin main && break
-                sleep $((attempt * 5))
-              done
-              git push
+              # No rebase here. Pruning is idempotent and runs every time,
+              # so a rejected push costs nothing but a day - whereas rebasing
+              # a generated catalogue conflicts by construction and leaves the
+              # tree mid-rebase, which is how a recoverable race became a
+              # broken one. Give up cleanly and let tomorrow's run do it.
+              git push || echo "push rejected; the next run prunes again"
             }
           fi
 

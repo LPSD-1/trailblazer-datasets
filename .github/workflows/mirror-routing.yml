@@ -152,25 +152,14 @@ jobs:
           MIRRORED=$(python -c "import json;print(len(json.load(open('routing/index.json'))['tiles']))")
           git commit -m "Mirror routing: ${MIRRORED} tiles now served by us" \
                      -m "Riders no longer pull these from brouter.de."
-          # PULL BEFORE PUSHING, or a long job loses everything it did.
+          # NO REBASE. A generated file does not merge, it has a recipe:
+          # catalogue.json is rebuilt whole by both sides, so rebasing it
+          # conflicts every time by construction, stops mid-way, and the retry
+          # then runs `git pull` into an unresolved conflict. That is how the
+          # satellite job turned a recoverable push race into a detached HEAD.
           #
-          # These jobs run for tens of minutes against a checkout taken at the
-          # start. Anything else committing to main in the meantime - another
-          # of these three workflows, or a person - makes the push a
-          # non-fast-forward, and the job fails AFTER uploading its release
-          # assets: the bytes are published and the index that points at them
-          # is not, so the catalogue never learns they exist.
-          #
-          # That is exactly what happened to the first South East imagery run:
-          # 47 minutes of fetching, 224 MB uploaded, and the record lost to
-          # five unrelated commits pushed while it worked. Rebase and retry -
-          # these jobs touch different files, so a rebase is the ordinary case
-          # rather than a conflict.
-          for attempt in 1 2 3; do
-            git pull --rebase --autostash origin main && break
-            echo "rebase attempt $attempt failed; retrying"
-            sleep $((attempt * 5))
-          done
+          # This job re-runs on its own clock and its work is idempotent, so a
+          # rejected push costs one cycle and nothing else. Say so and stop.
           git push
 
       # Anything we publish and no longer should. Nothing else removes
@@ -197,12 +186,12 @@ jobs:
             git add -A satellite/index.json routing/index.json
             git diff --cached --quiet || {
               git commit -m "Prune withdrawn packs"
-              # Rebase first, for the reason given at the main push above.
-              for attempt in 1 2 3; do
-                git pull --rebase --autostash origin main && break
-                sleep $((attempt * 5))
-              done
-              git push
+              # No rebase here. Pruning is idempotent and runs every time,
+              # so a rejected push costs nothing but a day - whereas rebasing
+              # a generated catalogue conflicts by construction and leaves the
+              # tree mid-rebase, which is how a recoverable race became a
+              # broken one. Give up cleanly and let tomorrow's run do it.
+              git push || echo "push rejected; the next run prunes again"
             }
           fi
 

@@ -83,6 +83,54 @@
       },
       "area": "gb-south-east",
       "generated": "2026-09-12T21:21:00Z"
+    },
+    {
+      "id": "gb-south-west-satellite-high",
+      "kind": "basemap",
+      "label": "Satellite - South West",
+      "file": "https://github.com/LPSD-1/trailblazer-datasets/releases/download/satellite/gb-south-west-satellite-high.pmtiles",
+      "sha256": "4247faac69329c1bf9af794cc03dd180a01a26eec5726b80a34b03669d44e243",
+      "bytes": 166642824,
+      "bounds": {
+        "west": -6.45,
+        "south": 49.85,
+        "east": -1.95,
+        "north": 51.55
+      },
+      "note": "Sentinel-2 cloudless 2024 by EOX IT Services GmbH, CC BY 4.0. Contains modified Copernicus Sentinel data 2024.",
+      "maxZoom": 14,
+      "detail": {
+        "id": "high",
+        "label": "High detail",
+        "description": "Twice the pixels when you zoom right in. The same 10 m satellite behind it - what improves is how it is drawn, not what it can show.",
+        "groundMetresPerPixel": 4.8
+      },
+      "area": "gb-south-west",
+      "generated": "2026-09-12T23:06:35Z"
+    },
+    {
+      "id": "gb-south-west-satellite-standard",
+      "kind": "basemap",
+      "label": "Satellite - South West",
+      "file": "https://github.com/LPSD-1/trailblazer-datasets/releases/download/satellite/gb-south-west-satellite-standard.pmtiles",
+      "sha256": "ccbf9c416b7bd6aa1078b5520e562a6b46b7fb0436ec28045d7314b0e994560d",
+      "bytes": 53799251,
+      "bounds": {
+        "west": -6.45,
+        "south": 49.85,
+        "east": -1.95,
+        "north": 51.55
+      },
+      "note": "Sentinel-2 cloudless 2024 by EOX IT Services GmbH, CC BY 4.0. Contains modified Copernicus Sentinel data 2024.",
+      "maxZoom": 13,
+      "detail": {
+        "id": "standard",
+        "label": "Standard",
+        "description": "The whole area at the source's own resolution. A quarter of the size.",
+        "groundMetresPerPixel": 9.6
+      },
+      "area": "gb-south-west",
+      "generated": "2026-09-12T23:06:35Z"
     }
   ]
 }
