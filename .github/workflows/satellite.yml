@@ -81,7 +81,8 @@ jobs:
         run: |
           if [ -n "${{ inputs.area }}" ]; then
             PLAN=$(python tools/satellite_plan.py --catalogue catalogue.json \
-                     --refresh-after-days 0 --max-zoom "${{ inputs.max_zoom }}")
+                     --refresh-after-days 0 \
+                     --max-zoom "${{ inputs.max_zoom || '14' }}")
             PLAN=$(python - "$PLAN" "${{ inputs.area }}" <<'PY'
           import json, sys
           plan = json.loads(sys.argv[1])
@@ -94,8 +95,19 @@ jobs:
           PY
           )
           else
+            # THE DEFAULT MATTERS HERE. `inputs` exist only for a manual
+            # dispatch, so on the nightly SCHEDULE this expanded to an empty
+            # string and argparse rejected it:
+            #
+            #   satellite_plan.py: error: argument --max-zoom: invalid int
+            #   value: ''
+            #
+            # Every scheduled run has died on that line nine seconds in and
+            # raised an issue saying the build failed. Both packs published so
+            # far were built by hand, and this workflow's own header promising
+            # a full pass "in under a week" had never once been true.
             PLAN=$(python tools/satellite_plan.py --catalogue catalogue.json \
-                     --max-zoom "${{ inputs.max_zoom }}")
+                     --max-zoom "${{ inputs.max_zoom || '14' }}")
           fi
           echo "$PLAN"
           echo "plan=$PLAN" >> "$GITHUB_OUTPUT"
