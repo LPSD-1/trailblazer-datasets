@@ -20,9 +20,9 @@ on:
         type: string
         default: ''
       max_zoom:
-        description: 'Maximum zoom. 13 is Sentinel-2 native; 14 is 2x oversampled.'
+        description: 'Maximum zoom. 13 is Sentinel-2 native; 14 is 2x oversampled and publishes both tiers.'
         type: string
-        default: '13'
+        default: '14'
 
 permissions:
   contents: write   # to commit the record and upload the release asset
@@ -131,27 +131,37 @@ jobs:
         if: steps.plan.outputs.work == 'true'
         run: |
           python - <<'PY'
-          import json, struct, sys
+          import glob, struct, sys
 
-          path = "dist/satellite/${{ steps.plan.outputs.id }}.pmtiles"
-          with open(path, "rb") as f:
-              head = f.read(127)
+          # EVERY pack the run wrote. One fetch now publishes a pack per detail
+          # tier, and a check against a fixed filename would have verified one
+          # of them and shipped the other unread.
+          paths = sorted(glob.glob("dist/satellite/*.pmtiles"))
+          if not paths:
+              sys.exit("no packs were written")
 
-          if head[:7] != b"PMTiles":
-              sys.exit("not a PMTiles archive")
-          if head[7] != 3:
-              sys.exit("spec version %d, the app reads 3" % head[7])
-          # The reader refuses an unclustered archive outright. Nothing in the
-          # format documentation makes that obvious, and it is exactly the
-          # sort of thing that would ship.
-          if head[96] != 1:
-              sys.exit("archive is not clustered; the app will refuse it")
-          if head[99] != 3:
-              sys.exit("tiles are not JPEG (type %d)" % head[99])
-          entries = struct.unpack_from("<Q", head, 80)[0]
-          if entries < 100:
-              sys.exit("only %d tiles; something went wrong" % entries)
-          print("archive OK: %d tile entries, clustered, JPEG" % entries)
+          for path in paths:
+              with open(path, "rb") as f:
+                  head = f.read(127)
+
+              if head[:7] != b"PMTiles":
+                  sys.exit("%s: not a PMTiles archive" % path)
+              if head[7] != 3:
+                  sys.exit("%s: spec version %d, the app reads 3"
+                           % (path, head[7]))
+              # The reader refuses an unclustered archive outright. Nothing in
+              # the format documentation makes that obvious, and it is exactly
+              # the sort of thing that would ship.
+              if head[96] != 1:
+                  sys.exit("%s: not clustered; the app will refuse it" % path)
+              if head[99] != 3:
+                  sys.exit("%s: tiles are not JPEG (type %d)"
+                           % (path, head[99]))
+              entries = struct.unpack_from("<Q", head, 80)[0]
+              if entries < 100:
+                  sys.exit("%s: only %d tiles; something went wrong"
+                           % (path, entries))
+              print("%s OK: %d tile entries, clustered, JPEG" % (path, entries))
           PY
 
       # Once a pack is written the staged tiles have done their job. Left in
@@ -170,7 +180,8 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          PACK="dist/satellite/${{ steps.plan.outputs.id }}.pmtiles"
+          # Every pack this run wrote: one per detail tier.
+          PACKS=$(ls dist/satellite/*.pmtiles)
 
           # One long-lived release holds every imagery pack. They are hundreds
           # of megabytes and cannot live beside the index on GitHub Pages,
@@ -182,9 +193,14 @@ jobs:
               --notes "Sentinel-2 cloudless by EOX IT Services GmbH (CC BY 4.0). Contains modified Copernicus Sentinel data. Rebuilt one area at a time; see the dated asset list." \
               --latest=false
 
-          gh release upload satellite "$PACK" --clobber
+          gh release upload satellite $PACKS --clobber
 
-          URL="${{ github.server_url }}/${{ github.repository }}/releases/download/satellite/${{ steps.plan.outputs.id }}.pmtiles"
+          # The BASE of the release download path. Each entry appends its OWN
+          # filename, because a run now publishes one asset per detail tier and
+          # a single whole URL would have pointed every entry at one of them —
+          # so a rider choosing "High detail" would have downloaded the
+          # standard pack, with nothing anywhere saying so.
+          URL="${{ github.server_url }}/${{ github.repository }}/releases/download/satellite/"
           python tools/record_satellite.py \
             --entry dist/satellite/entry.json \
             --url "$URL" \
@@ -217,7 +233,7 @@ jobs:
             echo "Nothing changed."
             exit 0
           fi
-          SIZE=$(python -c "import os;print('%.0f MB' % (os.path.getsize('$PACK')/1048576))")
+          SIZE=$(python -c "import glob,os;print('%.0f MB' % (sum(os.path.getsize(p) for p in glob.glob('dist/satellite/*.pmtiles'))/1048576))")
           git commit -m "Satellite: ${{ steps.plan.outputs.id }} (${SIZE})" \
                      -m "Sentinel-2 cloudless via EOX, CC BY 4.0."
           git push

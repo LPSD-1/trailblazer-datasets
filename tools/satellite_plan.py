@@ -86,7 +86,18 @@ def main():
     ap.add_argument("--refresh-after-days", type=int, default=25,
                     help="a pack younger than this is left alone, so a full "
                          "cycle lands about once a month")
-    ap.add_argument("--max-zoom", type=int, default=13)
+    # 14, which is a decision that was taken and then not carried out: every
+    # pack published so far says maxZoom 13 because this default was never
+    # moved. Sentinel-2 is 10 m/pixel and z13 already IS that resolution, so
+    # z14 adds no optical detail - but a rider looks at RENDERED pixels, and at
+    # z13 the phone stretches a 256px JPEG four times while at z14 it is handed
+    # twice as many real pixels resampled offline. Zoomed in, which is the
+    # condition anyone complains about, z14 is visibly better.
+    #
+    # It also unlocks the second detail tier: a z0-14 fetch CONTAINS z0-13, so
+    # one run now publishes both and the picker in the app finally has
+    # something to pick between.
+    ap.add_argument("--max-zoom", type=int, default=14)
     args = ap.parse_args()
 
     try:

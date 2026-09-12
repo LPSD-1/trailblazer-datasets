@@ -348,6 +348,51 @@ def stage(staging, z, x, y, blob):
     os.replace(tmp, path)
 
 
+# The detail levels one fetch is published at, coarsest first.
+#
+# TWO PACKS FROM ONE SET OF TILES. A z0-14 archive CONTAINS z0-13, so fetching
+# once and packaging twice costs nothing but disk - and it is what makes the
+# choice in the app real. `ImageryDetail` and the picker that orders tiers by
+# `groundMetresPerPixel` have been in the app for a while with nothing to show,
+# because no pack has ever carried a `detail` block.
+#
+# The DESCRIPTIONS have to stay honest, and the honest thing here is awkward:
+# z14 adds no optical detail whatever. Sentinel-2 is 10 m/pixel and at British
+# latitudes z13 already is that resolution. What z14 buys is RENDERED pixels -
+# the phone stretching a 256px JPEG four times, against twice as many real
+# pixels resampled offline - and zoomed in that is visibly better. Saying
+# "sharper" without saying why would be selling a rider four times the bytes on
+# a claim about detail that is not true.
+#
+# `groundMetresPerPixel` is the RENDERED figure, and it is never shown: the app
+# uses it only to order the tiers, so a number that sorts correctly and is
+# never read aloud is the right one to put there.
+TIERS = [
+    {
+        "zoom": 13,
+        "id": "standard",
+        "label": "Standard",
+        "description": "The whole area at the source's own resolution. "
+                       "A quarter of the size.",
+        "groundMetresPerPixel": 9.6,
+    },
+    {
+        "zoom": 14,
+        "id": "high",
+        "label": "High detail",
+        "description": "Twice the pixels when you zoom right in. The same "
+                       "10 m satellite behind it - what improves is how it is "
+                       "drawn, not what it can show.",
+        "groundMetresPerPixel": 4.8,
+    },
+]
+
+
+def tiers_up_to(max_zoom):
+    """Every tier this fetch can be published at."""
+    return [t for t in TIERS if t["zoom"] <= max_zoom]
+
+
 def main():
     ap = argparse.ArgumentParser(
         description=__doc__,
@@ -441,39 +486,67 @@ def main():
         with open(staged_path(args.staging, z, x, y), "rb") as f:
             tiles[tile_id(z, x, y)] = f.read()
 
-    entries, unique = write_pmtiles(
-        args.out, tiles, bbox, args.min_zoom, args.max_zoom,
-        metadata={
-            "name": args.label,
-            "format": "jpeg",
-            "attribution": ATTRIBUTION,
-            "type": "baselayer",
-        },
-    )
+    stem, ext = os.path.splitext(args.out)
+    written = []
+    for tier in tiers_up_to(args.max_zoom):
+        # One tier per pack, each holding z0 up to its own ceiling. The
+        # coarser one is a strict subset, so this is a filter rather than a
+        # second fetch.
+        subset = {
+            tile_id(z, x, y): tiles[tile_id(z, x, y)]
+            for (z, x, y) in wanted
+            if z <= tier["zoom"]
+        }
+        # The only tier gets the plain filename, so an area published at one
+        # level keeps the name every existing release asset already has.
+        single = len(tiers_up_to(args.max_zoom)) == 1
+        path = args.out if single else "%s-%s%s" % (stem, tier["id"], ext)
 
-    size = os.path.getsize(args.out)
-    digest = hashlib.sha256(open(args.out, "rb").read()).hexdigest()
-    print("wrote %s" % args.out)
-    print("  %s tiles, %s directory entries, %s unique blobs" % (
-        format(len(tiles), ","), format(entries, ","), format(unique, ",")))
-    print("  %.1f MB   sha256 %s" % (size / 1024.0 / 1024.0, digest))
+        entries, unique = write_pmtiles(
+            path, subset, bbox, args.min_zoom, tier["zoom"],
+            metadata={
+                "name": "%s (%s)" % (args.label, tier["label"]),
+                "format": "jpeg",
+                "attribution": ATTRIBUTION,
+                "type": "baselayer",
+            },
+        )
 
-    entry = {
-        "id": args.id,
-        "kind": "basemap",
-        "label": args.label,
-        # Filled in by whoever uploads it. A satellite pack is hundreds of
-        # megabytes and cannot live beside the index on GitHub Pages, which
-        # caps a site at 1 GB - so these go to a release, addressed absolutely,
-        # exactly as the routing tiles are.
-        "file": os.path.basename(args.out),
-        "sha256": digest,
-        "bytes": size,
-        "bounds": {"west": bbox[0], "south": bbox[1],
-                   "east": bbox[2], "north": bbox[3]},
-        "note": ATTRIBUTION,
-        "maxZoom": args.max_zoom,
-    }
+        size = os.path.getsize(path)
+        digest = hashlib.sha256(open(path, "rb").read()).hexdigest()
+        print("wrote %s" % path)
+        print("  %s tiles, %s directory entries, %s unique blobs" % (
+            format(len(subset), ","), format(entries, ","),
+            format(unique, ",")))
+        print("  %.1f MB   sha256 %s" % (size / 1024.0 / 1024.0, digest))
+
+        written.append({
+            "id": args.id if single else "%s-%s" % (args.id, tier["id"]),
+            "kind": "basemap",
+            "label": args.label,
+            # Filled in by whoever uploads it. A satellite pack is hundreds of
+            # megabytes and cannot live beside the index on GitHub Pages,
+            # which caps a site at 1 GB - so these go to a release, addressed
+            # absolutely, exactly as the routing tiles are.
+            "file": os.path.basename(path),
+            "sha256": digest,
+            "bytes": size,
+            "bounds": {"west": bbox[0], "south": bbox[1],
+                       "east": bbox[2], "north": bbox[3]},
+            "note": ATTRIBUTION,
+            "maxZoom": tier["zoom"],
+            "detail": {
+                "id": tier["id"],
+                "label": tier["label"],
+                "description": tier["description"],
+                "groundMetresPerPixel": tier["groundMetresPerPixel"],
+            },
+        })
+
+    # One entry, or a list. Kept this way round so an area published at a
+    # single level writes exactly what it always wrote, and nothing reading an
+    # older entry file has to change.
+    entry = written[0] if len(written) == 1 else written
     print("")
     print("catalogue entry:")
     print(json.dumps(entry, indent=2))
