@@ -12,8 +12,13 @@ The dataset is quietly smaller than it claims and nothing says so.
 No framework, matching test_build_trips.py: the repo has none and this build
 has to run unattended.
 """
+import gzip
+import hashlib
+import json
 import os
+import shutil
 import sys
+import tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import build_packages  # noqa: E402
@@ -232,6 +237,133 @@ check_true("and it is placed in a region rather than orphaned",
 
 for _name, (_w, _s, _e, _n) in build_packages.UNSERVED:
     check_true("%s box is the right way round" % _name, _w < _e and _s < _n)
+
+
+# --- reproducibility ----------------------------------------------------------
+
+# The property the monthly refresh is built on: identical council data must
+# rebuild to identical bytes.
+#
+# It did not. pack() drew a random nonce, so the same lanes sealed twice gave
+# two different ciphertexts and two different hashes, and write_package put the
+# build date in the filename, so every run wrote new paths regardless. The
+# workflow's "councils published nothing new" branch therefore could not fire
+# once: every monthly run republished ~100 MB and every rider re-downloaded the
+# lot to end up with the lanes they already had.
+#
+# Each check below fails if any one of those three causes comes back - the
+# random nonce, the dated filename, or the build stamp sealed into the payload.
+
+# Any 32 bytes will do; this is a fixture, not a secret, and it is not the key
+# anything is published with.
+KEY = bytes(range(32))
+OTHER_KEY = bytes(range(32, 64))
+
+
+def payload(n):
+    return json.dumps({"features": list(range(n))}).encode("utf8")
+
+
+check("the same payload seals to the same bytes",
+      build_packages.pack(payload(50), KEY),
+      build_packages.pack(payload(50), KEY))
+
+# The other half, and the half that makes the first one worth anything. A pack()
+# that returned a constant would pass the check above and be catastrophic: with
+# AES-GCM, one nonce over two different plaintexts leaks their XOR and hands an
+# attacker the authentication subkey.
+_a = build_packages.pack(payload(50), KEY)
+_b = build_packages.pack(payload(51), KEY)
+check_true("different payloads seal to different bytes", _a != _b)
+check_true("and to different nonces", _a[6:18] != _b[6:18])
+
+# The nonce is derived from the payload UNDER THE KEY, so it cannot be computed
+# by anyone who does not hold the key.
+check_true("a different key gives a different nonce",
+           build_packages.pack(payload(50), OTHER_KEY)[6:18] != _a[6:18])
+
+# Deterministic is no good if the app can no longer open it. This is the
+# reader's side, exactly as check_build.py and the device do it: nonce taken
+# from the prefix, whole prefix as the AAD.
+try:
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+
+    _sealed = build_packages.pack(payload(7), KEY)
+    _prefix, _body = _sealed[:18], _sealed[18:]
+    _plain = gzip.decompress(AESGCM(KEY).decrypt(_prefix[6:18], _body, _prefix))
+    check("a pack still opens the way the app opens it", _plain, payload(7))
+    check("and carries the container header", _prefix[:4], b"TBPK")
+except ImportError:  # pragma: no cover - build_packages would have exited
+    FAILURES.append("cryptography missing; the reader check did not run")
+
+
+# --- an unchanged package keeps its bytes and its cut date --------------------
+
+_real_dist = build_packages.dist_dir
+_tmp = tempfile.mkdtemp(prefix="tbpack-test-")
+build_packages.dist_dir = lambda: _tmp
+
+
+def build_one(features, stamp, published=None):
+    """One package, as main() would write it -> (entry, sealed bytes)."""
+    entry = build_packages.write_package(
+        "motor", "midlands", "Midlands", None, features, KEY, stamp,
+        published=published)
+    with open(os.path.join(_tmp, "packages",
+                           os.path.basename(entry["file"])), "rb") as fh:
+        return entry, fh.read()
+
+
+LANES = [lane([(-1.70, 52.50), (-1.69, 52.51)], uid="a"),
+         lane([(-1.60, 52.60), (-1.59, 52.61)], uid="b")]
+CHANGED = LANES + [lane([(-1.50, 52.40), (-1.49, 52.41)], uid="c")]
+
+JAN = "2026-01-01T03:17:00Z"
+FEB = "2026-02-01T03:17:00Z"
+
+_first, _first_bytes = build_one(LANES, JAN)
+
+# The published name carries no date. The device already saves each pack under
+# a dateless local name, so the date bought nothing and cost the ability to
+# tell a rebuild from a change.
+check("the published name carries no build date",
+      _first["file"], "packages/motor-midlands.tbpack")
+
+# Keyed the way build_packages keys it, via the manifest reader itself - a
+# mismatch between the two would silently turn the comparison off and leave
+# every rebuild looking new, which is the bug this whole test exists for.
+_manifest = os.path.join(_tmp, "manifest.json")
+with open(_manifest, "w", encoding="utf8") as fh:
+    json.dump({"packages": [_first]}, fh)
+PUBLISHED = build_packages.published_packages(_manifest)
+check_true("the published manifest indexes the package we just built",
+           "motor/midlands" in PUBLISHED)
+
+# A month later, nothing amended: same bytes, same hash, same cut date.
+_again, _again_bytes = build_one(LANES, FEB, PUBLISHED)
+check("a rebuild of unchanged lanes is byte-identical",
+      hashlib.sha256(_again_bytes).hexdigest(),
+      hashlib.sha256(_first_bytes).hexdigest())
+check("and keeps the date the data was actually cut",
+      _again["generated"], JAN)
+check("and so publishes the same hash", _again["sha256"], _first["sha256"])
+
+# And the half that must still fail: a council amends its map.
+_changed, _changed_bytes = build_one(CHANGED, FEB, PUBLISHED)
+check_true("a changed lane changes the bytes", _changed_bytes != _first_bytes)
+check_true("and the hash", _changed["sha256"] != _first["sha256"])
+check("and the cut date moves to this build", _changed["generated"], FEB)
+
+# A published hash that does not reproduce means "rebuild it", never "publish
+# the old date anyway". That is what keeps a zlib upgrade or a changed field
+# from freezing the cut date on data that really did move.
+_stale = {"motor/midlands": dict(_first, sha256="0" * 64)}
+_rebuilt, _ = build_one(LANES, FEB, _stale)
+check("a hash that does not reproduce falls back to this build's date",
+      _rebuilt["generated"], FEB)
+
+build_packages.dist_dir = _real_dist
+shutil.rmtree(_tmp, ignore_errors=True)
 
 
 if FAILURES:

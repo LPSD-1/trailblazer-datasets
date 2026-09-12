@@ -99,9 +99,17 @@ python fetch_rights_of_way.py            # 149 authorities, cached and resumable
 python build_packages.py --key <keyfile>
 ```
 
-Republishing replaces packages in place. The app's local filenames deliberately
-omit the build date, so a new build supersedes the old copy on the device
-rather than accumulating beside it.
+Republishing replaces packages in place. Filenames carry no build date — here
+or on the device — so a new build supersedes the old copy rather than
+accumulating beside it.
+
+**The build is reproducible.** Rebuild the same council data and you get the
+same bytes: the GCM nonce is derived from the payload rather than drawn at
+random, and a package whose lanes have not changed keeps the date it was cut.
+So a monthly refresh over a map nobody amended produces packages identical to
+the published ones, publishes nothing, and costs riders no download at all —
+and the date shown against a package is the date that data was really cut,
+not the date a build last ran over it.
 
 ## Licence
 

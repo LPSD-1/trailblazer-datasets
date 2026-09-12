@@ -4,8 +4,12 @@
 Input:  cache/<AUTHORITY>/<type>.json   (from fetch_rights_of_way.py)
 Output: dist/
           manifest.json
-          <vehicle>-<date>.tbpack       encrypted AES-256-GCM
-          <vehicle>-<date>.tbpack.sha256
+          <vehicle>-<area>.tbpack       encrypted AES-256-GCM
+          <vehicle>-<area>.tbpack.sha256
+
+The output is REPRODUCIBLE: build the same council data twice and you get the
+same bytes, down to the SHA-256. Nothing else in this file matters as much to
+a rider on a phone tethered to their bike - see pack() and write_package().
 
 One package per vehicle access type, because that is how a rider chooses: a
 motorcyclist has no use for 140,000 footpaths, and downloading them costs them
@@ -22,6 +26,7 @@ import base64
 import glob
 import gzip
 import hashlib
+import hmac
 import json
 import os
 import sys
@@ -284,6 +289,29 @@ def dist_dir():
     return os.path.join(repo_root(), "dist")
 
 
+def published_packages(path):
+    """What is already on riders' phones -> {"<package>/<area>": entry}.
+
+    Read from the manifest that is committed at the top of the repository,
+    which is the one the app is serving right now. Missing, empty or unreadable
+    all mean the same thing and are all fine: every package is then treated as
+    new, which is what a first publish is.
+    """
+    if not path or not os.path.isfile(path):
+        return {}
+    try:
+        with open(path, encoding="utf8") as fh:
+            manifest = json.load(fh)
+    except (ValueError, OSError) as e:
+        print("  could not read %s (%s); every package counts as new"
+              % (path, e))
+        return {}
+    return {
+        "%s/%s" % (p.get("package"), p.get("area") or p.get("region")): p
+        for p in manifest.get("packages", [])
+    }
+
+
 def load_key(path):
     with open(path, encoding="utf8") as fh:
         key = base64.b64decode(fh.read().strip())
@@ -293,9 +321,53 @@ def load_key(path):
 
 
 def pack(payload_bytes, key):
-    """Same container the app already reads: prefix is the AAD."""
+    """Same container the app already reads: prefix is the AAD.
+
+    The nonce is DERIVED FROM THE PAYLOAD, not drawn at random, so sealing the
+    same lanes twice produces the same bytes. That is the whole point: with
+    os.urandom here, a monthly rebuild of council data nobody had amended still
+    produced 97 packages with 97 new hashes, and every rider re-downloaded
+    ~100 MB for nothing. Determinism is what makes "councils published nothing
+    new" a fact the build can check rather than a hope.
+
+    WHY THIS IS SAFE, since deriving a GCM nonce looks alarming
+    -----------------------------------------------------------
+    AES-GCM fails catastrophically when one (key, nonce) pair seals two
+    DIFFERENT plaintexts: the keystream repeats, so the ciphertexts XOR to the
+    plaintexts' XOR, and the GHASH subkey can be recovered from the pair, which
+    hands an attacker forgeries for that key. So the property that has to hold
+    is "different plaintext, different nonce" - NOT "every encryption gets a
+    fresh nonce".
+
+    A PRF of the plaintext gives exactly that property:
+
+      * identical plaintext -> identical nonce. Not reuse across two messages:
+        it is the SAME message sealed twice, which yields a byte-for-byte
+        identical file and so tells an attacker nothing a second copy of the
+        file would not have told them anyway.
+      * different plaintext -> different nonce, unless HMAC-SHA256 truncated to
+        96 bits collides. That is a birthday bound of 2**48 packages; we publish
+        about a hundred a month, and an attacker cannot search for a collision
+        without the key.
+
+    This is the synthetic-IV construction that deterministic AEADs (AES-SIV,
+    RFC 5297) are built on, with the domain string keeping this use of the key
+    from colliding with any other.
+
+    What it gives up is real and is fine here: deterministic encryption leaks
+    that two packs have identical CONTENT. These are public rights of way
+    published under the Open Government Licence, whose whole purpose is to be
+    downloaded - and manifest.json already prints every pack's SHA-256 in the
+    clear, so pack equality was public before this line existed. The README is
+    blunt about what the sealing is for: "a speed bump, not a lock".
+
+    Nothing on the device changes. The nonce travels in the prefix exactly as
+    before and the reader takes it from there; it never recomputes it. Old and
+    new packs open identically.
+    """
     compressed = gzip.compress(payload_bytes, mtime=0)
-    nonce = os.urandom(NONCE_LEN)
+    nonce = hmac.new(key, b"tbpack-nonce-v1\x00" + compressed,
+                     hashlib.sha256).digest()[:NONCE_LEN]
     prefix = MAGIC + bytes([VERSION, ALG_AES_GCM_256]) + nonce
     sealed = AESGCM(key).encrypt(nonce, compressed, prefix)
     return prefix + sealed
@@ -469,11 +541,15 @@ def in_region(feature, box):
 
 
 def write_package(pkg_name, region_id, region_label, area_label, features,
-                  key, stamp):
+                  key, stamp, published=None):
     """Seal one downloadable piece.
 
     [area_label] is None when the whole region fits in one package; then the
     area IS the region and the app shows the region's name.
+
+    [published] is what is already on riders' phones, from published_packages().
+    It is what lets an unchanged package keep the date it was cut - and
+    therefore keep its bytes. See the comment on the seal below.
     """
     spec = PACKAGES[pkg_name]
     area_id = region_id if area_label is None else \
@@ -493,24 +569,68 @@ def write_package(pkg_name, region_id, region_label, area_label, features,
             "publishing."
             % (pkg_name, area_id, len(uids) - len(set(uids)), ", ".join(worst)))
 
-    collection = {
-        "type": "FeatureCollection",
-        "generated": stamp,
-        "package": pkg_name,
-        "region": region_id,
-        "area": area_id,
-        "label": "%s - %s" % (spec["label"], shown),
-        "note": spec["note"],
-        "attribution": OGL,
-        "features": features,
-    }
-    payload = json.dumps(collection, separators=(",", ":")).encode("utf8")
-    sealed = pack(payload, key)
+    def sealed_at(cut):
+        """Exactly the bytes this package publishes as, cut on [cut]."""
+        collection = {
+            "type": "FeatureCollection",
+            "generated": cut,
+            "package": pkg_name,
+            "region": region_id,
+            "area": area_id,
+            "label": "%s - %s" % (spec["label"], shown),
+            "note": spec["note"],
+            "attribution": OGL,
+            "features": features,
+        }
+        body = json.dumps(collection, separators=(",", ":")).encode("utf8")
+        return body, pack(body, key)
+
+    # An unchanged package keeps the date it was CUT, and so keeps its bytes.
+    #
+    # A deterministic nonce is not on its own enough to make a rebuild
+    # reproducible, because the build stamp is INSIDE the payload: rebuild
+    # untouched council data and the timestamp alone gives every package a new
+    # plaintext, a new ciphertext and a new hash. So the stamp cannot simply be
+    # "now" - it has to be the date this data was actually cut.
+    #
+    # Which we can establish exactly, without decrypting anything: seal the
+    # package with the date the published one claims, and see whether it
+    # reproduces the published SHA-256. It can only do that if every lane, its
+    # geometry and its label are identical to what is already on riders'
+    # phones. Then the pack is republished unchanged and the rider downloads
+    # nothing.
+    #
+    # Riders are shown this date as when their lane data was cut. Advancing it
+    # monthly while the data underneath stood still was telling them their map
+    # was fresher than it was, which is the one direction a mapping app must
+    # never round in.
+    #
+    # A mismatch is always safe: it means "rebuild it", which is what happened
+    # every month before this existed. So a new zlib, a changed field order or
+    # a first publish costs one extra republish, never a stale one.
+    payload = sealed = None
+    previous = (published or {}).get("%s/%s" % (pkg_name, area_id))
+    if previous and previous.get("generated") and previous.get("sha256"):
+        payload, sealed = sealed_at(previous["generated"])
+        if hashlib.sha256(sealed).hexdigest() == previous["sha256"]:
+            stamp = previous["generated"]
+        else:
+            payload = sealed = None
+    if sealed is None:
+        payload, sealed = sealed_at(stamp)
 
     pkg_dir = os.path.join(dist_dir(), "packages")
     os.makedirs(pkg_dir, exist_ok=True)
-    date = stamp[:10]
-    fname = "%s-%s-%s.tbpack" % (pkg_name, area_id, date)
+    # No build date in the name.
+    #
+    # The date made every run write new paths whatever was in them, so git saw
+    # a whole new set of files even when the bytes were identical, and the
+    # "nothing new" branch in the refresh workflow could never fire. Nothing
+    # downstream wants it: the app saves each pack under a dateless local name
+    # so a new build supersedes the old copy on the device, and the workflow
+    # replaces the packages directory wholesale, so nothing accumulates here
+    # either.
+    fname = "%s-%s.tbpack" % (pkg_name, area_id)
     out = os.path.join(pkg_dir, fname)
     with open(out, "wb") as fh:
         fh.write(sealed)
@@ -542,6 +662,12 @@ def main():
     ap.add_argument("--only", help="comma-separated package names")
     ap.add_argument("--allow-orphans", action="store_true",
                     help="publish even though some lanes match no region")
+    ap.add_argument("--previous",
+                    default=os.path.join(repo_root(), "manifest.json"),
+                    help="the published manifest. A package whose lanes have "
+                         "not changed since it keeps the date it was cut, and "
+                         "so rebuilds byte for byte. Pass '' to rebuild "
+                         "everything as new.")
     args = ap.parse_args()
 
     key = load_key(args.key)
@@ -556,6 +682,11 @@ def main():
     stamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     wanted = [p.strip() for p in args.only.split(",")] if args.only \
         else list(PACKAGES)
+
+    published = published_packages(args.previous)
+    if published:
+        print("\ncomparing against %d published packages in %s"
+              % (len(published), args.previous))
 
     entries = []
     orphans = []
@@ -575,15 +706,19 @@ def main():
             placed.update(f["properties"]["lane_uid"] for f in features)
             for area_label, part in split_by_authority(features):
                 entry = write_package(pkg_name, region_id, region_label,
-                                      area_label, part, key, stamp)
+                                      area_label, part, key, stamp,
+                                      published=published)
                 entries.append(entry)
                 over = "  OVER BUDGET" \
                     if entry["plainBytes"] > MAX_PLAIN_BYTES else ""
+                # Worth seeing per package, because it is what decides whether
+                # a rider spends their data on this build at all.
+                state = "unchanged" if entry["generated"] != stamp else ""
                 print("  %-9s %-34s %6d lanes  %5.1f MB sealed "
-                      "(%5.1f MB plain)%s"
+                      "(%5.1f MB plain) %-9s%s"
                       % (pkg_name, entry["area"], entry["laneCount"],
                          entry["bytes"] / 1048576,
-                         entry["plainBytes"] / 1048576, over))
+                         entry["plainBytes"] / 1048576, state, over))
 
         orphans.extend(
             f for f in pool if f["properties"]["lane_uid"] not in placed)
@@ -640,6 +775,15 @@ def main():
 
     print("\nwrote %s" % os.path.join(dist_dir(), "manifest.json"))
     print("timestamp: %s" % stamp)
+
+    # The number the publish step acts on, so it is in the log either way.
+    same = [e for e in entries if e["generated"] != stamp]
+    if published:
+        print("%d of %d packages are byte-identical to the published build"
+              % (len(same), len(entries)))
+        if len(same) == len(entries) and len(entries) == len(published):
+            print("nothing here has changed since %s - a rider who already "
+                  "has this data downloads nothing" % args.previous)
 
 
 if __name__ == "__main__":
