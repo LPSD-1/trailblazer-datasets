@@ -55,7 +55,21 @@ def areas_with_lanes(catalogue):
 
 
 def existing_satellite(catalogue):
-    """Satellite packs already published, by id, with when they were built."""
+    """When each area's imagery was last built, by the AREA's satellite id.
+
+    Keyed on the area rather than on the pack, because one area now publishes
+    one pack per detail tier - `gb-south-east-satellite-standard` and
+    `-high` - and the planner asks about `gb-south-east-satellite`. Keyed on
+    the pack id it found neither, decided the South East had never been built,
+    and would have rebuilt it every run for ever: a 20,000-tile fetch a night,
+    against a free service, for imagery already published.
+
+    The NEWEST of an area's tiers wins. They are written by one run and share a
+    timestamp today, but a rebuild that failed part way through should leave
+    the area looking as old as its oldest half rather than as young as its
+    newest - so `min` would be the safer choice if they ever diverge. They
+    cannot: record_satellite.py stamps every entry of a run with one value.
+    """
     out = {}
     for continent in catalogue.get("continents", []):
         for country in continent.get("countries", []):
@@ -63,7 +77,16 @@ def existing_satellite(catalogue):
                 for pack in area.get("packs", []):
                     if pack.get("kind") != "basemap":
                         continue
-                    out[pack["id"]] = pack.get("generated")
+                    # `<area>-satellite-<tier>` and the older untiered
+                    # `<area>-satellite` both belong to the same area.
+                    pid = pack.get("id", "")
+                    marker = "-satellite"
+                    at = pid.find(marker)
+                    key = pid[: at + len(marker)] if at >= 0 else pid
+                    was = out.get(key)
+                    now = pack.get("generated")
+                    if was is None or (now is not None and now < was):
+                        out[key] = now
     return out
 
 

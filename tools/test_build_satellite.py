@@ -87,6 +87,36 @@ def main():
     ids = [t["id"] for t in tiers]
     check(len(set(ids)) == len(ids), "two tiers share an id: %s" % ids)
 
+    # THE PLANNER MUST RECOGNISE ITS OWN OUTPUT. One area now publishes one
+    # pack per tier, with the tier in the id, and the planner asks about the
+    # area. Keyed on the pack id it found neither, concluded the area had never
+    # been built, and would have re-fetched it every run for ever against a
+    # free service.
+    plan = importlib.util.spec_from_file_location(
+        "satellite_plan", os.path.join(HERE, "satellite_plan.py"))
+    sp = importlib.util.module_from_spec(plan)
+    plan.loader.exec_module(sp)
+
+    built = {
+        "continents": [{"countries": [{"areas": [{
+            "packs": [
+                {"kind": "basemap", "id": "gb-south-east-satellite-standard",
+                 "generated": "2026-09-12T21:21:00Z"},
+                {"kind": "basemap", "id": "gb-south-east-satellite-high",
+                 "generated": "2026-09-12T21:21:00Z"},
+            ]}]}]}],
+    }
+    seen = sp.existing_satellite(built)
+    check("gb-south-east-satellite" in seen,
+          "the planner cannot see its own tiered packs: %s" % sorted(seen))
+
+    # And the shape published before tiers existed still counts.
+    old = {"continents": [{"countries": [{"areas": [{"packs": [
+        {"kind": "basemap", "id": "gb-midlands-satellite",
+         "generated": "2026-09-12T19:06:35Z"}]}]}]}]}
+    check("gb-midlands-satellite" in sp.existing_satellite(old),
+          "an untiered pack published earlier stopped counting")
+
     if failures:
         for f in failures:
             print("FAIL: %s" % f, file=sys.stderr)
