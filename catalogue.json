@@ -1,6 +1,6 @@
 {
  "schema": 2,
- "generated": "2026-09-12T21:34:55Z",
+ "generated": "2026-09-12T23:02:42Z",
  "attribution": "Map and routing data (c) OpenStreetMap contributors, ODbL. United Kingdom rights of way contain public sector information licensed under the Open Government Licence v3.0, via rowmaps.com.",
  "baseUrl": "https://lpsd-1.github.io/trailblazer-datasets/",
  "updates": {
@@ -2440,6 +2440,14 @@
          "generated": "2026-09-11T22:40:02Z"
         },
         {
+         "id": "gb-east-anglia-names",
+         "kind": "names",
+         "label": "Place search",
+         "file": "https://lpsd-1.github.io/trailblazer-datasets/names/east-anglia.tbnames",
+         "sha256": "3e2f8c3321ea098ae059c1080e913a922afdfdbf9f3387bbc08f836b6242bee3",
+         "bytes": 6019510
+        },
+        {
          "id": "gb-trips",
          "kind": "trips",
          "label": "Ready-made trips",
@@ -2799,6 +2807,14 @@
          "generated": "2026-09-12T19:06:35Z"
         },
         {
+         "id": "gb-midlands-names",
+         "kind": "names",
+         "label": "Place search",
+         "file": "https://lpsd-1.github.io/trailblazer-datasets/names/midlands.tbnames",
+         "sha256": "f78584933aad498262b8c12049ee893697326922800c7f693485eb5a3696399d",
+         "bytes": 9483269
+        },
+        {
          "id": "gb-trips",
          "kind": "trips",
          "label": "Ready-made trips",
@@ -3047,6 +3063,14 @@
          "generated": "2026-09-12T21:21:00Z"
         },
         {
+         "id": "gb-south-east-names",
+         "kind": "names",
+         "label": "Place search",
+         "file": "https://lpsd-1.github.io/trailblazer-datasets/names/south-east.tbnames",
+         "sha256": "9521f16b0b9c544c38a7f5ee4bcd0d7a461d8b861ba7020af2b27e6294a25697",
+         "bytes": 13926790
+        },
+        {
          "id": "gb-trips",
          "kind": "trips",
          "label": "Ready-made trips",
@@ -3247,6 +3271,14 @@
          "legalBasis": "official",
          "note": "Every recorded right of way.",
          "generated": "2026-09-10T14:40:52Z"
+        },
+        {
+         "id": "gb-south-west-names",
+         "kind": "names",
+         "label": "Place search",
+         "file": "https://lpsd-1.github.io/trailblazer-datasets/names/south-west.tbnames",
+         "sha256": "edfc1982456e6d087d6d80a8e0aa256ca744e7b5a2e8836bd8d174c331ee996f",
+         "bytes": 6313834
         },
         {
          "id": "gb-trips",
@@ -3563,6 +3595,14 @@
          "generated": "2026-09-10T14:40:52Z"
         },
         {
+         "id": "gb-north-names",
+         "kind": "names",
+         "label": "Place search",
+         "file": "https://lpsd-1.github.io/trailblazer-datasets/names/north.tbnames",
+         "sha256": "80b38f45bdc88a65357805210fb440097b220cbd18c6df02cbf5078553038a74",
+         "bytes": 14970754
+        },
+        {
          "id": "gb-trips",
          "kind": "trips",
          "label": "Ready-made trips",
@@ -3805,6 +3845,14 @@
          "legalBasis": "official",
          "note": "Every recorded right of way.",
          "generated": "2026-09-10T14:40:52Z"
+        },
+        {
+         "id": "gb-wales-names",
+         "kind": "names",
+         "label": "Place search",
+         "file": "https://lpsd-1.github.io/trailblazer-datasets/names/wales.tbnames",
+         "sha256": "83d89b7d9e18a989f825edbe3fcc4663f5f25920aa2da27f1e0594cf9f70660c",
+         "bytes": 3303343
         },
         {
          "id": "gb-trips",
