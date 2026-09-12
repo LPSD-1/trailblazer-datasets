@@ -10,9 +10,10 @@ name: Build satellite imagery
 #   wales        6,767   26,675     midlands     6,859   26,854
 #   south-west   8,580   34,124     north       13,682   53,778
 #
-# The North alone now exceeds the 40,000-tile budget, so it takes two nights
-# and resumes from the cache. A full pass is about seven runs rather than the
-# six it was, after which the job idles until the oldest pack is 25 days old.
+# The budget is 55,000, sized to the North so every region still fits in one
+# run - that is what splitting by area was for. Six areas, six runs, and at
+# twice daily that is three days; after which the job idles until the oldest
+# pack is 25 days old.
 #
 # Both tiers come out of one fetch: a z0-14 archive contains z0-13, so this
 # publishes Standard and High detail without fetching anything twice. Together
