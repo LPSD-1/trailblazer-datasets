@@ -73,6 +73,13 @@ jobs:
       - name: Install dependencies
         run: pip install --quiet Pillow
 
+      # Cheap, and it guards a number nobody ever sees: the app picks the
+      # coarsest tier for any rider who has not chosen one, by sorting on
+      # `groundMetresPerPixel`. Written the wrong way round, every such rider
+      # silently gets the largest file published instead of the smallest.
+      - name: Check the imagery tiers
+        run: python tools/test_build_satellite.py
+
       # Which area, if any. The plan is derived from the catalogue's own
       # areas, so adding a lane region adds an imagery region with no second
       # list to keep in step.
