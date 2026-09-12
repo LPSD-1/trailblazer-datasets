@@ -4,9 +4,15 @@ name: Refresh lane data
 # repository is public because the app has to download from it without
 # credentials.
 #
-# Monthly, because that is roughly how often councils amend a definitive map.
-# Running it weekly would republish 100 MB of near-identical packages and make
-# every rider re-download them for nothing.
+# Monthly, because that is roughly how often councils amend a definitive map,
+# and because the fetch is 25 minutes of somebody else's bandwidth.
+#
+# It used to also be because a run republished 100 MB of near-identical packs
+# and made every rider re-download them for nothing. That is no longer true:
+# the build is reproducible, so a run over unchanged council data produces
+# byte-identical packs and publishes nothing at all. Running this more often
+# now costs rowmaps.com a fetch and costs riders nothing - which is the right
+# way round, and the reason the frequency could be revisited.
 on:
   schedule:
     - cron: '17 3 1 * *'   # 03:17 UTC on the 1st
@@ -204,20 +210,55 @@ jobs:
       # Nothing below here runs unless every check above passed.
       - name: Publish
         run: |
+          # Scaffolding for check_build, never published beside the packs.
+          rm -f dist/packages/*.sha256
+
+          # Did this build actually produce anything new?
+          #
+          # Asked of the PACKS, before anything is moved, because they are what
+          # a rider pays to download. The build is reproducible now - the nonce
+          # is derived from the payload and a package whose lanes have not
+          # changed keeps the date it was cut - so identical council data
+          # rebuilds to identical bytes and this comparison is exact.
+          #
+          # It used to be asked of `git diff --cached` after the move, and it
+          # could never say yes: every pack carried a random nonce and the
+          # build date in its filename, so every monthly run wrote ~100 MB of
+          # new paths with new hashes and every rider re-downloaded the lot to
+          # arrive at the same lanes they already had.
+          #
+          # manifest.json and catalogue.json are deliberately NOT part of the
+          # question and are not moved when the answer is no. Both carry a
+          # `generated` stamp, and the catalogue also carries routing tile
+          # sizes that upstream rebuilds nightly, so both differ on every run
+          # whatever the lanes did - which is precisely what made this
+          # unanswerable before. Holding them back costs nothing: the imagery
+          # and routing-mirror workflows rebuild and commit the catalogue on
+          # their own clocks, and each pack's `generated` is shown to riders as
+          # the date their lane data was CUT. Advancing that monthly over data
+          # that never moved told them their map was fresher than it was.
+          #
+          # The trips pack is in the question because it is published by this
+          # job and its hash is carried in the catalogue: publishing a rebuilt
+          # trips pack against a held-back catalogue would hand riders a
+          # download that fails its own checksum.
+          if [ -d packages ] \
+             && diff -rq packages dist/packages >/dev/null 2>&1 \
+             && git diff --quiet -- trips/gb.tbtrips; then
+            echo "Councils published nothing new. Leaving the last build in place."
+            echo "Every pack is byte-identical to the published one, so nobody"
+            echo "re-downloads anything and the cut dates riders see stay true."
+            exit 0
+          fi
+
           rm -rf packages
           mv dist/packages packages
-          rm -f packages/*.sha256
           mv dist/manifest.json manifest.json
           mv dist/catalogue.json catalogue.json
 
           git config user.name  'Trail Blazer data bot'
           git config user.email 'noreply@github.com'
           git add -A packages manifest.json catalogue.json trips/gb.tbtrips
-
-          if git diff --cached --quiet; then
-            echo "Councils published nothing new. Leaving the last build in place."
-            exit 0
-          fi
 
           # The lane count is the number worth seeing in the commit list: it is
           # the one that moves when a council amends its map.
