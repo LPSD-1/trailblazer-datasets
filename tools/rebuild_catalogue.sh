@@ -48,7 +48,18 @@ ARGS=(--lanes "$LANES" --base-url "$BASE_URL" --out "$OUT")
   --routing-mirror-base "$REPO_URL/releases/download/routing/"
 )
 [ -f trips/gb.tbtrips ] && ARGS+=(--trips trips/gb.tbtrips)
-[ -d names ] && ARGS+=(--names names)
+# NOT YET. The packs are built and committed; publishing them is held back
+# until an app that can read them is in riders' hands.
+#
+# `PackKind.parse` returns null for a kind it does not know, and `Pack.fromJson`
+# turns that into "The data index lists something this version cannot read" for
+# the WHOLE catalogue — so one unknown pack does not degrade gracefully, it
+# takes every download on every older install with it. Publishing `names`
+# before the app shipped did exactly that, and `real_catalogue_test.dart`
+# caught it by parsing the live file with the app's own reader.
+#
+# Uncomment when a build that knows `names` is out.
+# [ -d names ] && ARGS+=(--names names)
 
 echo "rebuilding catalogue with: ${ARGS[*]}"
 python tools/build_catalogue.py "${ARGS[@]}"

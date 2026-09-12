@@ -47,7 +47,9 @@ def main():
     ap.add_argument("--satellite", default="satellite/index.json")
     ap.add_argument("--routing", default="routing/index.json")
     ap.add_argument("--trips", default="trips/gb.tbtrips")
-    ap.add_argument("--names", default="names")
+    ap.add_argument("--published", default="catalogue.json",
+                    help="the catalogue currently published, to compare "
+                         "against; '' to skip")
     args = ap.parse_args()
 
     catalogue = load(args.catalogue)
@@ -97,16 +99,31 @@ def main():
     # passed --names. So every catalogue any workflow built offered no place
     # search at all, exactly the silent-deletion failure this file exists to
     # catch, in the one index it had never been told about.
-    if os.path.isdir(args.names):
-        on_disk = {f for f in os.listdir(args.names) if f.endswith(".tbnames")}
-        if on_disk:
-            offered = {p.get("file", "").rsplit("/", 1)[-1]
-                       for p in packs_in(catalogue) if p.get("kind") == "names"}
-            dropped = sorted(on_disk - offered)
-            if dropped:
-                problems.append(
-                    "%d gazetteer pack(s) on disk and absent from the "
-                    "catalogue: %s" % (len(dropped), ", ".join(dropped[:5])))
+    # ONCE PUBLISHED, NEVER DROPPED - which is not the same question as "is
+    # everything on disk offered".
+    #
+    # The first version asked the second question and was wrong the first time
+    # it mattered. The gazetteer packs are built and committed but deliberately
+    # NOT published yet: `PackKind.parse` returns null for a kind it does not
+    # know and `Pack.fromJson` turns that into a refusal of the WHOLE
+    # catalogue, so shipping `names` before an app that reads it took every
+    # download on every older install with it. A check that cannot tell "held
+    # back on purpose" from "dropped by accident" forces you to disable it,
+    # and a disabled check catches nothing.
+    #
+    # So this compares against what was LAST published, which is the actual
+    # subject of this file: a kind that has reached riders must not vanish.
+    published = load(args.published) if args.published else None
+    if published:
+        was = {p.get("id") for p in packs_in(published)
+               if p.get("kind") == "names"}
+        now = {p.get("id") for p in packs_in(catalogue)
+               if p.get("kind") == "names"}
+        lost = sorted(was - now)
+        if lost:
+            problems.append(
+                "%d gazetteer pack(s) were published and are now absent: %s"
+                % (len(lost), ", ".join(lost[:5])))
 
     # --- trips ---------------------------------------------------------------
     book = load(args.trips)
