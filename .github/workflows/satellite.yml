@@ -2,10 +2,21 @@ name: Build satellite imagery
 
 # Daily, and it decides for itself whether there is anything to do.
 #
-# One AREA per run. The Midlands is 6,859 tiles at z13 and the largest, the
-# North, is 13,682 — each a single polite run of under an hour. Six areas cover
-# Britain, so a full pass takes under a week and then the job idles until the
-# oldest pack is 25 days old, which lands the next release about a month later.
+# One AREA per run, and since the move to z14 an area may take more than one.
+# Counted from the tool's own tile maths rather than remembered:
+#
+#              z0-13    z0-14
+#   east-anglia  3,983   15,295     south-east   5,013   19,358
+#   wales        6,767   26,675     midlands     6,859   26,854
+#   south-west   8,580   34,124     north       13,682   53,778
+#
+# The North alone now exceeds the 40,000-tile budget, so it takes two nights
+# and resumes from the cache. A full pass is about seven runs rather than the
+# six it was, after which the job idles until the oldest pack is 25 days old.
+#
+# Both tiers come out of one fetch: a z0-14 archive contains z0-13, so this
+# publishes Standard and High detail without fetching anything twice. Together
+# they are roughly 3.9 GB of release assets for Britain.
 #
 # Nothing here needs a human. It picks the area, fetches it, packages it,
 # publishes it, records it and stops. A run that finds nothing due exits in
@@ -35,9 +46,16 @@ concurrency:
 jobs:
   imagery:
     runs-on: ubuntu-latest
-    # The North is ~14k tiles at three connections with backoff. Two hours is
-    # ample; this only guards against a hung request holding a runner all day.
-    timeout-minutes: 180
+    # SIZED AGAINST THE BUDGET, not against an area. It was 180 minutes when
+    # the largest area was 13,682 tiles at z13 and a run was "under an hour".
+    # At z14 a full-budget run is 40,000 tiles — roughly three hours at the
+    # same polite rate — so 180 was about to start timing out the nightly job
+    # on the larger regions, on the first night this ran.
+    #
+    # 350 leaves real headroom under GitHub's own six-hour ceiling. The guard
+    # it provides is still the one that matters: a hung request must not hold
+    # a runner all day.
+    timeout-minutes: 350
 
     steps:
       - uses: actions/checkout@v4
@@ -84,9 +102,23 @@ jobs:
         if: steps.plan.outputs.work != 'true'
         run: echo "Everything is current. No bandwidth spent."
 
-      # Survives a failed job, so a run that dies at tile 12,000 of 13,682
-      # resumes rather than starting again. Keyed by month as well as area, so
-      # a rebuild genuinely re-fetches rather than repackaging stale imagery.
+      # Resumption rests on a run SUCCEEDING, not on surviving a failure.
+      #
+      # This said "survives a failed job". It does not: actions/cache declares
+      # `post-if: success()`, so a job that fails saves nothing and the next
+      # night starts from an empty staging directory. What actually makes a
+      # multi-night area work is that a run which merely exhausts its budget
+      # EXITS ZERO - it prints what is left and stops - so the cache is written
+      # and the next run picks it up.
+      #
+      # Which is why the timeout above is sized against the budget. A run that
+      # overruns is a run whose entire night of tiles is thrown away, and at
+      # z14 the North needs two nights: had the 180-minute timeout stayed, the
+      # larger regions could have failed, discarded everything and retried for
+      # ever without converging.
+      #
+      # Keyed by month as well as area, so a rebuild genuinely re-fetches
+      # rather than repackaging stale imagery.
       - name: Restore the staged tiles
         if: steps.plan.outputs.work == 'true'
         uses: actions/cache@v4
