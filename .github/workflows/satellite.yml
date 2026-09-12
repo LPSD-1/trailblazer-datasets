@@ -23,7 +23,13 @@ name: Build satellite imagery
 # seconds having spent no bandwidth.
 on:
   schedule:
-    - cron: '41 2 * * *'   # 02:41 UTC daily, off the hour to be a good citizen
+    # Twice daily while Britain is being brought up to two tiers from nothing:
+    # six areas at one run each is three days rather than six. Put back to a
+    # single nightly run once the first full pass has landed - past that the
+    # job is only refreshing packs older than 25 days and has no reason to ask
+    # a free service for more than one area a night.
+    - cron: '41 2 * * *'    # 02:41 UTC, off the hour to be a good citizen
+    - cron: '41 14 * * *'   # and again mid-afternoon UTC
   workflow_dispatch:
     inputs:
       area:
@@ -142,8 +148,16 @@ jobs:
           MAXZ=$(echo "$PLAN" | python -c 'import json,sys;print(json.load(sys.stdin)["max_zoom"])')
 
           mkdir -p dist/satellite
-          # A budget high enough to finish the largest area in one run, since
-          # the whole point of splitting by area was that each one fits.
+          # Sized to the LARGEST AREA, not to the timeout: the North is 53,778
+          # tiles at z14, so 55,000 puts every region back inside a single run
+          # the way splitting by area intended. It was 40,000, which fitted
+          # when z13 made the North 13,682 and would now have split it over two
+          # nights.
+          #
+          # This does not make the fetch ruder. The rate is the same three
+          # connections with backoff; the run simply lasts longer, and a
+          # 55,000-tile run is about four hours against the 350-minute ceiling
+          # above. Fewer, longer runs move the same bytes in fewer days.
           python tools/build_satellite.py \
             --bbox $BBOX \
             --id "${{ steps.plan.outputs.id }}" \
@@ -151,7 +165,7 @@ jobs:
             --max-zoom "$MAXZ" \
             --sharpen \
             --staging "staging/${{ steps.plan.outputs.id }}" \
-            --budget 40000 \
+            --budget 55000 \
             --package \
             --out "dist/satellite/${{ steps.plan.outputs.id }}.pmtiles" \
             --entry-out dist/satellite/entry.json
