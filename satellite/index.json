@@ -17,6 +17,24 @@
       "maxZoom": 13,
       "area": "gb-east-anglia",
       "generated": "2026-09-11T22:40:02Z"
+    },
+    {
+      "id": "gb-midlands-satellite",
+      "kind": "basemap",
+      "label": "Satellite - Midlands",
+      "file": "https://github.com/LPSD-1/trailblazer-datasets/releases/download/satellite/gb-midlands-satellite.pmtiles",
+      "sha256": "745dc8ad66d0a1a59990066cb88956a2923c152d987577cea663d33516849fd5",
+      "bytes": 104132317,
+      "bounds": {
+        "west": -3.25,
+        "south": 51.9,
+        "east": 0.15,
+        "north": 53.6
+      },
+      "note": "Sentinel-2 cloudless 2024 by EOX IT Services GmbH, CC BY 4.0. Contains modified Copernicus Sentinel data 2024.",
+      "maxZoom": 13,
+      "area": "gb-midlands",
+      "generated": "2026-09-12T19:06:35Z"
     }
   ]
 }
