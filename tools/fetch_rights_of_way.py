@@ -47,7 +47,11 @@ REQUEST_GAP_S = 1.5
 
 
 def cache_dir():
-    return os.path.join(os.path.dirname(os.path.abspath(__file__)), "cache")
+    # The repository root, one level above tools/, and it must stay the same
+    # directory build_packages.py reads: the workflow caches <root>/cache and
+    # nothing fetched into tools/cache was ever seen again.
+    return os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "cache")
 
 
 def get(url, timeout=60):

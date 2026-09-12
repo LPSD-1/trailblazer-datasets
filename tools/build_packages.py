@@ -262,12 +262,26 @@ def split_by_authority(features):
     return out
 
 
+def repo_root():
+    """The checkout, one level above tools/.
+
+    cache/ and dist/ belong to the REPOSITORY, not to this directory. They were
+    resolved against tools/ here and in fetch_rights_of_way.py, while every
+    workflow, .gitignore and the other tools use the root - so the monthly
+    refresh fetched into tools/cache, built into tools/dist, and then looked
+    for dist/manifest.json, which was not there. Anchoring both to the root is
+    what makes `python tools/build_packages.py` from the checkout agree with
+    the workflow that runs it.
+    """
+    return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
 def cache_dir():
-    return os.path.join(os.path.dirname(os.path.abspath(__file__)), "cache")
+    return os.path.join(repo_root(), "cache")
 
 
 def dist_dir():
-    return os.path.join(os.path.dirname(os.path.abspath(__file__)), "dist")
+    return os.path.join(repo_root(), "dist")
 
 
 def load_key(path):
