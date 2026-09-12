@@ -35,6 +35,54 @@
       "maxZoom": 13,
       "area": "gb-midlands",
       "generated": "2026-09-12T19:06:35Z"
+    },
+    {
+      "id": "gb-south-east-satellite-high",
+      "kind": "basemap",
+      "label": "Satellite - South East",
+      "file": "https://github.com/LPSD-1/trailblazer-datasets/releases/download/satellite/gb-south-east-satellite-high.pmtiles",
+      "sha256": "8f860f83a2406dc06acef9696ffa0e5500af46af29d0e9cab737da8bcca178d9",
+      "bytes": 173732771,
+      "bounds": {
+        "west": -1.85,
+        "south": 50.5,
+        "east": 1.45,
+        "north": 51.8
+      },
+      "note": "Sentinel-2 cloudless 2024 by EOX IT Services GmbH, CC BY 4.0. Contains modified Copernicus Sentinel data 2024.",
+      "maxZoom": 14,
+      "detail": {
+        "id": "high",
+        "label": "High detail",
+        "description": "Twice the pixels when you zoom right in. The same 10 m satellite behind it - what improves is how it is drawn, not what it can show.",
+        "groundMetresPerPixel": 4.8
+      },
+      "area": "gb-south-east",
+      "generated": "2026-09-12T21:21:00Z"
+    },
+    {
+      "id": "gb-south-east-satellite-standard",
+      "kind": "basemap",
+      "label": "Satellite - South East",
+      "file": "https://github.com/LPSD-1/trailblazer-datasets/releases/download/satellite/gb-south-east-satellite-standard.pmtiles",
+      "sha256": "09b19d408d0f9054ac87914463ff16888e59fe5a4c407a481f413ee4e511ef41",
+      "bytes": 60989442,
+      "bounds": {
+        "west": -1.85,
+        "south": 50.5,
+        "east": 1.45,
+        "north": 51.8
+      },
+      "note": "Sentinel-2 cloudless 2024 by EOX IT Services GmbH, CC BY 4.0. Contains modified Copernicus Sentinel data 2024.",
+      "maxZoom": 13,
+      "detail": {
+        "id": "standard",
+        "label": "Standard",
+        "description": "The whole area at the source's own resolution. A quarter of the size.",
+        "groundMetresPerPixel": 9.6
+      },
+      "area": "gb-south-east",
+      "generated": "2026-09-12T21:21:00Z"
     }
   ]
 }

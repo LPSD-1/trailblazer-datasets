@@ -302,6 +302,25 @@ jobs:
           SIZE=$(python -c "import glob,os;print('%.0f MB' % (sum(os.path.getsize(p) for p in glob.glob('dist/satellite/*.pmtiles'))/1048576))")
           git commit -m "Satellite: ${{ steps.plan.outputs.id }} (${SIZE})" \
                      -m "Sentinel-2 cloudless via EOX, CC BY 4.0."
+          # PULL BEFORE PUSHING, or a long job loses everything it did.
+          #
+          # These jobs run for tens of minutes against a checkout taken at the
+          # start. Anything else committing to main in the meantime - another
+          # of these three workflows, or a person - makes the push a
+          # non-fast-forward, and the job fails AFTER uploading its release
+          # assets: the bytes are published and the index that points at them
+          # is not, so the catalogue never learns they exist.
+          #
+          # That is exactly what happened to the first South East imagery run:
+          # 47 minutes of fetching, 224 MB uploaded, and the record lost to
+          # five unrelated commits pushed while it worked. Rebase and retry -
+          # these jobs touch different files, so a rebase is the ordinary case
+          # rather than a conflict.
+          for attempt in 1 2 3; do
+            git pull --rebase --autostash origin main && break
+            echo "rebase attempt $attempt failed; retrying"
+            sleep $((attempt * 5))
+          done
           git push
 
       # Anything we publish and no longer should. Nothing else removes
@@ -328,6 +347,11 @@ jobs:
             git add -A satellite/index.json routing/index.json
             git diff --cached --quiet || {
               git commit -m "Prune withdrawn packs"
+              # Rebase first, for the reason given at the main push above.
+              for attempt in 1 2 3; do
+                git pull --rebase --autostash origin main && break
+                sleep $((attempt * 5))
+              done
               git push
             }
           fi
