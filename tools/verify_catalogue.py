@@ -47,6 +47,7 @@ def main():
     ap.add_argument("--satellite", default="satellite/index.json")
     ap.add_argument("--routing", default="routing/index.json")
     ap.add_argument("--trips", default="trips/gb.tbtrips")
+    ap.add_argument("--names", default="names")
     args = ap.parse_args()
 
     catalogue = load(args.catalogue)
@@ -87,6 +88,25 @@ def main():
             problems.append(
                 "%d mirrored routing tile(s) wrong or missing: %s"
                 % (len(wrong), ", ".join(wrong[:5])))
+
+    # --- place names ---------------------------------------------------------
+    #
+    # The kind this check did not know about, and the gap was live: the
+    # gazetteer packs were written to dist/, which is gitignored, and
+    # rebuild_catalogue.sh - "THE only way any workflow may do it" - never
+    # passed --names. So every catalogue any workflow built offered no place
+    # search at all, exactly the silent-deletion failure this file exists to
+    # catch, in the one index it had never been told about.
+    if os.path.isdir(args.names):
+        on_disk = {f for f in os.listdir(args.names) if f.endswith(".tbnames")}
+        if on_disk:
+            offered = {p.get("file", "").rsplit("/", 1)[-1]
+                       for p in packs_in(catalogue) if p.get("kind") == "names"}
+            dropped = sorted(on_disk - offered)
+            if dropped:
+                problems.append(
+                    "%d gazetteer pack(s) on disk and absent from the "
+                    "catalogue: %s" % (len(dropped), ", ".join(dropped[:5])))
 
     # --- trips ---------------------------------------------------------------
     book = load(args.trips)

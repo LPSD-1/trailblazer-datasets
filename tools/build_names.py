@@ -138,9 +138,19 @@ def fold(text):
 #   * London goes to the South East. It belongs to neither properly, and it is
 #     the one part of Britain with no green lanes in it at all.
 #
-# Scotland has no lane packs, so its names get a pack of their own rather than
-# being dropped: a rider touring north still wants to type a village, and the
-# catalogue can decide whether to offer it.
+# Scotland gets a pack built but NOT published, and the distinction is the
+# point. It has no lane area, so the catalogue has nowhere to attach it: a
+# names pack is offered beside the lanes for the same ground, and where we
+# publish no rights of way there is no ground to sit beside.
+#
+# `verify_catalogue.py` refuses a build where a pack on disk reaches no
+# catalogue entry, and it caught this the first time it ran. Leaving the file
+# out of `names/` is the honest resolution - shipping 5.6 MB of place names for
+# a country the app has nothing to say about is bytes spent on nothing, which
+# is the same reasoning `satellite_plan.py` gives for imagery.
+#
+# The day a Scottish lane area is published, put the file back and it is
+# offered automatically.
 REGION_TO_AREA = {
     "South West": "south-west",
     "South East": "south-east",

@@ -48,6 +48,7 @@ ARGS=(--lanes "$LANES" --base-url "$BASE_URL" --out "$OUT")
   --routing-mirror-base "$REPO_URL/releases/download/routing/"
 )
 [ -f trips/gb.tbtrips ] && ARGS+=(--trips trips/gb.tbtrips)
+[ -d names ] && ARGS+=(--names names)
 
 echo "rebuilding catalogue with: ${ARGS[*]}"
 python tools/build_catalogue.py "${ARGS[@]}"
