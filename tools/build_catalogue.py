@@ -347,13 +347,55 @@ def trips_pack(path, base_url):
     }
 
 
+def names_packs(names_dir, base_url):
+    """The gazetteer packs, one per region, keyed by the region they cover.
+
+    Built by build_names.py from OS Open Names - 1.7 million unit postcodes,
+    882,000 named roads and every settlement in Great Britain, under the Open
+    Government Licence. Without them, typing a postcode or a village needs a
+    signal, which is the wrong way round for this app.
+
+    Split by the SAME regions the lane packs use, so "download the Midlands"
+    means one shape of ground rather than two.
+    """
+    if not names_dir or not os.path.isdir(names_dir):
+        # Loudly, for the reason trips_pack gives: a workflow quietly
+        # publishing a catalogue with no names in it leaves no trace, and the
+        # only symptom is a rider typing their own village and being told to
+        # find a signal.
+        print("warning: %s is missing; NO offline place search in this build"
+              % names_dir, file=sys.stderr)
+        return {}
+
+    out = {}
+    for name in sorted(os.listdir(names_dir)):
+        if not name.endswith(".tbnames"):
+            continue
+        region = name[: -len(".tbnames")]
+        path = os.path.join(names_dir, name)
+        size = os.path.getsize(path)
+        out[region] = {
+            "id": "gb-%s-names" % region,
+            "kind": "names",
+            "label": "Place search",
+            "file": urllib.parse.urljoin(base_url, "names/%s" % name),
+            "sha256": _sha256_of(path),
+            "bytes": size,
+        }
+    if out:
+        total = sum(p["bytes"] for p in out.values())
+        print("  %d gazetteer packs (%.1f MB)" % (len(out), total / 1e6))
+    return out
+
+
 def build(lanes_manifest, base_url, stamp, satellite_index=None,
           routing_mirror_index=None, routing_mirror_base="",
-          trips_index=None):
+          trips_index=None, names_dir=None):
     tile_sizes = routing_index()
     gb_areas = lane_areas(lanes_manifest)
     imagery = satellite_packs(satellite_index)
     trips = trips_pack(trips_index, base_url)
+    names = names_packs(names_dir, base_url)
     mirror = mirrored_routing(routing_mirror_index)
     if mirror:
         print("  %d routing tiles served from our own mirror" % len(mirror))
@@ -374,6 +416,15 @@ def build(lanes_manifest, base_url, stamp, satellite_index=None,
                 # rider choosing "the area I am in" gets both.
                 for pack in imagery.get(area["id"], []):
                     area.setdefault("packs", []).append(pack)
+                # The gazetteer for THIS ground, beside the lanes over it.
+                #
+                # Per area rather than duplicated into all of them the way
+                # trips are: trips are seven kilobytes and these are three to
+                # fifteen megabytes, so a rider downloading Wales should get
+                # Welsh names and not the whole country's.
+                region = area["id"][len("gb-"):]
+                if region in names:
+                    area.setdefault("packs", []).append(names[region])
                 areas.append(area)
 
             # Into EVERY area, not one of them.
@@ -474,6 +525,8 @@ def main():
                          "and simply leaves them pointing upstream")
     ap.add_argument("--routing-mirror-base", default="",
                     help="where our mirrored tiles are served from")
+    ap.add_argument("--names", default="dist/names",
+                    help="directory of .tbnames gazetteer packs")
     ap.add_argument("--out", default="dist/catalogue.json")
     args = ap.parse_args()
 
@@ -483,6 +536,7 @@ def main():
     catalogue = build(args.lanes, args.base_url, stamp,
                       satellite_index=args.satellite,
                       trips_index=args.trips,
+                      names_dir=args.names,
                       routing_mirror_index=args.routing_mirror,
                       routing_mirror_base=args.routing_mirror_base)
     os.makedirs(os.path.dirname(os.path.abspath(args.out)), exist_ok=True)

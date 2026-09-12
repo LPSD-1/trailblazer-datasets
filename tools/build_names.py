@@ -123,22 +123,68 @@ def fold(text):
     return _FOLD.sub("", text.lower())
 
 
-def area_of(row):
+# OS Open Names' own REGION, mapped onto the six areas this app browses lanes
+# by (the `regions` list in manifest.json). The grouping has to agree with the
+# lane packs, or a rider downloading "the Midlands" gets lanes for one shape of
+# ground and names for another.
+#
+# Two of these are judgement calls and should be read as such:
+#
+#   * "Eastern" is a bigger thing than East Anglia - it reaches down into
+#     Bedfordshire and Hertfordshire. Sent there anyway, because the
+#     alternative is splitting a region along county lines the source does not
+#     draw, and a name in the wrong pack costs a rider a download rather than
+#     a wrong answer.
+#   * London goes to the South East. It belongs to neither properly, and it is
+#     the one part of Britain with no green lanes in it at all.
+#
+# Scotland has no lane packs, so its names get a pack of their own rather than
+# being dropped: a rider touring north still wants to type a village, and the
+# catalogue can decide whether to offer it.
+REGION_TO_AREA = {
+    "South West": "south-west",
+    "South East": "south-east",
+    "London": "south-east",
+    "Eastern": "east-anglia",
+    "East of England": "east-anglia",
+    "West Midlands": "midlands",
+    "East Midlands": "midlands",
+    "North West": "north",
+    "North East": "north",
+    "Yorkshire and the Humber": "north",
+    "Wales": "wales",
+    "Scotland": "scotland",
+}
+
+
+def area_of(row, split):
     """Which pack a record belongs in.
 
-    County or unitary authority, because that is the unit the lane packs are
-    already split by and a rider downloading "Derbyshire" should get the lanes
-    and the names together rather than two differently-shaped choices.
+    By REGION, because that is how the app browses lane packs and a rider
+    downloading a place should get the lanes and the names for the same
+    ground. County is kept as an option: it produces 143 small packs, which
+    suits somebody who only ever rides one of them.
     """
-    for col in (C_COUNTY, C_REGION, C_COUNTRY):
-        value = row[col].strip() if len(row) > col else ""
-        if value:
-            return value
-    return "Great Britain"
+    if split == "county":
+        for col in (C_COUNTY, C_REGION, C_COUNTRY):
+            value = row[col].strip() if len(row) > col else ""
+            if value:
+                return value
+        return "great-britain"
+
+    region = row[C_REGION].strip() if len(row) > C_REGION else ""
+    mapped = REGION_TO_AREA.get(region)
+    if mapped:
+        return mapped
+    # An unrecognised region lands in its own pack rather than being silently
+    # binned. A renamed region upstream would otherwise drop a whole county's
+    # names, and the only symptom is a rider finding nothing where they live.
+    country = row[C_COUNTRY].strip() if len(row) > C_COUNTRY else ""
+    return REGION_TO_AREA.get(country) or "unassigned"
 
 
-def read_records(source):
-    """Every usable row, as (area, name, kind, county, easting, northing)."""
+def read_records(source, split):
+    """Every usable row, as (area, name, kind, context, easting, northing)."""
     with zipfile.ZipFile(source) as z:
         members = [n for n in z.namelist()
                    if n.startswith("Data/") and n.endswith(".csv")]
@@ -158,7 +204,7 @@ def read_records(source):
                     northing = int(float(row[C_Y]))
                 except ValueError:
                     continue
-                area = area_of(row)
+                area = area_of(row, split)
                 # The place a road is in, so "Elmhurst Drive" can be told from
                 # the other nine hundred of them. Falls back to the county.
                 # Town, then borough, then county. A road with no populated
@@ -249,13 +295,16 @@ def main():
     ap.add_argument("--out", required=True)
     ap.add_argument("--min-records", type=int, default=200,
                     help="skip areas with fewer than this")
+    ap.add_argument("--split", choices=("region", "county"), default="region",
+                    help="region matches how the app browses lane packs")
     args = ap.parse_args()
 
     os.makedirs(args.out, exist_ok=True)
 
     by_area = collections.defaultdict(list)
     total = 0
-    for area, name, kind, context, e, n in read_records(args.source):
+    for area, name, kind, context, e, n in read_records(args.source,
+                                                        args.split):
         by_area[area].append((name, kind, context, e, n))
         total += 1
         if total % 500000 == 0:
