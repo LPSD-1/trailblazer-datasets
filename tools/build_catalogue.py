@@ -390,10 +390,16 @@ def names_packs(names_dir, base_url):
 
 def build(lanes_manifest, base_url, stamp, satellite_index=None,
           routing_mirror_index=None, routing_mirror_base="",
-          trips_index=None, names_dir=None):
+          trips_index=None, names_dir=None, height_index=None):
     tile_sizes = routing_index()
     gb_areas = lane_areas(lanes_manifest)
     imagery = satellite_packs(satellite_index)
+    # Read exactly the way imagery is, and for exactly the same reason: the
+    # height job runs on its own clock, and a monthly lane refresh that
+    # rebuilt the catalogue without this would delete every height pack from
+    # every rider's Downloads screen with no code having changed. That has
+    # happened three times in this repository to other kinds.
+    heights = satellite_packs(height_index)
     trips = trips_pack(trips_index, base_url)
     names = names_packs(names_dir, base_url)
     mirror = mirrored_routing(routing_mirror_index)
@@ -415,6 +421,9 @@ def build(lanes_manifest, base_url, stamp, satellite_index=None,
                 # Imagery goes in beside the lanes for the same ground, so a
                 # rider choosing "the area I am in" gets both.
                 for pack in imagery.get(area["id"], []):
+                    area.setdefault("packs", []).append(pack)
+                # Ground height, beside the imagery over the same ground.
+                for pack in heights.get(area["id"], []):
                     area.setdefault("packs", []).append(pack)
                 # The gazetteer for THIS ground, beside the lanes over it.
                 #
@@ -525,6 +534,9 @@ def main():
                          "and simply leaves them pointing upstream")
     ap.add_argument("--routing-mirror-base", default="",
                     help="where our mirrored tiles are served from")
+    ap.add_argument("--height", default="height/index.json",
+                    help="record of published ground-height packs; missing is "
+                         "fine and simply means no hill shading in this build")
     ap.add_argument("--names", default="dist/names",
                     help="directory of .tbnames gazetteer packs")
     ap.add_argument("--out", default="dist/catalogue.json")
@@ -537,6 +549,7 @@ def main():
                       satellite_index=args.satellite,
                       trips_index=args.trips,
                       names_dir=args.names,
+                      height_index=args.height,
                       routing_mirror_index=args.routing_mirror,
                       routing_mirror_base=args.routing_mirror_base)
     os.makedirs(os.path.dirname(os.path.abspath(args.out)), exist_ok=True)

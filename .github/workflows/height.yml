@@ -1,0 +1,287 @@
+name: Build ground height
+
+# Nightly, and it decides for itself whether there is anything to do.
+#
+# One AREA per run, and every area fits comfortably in one. Counted from the
+# tool's own tile maths rather than remembered, at z0-12:
+#
+#   east-anglia    706      midlands   1,789      south-east   1,827
+#   south-west   2,397      wales      1,896      north        3,340
+#
+# So the largest area is 3,340 tiles - a twentieth of what an imagery run
+# fetches - and Britain is covered in six nights. After that the job idles
+# until a pack is six months old, because ground height does not change and
+# rebuilding is only for picking up an improved SOURCE.
+#
+# A run that finds nothing due exits in seconds having spent no bandwidth.
+on:
+  schedule:
+    - cron: '17 3 * * *'    # 03:17 UTC, off the hour and clear of the imagery
+                            # job at 02:41 so two builders never crawl at once
+  workflow_dispatch:
+    inputs:
+      refresh_after_days:
+        description: 'Rebuild anything older than this many days (0 = force the oldest)'
+        type: string
+        default: ''
+      vertical_step:
+        description: 'Metres per encoded height step. 0.5 is the default; 1 is a third smaller and terraces flat ground.'
+        type: string
+        default: '0.5'
+
+permissions:
+  contents: write   # to commit the record and upload the release asset
+  issues: write     # to raise one when a run fails
+
+concurrency:
+  group: height
+  cancel-in-progress: false   # never interrupt a run mid-publish
+
+jobs:
+  height:
+    runs-on: ubuntu-latest
+    # An order of magnitude under the imagery job because an area is an order
+    # of magnitude fewer tiles. Still generous: the guard that matters is that
+    # a hung request must not hold a runner all day.
+    timeout-minutes: 90
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install --quiet Pillow
+
+      # Cheap, and it guards two silent failures: a planner that cannot
+      # recognise its own published packs (which re-fetches every area for
+      # ever, against a free service), and a quantiser that moves the ground
+      # further than it claims to.
+      - name: Check the height builder
+        run: python tools/test_build_height.py
+
+      - name: What is due?
+        id: plan
+        run: |
+          # THE DEFAULT MATTERS. `inputs` exist only on a manual dispatch, so
+          # on the nightly SCHEDULE these expand to empty strings - and an
+          # empty string handed to argparse is not a missing argument, it is
+          # an invalid int. That exact mistake killed every scheduled run of
+          # the imagery job nine seconds in, for weeks, while the workflow
+          # raised an issue each time saying the build had failed.
+          REFRESH="${{ inputs.refresh_after_days }}"
+          ARGS=(--catalogue catalogue.json)
+          if [ -n "$REFRESH" ]; then
+            ARGS+=(--refresh-after-days "$REFRESH")
+          fi
+          PLAN=$(python tools/height_plan.py "${ARGS[@]}")
+          echo "$PLAN"
+          echo "plan=$PLAN" >> "$GITHUB_OUTPUT"
+          echo "work=$(echo "$PLAN" | python -c 'import json,sys;print(str(json.load(sys.stdin).get("work",False)).lower())')" >> "$GITHUB_OUTPUT"
+          echo "id=$(echo "$PLAN" | python -c 'import json,sys;print(json.load(sys.stdin).get("id",""))')" >> "$GITHUB_OUTPUT"
+          echo "area=$(echo "$PLAN" | python -c 'import json,sys;print(json.load(sys.stdin).get("area",""))')" >> "$GITHUB_OUTPUT"
+          echo "month=$(date -u +%Y-%m)" >> "$GITHUB_OUTPUT"
+
+      - name: Nothing to do
+        if: steps.plan.outputs.work != 'true'
+        run: echo "Every area is current. No bandwidth spent."
+
+      # Resumption rests on a run SUCCEEDING, not on surviving a failure:
+      # actions/cache declares `post-if: success()`, so a failed job saves
+      # nothing. A run that merely exhausts its budget exits zero, which is
+      # what lets a large area span nights if it ever needs to.
+      #
+      # Keyed by month as well as area so a rebuild genuinely re-fetches
+      # rather than repackaging the same staged tiles for ever.
+      - name: Restore the staged tiles
+        if: steps.plan.outputs.work == 'true'
+        uses: actions/cache@v4
+        with:
+          path: staging/height
+          key: height-${{ steps.plan.outputs.id }}-${{ steps.plan.outputs.month }}
+          restore-keys: height-${{ steps.plan.outputs.id }}-${{ steps.plan.outputs.month }}
+
+      - name: Fetch and package
+        if: steps.plan.outputs.work == 'true'
+        run: |
+          PLAN='${{ steps.plan.outputs.plan }}'
+          BBOX=$(echo "$PLAN" | python -c 'import json,sys;print(" ".join(str(v) for v in json.load(sys.stdin)["bbox"]))')
+          LABEL=$(echo "$PLAN" | python -c 'import json,sys;print(json.load(sys.stdin)["label"])')
+          MAXZ=$(echo "$PLAN" | python -c 'import json,sys;print(json.load(sys.stdin)["max_zoom"])')
+          STEP="${{ inputs.vertical_step }}"
+          STEP="${STEP:-0.5}"
+
+          mkdir -p dist/height
+          # Budget sized to the largest area with room to spare, so every
+          # region finishes in one run. The rate is unchanged - four
+          # connections with backoff - the run simply has room not to stop
+          # half way.
+          python tools/build_height.py \
+            --bbox $BBOX \
+            --id "${{ steps.plan.outputs.id }}" \
+            --label "$LABEL" \
+            --max-zoom "$MAXZ" \
+            --vertical-step "$STEP" \
+            --staging "staging/height/${{ steps.plan.outputs.id }}" \
+            --budget 6000
+
+          # A second pass packages it. The builder refuses to package an
+          # incomplete set, so a run that ran out of budget simply exits here
+          # having banked its tiles in the cache.
+          python tools/build_height.py \
+            --bbox $BBOX \
+            --id "${{ steps.plan.outputs.id }}" \
+            --label "$LABEL" \
+            --max-zoom "$MAXZ" \
+            --vertical-step "$STEP" \
+            --staging "staging/height/${{ steps.plan.outputs.id }}" \
+            --package \
+            --out "dist/height/${{ steps.plan.outputs.id }}.pmtiles" \
+            --entry-out dist/height/entry.json
+
+      # Did it actually produce a pack this run, or only bank tiles?
+      - name: Was a pack written?
+        id: packed
+        if: steps.plan.outputs.work == 'true'
+        run: |
+          if [ -f "dist/height/${{ steps.plan.outputs.id }}.pmtiles" ]; then
+            echo "packed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "packed=false" >> "$GITHUB_OUTPUT"
+            echo "Tiles banked; the set is not complete yet. Next run resumes."
+          fi
+
+      # The one check worth having: the app's own reader must be able to open
+      # it. A pack that packages cleanly and will not open is a pack every
+      # rider downloads and cannot use.
+      - name: Would the app be able to read it?
+        if: steps.packed.outputs.packed == 'true'
+        run: |
+          python - <<'PY'
+          import glob, struct, sys
+
+          paths = sorted(glob.glob("dist/height/*.pmtiles"))
+          if not paths:
+              sys.exit("no packs were written")
+
+          for path in paths:
+              with open(path, "rb") as f:
+                  head = f.read(127)
+              if head[:7] != b"PMTiles":
+                  sys.exit("%s: not a PMTiles archive" % path)
+              if head[7] != 3:
+                  sys.exit("%s: spec version %d, the app reads 3"
+                           % (path, head[7]))
+              # The reader refuses an unclustered archive outright, and
+              # nothing in the format documentation makes that obvious.
+              if head[96] != 1:
+                  sys.exit("%s: not clustered; the app will refuse it" % path)
+              # 2 is PNG. Terrarium cannot survive a lossy codec - the low
+              # bits ARE the height - so a JPEG archive here would decode to a
+              # landscape with the wrong shape and report nothing.
+              if head[99] != 2:
+                  sys.exit("%s: tiles are not PNG (type %d); height cannot "
+                           "survive JPEG" % (path, head[99]))
+              entries = struct.unpack_from("<Q", head, 80)[0]
+              if entries < 100:
+                  sys.exit("%s: only %d tiles; something went wrong"
+                           % (path, entries))
+              print("%s OK: %d tile entries, clustered, PNG"
+                    % (path, entries))
+          PY
+
+      # Once a pack is written the staged tiles have done their job. Left in
+      # place, the next rebuild would find every tile already there, fetch
+      # nothing, and republish byte-identical data - so the refresh would run
+      # for ever and nothing would ever change. That is a correctness fault
+      # wearing the clothes of untidiness.
+      - name: Clear the staged tiles
+        if: steps.packed.outputs.packed == 'true'
+        run: |
+          rm -rf "staging/height/${{ steps.plan.outputs.id }}"
+          echo "staged tiles cleared; next rebuild re-fetches"
+
+      - name: Publish
+        if: steps.packed.outputs.packed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          PACK="dist/height/${{ steps.plan.outputs.id }}.pmtiles"
+
+          # One long-lived release holds every height pack, for the same
+          # reason the imagery has one: tens of megabytes cannot live beside
+          # the index on GitHub Pages, which caps a site at 1 GB.
+          gh release view height >/dev/null 2>&1 || \
+            gh release create height \
+              --title "Ground height" \
+              --notes "United Kingdom terrain data (c) Environment Agency copyright and/or database right 2015. All rights reserved. Terrain Tiles hosted by AWS Open Data. Terrarium-encoded, half-metre vertical steps. Rebuilt one area at a time." \
+              --latest=false
+
+          gh release upload height "$PACK" --clobber
+
+          # The BASE of the release path; the recorder appends each entry's
+          # own filename. Shared with the imagery recorder rather than given a
+          # copy, because that URL-joining rule is the sort of thing that goes
+          # wrong in the second copy.
+          URL="${{ github.server_url }}/${{ github.repository }}/releases/download/height/"
+          python tools/record_satellite.py \
+            --entry dist/height/entry.json \
+            --url "$URL" \
+            --area "${{ steps.plan.outputs.area }}" \
+            --index height/index.json
+
+          REPO_URL="${{ github.server_url }}/${{ github.repository }}"
+          export REPO_URL
+          bash tools/rebuild_catalogue.sh manifest.json dist/catalogue.json
+          # Refuses to publish a catalogue that lost something already
+          # published. The catalogue is rebuilt from scratch, so a job that
+          # forgets an index DELETES what another job published - silently, in
+          # a build that otherwise succeeds. It has happened three times.
+          python tools/verify_catalogue.py dist/catalogue.json
+          mv dist/catalogue.json catalogue.json
+
+          git config user.name  'Trail Blazer data bot'
+          git config user.email 'noreply@github.com'
+          git add -A height/index.json catalogue.json
+          if git diff --cached --quiet; then
+            echo "Nothing changed."
+            exit 0
+          fi
+          git commit -m "Ground height: ${{ steps.plan.outputs.id }}"
+          # Rebased onto whatever landed while this ran, rather than pulled:
+          # catalogue.json is GENERATED, so it conflicts on every concurrent
+          # publish and a merge here would resolve to one job's view of the
+          # world and silently drop the other's.
+          for attempt in 1 2 3; do
+            if git push; then
+              exit 0
+            fi
+            echo "push rejected; rebuilding on top of origin/main (attempt $attempt)"
+            git fetch origin main
+            git reset --hard origin/main
+            python tools/record_satellite.py \
+              --entry dist/height/entry.json \
+              --url "$URL" \
+              --area "${{ steps.plan.outputs.area }}" \
+              --index height/index.json
+            bash tools/rebuild_catalogue.sh manifest.json dist/catalogue.json
+            python tools/verify_catalogue.py dist/catalogue.json
+            mv dist/catalogue.json catalogue.json
+            git add -A height/index.json catalogue.json
+            git diff --cached --quiet && exit 0
+            git commit -m "Ground height: ${{ steps.plan.outputs.id }}"
+          done
+          echo "could not publish after three attempts" >&2
+          exit 1
+
+      - name: Raise an issue if this failed
+        if: failure()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh issue create \
+            --title "Ground height build failed: ${{ steps.plan.outputs.id }}" \
+            --body "Run ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }} failed. Staged tiles are cached and the next run resumes from them." \
+            || true

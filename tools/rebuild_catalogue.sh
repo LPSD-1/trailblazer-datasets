@@ -62,6 +62,13 @@ ARGS=(--lanes "$LANES" --base-url "$BASE_URL" --out "$OUT")
 #   * and an unknown kind no longer refuses the index. It is skipped now, and
 #     named on the Downloads screen, so the NEXT new kind cannot do this again.
 [ -d names ] && ARGS+=(--names names)
+# Ground height, for hill shading and 3D ground. Held back from the live
+# catalogue by exactly the rule the block above records: the app must ship
+# `PackKind.height` FIRST. That is now true of the build in progress, and an
+# unknown kind is skipped rather than refused since the names incident, so the
+# risk this line carries is a pack riders on an older build cannot see - not a
+# catalogue none of them can read.
+[ -f height/index.json ] && ARGS+=(--height height/index.json)
 
 echo "rebuilding catalogue with: ${ARGS[*]}"
 python tools/build_catalogue.py "${ARGS[@]}"

@@ -245,8 +245,12 @@ def build_header(**f):
     u64(88, f["contents"])
     h[96] = 1                 # clustered
     h[97] = 2                 # internal compression: gzip
-    h[98] = 1                 # tile compression: none (JPEG is already that)
-    h[99] = 3                 # tile type: jpeg
+    h[98] = 1                 # tile compression: none (both are already that)
+    # 3 = jpeg, 2 = png. A parameter rather than a constant because the height
+    # packs are PNG - Terrarium cannot survive JPEG, which is lossy in exactly
+    # the low bits the height lives in - and they are written by this same
+    # function. Defaulted to jpeg so the imagery builder is unchanged.
+    h[99] = f.get("tile_type", 3)
     h[100] = f["min_zoom"]
     h[101] = f["max_zoom"]
     i32(102, f["west"] * 1e7)
@@ -259,8 +263,14 @@ def build_header(**f):
     return bytes(h)
 
 
-def write_pmtiles(path, tiles, bbox, min_zoom, max_zoom, metadata):
-    """tiles: dict of tile_id -> jpeg bytes."""
+def write_pmtiles(path, tiles, bbox, min_zoom, max_zoom, metadata,
+                  tile_type=3):
+    """tiles: dict of tile_id -> encoded bytes.
+
+    `tile_type` is the PMTiles v3 code for what those bytes are: 3 for
+    JPEG, which is the imagery and the default, and 2 for PNG, which is
+    what a Terrarium height pack has to be.
+    """
     west, south, east, north = bbox
 
     # Identical tiles share one copy. Blank ocean and uniform cloud shadow
@@ -308,6 +318,7 @@ def write_pmtiles(path, tiles, bbox, min_zoom, max_zoom, metadata):
         west=west, south=south, east=east, north=north,
         centre_zoom=min(max_zoom, 12),
         centre_lon=(west + east) / 2, centre_lat=(south + north) / 2,
+        tile_type=tile_type,
     )
 
     os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)

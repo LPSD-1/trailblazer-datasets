@@ -18,9 +18,62 @@ eleven of twelve passed. This one compares the catalogue against what each
 index SAYS is published, pack by pack, and names what is missing.
 """
 import argparse
+import hashlib
 import json
 import os
+import subprocess
 import sys
+
+# Where a pack URL has to start before the file behind it is ours to check.
+OUR_SITE = "https://lpsd-1.github.io/trailblazer-datasets/"
+
+
+def _local_path(file, root):
+    """The file on disk behind a pack's `file`, or None if we do not host it.
+
+    Packs are addressed three ways: a path relative to the catalogue, an
+    absolute URL on our own Pages site, and an absolute URL somewhere else
+    entirely (brouter.de for routing, a GitHub release for imagery). Only the
+    first two are files this repository can be asked to stand behind.
+    """
+    if not isinstance(file, str) or not file:
+        return None
+    if file.startswith(OUR_SITE):
+        file = file[len(OUR_SITE):]
+    elif file.startswith("http://") or file.startswith("https://"):
+        return None
+    # A published path is always forward-slashed; join it the same way on
+    # every platform rather than trusting os.path to read it.
+    return os.path.join(root, *file.split("/"))
+
+
+def _rewritten_by_git(paths):
+    """Which of [paths] git would not store byte-for-byte.
+
+    Returns the empty list when git cannot be asked at all — an unpacked
+    tarball, a container with no git — because a check that cannot run must
+    not become a check that fails.
+    """
+    out = []
+    for path in paths:
+        # RUN IT BESIDE THE FILE. `git hash-object` applies the attributes and
+        # config of the repository it is INVOKED in, not of the one the path
+        # happens to live in - so asked from somewhere else it answers about
+        # the wrong .gitattributes and quietly says everything is fine.
+        where = os.path.dirname(os.path.abspath(path)) or "."
+        name = os.path.basename(path)
+        try:
+            filtered = subprocess.run(
+                ["git", "hash-object", "--", name],
+                cwd=where, capture_output=True, check=True).stdout
+            raw = subprocess.run(
+                ["git", "hash-object", "--no-filters", "--", name],
+                cwd=where, capture_output=True, check=True).stdout
+        except (OSError, subprocess.CalledProcessError):
+            return []
+        if filtered != raw:
+            out.append(path)
+    return out
 
 
 def load(path, default=None):
@@ -50,6 +103,9 @@ def main():
     ap.add_argument("--published", default="catalogue.json",
                     help="the catalogue currently published, to compare "
                          "against; '' to skip")
+    ap.add_argument("--root", default=".",
+                    help="where the packs this repository hosts live, for "
+                         "the size-and-hash check; '' to skip")
     args = ap.parse_args()
 
     catalogue = load(args.catalogue)
@@ -125,6 +181,27 @@ def main():
                 "%d gazetteer pack(s) were published and are now absent: %s"
                 % (len(lost), ", ".join(lost[:5])))
 
+    # --- ground height -------------------------------------------------------
+    #
+    # Same rule as the gazetteer above, and it is here on the day the kind was
+    # added rather than after it has been silently dropped once. A height pack
+    # is what makes hill shading and 3D ground do anything at all, and it
+    # enters the catalogue through `--height` in rebuild_catalogue.sh - which
+    # is exactly the shape of flag that has now been forgotten three times.
+    #
+    # Published-versus-published, not disk-versus-catalogue, so an index built
+    # but deliberately held back does not fail the build.
+    if published:
+        was = {p.get("id") for p in packs_in(published)
+               if p.get("kind") == "height"}
+        now = {p.get("id") for p in packs_in(catalogue)
+               if p.get("kind") == "height"}
+        lost = sorted(was - now)
+        if lost:
+            problems.append(
+                "%d ground-height pack(s) were published and are now absent: "
+                "%s" % (len(lost), ", ".join(lost[:5])))
+
     # --- trips ---------------------------------------------------------------
     book = load(args.trips)
     if book and book.get("trips"):
@@ -133,6 +210,71 @@ def main():
             problems.append(
                 "%d ready-made trips are published and the catalogue offers "
                 "none - the pack was dropped" % len(book["trips"]))
+
+    # --- the size and hash of every pack WE host ----------------------------
+    #
+    # The catalogue's whole job is to describe files, and until now nothing
+    # checked that it described them correctly. The app does: it refuses any
+    # download whose SHA-256 does not match, bins it, and says "That download
+    # was corrupted. Try again." A pack whose published hash is wrong is
+    # therefore not "slightly off", it is undownloadable, permanently, for
+    # every rider, with a message that blames their connection.
+    #
+    # It happened. `trips/gb.tbtrips` is the one pack written in text mode, so
+    # git treats it as text and rewrites its line endings; a catalogue built on
+    # Windows hashed the CRLF copy in the working tree (7007 bytes,
+    # 4daf8ca3...) while the LF copy was what got committed and served (6764
+    # bytes, e3c05ef5...). Every build was green. See .gitattributes, which
+    # stops the rewrite; this stops anything else of the same shape, whatever
+    # causes it.
+    #
+    # Only packs this repository hosts. Routing tiles come from brouter.de and
+    # imagery from a GitHub release, and neither is on disk here.
+    if args.root:
+        wrong = []
+        for pack in packs_in(catalogue):
+            path = _local_path(pack.get("file"), args.root)
+            if path is None or not os.path.exists(path):
+                continue
+            with open(path, "rb") as f:
+                body = f.read()
+            want_bytes = pack.get("bytes")
+            want_sha = (pack.get("sha256") or "").lower()
+            if want_bytes is not None and len(body) != want_bytes:
+                wrong.append("%s: %d bytes on disk, catalogue says %s"
+                             % (pack.get("id"), len(body), want_bytes))
+            elif want_sha and hashlib.sha256(body).hexdigest() != want_sha:
+                wrong.append("%s: sha256 on disk is %s, catalogue says %s"
+                             % (pack.get("id"),
+                                hashlib.sha256(body).hexdigest()[:12],
+                                want_sha[:12]))
+        if wrong:
+            problems.append(
+                "%d pack(s) do not match the file this repository serves, so "
+                "the app would refuse every download of them: %s"
+                % (len(wrong), "; ".join(wrong[:5])))
+
+        # And the same failure one step earlier, where it is still cheap.
+        #
+        # The check above compares the catalogue to the working tree, and both
+        # are written by the same run on the same machine — so on the machine
+        # that CAUSES this it agrees with itself and passes. What actually goes
+        # wrong is that git stores something different from what was hashed.
+        #
+        # `git hash-object` runs the clean filter; `--no-filters` does not. If
+        # they disagree, git rewrites this file on the way in, the hash in the
+        # catalogue describes a file nobody will ever be served, and every
+        # download of that pack fails its checksum for ever.
+        rewritten = _rewritten_by_git(
+            sorted({p for p in (
+                _local_path(pack.get("file"), args.root)
+                for pack in packs_in(catalogue)) if p and os.path.exists(p)}))
+        if rewritten:
+            problems.append(
+                "git rewrites %d pack file(s) on the way in, so their "
+                "published hash would describe bytes nobody is served: %s "
+                "(mark the extension `-text` in .gitattributes)"
+                % (len(rewritten), ", ".join(rewritten[:5])))
 
     if problems:
         return fail("; ".join(problems))
