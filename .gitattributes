@@ -1,0 +1,36 @@
+# PACK FILES ARE BYTES, NOT TEXT. Never let git rewrite one.
+#
+# catalogue.json publishes a length and a SHA-256 for every pack, and the app
+# refuses any download whose bytes do not match: `PackageStore.publishDownloaded`
+# throws "That download was corrupted. Try again." and bins the file. So the
+# bytes a builder hashes have to be the bytes a rider is served, exactly, for
+# ever.
+#
+# Git's end-of-line conversion breaks that, silently and only on some machines.
+# With `core.autocrlf=true` — the Windows default, and what this project's own
+# checkout has — a pack git decides is "text" is stored LF and checked out
+# CRLF. `tools/build_catalogue.py` hashes the file in the WORKING TREE, so on
+# Windows it records the CRLF copy while the LF copy is what gets committed and
+# what GitHub Pages serves.
+#
+# That is not hypothetical: it shipped. `trips/gb.tbtrips` is written by
+# `build_trips.py` with `open(path, "w")`, which is enough for git to call it
+# text; the published catalogue records 7007 bytes / 4daf8ca3… (the CRLF copy)
+# and Pages serves 6764 bytes / e3c05ef5… (the LF copy). Every rider who ever
+# tapped "Ready-made trips" got "That download was corrupted", every time, with
+# no way to clear it — and nothing anywhere said why.
+#
+# `-text` turns the conversion off in both directions for these paths. It is
+# per-extension rather than a blanket `* -text` so that the Python, YAML and
+# Markdown in this repository still normalise the way everybody expects.
+*.tbtrips  -text
+*.tbpack   -text
+*.tbnames  -text
+*.rd5      -text
+*.pmtiles  -text
+*.sig      -text
+
+# The indexes ARE text and are meant to normalise — but they are also read
+# byte-for-byte by tools that compare builds, so pin them to LF rather than
+# leaving it to whatever each contributor's autocrlf happens to be.
+*.json     text eol=lf

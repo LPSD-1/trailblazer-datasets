@@ -117,6 +117,13 @@ jobs:
         run: |
           REPO_URL="${{ github.server_url }}/${{ github.repository }}"
           export REPO_URL
+          # The checks that stand behind the catalogue, before the catalogue
+          # that depends on them. A pack whose published hash does not match
+          # the file this repository serves is not slightly wrong, it is
+          # permanently undownloadable - the app bins every attempt and tells
+          # the rider their download was corrupted. That shipped once, on the
+          # ready-made trips pack, and every build stayed green.
+          python tools/test_verify_catalogue.py
           bash tools/rebuild_catalogue.sh dist/manifest.json dist/catalogue.json
           # Refuses to publish a catalogue that lost something already
           # published. The catalogue is rebuilt from scratch, so a job that

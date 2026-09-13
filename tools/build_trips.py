@@ -258,7 +258,21 @@ def main():
                                "rowmaps.com, Open Government Licence v3.0."),
         "trips": published,
     }
-    with open(path, "w", encoding="utf-8") as fh:
+    # newline="", so the same input produces the same BYTES on every platform.
+    #
+    # A pack is published with its length and its SHA-256, and the app refuses
+    # any download that does not match them exactly. Python's text mode
+    # translates a newline into a carriage-return-newline pair on Windows, so
+    # this file - the only pack written in text mode - comes out 243 bytes
+    # longer there than it does on
+    # the Linux runner. Build the catalogue on one platform and serve the file
+    # built on the other and every rider gets "That download was corrupted.
+    # Try again.", for ever, with nothing anywhere explaining it.
+    #
+    # .gitattributes stops git rewriting it as well. Both are needed: this one
+    # stops the wrong bytes being WRITTEN, that one stops the right bytes
+    # being rewritten on the way into the repository.
+    with open(path, "w", encoding="utf-8", newline="") as fh:
         json.dump(payload, fh, indent=1, ensure_ascii=False)
         fh.write("\n")
 
