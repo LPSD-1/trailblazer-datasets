@@ -1,0 +1,23 @@
+{
+  "packs": [
+    {
+      "id": "gb-east-anglia-height",
+      "kind": "height",
+      "label": "Ground height - East Anglia",
+      "file": "https://github.com/LPSD-1/trailblazer-datasets/releases/download/height/gb-east-anglia-height.pmtiles",
+      "sha256": "23cc26046be850a00d8fc5174b828dfa637c369a54b65ee59cd5d1973b14c13c",
+      "bytes": 21266074,
+      "bounds": {
+        "west": -0.4,
+        "south": 51.5,
+        "east": 1.8,
+        "north": 53.0
+      },
+      "note": "United Kingdom terrain data (c) Environment Agency copyright and/or database right 2015. All rights reserved. Terrain Tiles hosted by AWS Open Data.",
+      "maxZoom": 12,
+      "encoding": "terrarium",
+      "area": "gb-east-anglia",
+      "generated": "2026-09-13T08:41:04Z"
+    }
+  ]
+}
