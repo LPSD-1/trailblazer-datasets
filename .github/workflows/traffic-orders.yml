@@ -130,7 +130,23 @@ jobs:
           # workflows once each rebuilt this with their own subset of flags and
           # each quietly deleted what the others had published; see the comment
           # at the top of that file.
-          bash tools/rebuild_catalogue.sh dist/manifest.json dist/catalogue.json
+          # THE COMMITTED manifest.json, not dist/manifest.json.
+          #
+          # This job builds only dist/tro/, and dist/ is gitignored, so
+          # dist/manifest.json does not exist here. build_catalogue.lane_areas
+          # returns {} for a missing file without a word - and because
+          # satellite, names, height and trips packs are all attached INTO lane
+          # areas, losing the lanes takes every GB pack of every kind with it.
+          # Measured: 8.5 GB against the 9.8 GB every other job produces.
+          #
+          # verify_catalogue then refuses, correctly, and the job dies AFTER
+          # the release asset has been replaced and BEFORE the index is
+          # committed - so the published bytes and the published hash disagree
+          # and every rider's download fails its integrity check, four times a
+          # day. Every other workflow passes the committed manifest;
+          # refresh-data is the only one entitled to dist/, because it is the
+          # job that builds it.
+          bash tools/rebuild_catalogue.sh manifest.json dist/catalogue.json
           python tools/verify_catalogue.py dist/catalogue.json
 
       # Prove the pack riders will actually download is the one we just built,
@@ -159,14 +175,51 @@ jobs:
         run: |
           git config user.name  "trailblazer-data"
           git config user.email "data@trailblazer.invalid"
-          cp dist/catalogue.json catalogue.json
-          git add -A tro/index.json catalogue.json
-          git diff --cached --quiet && exit 0
           CUT=$(python -c "import json;print(json.load(open('tro/index.json'))['generated'])")
-          git commit -m "Traffic orders: data cut ${CUT}" \
-                     -m "Rebuilt by .github/workflows/traffic-orders.yml"
-          git pull --rebase
-          git push
+
+          commit_it() {
+            cp dist/catalogue.json catalogue.json
+            git add -A tro/index.json catalogue.json
+            if git diff --cached --quiet; then
+              echo "nothing changed"
+              return 1
+            fi
+            git commit -m "Traffic orders: data cut ${CUT}" -m "Rebuilt by .github/workflows/traffic-orders.yml"
+            return 0
+          }
+
+          commit_it || exit 0
+
+          # NO REBASE. catalogue.json is GENERATED and rebuilt whole by both
+          # sides, so it does not merge - it conflicts, every time, by
+          # construction. refresh-data.yml and satellite.yml both record what
+          # happened when a job ran `git pull --rebase` here: the rebase
+          # stopped mid-way, the retry loop pulled again into an unresolved
+          # conflict, and it pushed from a detached HEAD.
+          #
+          # This job collides more than any other - four runs a day against
+          # height, satellite, mirror-routing and refresh-data, all in
+          # different concurrency groups and all committing this same file - so
+          # it is the last one that should have kept the anti-pattern.
+          #
+          # A generated file has no merge: it has a recipe. Take the newest
+          # main, run the recipe again on top of it, try once more. dist/ is
+          # gitignored, so the pack we built survives the reset and nothing is
+          # re-fetched.
+          for attempt in 1 2 3; do
+            if git push; then
+              exit 0
+            fi
+            echo "push rejected; rebuilding the record on top of origin/main"
+            git fetch origin main
+            git reset --hard origin/main
+            bash tools/rebuild_catalogue.sh manifest.json dist/catalogue.json
+            python tools/verify_catalogue.py dist/catalogue.json
+            commit_it || exit 0
+            sleep $((attempt * 5))
+          done
+          echo "::error::could not push after three attempts"
+          exit 1
 
       - name: Raise an issue if this failed
         if: failure()

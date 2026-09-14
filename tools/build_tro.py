@@ -54,12 +54,45 @@ csv.field_size_limit(2**31 - 1)
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 
-# SRID=27700;LINESTRING(e n, e n) — also POINT and POLYGON.
-_WKT = re.compile(r"SRID=(\d+);\s*(\w+)\s*\((.*)\)\s*$", re.S)
+# SRID=27700;LINESTRING(e n, e n) — also POINT, POLYGON and the MULTI forms.
+#
+# CASE-INSENSITIVE, AND IT TOLERATES A DIMENSION TAG. `POINT Z (x y z)` is
+# ordinary WKT and the service is free to start sending it; the old pattern
+# wanted a bare word hard against the bracket, so every such order would have
+# vanished from the pack with nothing logged anywhere. The same for a
+# lowercase `srid=`.
+_WKT = re.compile(r"SRID=(\d+);\s*([A-Za-z]+)\s*(?:Z|M|ZM)?\s*\((.*)\)\s*$",
+                  re.S | re.I)
 
-# Great Britain, generously. A coordinate outside this did not come from the
-# National Grid, and drawing it would put a road closure in the sea.
+# The National Grid's own extent, in metres, generously.
+#
+# CHECKED ON THE EASTING AND NORTHING, not on the degrees that come out.
+# (0, 0) — far and away the commonest missing value — converts to a point in
+# the Celtic Sea about 130 km southwest of Land's End, which sits comfortably
+# inside any box drawn round the British Isles and sailed straight through the
+# check that used to be here. Inside a linestring it was worse: a 130 m closure
+# near Sheffield became a 400 km V out into the Atlantic and back, and
+# everything downstream that reads a bounding box then covered half of England.
+_GRID = (0.0, 0.0, 800000.0, 1400000.0)
+
+# Great Britain, generously, as a second net under the first.
 _GB = (-9.0, 49.0, 2.5, 61.5)
+
+
+def in_grid(easting, northing):
+    """Whether a pair could have come from the National Grid at all.
+
+    (0, 0) IS REJECTED EXPLICITLY. It is a real corner of the grid — the
+    southwest of square SV, out in the sea beyond Scilly — so a range test
+    admits it, and it is also the value a missing number arrives as far more
+    often than it is a place anybody has closed a road. Treating the origin as
+    the sentinel it is in practice costs nothing real and is the whole reason
+    this function exists.
+    """
+    if easting == 0 and northing == 0:
+        return False
+    return (_GRID[0] <= easting <= _GRID[2]
+            and _GRID[1] <= northing <= _GRID[3])
 
 # Five decimal places is about a metre. The datum shift in osgb.py is good to
 # about five, so more places would be recording noise - and every digit is
@@ -77,23 +110,36 @@ def parse_wkt(text):
         # Everything published so far is 27700. Anything else is a change in
         # the service, and guessing at it would silently misplace the order.
         return None, []
-    body = body.replace("(", " ").replace(")", " ")
-    points = []
-    for chunk in body.split(","):
-        parts = chunk.split()
-        if len(parts) < 2:
-            continue
-        try:
-            points.append((float(parts[0]), float(parts[1])))
-        except ValueError:
-            continue
-    return kind, points
+    def read(run):
+        points = []
+        for chunk in run.split(","):
+            parts = chunk.split()
+            if len(parts) < 2:
+                continue
+            try:
+                points.append((float(parts[0]), float(parts[1])))
+            except ValueError:
+                continue
+        return points
+
+    # THE MULTI FORMS KEEP THEIR PARTS APART. Flattened into one run of
+    # points — which is what happened — two closed stretches a mile apart get
+    # joined by a straight line drawn along roads that are open.
+    if kind.startswith("MULTI") or kind == "GEOMETRYCOLLECTION":
+        parts = [read(run) for run in re.findall(r"\(([^()]*)\)", body)]
+        return kind, [p for p in parts if p]
+
+    return kind, read(body.replace("(", " ").replace(")", " "))
 
 
 def to_wgs84(points):
     """National Grid pairs to rounded [lon, lat], dropping anything absurd."""
     out = []
     for easting, northing in points:
+        # The grid check FIRST — see the note on _GRID. The degree check below
+        # cannot catch (0, 0) because (0, 0) converts to somewhere plausible.
+        if not in_grid(easting, northing):
+            continue
         lon, lat = grid_to_wgs84(easting, northing)
         if not (_GB[0] <= lon <= _GB[2] and _GB[1] <= lat <= _GB[3]):
             continue
@@ -110,6 +156,17 @@ def geojson(feature, dtro_id=None):
     kind, points = parse_wkt(feature["wkt"])
     if not points:
         return None
+
+    # A MULTI form arrives as a list of runs. Its parts stay apart: joining
+    # them draws a line along roads that are open.
+    if kind and (kind.startswith("MULTI") or kind == "GEOMETRYCOLLECTION"):
+        parts = [to_wgs84(run) for run in points if isinstance(run, list)]
+        parts = [p for p in parts if len(p) >= 2]
+        if not parts:
+            return None
+        geometry = {"type": "MultiLineString", "coordinates": parts}
+        return _wrap(geometry, parts[0][0], feature, dtro_id)
+
     coords = to_wgs84(points)
     if not coords:
         return None
@@ -128,6 +185,11 @@ def geojson(feature, dtro_id=None):
             return None
         geometry = {"type": "LineString", "coordinates": coords}
 
+    return _wrap(geometry, coords[0], feature, dtro_id)
+
+
+def _wrap(geometry, first, feature, dtro_id):
+    """Geometry plus the properties every feature carries."""
     properties = {
         "code": feature["code"],
         "label": feature["label"],
@@ -147,10 +209,30 @@ def geojson(feature, dtro_id=None):
 
     # A stable id, so the app can tell "this order again" from "a new order"
     # across two days' packs without the service offering one that survives an
-    # amendment. Content-derived, so an order that has not changed keeps its
-    # id and one that has gets a new one.
-    seed = "%s|%s|%s|%s" % (feature.get("ref"), feature["code"],
-                            feature.get("where"), coords[0])
+    # amendment.
+    #
+    # SEEDED FROM WHAT THE ORDER ACTUALLY SAYS. It used to be
+    # (ref, code, where, first coordinate) under a comment claiming "an order
+    # that has not changed keeps its id and one that has gets a new one" — and
+    # it was neither. Amending the dates kept the id, so an app caching by uid
+    # went on showing the old ones; extending the geometry by a hundred
+    # kilometres kept it too; and two different closures at one junction with
+    # no ref and no road name collided into one, so one of them simply
+    # disappeared from the rider's map.
+    #
+    # The dates and the whole geometry are in the seed now. The rounding in
+    # to_wgs84 is what keeps it stable: identical published geometry gives
+    # identical coordinates gives an identical id, which is what lets an
+    # unchanged cut rebuild to identical bytes.
+    seed = "|".join([
+        str(feature.get("ref")),
+        str(feature["code"]),
+        str(feature.get("where")),
+        str(feature.get("start")),
+        str(feature.get("end")),
+        geometry["type"],
+        json.dumps(geometry["coordinates"], separators=(",", ":")),
+    ])
     properties["tro_uid"] = hashlib.sha256(seed.encode()).hexdigest()[:16]
     return {"type": "Feature", "geometry": geometry, "properties": properties}
 
@@ -173,6 +255,25 @@ def read_corpus(path, today, keep_expired=False):
                 if built is not None:
                     kept.append(built)
     return kept, records, skipped
+
+
+def previous_count(index_path):
+    """How many restrictions the last published pack carried, or 0.
+
+    Read from the committed index rather than from the pack itself, because
+    every job can read the index and only the job that built the pack has the
+    pack. See the note where the index is written.
+    """
+    try:
+        with open(index_path, encoding="utf-8") as handle:
+            index = json.load(handle)
+        for pack in index.get("packs", []):
+            count = pack.get("features")
+            if isinstance(count, int) and count > 0:
+                return count
+    except (IOError, ValueError, KeyError):
+        pass
+    return 0
 
 
 def corpus_date(path):
@@ -200,6 +301,10 @@ def main():
                     "trailblazer-datasets/releases/download/tro/",
                     help="where the sealed pack is hosted")
     ap.add_argument("--today", help="override the expiry date, for testing")
+    ap.add_argument("--allow-shrink", action="store_true",
+                    help="publish even if the count has collapsed against the "
+                         "last run - for a genuine change, never to get a red "
+                         "build green")
     args = ap.parse_args()
 
     path = args.csv
@@ -208,16 +313,64 @@ def main():
         path = download_corpus(os.path.join(args.out, "_corpus"))
 
     cut = corpus_date(path)
-    today = args.today or datetime.date.today().isoformat()
-    print("corpus  %s (cut %s)" % (os.path.basename(path), cut))
+    # FILTERED AGAINST THE EXTRACT'S OWN DATE, not today's.
+    #
+    # `corpus_date` promises two lines up that "the pack is then a function of
+    # the data alone, so rebuilding an unchanged extract produces identical
+    # bytes and riders do not re-download a file that has not changed" — and
+    # passing today's date here broke that promise every midnight. The job runs
+    # four times a day against an extract DfT re-cuts every few days, so a
+    # rider was handed a fresh 3.7 MB pack each morning because a handful of
+    # orders had rolled past their end date, not because anything new had been
+    # published.
+    #
+    # The orders that expire between the cut and the rider looking are handled
+    # where they should be: the app filters `inForceOn(today)` before it draws
+    # anything, so a lapsed order is carried and not shown. Deciding that here
+    # would mean deciding it once, on a build server, for a file somebody opens
+    # a fortnight later.
+    day = args.today or cut
+    print("corpus  %s (cut %s, filtered against %s)"
+          % (os.path.basename(path), cut, day))
 
-    built, records, skipped = read_corpus(path, today)
+    built, records, skipped = read_corpus(path, day)
     print("records %d, unreadable %d" % (records, skipped))
     print("live restrictions %d" % len(built))
     if not built:
         sys.exit("Nothing to publish. Refusing to write an empty pack: an "
                  "empty TRO pack is indistinguishable from 'no orders in "
                  "force anywhere', which is never true.")
+
+    # A FLOOR, NOT JUST A ZERO CHECK.
+    #
+    # The line above catches the one case that cannot happen quietly. What can
+    # happen quietly is a pack with four hundred restrictions in it instead of
+    # thirty-four thousand: a truncated extract, a schema change that makes
+    # `parse_wkt` drop a geometry shape, an authority's rows failing to parse.
+    # Every one of those publishes cleanly and shows almost every closed road
+    # in Great Britain as open, and nothing in the pipeline could tell that
+    # pack from a genuinely quiet day.
+    #
+    # Two thirds of what was published last time, because the real count moves
+    # with the ninety-day horizon and with how much each authority has filed —
+    # day to day that is a few per cent. A third of the country disappearing
+    # between two cuts is not a quiet day, it is a broken read.
+    previous = previous_count(args.index)
+    if previous and len(built) < previous * 2 // 3 and not args.allow_shrink:
+        sys.exit(
+            "REFUSING TO PUBLISH: %d restrictions, against %d last time.\n"
+            "That is not a quiet day, it is a bad read - a truncated "
+            "extract, or geometry this build no longer understands.\n"
+            "%d of %d records were unreadable.\n"
+            "Pass --allow-shrink if the drop is genuine."
+            % (len(built), previous, skipped, records))
+
+    # Unreadable rows are a signal in their own right: the corpus is machine
+    # written, so a sudden crop of them means the shape changed under us.
+    if records and skipped > records // 10 and not args.allow_shrink:
+        sys.exit("REFUSING TO PUBLISH: %d of %d records could not be read. "
+                 "The extract's shape has probably changed."
+                 % (skipped, records))
 
     # Sorted, so the file is a function of its contents and not of the order
     # the service happened to return them in.
@@ -273,6 +426,9 @@ def main():
             "sha256": digest,
             "bytes": len(sealed),
             "generated": cut,
+            # What the next run's floor check compares against. Not read by
+            # the app; the catalogue builder ignores fields it does not know.
+            "features": len(built),
         }],
     }
     os.makedirs(os.path.dirname(os.path.abspath(args.index)), exist_ok=True)

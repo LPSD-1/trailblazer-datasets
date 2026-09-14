@@ -57,13 +57,51 @@ def download_corpus(out_dir):
     # Already have this exact cut: nothing to fetch. The extract is half a
     # gigabyte and is rebuilt by the service on its own schedule, so a build
     # run twice in one day should not pull it twice.
-    if os.path.isfile(path) and os.path.getsize(path) > 1_000_000:
+    #
+    # THE CACHED FILE IS ONLY TRUSTED IF IT WAS FINISHED. This test used to be
+    # `size > 1 MB` against a file `urlretrieve` wrote in place, so a network
+    # blip left a partial CSV on disk that every later run accepted as
+    # complete — and the workflow caches this directory, so the truncated copy
+    # came back for as long as the service kept the same filename, which has
+    # been nine days. A pack built from it would publish four hundred of
+    # thirty-six thousand restrictions and look exactly like a quiet day: every
+    # closed road in the country shown open, with nothing anywhere saying so.
+    #
+    # Downloading beside the target and renaming only on success is what makes
+    # "the file is here" mean "the file is whole". A rename within one
+    # directory is atomic on every filesystem this runs on.
+    done = path + ".done"
+    if os.path.isfile(path) and os.path.isfile(done):
         print("using the copy already here: %s" % name)
         return path
 
+    part = path + ".part"
     print("downloading %s" % name)
-    urllib.request.urlretrieve(url, path)
-    print("  %.1f MB" % (os.path.getsize(path) / 1e6))
+    if os.path.isfile(done):
+        os.remove(done)
+    _, headers = urllib.request.urlretrieve(url, part)
+
+    # The service sends Content-Length; when it does, a short file is a failed
+    # download however cleanly urlretrieve returned.
+    got = os.path.getsize(part)
+    expected = headers.get("Content-Length")
+    if expected is not None:
+        try:
+            expected = int(expected)
+        except ValueError:
+            expected = None
+    if expected is not None and got != expected:
+        os.remove(part)
+        raise IOError("short download: got %d bytes of %d for %s"
+                      % (got, expected, name))
+    if got < 1_000_000:
+        os.remove(part)
+        raise IOError("the extract is %d bytes, which is not an extract" % got)
+
+    os.replace(part, path)
+    with open(done, "w", encoding="utf-8") as handle:
+        handle.write(str(got) + chr(10))
+    print("  %.1f MB" % (got / 1e6))
     return path
 
 
