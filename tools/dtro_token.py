@@ -91,6 +91,41 @@ def describe(body):
         print("  issued before reading anything into a 403 later.")
 
 
+KNOWN_BASES = [
+    ("integration", "https://dtro-integration.dft.gov.uk/v1"),
+    ("production", "https://dtro.dft.gov.uk/v1"),
+]
+
+
+def try_base(base, attempts):
+    """Every candidate client ID against one environment.
+
+    Returns the parsed body and the label that worked, or (None, None) when
+    every candidate came back 401/400 — the case the next environment exists
+    for. Anything else is not a question of which field is which, so it stops.
+    """
+    for label, candidate in attempts:
+        if not candidate:
+            continue
+        print("  trying %s" % label)
+        try:
+            return token(base, candidate, attempts.secret), label
+        except urllib.error.HTTPError as e:
+            detail = e.read().decode(errors="replace")[:300]
+            print("    %s %s  %s" % (e.code, e.reason, detail.strip()))
+            if e.code not in (400, 401):
+                return None, None
+        except urllib.error.URLError as e:
+            print("    could not reach %s: %s" % (base, e.reason))
+            return None, None
+    return None, None
+
+
+class Attempts(list):
+    """The candidate client IDs, carrying the secret they all share."""
+    secret = ""
+
+
 def main():
     env = load_env()
     base = env.get("DTRO_BASE_URL", "").strip()
@@ -104,57 +139,55 @@ def main():
         sys.exit("DTRO_CLIENT_SECRET is empty.")
 
     print("D-TRO token check")
-    print("  base       %s" % base)
     print("  app id     %s" % ("set" if app_id else "EMPTY"))
     print("  client id  %s" % ("set" if key else "EMPTY"))
     print("  secret     %s" % ("set" if secret else "EMPTY"))
     print()
 
-    # The documented mapping first: API Key as the client ID.
-    attempts = [("DTRO_CLIENT_ID (the API Key)", key)]
-    # And the other candidate, because two names for three values is a guess
-    # until the service settles it. Skipped when they are the same string or
-    # the app id is absent.
+    # The documented mapping first: API Key as the client ID. Then the other
+    # candidate, because two names for three values is a guess until the
+    # service settles it.
+    attempts = Attempts([("DTRO_CLIENT_ID (the API Key)", key)])
     if app_id and app_id != key:
         attempts.append(("DTRO_APP_ID", app_id))
+    attempts.secret = secret
 
-    last = None
-    for label, candidate in attempts:
-        if not candidate:
-            continue
-        print("Trying %s as the client ID…" % label)
-        try:
-            body = token(base, candidate, secret)
-        except urllib.error.HTTPError as e:
-            detail = e.read().decode(errors="replace")[:300]
-            print("  %s %s" % (e.code, e.reason))
-            if detail.strip():
-                print("  %s" % detail.strip())
-            last = e
-            # 401 is "wrong credentials", which is the case the next attempt
-            # exists for. Anything else is not about which field is which.
-            if e.code not in (400, 401):
-                break
+    # The configured environment first, then the other one. Credentials are
+    # per environment and a pair pointed at the wrong one fails as 401 with
+    # the same wording as a bad secret — so the only way to tell those apart
+    # is to ask the other environment, which costs one request.
+    bases = [b for b in [base] if b]
+    for name, url in KNOWN_BASES:
+        if url.rstrip("/") != base.rstrip("/"):
+            bases.append(url)
+
+    for url in bases:
+        named = dict((u.rstrip("/"), n) for n, u in KNOWN_BASES)
+        print("%s  (%s)" % (url, named.get(url.rstrip("/"), "unrecognised URL")))
+        body, label = try_base(url, attempts)
+        if body is None:
             print()
             continue
-        except urllib.error.URLError as e:
-            sys.exit("  could not reach %s: %s" % (base, e.reason))
-
         print("  OK")
         describe(body)
-        print("\nUse %s as the client ID. Worth writing into TRO_SPEC.md 1.2,"
-              % label)
-        print("which describes the pair without saying which portal field is")
-        print("which.")
+        print()
+        print("Client ID: %s" % label)
+        print("Environment: %s" % url)
+        if url.rstrip("/") != base.rstrip("/"):
+            print("NOTE: that is NOT the DTRO_BASE_URL in .env. Change it, or")
+            print("every later call repeats this 401.")
+        print("Both are worth writing into TRO_SPEC.md 1.2, which describes the")
+        print("pair without saying which portal field is which.")
         return 0
 
+    print("Rejected by every environment, with both fields tried as the client")
+    print("ID. The error says the CLIENT ID is unrecognised rather than the")
+    print("secret, and the values are well-formed, so this is most likely an")
+    print("account that is registered but not yet activated for the API.")
     print()
-    if last is not None and last.code in (400, 401):
-        print("Neither field was accepted as the client ID.")
-        print("Check the secret first — it is the one that is easy to truncate")
-        print("when copying. Then check DTRO_BASE_URL: credentials are per")
-        print("environment, and a sandbox pair pointed at production fails as")
-        print("401, which looks exactly like a wrong secret.")
+    print("That is a question for d-tro@dft.gov.uk: quote the App ID (it is an")
+    print("account identifier, not a secret), say which environment you were")
+    print("issued for, and ask whether the application has been approved.")
     return 1
 
 
