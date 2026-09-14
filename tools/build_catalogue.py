@@ -347,6 +347,45 @@ def trips_pack(path, base_url):
     }
 
 
+def tro_pack(path, base_url):
+    """The national traffic-orders pack, if the TRO job has written one.
+
+    ONE for the whole country, and it goes into every area. An order does not
+    stop at a regional boundary: a rider who downloaded the Midlands must still
+    be told about the closure two miles into Wales, and the pack is under three
+    megabytes, so there is nothing to save by splitting it.
+
+    Duplicated into each area the way trips are, and for the same reason - a
+    pack listed once lands in whichever area sorts first, and everybody else
+    silently goes without.
+    """
+    if not path or not os.path.exists(path):
+        # Loudly, like trips. A workflow that quietly published a catalogue
+        # with no traffic orders in it would leave no trace anywhere, and the
+        # app would simply show no closures - which is indistinguishable from
+        # there being none.
+        print("warning: %s is missing; NO traffic orders in this build"
+              % path, file=sys.stderr)
+        return None
+    try:
+        size = os.path.getsize(path)
+    except OSError as e:
+        print("warning: could not read %s (%s); no traffic orders"
+              % (path, e), file=sys.stderr)
+        return None
+
+    name = os.path.basename(path)
+    print("  traffic orders pack (%d bytes)" % size)
+    return {
+        "id": "gb-tro",
+        "kind": "tro",
+        "label": "Traffic orders",
+        "file": urllib.parse.urljoin(base_url, "tro/%s" % name),
+        "sha256": _sha256_of(path),
+        "bytes": size,
+    }
+
+
 def names_packs(names_dir, base_url):
     """The gazetteer packs, one per region, keyed by the region they cover.
 
@@ -390,7 +429,8 @@ def names_packs(names_dir, base_url):
 
 def build(lanes_manifest, base_url, stamp, satellite_index=None,
           routing_mirror_index=None, routing_mirror_base="",
-          trips_index=None, names_dir=None, height_index=None):
+          trips_index=None, names_dir=None, height_index=None,
+          tro_path=None):
     tile_sizes = routing_index()
     gb_areas = lane_areas(lanes_manifest)
     imagery = satellite_packs(satellite_index)
@@ -402,6 +442,7 @@ def build(lanes_manifest, base_url, stamp, satellite_index=None,
     heights = satellite_packs(height_index)
     trips = trips_pack(trips_index, base_url)
     names = names_packs(names_dir, base_url)
+    tro = tro_pack(tro_path, base_url)
     mirror = mirrored_routing(routing_mirror_index)
     if mirror:
         print("  %d routing tiles served from our own mirror" % len(mirror))
@@ -450,7 +491,21 @@ def build(lanes_manifest, base_url, stamp, satellite_index=None,
                 for area in areas:
                     area.setdefault("packs", []).append(trips)
 
-        if routing:
+        # The country-wide area carries the things that are not regional.
+        #
+        # Routing tiles were always here. Traffic orders join them rather than
+        # being duplicated into every region, which is how trips are done —
+        # and this is better for both reasons that matter. An order does not
+        # stop at a regional boundary, and this area's bounds cover the whole
+        # country, so a rider anywhere in it picks the pack up whichever region
+        # they are standing in. It also cannot be silently lost: duplicating
+        # into regions means a build where the lane manifest is missing
+        # publishes no orders at all, and says nothing about it.
+        national = list(routing)
+        if code == "gb" and tro:
+            national.append(tro)
+
+        if national:
             areas.append({
                 "id": "%s-roads" % code,
                 # Named for the country, not "United Kingdom roads": this
@@ -459,7 +514,7 @@ def build(lanes_manifest, base_url, stamp, satellite_index=None,
                 # like a place nobody has ever been.
                 "label": label,
                 "bounds": {"west": w, "south": s, "east": e, "north": n},
-                "packs": routing,
+                "packs": national,
             })
 
         if not areas:
@@ -488,6 +543,11 @@ def build(lanes_manifest, base_url, stamp, satellite_index=None,
             "routing": "monthly",
             "basemap": "monthly",
             "gpx": "weekly",
+            # Four times a day. The only kind here that goes OFF: measured,
+            # 1,124 orders change nationally in a single day, and the one that
+            # matters is the one made this morning. Three megabytes makes that
+            # affordable; see tools/build_tro.py.
+            "tro": "sixHourly",
         },
         "continents": [
             {
@@ -539,6 +599,8 @@ def main():
                          "fine and simply means no hill shading in this build")
     ap.add_argument("--names", default="dist/names",
                     help="directory of .tbnames gazetteer packs")
+    ap.add_argument("--tro", default="dist/tro/gb-tro.tbpack",
+                    help="the national traffic-orders pack")
     ap.add_argument("--out", default="dist/catalogue.json")
     args = ap.parse_args()
 
@@ -551,7 +613,8 @@ def main():
                       names_dir=args.names,
                       height_index=args.height,
                       routing_mirror_index=args.routing_mirror,
-                      routing_mirror_base=args.routing_mirror_base)
+                      routing_mirror_base=args.routing_mirror_base,
+                      tro_path=args.tro)
     os.makedirs(os.path.dirname(os.path.abspath(args.out)), exist_ok=True)
     with open(args.out, "w", encoding="utf8") as fh:
         json.dump(catalogue, fh, indent=1)
