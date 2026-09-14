@@ -105,7 +105,7 @@ def to_wgs84(points):
     return out
 
 
-def geojson(feature):
+def geojson(feature, dtro_id=None):
     """One normalised restriction as a GeoJSON feature, or None."""
     kind, points = parse_wkt(feature["wkt"])
     if not points:
@@ -132,6 +132,12 @@ def geojson(feature):
         "code": feature["code"],
         "label": feature["label"],
     }
+    # The order this came from. Carried so a delta can REPLACE everything one
+    # order contributed, rather than trying to match feature by feature: an
+    # amended order routinely changes how many stretches it covers, and a
+    # merge that cannot delete what is gone leaves ghosts on the map.
+    if dtro_id:
+        properties["dtro"] = dtro_id
     # Only what is actually there. An empty string for every absent field
     # would add a hundred kilobytes to say nothing.
     for key in ("name", "where", "start", "end", "ref", "tra"):
@@ -160,9 +166,10 @@ def read_corpus(path, today, keep_expired=False):
             except (ValueError, KeyError):
                 skipped += 1
                 continue
+            dtro_id = row.get("Id")
             for feature in features(record, today=today,
                                     keep_expired=keep_expired):
-                built = geojson(feature)
+                built = geojson(feature, dtro_id)
                 if built is not None:
                     kept.append(built)
     return kept, records, skipped

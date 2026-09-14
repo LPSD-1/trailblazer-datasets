@@ -15,7 +15,7 @@ import unittest
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from tro import (  # noqa: E402
-    expired, features, is_placeholder, kind_of, not_yet)
+    expired, features, is_placeholder, kind_of, not_yet, worth_hydrating)
 
 TODAY = "2026-09-14"
 
@@ -274,6 +274,63 @@ class Expiry(unittest.TestCase):
         self.assertFalse(expired(TODAY, TODAY))
         self.assertFalse(expired("2026-09-15", TODAY))
         self.assertTrue(expired("2026-09-13", TODAY))
+
+
+class WhichChangesAreWorthFetching(unittest.TestCase):
+    """1,118 orders changed on 14 September alone, and the service rate-limits.
+
+    An event carries the order's types and dates but not its geometry, so
+    every order kept costs a request. Rejecting from the event alone is worth
+    more than any amount of pacing - but a maybe must always be fetched,
+    because missing a real closure to save a request is the wrong way round.
+    """
+
+    def test_a_closure_is_fetched(self):
+        self.assertTrue(worth_hydrating(
+            {"eventType": "update", "regulationType": ["miscRoadClosure"]},
+            TODAY))
+
+    def test_parking_is_not(self):
+        self.assertFalse(worth_hydrating(
+            {"eventType": "update", "regulationType": ["kerbsideNoWaiting"]},
+            TODAY))
+
+    def test_an_order_that_is_partly_interesting_is_fetched(self):
+        # One order can carry several regulations. If ANY of them is one we
+        # carry, the order has to be fetched.
+        self.assertTrue(worth_hydrating(
+            {"eventType": "update",
+             "regulationType": ["kerbsideNoWaiting", "miscRoadClosure"]},
+            TODAY))
+
+    def test_an_order_that_has_already_ended_is_not_fetched(self):
+        self.assertFalse(worth_hydrating(
+            {"eventType": "update", "regulationType": ["miscRoadClosure"],
+             "regulationEnd": ["2026-08-01T00:00:00"]}, TODAY))
+
+    def test_one_that_ends_today_still_is(self):
+        self.assertTrue(worth_hydrating(
+            {"eventType": "update", "regulationType": ["miscRoadClosure"],
+             "regulationEnd": [TODAY + "T18:00:00"]}, TODAY))
+
+    def test_one_that_starts_years_out_is_not(self):
+        self.assertFalse(worth_hydrating(
+            {"eventType": "update", "regulationType": ["miscRoadClosure"],
+             "regulationStart": ["2029-01-01T00:00:00"]}, TODAY))
+
+    def test_a_deletion_is_always_acted_on(self):
+        # Nothing to fetch, but the order has to come OUT of the pack. Treated
+        # as worth handling so a caller looping over events cannot skip it.
+        self.assertTrue(worth_hydrating({"eventType": "delete"}, TODAY))
+
+    def test_an_event_with_no_type_is_a_maybe_and_maybes_are_fetched(self):
+        self.assertTrue(worth_hydrating({"eventType": "create"}, TODAY))
+        self.assertTrue(worth_hydrating(
+            {"eventType": "create", "regulationType": []}, TODAY))
+
+    def test_rubbish_is_not_fetched(self):
+        for bad in (None, [], "", 7):
+            self.assertFalse(worth_hydrating(bad, TODAY))
 
 
 if __name__ == "__main__":

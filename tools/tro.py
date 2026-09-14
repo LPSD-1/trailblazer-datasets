@@ -170,6 +170,59 @@ def expired(end, today):
     return end is not None and end < today
 
 
+def worth_hydrating(event, today, horizon_days=HORIZON_DAYS):
+    """Whether a change event is worth fetching the full order for.
+
+    THE CHEAPEST REQUEST IS THE ONE NOT MADE. An event carries the order's
+    regulation types and end dates but NOT its geometry, so keeping up with
+    the feed means one `GET /dtros/{id}` per changed order — and measured on
+    14 September 2026, 1,118 orders changed in a single day. The service
+    rate-limits and does not say where the limit is, so a filter that can
+    reject an order from the event alone is worth more than any pacing.
+
+    Rejects, without a request:
+      * orders whose every regulation type is one we do not carry — the
+        kerbside parking that dominates the corpus;
+      * orders whose every end date has passed;
+      * orders that do not start for longer than the horizon.
+
+    Keeps anything it cannot rule out. An event with no type at all is a
+    maybe, and a maybe is fetched: missing a real closure to save a request
+    is the wrong way round.
+    """
+    if not isinstance(event, dict):
+        return False
+    if event.get("eventType") == "delete":
+        return True  # nothing to fetch, but the caller must act on it
+
+    types = event.get("regulationType")
+    if isinstance(types, str):
+        types = [types]
+    if isinstance(types, list) and types:
+        known = [t for t in types if isinstance(t, str)]
+        if known and not any(t in INTERESTING or t == SPEED_LIMIT
+                             for t in known):
+            return False
+
+    ends = event.get("regulationEnd")
+    if isinstance(ends, str):
+        ends = [ends]
+    if isinstance(ends, list) and ends:
+        dates = [str(e)[:10] for e in ends if e]
+        if dates and all(expired(d, today) for d in dates):
+            return False
+
+    starts = event.get("regulationStart")
+    if isinstance(starts, str):
+        starts = [starts]
+    if isinstance(starts, list) and starts:
+        dates = [str(s)[:10] for s in starts if s]
+        if dates and all(not_yet(d, today, horizon_days) for d in dates):
+            return False
+
+    return True
+
+
 def features(record, today=None, keep_expired=False,
              horizon_days=HORIZON_DAYS):
     """Every restriction in one D-TRO record, as flat dictionaries.
