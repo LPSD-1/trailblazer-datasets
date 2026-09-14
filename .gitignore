@@ -11,3 +11,22 @@ dist/
 # The rights-of-way cache. Tens of thousands of council records, refetched by
 # fetch_rights_of_way.py and cached by the workflow rather than by git.
 cache/
+
+# CREDENTIALS. Nothing in here is ever committed.
+#
+# D-TRO consumer access is OAuth 2.0 client credentials (TRO_SPEC.md 1.2), and
+# the ingestion that will use them runs from this repo. Added BEFORE any
+# credential existed on disk: a secret that reaches a public repo is not
+# "removed" by a later commit, it is rotated, and a .gitignore written after
+# the fact is written too late.
+#
+# Local runs read them from .env; the workflow reads them from GitHub Actions
+# secrets, which never touch the working tree at all.
+.env
+.env.*
+# ...except the template, which is the whole point of having one: it carries
+# the variable names and the traps, and no values.
+!.env.example
+secrets/
+*.key
+*.pem
