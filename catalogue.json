@@ -1,6 +1,6 @@
 {
  "schema": 2,
- "generated": "2026-09-14T11:49:52Z",
+ "generated": "2026-09-14T20:24:12Z",
  "attribution": "Map and routing data (c) OpenStreetMap contributors, ODbL. United Kingdom rights of way contain public sector information licensed under the Open Government Licence v3.0, via rowmaps.com.",
  "baseUrl": "https://lpsd-1.github.io/trailblazer-datasets/",
  "updates": {
@@ -3974,6 +3974,52 @@
          "legalBasis": "official",
          "note": "Every recorded right of way.",
          "generated": "2026-09-10T14:40:52Z"
+        },
+        {
+         "id": "gb-wales-satellite-high",
+         "kind": "basemap",
+         "label": "Satellite - Wales",
+         "file": "https://github.com/LPSD-1/trailblazer-datasets/releases/download/satellite/gb-wales-satellite-high.pmtiles",
+         "sha256": "bf98bed47d4efe7e47db217ed4b1b5f6dbdfa5069a85b951fb043ec7f9911ca0",
+         "bytes": 185154236,
+         "bounds": {
+          "west": -5.35,
+          "south": 51.35,
+          "east": -2.6,
+          "north": 53.45
+         },
+         "note": "Sentinel-2 cloudless 2024 by EOX IT Services GmbH, CC BY 4.0. Contains modified Copernicus Sentinel data 2024.",
+         "maxZoom": 14,
+         "detail": {
+          "id": "high",
+          "label": "High detail",
+          "description": "Twice the pixels when you zoom right in. The same 10 m satellite behind it - what improves is how it is drawn, not what it can show.",
+          "groundMetresPerPixel": 4.8
+         },
+         "generated": "2026-09-14T20:24:12Z"
+        },
+        {
+         "id": "gb-wales-satellite-standard",
+         "kind": "basemap",
+         "label": "Satellite - Wales",
+         "file": "https://github.com/LPSD-1/trailblazer-datasets/releases/download/satellite/gb-wales-satellite-standard.pmtiles",
+         "sha256": "03ac701e5873cdfb76955c3b8ab4273a42e39a27e7130976dcd6a12030876b95",
+         "bytes": 63078018,
+         "bounds": {
+          "west": -5.35,
+          "south": 51.35,
+          "east": -2.6,
+          "north": 53.45
+         },
+         "note": "Sentinel-2 cloudless 2024 by EOX IT Services GmbH, CC BY 4.0. Contains modified Copernicus Sentinel data 2024.",
+         "maxZoom": 13,
+         "detail": {
+          "id": "standard",
+          "label": "Standard",
+          "description": "The whole area at the source's own resolution. A quarter of the size.",
+          "groundMetresPerPixel": 9.6
+         },
+         "generated": "2026-09-14T20:24:12Z"
         },
         {
          "id": "gb-wales-names",
