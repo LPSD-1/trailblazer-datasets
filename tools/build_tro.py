@@ -194,6 +194,11 @@ def main():
     ap.add_argument("--key", required=True, help="base64 32-byte key file")
     ap.add_argument("--csv", help="a local dtros_all.csv; otherwise fetched")
     ap.add_argument("--out", default=os.path.join(ROOT, "dist", "tro"))
+    ap.add_argument("--index", default=os.path.join(ROOT, "tro", "index.json"),
+                    help="the committed record of what was published")
+    ap.add_argument("--base", default="https://github.com/lpsd-1/"
+                    "trailblazer-datasets/releases/download/tro/",
+                    help="where the sealed pack is hosted")
     ap.add_argument("--today", help="override the expiry date, for testing")
     args = ap.parse_args()
 
@@ -244,10 +249,42 @@ def main():
     with open(out + ".sha256", "w", encoding="utf-8") as handle:
         handle.write(digest + "\n")
 
+    # A COMMITTED INDEX, and the sealed pack published as a release asset.
+    #
+    # Both halves of that matter. The pack is three megabytes and is rebuilt
+    # several times a day, so committing the binary would add a gigabyte a year
+    # to a repository riders clone nothing from — releases carry it instead,
+    # exactly as the mirrored routing tiles are carried.
+    #
+    # But the catalogue is rebuilt FROM SCRATCH by whichever job runs, and a
+    # flag pointing at a file that job does not have is a flag it silently
+    # skips — which deletes this pack from every rider's Downloads screen with
+    # no code having changed. That has happened three times in this repository
+    # to other kinds; see tools/rebuild_catalogue.sh. So the size and hash live
+    # in a small file that IS committed, the way satellite and height already
+    # do it, and every job can read it whether or not it built the pack.
+    index = {
+        "generated": cut,
+        "packs": [{
+            "id": "gb-tro",
+            "kind": "tro",
+            "label": "Traffic orders",
+            "file": args.base.rstrip("/") + "/" + os.path.basename(out),
+            "sha256": digest,
+            "bytes": len(sealed),
+            "generated": cut,
+        }],
+    }
+    os.makedirs(os.path.dirname(os.path.abspath(args.index)), exist_ok=True)
+    with open(args.index, "w", encoding="utf-8") as handle:
+        json.dump(index, handle, indent=2, sort_keys=True)
+        handle.write(chr(10))
+
     print("wrote %s" % out)
     print("  %.2f MB plain, %.2f MB sealed"
           % (len(body) / 1e6, len(sealed) / 1e6))
     print("  sha256 %s" % digest)
+    print("wrote %s" % args.index)
     return 0
 
 

@@ -1,0 +1,183 @@
+name: Traffic orders
+
+# FOUR TIMES A DAY, and it is the only job here that runs on that clock.
+#
+# Everything else in this repository is a snapshot of something that moves over
+# weeks: councils amend a definitive map monthly, Ordnance Survey republish
+# place names twice a year, the ground does not move at all. A traffic
+# regulation order is the opposite — measured against the live feed, 1,124
+# orders changed nationally in a single day — and the one that matters is the
+# one made this morning. A rider who finds out about a closure by arriving at
+# it is the failure this exists to prevent.
+#
+# It is affordable because it is small: every live order in Great Britain seals
+# to under four megabytes.
+on:
+  schedule:
+    # Spread across the day rather than every six hours on the hour, so this
+    # does not arrive at the same moment as everybody else's cron.
+    - cron: '23 2,8,14,20 * * *'
+  workflow_dispatch:
+    inputs:
+      force:
+        description: 'Publish even if the pack is unchanged'
+        type: boolean
+        default: false
+
+permissions:
+  contents: write   # the release asset, and the committed index
+
+concurrency:
+  group: traffic-orders
+  cancel-in-progress: false   # never interrupt a run mid-publish
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install --quiet cryptography
+
+      - name: Write the dataset key
+        env:
+          DATASET_KEY_B64: ${{ secrets.DATASET_KEY_B64 }}
+        run: |
+          if [ -z "$DATASET_KEY_B64" ]; then
+            echo "::error::DATASET_KEY_B64 is not set."
+            exit 1
+          fi
+          printf '%s' "$DATASET_KEY_B64" > /tmp/dataset.key
+
+      - name: Write the D-TRO credentials
+        env:
+          DTRO_CLIENT_ID: ${{ secrets.DTRO_CLIENT_ID }}
+          DTRO_CLIENT_SECRET: ${{ secrets.DTRO_CLIENT_SECRET }}
+        run: |
+          if [ -z "$DTRO_CLIENT_SECRET" ]; then
+            echo "::error::DTRO_CLIENT_SECRET is not set. See .env.example."
+            exit 1
+          fi
+          # Production, because that is the only environment these credentials
+          # work in — see docs/TRO_SPEC.md 1.2. There is no sandbox, which is
+          # why tools/dtro_events.py paces itself and honours Retry-After.
+          {
+            printf 'DTRO_CLIENT_ID=%s\n' "$DTRO_CLIENT_ID"
+            printf 'DTRO_CLIENT_SECRET=%s\n' "$DTRO_CLIENT_SECRET"
+            printf 'DTRO_BASE_URL=https://dtro.dft.gov.uk/v1\n'
+          } > .env
+
+      # The national extract is half a gigabyte and the service cuts it on its
+      # own schedule — measured, it served a nine-day-old file all day on 14
+      # September. Caching it means four runs a day fetch it once.
+      - name: Restore the corpus cache
+        uses: actions/cache@v4
+        with:
+          path: dist/tro/_corpus
+          key: dtro-corpus-${{ github.run_id }}
+          restore-keys: dtro-corpus-
+
+      - name: Run the tests before trusting the build
+        run: |
+          python tools/test_osgb.py
+          python tools/test_tro.py
+          python tools/test_tro_merge.py
+
+      - name: Build the pack
+        run: python tools/build_tro.py --key /tmp/dataset.key
+
+      - name: Forget the credentials
+        if: always()
+        run: rm -f .env /tmp/dataset.key
+
+      # Nothing changed: the build is reproducible, so an unchanged corpus
+      # produces a byte-identical pack and the same hash. Publishing it anyway
+      # would make every rider re-download four megabytes to be told nothing
+      # had happened.
+      - name: Has anything changed?
+        id: changed
+        run: |
+          if git diff --quiet -- tro/index.json && [ "${{ inputs.force }}" != "true" ]; then
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+            echo "The pack is identical to the one already published."
+          else
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Publish the pack
+        if: steps.changed.outputs.publish == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # A single moving tag, like the routing mirror. Riders get the file
+          # from a stable URL and the catalogue's hash says which version they
+          # are entitled to expect.
+          gh release view tro >/dev/null 2>&1 || \
+            gh release create tro --notes "Traffic regulation orders, rebuilt through the day."
+          gh release upload tro dist/tro/gb-tro.tbpack --clobber
+
+      - name: Rebuild the catalogue
+        if: steps.changed.outputs.publish == 'true'
+        run: |
+          # THE shared script, never a hand-written flag list. Three separate
+          # workflows once each rebuilt this with their own subset of flags and
+          # each quietly deleted what the others had published; see the comment
+          # at the top of that file.
+          bash tools/rebuild_catalogue.sh dist/manifest.json dist/catalogue.json
+          python tools/verify_catalogue.py dist/catalogue.json
+
+      # Prove the pack riders will actually download is the one we just built,
+      # rather than trusting that the upload went where it was told.
+      - name: Check the published pack matches the index
+        if: steps.changed.outputs.publish == 'true'
+        run: |
+          python - <<'PY'
+          import hashlib, json, sys, urllib.request
+          index = json.load(open("tro/index.json"))["packs"][0]
+          url = index["file"]
+          print("fetching", url)
+          data = urllib.request.urlopen(url, timeout=300).read()
+          got = hashlib.sha256(data).hexdigest()
+          if got != index["sha256"]:
+              sys.exit("published pack does not match the index:\n"
+                       "  index says %s\n  release is %s" % (index["sha256"], got))
+          if len(data) != index["bytes"]:
+              sys.exit("published pack is %d bytes, index says %d"
+                       % (len(data), index["bytes"]))
+          print("matches: %d bytes, %s" % (len(data), got[:16]))
+          PY
+
+      - name: Commit the index and the catalogue
+        if: steps.changed.outputs.publish == 'true'
+        run: |
+          git config user.name  "trailblazer-data"
+          git config user.email "data@trailblazer.invalid"
+          cp dist/catalogue.json catalogue.json
+          git add -A tro/index.json catalogue.json
+          git diff --cached --quiet && exit 0
+          CUT=$(python -c "import json;print(json.load(open('tro/index.json'))['generated'])")
+          git commit -m "Traffic orders: data cut ${CUT}" \
+                     -m "Rebuilt by .github/workflows/traffic-orders.yml"
+          git pull --rebase
+          git push
+
+      - name: Raise an issue if this failed
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Silence is the failure mode that matters here. The app shows no
+          # closures whether the job is working perfectly in an area nobody
+          # publishes in, or has been broken for a fortnight — so a broken run
+          # has to say so somewhere a person will see it.
+          gh issue create \
+            --title "Traffic orders build failed" \
+            --body "Run ${{ github.run_id }} failed. Riders keep the last published pack until this is fixed, so orders will quietly go stale." \
+            || true

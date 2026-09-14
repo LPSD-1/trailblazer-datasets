@@ -187,6 +187,49 @@ def test_a_pack_git_would_rewrite_is_refused():
         shutil.rmtree(root, ignore_errors=True)
 
 
+def test_dropped_traffic_orders_are_refused():
+    """The kind whose absence is a wrong answer, not a missing feature.
+
+    A rider without imagery still has a map. A rider without traffic orders is
+    shown a map with no closures on it, which looks exactly like a map where
+    nothing is closed. So a rebuild that loses this pack must fail loudly.
+    """
+    with tempfile.TemporaryDirectory() as root:
+        tro = {
+            "id": "gb-tro", "kind": "tro", "label": "Traffic orders",
+            "file": "https://example.test/tro/gb-tro.tbpack",
+            "sha256": "a" * 64, "bytes": 3751859,
+        }
+        was = os.path.join(root, "published.json")
+        with open(was, "w", encoding="utf-8") as fh:
+            json.dump(catalogue_with(tro), fh)
+
+        # The same catalogue with the orders gone - which is what a rebuild
+        # that forgot --tro produces.
+        lanes = {
+            "id": "gb-midlands-motor", "kind": "lanes", "label": "Lanes",
+            "file": "packages/gb-midlands-motor.tbpack",
+            "sha256": sha_of(b"x"), "bytes": 1,
+        }
+        write_pack(root, b"x")
+        now = os.path.join(root, "catalogue.json")
+        with open(now, "w", encoding="utf-8") as fh:
+            json.dump(catalogue_with(lanes), fh)
+
+        done = subprocess.run(
+            [sys.executable, VERIFY, now, "--root", root,
+             "--satellite", os.path.join(root, "none.json"),
+             "--routing", os.path.join(root, "none.json"),
+             "--trips", os.path.join(root, "none.json"),
+             "--published", was],
+            capture_output=True, text=True, encoding="utf-8",
+            errors="replace")
+        check("a dropped traffic-orders pack is refused",
+              done.returncode != 0 and "traffic orders" in done.stdout.lower()
+              + done.stderr.lower(),
+              done.stdout + done.stderr)
+
+
 def main():
     for fn in list(globals().values()):
         if callable(fn) and getattr(fn, "__name__", "").startswith("test_"):

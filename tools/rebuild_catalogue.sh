@@ -69,6 +69,14 @@ ARGS=(--lanes "$LANES" --base-url "$BASE_URL" --out "$OUT")
 # risk this line carries is a pack riders on an older build cannot see - not a
 # catalogue none of them can read.
 [ -f height/index.json ] && ARGS+=(--height height/index.json)
+# Traffic regulation orders. Rebuilt several times a day by its own workflow,
+# which is precisely why it has to be listed HERE: the monthly lane refresh
+# rebuilds this catalogue from scratch, and a kind it does not pass is a kind
+# it deletes. That is the whole reason this file exists.
+#
+# The index is committed; the sealed pack is a release asset, because three
+# megabytes several times a day would be a gigabyte a year of git history.
+[ -f tro/index.json ] && ARGS+=(--tro tro/index.json)
 
 echo "rebuilding catalogue with: ${ARGS[*]}"
 python tools/build_catalogue.py "${ARGS[@]}"

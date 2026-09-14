@@ -202,6 +202,31 @@ def main():
                 "%d ground-height pack(s) were published and are now absent: "
                 "%s" % (len(lost), ", ".join(lost[:5])))
 
+    # --- traffic orders ------------------------------------------------------
+    #
+    # The same rule again, and this kind is the one it protects hardest. Every
+    # other dataset here degrades gracefully when it goes missing: a rider
+    # without imagery has a map, a rider without place names can still pan to
+    # where they are going. A rider without traffic orders is shown a map with
+    # no closures on it, which is indistinguishable from a map where nothing is
+    # closed — so a dropped pack is not a missing feature, it is a wrong answer
+    # delivered confidently.
+    #
+    # It enters through `--tro` in rebuild_catalogue.sh, and it is rebuilt four
+    # times a day by a job that does not build anything else. Both of those are
+    # exactly the conditions under which the other kinds got lost.
+    if published:
+        was = {p.get("id") for p in packs_in(published)
+               if p.get("kind") == "tro"}
+        now = {p.get("id") for p in packs_in(catalogue)
+               if p.get("kind") == "tro"}
+        lost = sorted(was - now)
+        if lost:
+            problems.append(
+                "traffic orders were published and are now absent: %s - "
+                "riders would see a map with no closures on it"
+                % ", ".join(lost))
+
     # --- trips ---------------------------------------------------------------
     book = load(args.trips)
     if book and book.get("trips"):

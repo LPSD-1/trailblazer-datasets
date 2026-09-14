@@ -347,43 +347,38 @@ def trips_pack(path, base_url):
     }
 
 
-def tro_pack(path, base_url):
-    """The national traffic-orders pack, if the TRO job has written one.
+def tro_pack(path):
+    """The national traffic-orders pack, from the record the TRO job keeps.
 
-    ONE for the whole country, and it goes into every area. An order does not
-    stop at a regional boundary: a rider who downloaded the Midlands must still
-    be told about the closure two miles into Wales, and the pack is under three
-    megabytes, so there is nothing to save by splitting it.
+    Read from a committed index rather than from the sealed file, for the same
+    reason imagery is: the two jobs run on completely different clocks. The TRO
+    job runs several times a day and the lane refresh monthly, and a monthly
+    rebuild that could not see this would delete traffic orders from every
+    rider's Downloads screen with no code having changed.
 
-    Duplicated into each area the way trips are, and for the same reason - a
-    pack listed once lands in whichever area sorts first, and everybody else
-    silently goes without.
+    The sealed pack itself is a release asset - three megabytes several times a
+    day would be a gigabyte a year of git history - so what is committed is its
+    size, its hash and where it lives.
     """
     if not path or not os.path.exists(path):
-        # Loudly, like trips. A workflow that quietly published a catalogue
-        # with no traffic orders in it would leave no trace anywhere, and the
-        # app would simply show no closures - which is indistinguishable from
-        # there being none.
         print("warning: %s is missing; NO traffic orders in this build"
               % path, file=sys.stderr)
         return None
     try:
-        size = os.path.getsize(path)
-    except OSError as e:
+        with open(path, encoding="utf-8") as f:
+            index = json.load(f)
+    except (ValueError, OSError) as e:
         print("warning: could not read %s (%s); no traffic orders"
               % (path, e), file=sys.stderr)
         return None
 
-    name = os.path.basename(path)
-    print("  traffic orders pack (%d bytes)" % size)
-    return {
-        "id": "gb-tro",
-        "kind": "tro",
-        "label": "Traffic orders",
-        "file": urllib.parse.urljoin(base_url, "tro/%s" % name),
-        "sha256": _sha256_of(path),
-        "bytes": size,
-    }
+    packs = index.get("packs") or []
+    if not packs:
+        return None
+    pack = packs[0]
+    print("  traffic orders pack (%s bytes, cut %s)"
+          % (pack.get("bytes"), pack.get("generated")))
+    return pack
 
 
 def names_packs(names_dir, base_url):
@@ -442,7 +437,7 @@ def build(lanes_manifest, base_url, stamp, satellite_index=None,
     heights = satellite_packs(height_index)
     trips = trips_pack(trips_index, base_url)
     names = names_packs(names_dir, base_url)
-    tro = tro_pack(tro_path, base_url)
+    tro = tro_pack(tro_path)
     mirror = mirrored_routing(routing_mirror_index)
     if mirror:
         print("  %d routing tiles served from our own mirror" % len(mirror))
@@ -599,8 +594,8 @@ def main():
                          "fine and simply means no hill shading in this build")
     ap.add_argument("--names", default="dist/names",
                     help="directory of .tbnames gazetteer packs")
-    ap.add_argument("--tro", default="dist/tro/gb-tro.tbpack",
-                    help="the national traffic-orders pack")
+    ap.add_argument("--tro", default="tro/index.json",
+                    help="the committed record of the traffic-orders pack")
     ap.add_argument("--out", default="dist/catalogue.json")
     args = ap.parse_args()
 
