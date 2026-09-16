@@ -413,15 +413,45 @@ jobs:
           LANES=$(python -c "import json;print(sum(p['laneCount'] for p in json.load(open('manifest.json'))['packages']))")
           git commit -m "Refresh lane data: ${LANES} ways" \
                      -m "Rebuilt from local highway authority definitive maps via rowmaps.com."
-          # NO REBASE. A generated file does not merge, it has a recipe:
-          # catalogue.json is rebuilt whole by both sides, so rebasing it
-          # conflicts every time by construction, stops mid-way, and the retry
-          # then runs `git pull` into an unresolved conflict. That is how the
-          # satellite job turned a recoverable push race into a detached HEAD.
+          # STILL NO REBASE, and for the reason that was always right: a
+          # generated file does not merge, it has a recipe. catalogue.json is
+          # rebuilt whole by both sides, so rebasing conflicts every time by
+          # construction, stops mid-way, and the retry runs `git pull` into an
+          # unresolved conflict. That is how the satellite job turned a
+          # recoverable push race into a detached HEAD.
           #
-          # This job re-runs on its own clock and its work is idempotent, so a
-          # rejected push costs one cycle and nothing else. Say so and stop.
-          git push
+          # What changed is the cost of losing. "A rejected push costs one
+          # cycle and nothing else" was true at a monthly cadence over packs.
+          # It now throws away ~25 minutes of container building, and the race
+          # got likelier: any ordinary commit to main while a run is in flight
+          # loses it. One did.
+          #
+          # So: re-anchor rather than merge. Take the new remote tip, keep OUR
+          # generated files whole, stage nothing else. That is ours-wins for
+          # exactly the paths the recipe rebuilds - which is sound BECAUSE
+          # they are rebuilt whole - while a commit to any other path survives
+          # untouched. `git reset` (mixed) moves HEAD and the index to the new
+          # tip and leaves the working tree alone, so re-adding only the
+          # generated paths stages our output against it and nothing else.
+          GENERATED="packages containers manifest.json catalogue.json trips/gb.tbtrips"
+          for attempt in 1 2 3; do
+            if git push; then
+              echo "published on attempt ${attempt}"
+              exit 0
+            fi
+            echo "push rejected; re-anchoring on the new tip (attempt ${attempt})"
+            git fetch origin main || exit 1
+            git reset origin/main || exit 1
+            git add -A ${GENERATED} || exit 1
+            # Nothing left to say once someone else published the same bytes.
+            if git diff --cached --quiet; then
+              echo "the remote already has this build; nothing to publish"
+              exit 0
+            fi
+            git commit -m "Refresh lane data: ${LANES} ways"                        -m "Rebuilt from local highway authority definitive maps via rowmaps.com."               || exit 1
+          done
+          echo "could not publish after 3 attempts; the next run will carry it"
+          exit 1
 
       # An email is easy to miss and impossible to reply to. An issue is
       # visible, has the log linked, and can be closed when it is dealt with.
