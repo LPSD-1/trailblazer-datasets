@@ -187,6 +187,9 @@ jobs:
       # REPLACES the good copy already on every rider's phone.
       - name: Would this build make things worse?
         run: |
+          # The guard's own tests first. It is the only thing standing between
+          # a short fetch and every rider's map, so "it ran" is not enough.
+          python tools/test_check_build.py
           python tools/check_build.py \
             --previous manifest.json \
             --new dist/manifest.json \

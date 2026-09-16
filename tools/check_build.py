@@ -44,14 +44,17 @@ def load(path):
 
 
 def lane_totals(manifest):
-    """-> (total, {package-area: lanes})"""
+    """-> (total, {package-area: lanes}, {package: lanes})"""
     by_area = {}
+    by_package = {}
     total = 0
     for pkg in manifest.get("packages", []):
+        count = pkg.get("laneCount", 0)
         key = "%s/%s" % (pkg["package"], pkg.get("area") or pkg["region"])
-        by_area[key] = by_area.get(key, 0) + pkg.get("laneCount", 0)
-        total += pkg.get("laneCount", 0)
-    return total, by_area
+        by_area[key] = by_area.get(key, 0) + count
+        by_package[pkg["package"]] = by_package.get(pkg["package"], 0) + count
+        total += count
+    return total, by_area, by_package
 
 
 def check_authorities(cache_dir, problems):
@@ -79,7 +82,7 @@ def check_authorities(cache_dir, problems):
 
 
 def check_totals(previous, new, problems):
-    new_total, new_areas = lane_totals(new)
+    new_total, new_areas, new_packages = lane_totals(new)
     print("  ways in this build: %d" % new_total)
 
     if new_total == 0:
@@ -90,7 +93,7 @@ def check_totals(previous, new, problems):
         print("  no previous build to compare against - first publish")
         return
 
-    old_total, old_areas = lane_totals(previous)
+    old_total, old_areas, old_packages = lane_totals(previous)
     print("  ways in the published build: %d" % old_total)
     if old_total == 0:
         return
@@ -101,6 +104,42 @@ def check_totals(previous, new, problems):
         problems.append(
             "the national total fell %.1f%% (%d ways). That is data loss, not "
             "an amendment." % (-change * 100, old_total - new_total))
+
+    # PER VEHICLE TYPE, and this is the check that was missing.
+    #
+    # The national total above is dominated by footpaths: 635,242 of 875,827 on
+    # the build published on 10 September. Byways open to all traffic - the
+    # lanes this app exists for, the only ones a rider may legally ride - were
+    # 11,851 of that, which is 1.35%.
+    #
+    # So the 2% national threshold could not see them. EVERY BYWAY IN GREAT
+    # BRITAIN could have vanished and the national total would have fallen
+    # 1.35%, under the limit, and this check would have passed. The per-area
+    # check catches a type that goes to exactly zero everywhere, and nothing
+    # caught anything between the two.
+    #
+    # Measured, on the run of 16 September 2026: motor fell from 11,851 to
+    # 10,420, which is 12.1% of every rideable byway in the country - and it
+    # read here as a 0.16% national movement. Nothing in this file objected.
+    # What caught it was the ready-made trips builder, by accident, failing to
+    # snap five trip anchors onto byways that were no longer there; the issue
+    # that raised named five Welsh and northern villages and said nothing about
+    # a shortfall, which sends the next reader off to edit trip anchors that
+    # were never wrong.
+    for name, old in sorted(old_packages.items()):
+        now = new_packages.get(name, 0)
+        if old == 0:
+            continue
+        moved = (now - old) / old
+        print("  %-8s %6d -> %6d (%+.2f%%)" % (name, old, now, moved * 100))
+        if moved < -MAX_NATIONAL_DROP:
+            problems.append(
+                "%s ways fell %.1f%% nationally (%d -> %d). That is only "
+                "%.2f%% of the national total, which is why the check above "
+                "did not object - and it is %.1f%% of every %s way a rider "
+                "would get."
+                % (name, -moved * 100, old, now,
+                   (old - now) / old_total * 100, -moved * 100, name))
 
     # An area vanishing entirely is the clearest sign of a partial fetch, and
     # the national check can miss it when the area is small.
