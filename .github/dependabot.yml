@@ -1,0 +1,28 @@
+# Keeps the SHA-pinned actions in `workflows/` from going stale.
+#
+# The workflows pin every action to a commit SHA rather than a moving tag,
+# because these jobs run with `contents: write`, hold the dataset encryption
+# key, and will hold the pack SIGNING key once that lands. A tag is a pointer
+# somebody else can move; a SHA is not.
+#
+# The cost of pinning is that security fixes no longer arrive on their own, so
+# something has to bring them. This does: one pull request per action update,
+# with the changelog attached, for a person to read rather than to receive
+# silently.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: tuesday
+    # Grouped, because five workflows pin the same three actions and five
+    # identical pull requests a week is how a person learns to ignore them.
+    groups:
+      actions:
+        patterns:
+          - '*'
+    commit-message:
+      prefix: 'ci'
+    labels:
+      - dependencies

@@ -50,9 +50,9 @@ jobs:
     timeout-minutes: 60
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09  # v5
 
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1  # v6
         with:
           python-version: '3.12'
 
@@ -109,7 +109,7 @@ jobs:
       # on. Keyed on the date, the first run of the day writes one entry and
       # the other three hit it and write nothing.
       - name: Restore the corpus cache
-        uses: actions/cache@v5
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25  # v5
         with:
           path: dist/tro/_corpus
           key: dtro-corpus-${{ steps.day.outputs.date }}
