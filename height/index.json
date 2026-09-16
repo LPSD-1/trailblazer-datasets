@@ -56,6 +56,25 @@
       "encoding": "terrarium",
       "area": "gb-south-east",
       "generated": "2026-09-15T08:49:08Z"
+    },
+    {
+      "id": "gb-south-west-height",
+      "kind": "height",
+      "label": "Ground height - South West",
+      "file": "https://github.com/LPSD-1/trailblazer-datasets/releases/download/height/gb-south-west-height.pmtiles",
+      "sha256": "07108766ff01032cc00d8b96de59777fe93d5d0b09f7542874dfe0bb95118ad0",
+      "bytes": 33537279,
+      "bounds": {
+        "west": -6.45,
+        "south": 49.85,
+        "east": -1.95,
+        "north": 51.55
+      },
+      "note": "United Kingdom terrain data (c) Environment Agency copyright and/or database right 2015. All rights reserved. Terrain Tiles hosted by AWS Open Data.",
+      "maxZoom": 12,
+      "encoding": "terrarium",
+      "area": "gb-south-west",
+      "generated": "2026-09-16T08:43:17Z"
     }
   ]
 }
