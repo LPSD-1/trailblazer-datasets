@@ -103,6 +103,41 @@ jobs:
           python tools/test_build_packages.py
           python tools/build_packages.py --key /tmp/dataset.key
 
+      # THE CONTAINERS ARE WHAT A RIDER DOWNLOADS. The packs above are where
+      # the fetched rows are assembled and checked; this turns each one into
+      # the `.tbmap` the app reads - vector tiles for the map, an indexed
+      # record table for every legal answer - and one overview per vehicle.
+      #
+      # Measured on the real catalogue: 99 containers, and the whole of England
+      # and Wales for a motorcyclist is 5.7 MB.
+      - name: Build the map containers
+        env:
+          # Signing closes the hole the sealing never did: the pack key ships
+          # in the app, so a substituted catalogue can point at a substituted
+          # pack sealed under it. Missing, the build warns and publishes
+          # unsigned rather than failing - but see the guard below, which will
+          # not let an unsigned build through.
+          TB_SIGNING_KEY_PEM: ${{ secrets.TB_SIGNING_KEY_PEM }}
+        run: |
+          python tools/test_mvt.py
+          python tools/test_build_changeset.py
+          python tools/test_sign_release.py
+          python tools/build_containers.py \
+            --manifest manifest.json \
+            --key /tmp/dataset.key \
+            --out dist/containers
+
+      # The guard for the new format. check_build.py still guards the packs.
+      #
+      # It refuses a tile over 512 kB, a record in no tile, a feature in no
+      # record, and a lane claimed by two areas. It caught a real one on its
+      # first run - every record in every area container was invisible,
+      # because the zoom table for coalescing was inverted - and a second when
+      # the national footpath overview would not fit at z6.
+      - name: Check the containers
+        run: |
+          python tools/check_containers.py dist/containers/*.tbmap
+
       # Ready-made trips: anchors snapped to real byways in the data we
       # have just built. It REFUSES to publish a trip whose anchors it
       # cannot place on a motor-legal byway, so a transposed digit fails
@@ -265,6 +300,8 @@ jobs:
           # download that fails its own checksum.
           if [ -d packages ] \
              && diff -rq packages dist/packages >/dev/null 2>&1 \
+             && [ -d containers ] \
+             && diff -rq containers dist/containers >/dev/null 2>&1 \
              && git diff --quiet -- trips/gb.tbtrips; then
             echo "Councils published nothing new. Leaving the last build in place."
             echo "Every pack is byte-identical to the published one, so nobody"
@@ -274,12 +311,16 @@ jobs:
 
           rm -rf packages
           mv dist/packages packages
+          # The containers are what riders download; the packs stay as the
+          # thing they were built from and as the diff above's subject.
+          rm -rf containers
+          mv dist/containers containers
           mv dist/manifest.json manifest.json
           mv dist/catalogue.json catalogue.json
 
           git config user.name  'Trail Blazer data bot'
           git config user.email 'noreply@github.com'
-          git add -A packages manifest.json catalogue.json trips/gb.tbtrips
+          git add -A packages containers manifest.json catalogue.json trips/gb.tbtrips
 
           # The lane count is the number worth seeing in the commit list: it is
           # the one that moves when a council amends its map.

@@ -48,6 +48,23 @@ ARGS=(--lanes "$LANES" --base-url "$BASE_URL" --out "$OUT")
   --routing-mirror-base "$REPO_URL/releases/download/routing/"
 )
 [ -f trips/gb.tbtrips ] && ARGS+=(--trips trips/gb.tbtrips)
+
+# THE CONTAINERS, and they go HERE for exactly the reason at the top of this
+# file. The lane refresh builds them; the daily imagery job and the weekly
+# routing job both rebuild the catalogue from scratch, and either of them
+# passing everything EXCEPT this would delete every lane download in the
+# catalogue within a day - which is the same bug that wiped the trips, one kind
+# later.
+# dist/ FIRST, because the lane refresh rebuilds the catalogue while the
+# containers it has just built are still there - they are only moved into place
+# after the "did anything change" diff further down. Reading the committed copy
+# would publish a catalogue describing LAST month's containers alongside this
+# month's hashes, which is the trips bug again wearing a different hat.
+if [ -f dist/containers/manifest.json ]; then
+  ARGS+=(--containers dist/containers/manifest.json)
+elif [ -f containers/manifest.json ]; then
+  ARGS+=(--containers containers/manifest.json)
+fi
 # Published as of 13 Sep 2026, once BOTH halves were in a build riders have.
 #
 # It was held back for a fortnight of an evening because publishing it early

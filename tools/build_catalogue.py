@@ -215,8 +215,35 @@ def _tile_label(lon, lat):
     )
 
 
-def lane_areas(lanes_manifest):
-    """Turn the Great Britain lane manifest into catalogue areas."""
+def load_containers(path):
+    """{(vehicle, area): entry} from the container build, or {} if there is none.
+
+    A MISSING FILE IS NOT A QUIET FALLBACK. The catalogue that comes out will
+    have lane entries with no file, `verify_catalogue.py` will refuse it, and
+    the build stops - which is the right end for a run whose container step did
+    not happen, because the app can no longer read the packs.
+    """
+    if not path or not os.path.isfile(path):
+        return {}
+    with open(path, encoding="utf8") as fh:
+        manifest = json.load(fh)
+    out = {}
+    for entry in manifest.get("containers", []):
+        if entry.get("kind") == "area":
+            out[(entry["vehicle"], entry["area"])] = entry
+        elif entry.get("kind") == "overview":
+            out[(entry["vehicle"], None)] = entry
+    return out
+
+
+def lane_areas(lanes_manifest, containers=None):
+    """Turn the Great Britain lane manifest into catalogue areas.
+
+    [containers] maps (vehicle, area) to the entry `build_containers.py` wrote
+    for it. That is what a rider downloads; the pack is only the thing it was
+    built from.
+    """
+    containers = containers or {}
     if not lanes_manifest or not os.path.isfile(lanes_manifest):
         return {}
     with open(lanes_manifest, encoding="utf8") as fh:
@@ -245,13 +272,29 @@ def lane_areas(lanes_manifest):
             "packs": [],
         })
         area_id = pkg.get("area") or region_id
+        # THE CONTAINER IS WHAT SHIPS, where one has been built.
+        #
+        # `build_containers.py` turns each pack into a `.tbmap` - tiles for the
+        # map, records for every legal answer - and the app reads only that.
+        # The pack stays in this entry as `legacyFile` so a build can be
+        # compared against the one before it, but nothing downloads it.
+        #
+        # An entry with no container is a lane pack the container build did not
+        # produce, which is a broken build rather than a mixed one: it is left
+        # POINTING AT NOTHING rather than silently falling back to a format the
+        # app can no longer read.
+        container = containers.get((pkg["package"], area_id))
         area["packs"].append({
             "id": "gb-%s-%s" % (area_id, pkg["package"]),
             "kind": "lanes",
+            "format": "tbmap",
             "label": pkg["label"],
-            "file": pkg["file"],
-            "sha256": pkg["sha256"],
-            "bytes": pkg["bytes"],
+            "file": container["file"] if container else None,
+            "sha256": container["sha256"] if container else None,
+            "bytes": container["bytes"] if container else 0,
+            "downloadBytes": container["downloadBytes"] if container else 0,
+            "signature": (container or {}).get("signature"),
+            "legacyFile": pkg["file"],
             "plainBytes": pkg.get("plainBytes", 0),
             "vehicle": pkg["package"],
             "featureCount": pkg.get("laneCount", 0),
@@ -425,9 +468,9 @@ def names_packs(names_dir, base_url):
 def build(lanes_manifest, base_url, stamp, satellite_index=None,
           routing_mirror_index=None, routing_mirror_base="",
           trips_index=None, names_dir=None, height_index=None,
-          tro_path=None):
+          tro_path=None, containers=None):
     tile_sizes = routing_index()
-    gb_areas = lane_areas(lanes_manifest)
+    gb_areas = lane_areas(lanes_manifest, containers)
     imagery = satellite_packs(satellite_index)
     # Read exactly the way imagery is, and for exactly the same reason: the
     # height job runs on its own clock, and a monthly lane refresh that
@@ -522,11 +565,45 @@ def build(lanes_manifest, base_url, stamp, satellite_index=None,
             "areas": areas,
         })
 
+    # WHERE THE LANES OF THE COUNTRY ARE, BEFORE ANY AREA IS DOWNLOADED.
+    #
+    # One per vehicle, and per vehicle for a measured reason: a single national
+    # overview across every vehicle type put 462,684 points in one z6 tile and
+    # took the app to 1.5 GB. A motorcyclist's is 10,114 lanes and 0.42 MB.
+    #
+    # `minZoom` travels with it because the FLOOR MOVES: the builder picks the
+    # lowest zoom whose tiles all fit under the ceiling, which is z6 for a
+    # motorcyclist and z9 for a walker. The app needs it to say where the lanes
+    # come back rather than drawing an empty map and leaving a rider to wonder.
+    overviews = sorted(
+        (
+            {
+                "id": entry["id"],
+                "kind": "overview",
+                "format": "tbmap",
+                "vehicle": entry["vehicle"],
+                "label": entry["label"],
+                "file": entry["file"],
+                "sha256": entry["sha256"],
+                "bytes": entry["bytes"],
+                "downloadBytes": entry["downloadBytes"],
+                "signature": entry.get("signature"),
+                "minZoom": entry.get("minZoom"),
+                "featureCount": entry["laneCount"],
+                "generated": entry["generated"],
+            }
+            for (vehicle, area), entry in (containers or {}).items()
+            if area is None
+        ),
+        key=lambda e: e["vehicle"],
+    )
+
     catalogue = {
         "schema": 2,
         "generated": stamp,
         "attribution": ATTRIBUTION,
         "baseUrl": base_url,
+        "overviews": overviews,
         # How often the app should CHECK each kind, published here so it can
         # be changed without shipping an app. They move on different clocks:
         # councils amend a definitive map every few weeks and the road network
@@ -596,6 +673,9 @@ def main():
                     help="directory of .tbnames gazetteer packs")
     ap.add_argument("--tro", default="tro/index.json",
                     help="the committed record of the traffic-orders pack")
+    ap.add_argument("--containers", default="dist/containers/manifest.json",
+                    help="what build_containers.py wrote; the .tbmap files "
+                         "are what the app downloads")
     ap.add_argument("--out", default="dist/catalogue.json")
     args = ap.parse_args()
 
@@ -603,6 +683,7 @@ def main():
     stamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
     catalogue = build(args.lanes, args.base_url, stamp,
+                      containers=load_containers(args.containers),
                       satellite_index=args.satellite,
                       trips_index=args.trips,
                       names_dir=args.names,
