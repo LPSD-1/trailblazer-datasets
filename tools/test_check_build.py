@@ -3,22 +3,30 @@
 
     python tools/test_check_build.py
 
-THE HOLE THIS FIXES, measured rather than imagined. The national total is
-dominated by footpaths - 635,242 of 875,827 ways on the build published on
-10 September 2026 - and byways open to all traffic, the only ones a rider may
-legally ride and the entire reason this app exists, were 11,851 of it. That is
-1.35%, against a national threshold of 2%.
+THE HOLE THIS CLOSES is arithmetic, and it is read straight off the published
+manifest of 10 September 2026. The national total is dominated by footpaths -
+635,242 of 875,827 ways - and byways open to all traffic, the only ones a rider
+may legally ride and the whole reason this app exists, are 11,851 of it. That is
+1.35%, against a national drop threshold of 2%.
 
-So every byway in Great Britain could have disappeared and this check would
-have passed.
+So every byway in Great Britain could disappear and the national check would
+report a 1.35% movement, under the limit, and publish. The per-area rule catches
+a type that goes to exactly zero in every area. Between those two there was
+nothing at all, and that gap is wide enough to lose a fifth of the country's
+byways in silence.
 
-It was not hypothetical. On 16 September the motor total came back 10,420
-against 11,851 published: 12.1% of every rideable byway in the country, gone,
-reading here as a 0.16% national movement. Nothing in check_build.py objected.
-What caught it was the ready-made trips builder, by accident, when five trip
-anchors could no longer find a byway to snap to - and the issue it raised named
-five Welsh and northern villages, which sends the next reader off to correct
-trip anchors that were never wrong.
+A CORRECTION, recorded because the commit that added this check got it wrong.
+That commit claimed the 16 September run had measured a 12.1% fall in byways.
+It had not. 10,420 is the count of raw byway rows fetched from councils and
+10,342 is that count after de-duplication; 11,851 is a count of LANES IN BUILT
+PACKAGES, which splits lanes by area and publishes a boundary-straddling lane in
+both. They are not comparable, and comparing them was the error. Measured like
+for like, that run's motor packages held 12,702 lanes against 11,851 published -
+a 7.2% RISE. Nothing had been lost.
+
+The check below is still right, and still needed; what was wrong was the story
+attached to it. It is kept because of the arithmetic in the first paragraph,
+which does not depend on any particular run.
 """
 import os
 import sys
@@ -65,8 +73,11 @@ class Totals(unittest.TestCase):
 class EveryBywayCouldVanish(unittest.TestCase):
     """The shape of the hole, at its sharpest."""
 
-    def test_a_twelve_percent_byway_loss_is_now_refused(self):
-        # The real run: 11,851 -> 10,420.
+    def test_a_loss_too_big_to_be_an_amendment_is_now_refused(self):
+        # A twelve percent fall, which is the size that would have gone unseen.
+        # NOT a measurement of any real run - see the correction in the module
+        # docstring. The figure is chosen because it is comfortably inside both
+        # old thresholds and far too large to be an amendment.
         after = manifest(foot=635242, bicycle=114367, horse=114367, motor=10420)
         problems = []
         check_totals(PUBLISHED, after, problems)
@@ -91,8 +102,7 @@ class EveryBywayCouldVanish(unittest.TestCase):
         #
         # It is kept because it pins the floor, not because it is evidence for
         # the check above. The gap the per-type check closes is everything
-        # BETWEEN a total collapse and a 2% national wobble, which is where the
-        # real 12.1% loss sat.
+        # BETWEEN a total collapse and a 2% national wobble.
         after = manifest(foot=635242, bicycle=114367, horse=114367, motor=4)
         problems = []
         check_totals(PUBLISHED, after, problems)

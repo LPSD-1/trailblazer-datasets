@@ -108,24 +108,21 @@ def check_totals(previous, new, problems):
     # PER VEHICLE TYPE, and this is the check that was missing.
     #
     # The national total above is dominated by footpaths: 635,242 of 875,827 on
-    # the build published on 10 September. Byways open to all traffic - the
+    # the build published on 10 September 2026. Byways open to all traffic - the
     # lanes this app exists for, the only ones a rider may legally ride - were
     # 11,851 of that, which is 1.35%.
     #
     # So the 2% national threshold could not see them. EVERY BYWAY IN GREAT
-    # BRITAIN could have vanished and the national total would have fallen
-    # 1.35%, under the limit, and this check would have passed. The per-area
-    # check catches a type that goes to exactly zero everywhere, and nothing
-    # caught anything between the two.
+    # BRITAIN could vanish and the national total would fall 1.35%, under the
+    # limit, and this check would pass. The per-area check catches a type that
+    # goes to exactly zero everywhere. Between the two there was nothing, and
+    # the gap is wide enough to lose a fifth of the country in silence.
     #
-    # Measured, on the run of 16 September 2026: motor fell from 11,851 to
-    # 10,420, which is 12.1% of every rideable byway in the country - and it
-    # read here as a 0.16% national movement. Nothing in this file objected.
-    # What caught it was the ready-made trips builder, by accident, failing to
-    # snap five trip anchors onto byways that were no longer there; the issue
-    # that raised named five Welsh and northern villages and said nothing about
-    # a shortfall, which sends the next reader off to edit trip anchors that
-    # were never wrong.
+    # The commit that added this cited a 12.1% fall measured on the 16 September
+    # run. That was wrong and is corrected in tools/test_check_build.py: it
+    # compared raw fetched rows against built package lanes, which count
+    # differently. That run actually GREW by 7.2%. The arithmetic above is the
+    # reason this check exists; no particular run is.
     for name, old in sorted(old_packages.items()):
         now = new_packages.get(name, 0)
         if old == 0:
