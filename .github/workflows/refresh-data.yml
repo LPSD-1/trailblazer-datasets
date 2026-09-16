@@ -142,10 +142,50 @@ jobs:
       # have just built. It REFUSES to publish a trip whose anchors it
       # cannot place on a motor-legal byway, so a transposed digit fails
       # the build instead of sending a rider to the wrong valley.
+      #
+      # A BAD TRIP DEFINITION MUST NOT HOLD BACK A MONTH OF LANE DATA.
+      #
+      # It did, for six days. Five of the eight trips have anchors with no BOAT
+      # within the 6 km limit - measured: 7.0 km at Cynwyd, 8.1 km at
+      # Pontrhydfendigaid, 8.1 km at Slaidburn - so this step exited 1, the job
+      # stopped, and nothing published. Councils amended their maps and no
+      # rider saw it, because of a handful of coordinates in a file that has
+      # nothing to do with lane data.
+      #
+      # The guard is right and stays exactly as strict. What changes is what it
+      # stops: the trips, not the refresh. The previously published trips stay
+      # in place, so nobody loses one, and the failure is raised as an issue
+      # rather than swallowed - which is the same bargain the rest of this
+      # workflow makes.
       - name: Build the ready-made trips
+        id: trips
+        continue-on-error: true
         run: |
           python tools/test_build_trips.py
           python tools/build_trips.py --trips trips/gb.json --out trips
+
+      - name: Say so if a trip could not be built
+        if: steps.trips.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # PUT THE PUBLISHED FILE BACK FIRST.
+          #
+          # build_trips.py WRITES before it refuses: the failing run logged
+          # "wrote trips/gb.tbtrips: 3 trips" and then exited 1. Left there,
+          # continue-on-error would publish three trips where eight were, and
+          # silently losing one is the exact thing that guard exists to stop.
+          git checkout -- trips/gb.tbtrips || true
+          echo "::warning::Ready-made trips did not build; the previously "
+          echo "::warning::published ones are unchanged. Lane data still went out."
+          # Deduplicated the same way every other alarm in this repository is:
+          # a job that runs monthly must not open a twelfth copy of the issue
+          # nobody has closed.
+          TITLE="Ready-made trips are not building"
+          if [ -z "$(gh issue list --state open --search ''"$TITLE"'' --json number --jq '.[0].number')" ]; then
+            gh issue create --title "$TITLE" --body \
+              "build_trips.py rejected one or more trips, so trips/gb.tbtrips was left as published. Lane data was published normally. Run the workflow logs for which anchors failed and by how far."
+          fi
 
       # Every index, not just the lanes.
       #
