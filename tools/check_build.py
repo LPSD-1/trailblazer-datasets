@@ -44,17 +44,33 @@ def load(path):
 
 
 def lane_totals(manifest):
-    """-> (total, {package-area: lanes}, {package: lanes})"""
-    by_area = {}
+    """-> (total, {package/region: lanes}, {package: lanes})
+
+    KEYED ON THE REGION, NOT THE AREA, and that distinction cost a publish.
+
+    An `area` id is derived from the authorities that happened to be packed
+    into it - "midlands-barnsley-and-38-more". Fetch more data, the chunking
+    shifts, and the same ground comes back as "...-and-41-more". The per-area
+    check then compares a name against a name that no longer exists and reports
+    every renamed area as having "lost every one of its ways": 50 of them on a
+    build whose data had GROWN by 8.94%, with all 149 authorities answering.
+
+    A region is one of six fixed names and does not move. It is a coarser
+    bucket, which the rule can afford - a partial fetch still shows as a region
+    losing most of its ways, and the per-vehicle and national checks above are
+    unchanged. What it cannot afford is a key that changes for reasons that have
+    nothing to do with the data.
+    """
+    by_region = {}
     by_package = {}
     total = 0
     for pkg in manifest.get("packages", []):
         count = pkg.get("laneCount", 0)
-        key = "%s/%s" % (pkg["package"], pkg.get("area") or pkg["region"])
-        by_area[key] = by_area.get(key, 0) + count
+        key = "%s/%s" % (pkg["package"], pkg["region"])
+        by_region[key] = by_region.get(key, 0) + count
         by_package[pkg["package"]] = by_package.get(pkg["package"], 0) + count
         total += count
-    return total, by_area, by_package
+    return total, by_region, by_package
 
 
 def check_authorities(cache_dir, problems):
@@ -152,7 +168,7 @@ def check_totals(previous, new, problems):
 
     missing = set(old_areas) - set(new_areas)
     if missing:
-        problems.append("areas that disappeared entirely: %s"
+        problems.append("regions that disappeared entirely: %s"
                         % ", ".join(sorted(missing)))
 
 

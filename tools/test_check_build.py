@@ -144,6 +144,68 @@ class OrdinaryAmendments(unittest.TestCase):
         self.assertEqual(problems, [])
 
 
+class RechunkingIsNotALoss(unittest.TestCase):
+    """An area id is not a stable key, and treating it as one cost a publish.
+
+    Area ids are built from the authorities packed into them -
+    "midlands-barnsley-and-38-more". Fetch more data, the chunking shifts, and
+    the same ground comes back as "...-and-41-more". Keyed on that, the check
+    compared names against names that no longer existed and reported 50 areas
+    as having "lost every one of its ways" - on a build whose data had GROWN by
+    8.94%, with all 149 authorities answering.
+    """
+
+    @staticmethod
+    def _chunked(total, names):
+        """`total` ways of motor data spread over the named areas of one region."""
+        per = total // len(names)
+        return {
+            "packages": [
+                {
+                    "package": "motor",
+                    "region": "midlands",
+                    "area": name,
+                    "laneCount": per if i else total - per * (len(names) - 1),
+                }
+                for i, name in enumerate(names)
+            ]
+        }
+
+    def test_renaming_every_area_is_not_a_loss(self):
+        before = self._chunked(12000, ["midlands-barnsley-and-38-more",
+                                       "midlands-derby-and-12-more"])
+        # More data, so the chunker packs the authorities differently and every
+        # area comes back under a new name.
+        after = self._chunked(13000, ["midlands-barnsley-and-41-more",
+                                      "midlands-derby-and-9-more",
+                                      "midlands-stoke-and-3-more"])
+        problems = []
+        check_totals(before, after, problems)
+        self.assertEqual(problems, [])
+
+    def test_but_a_region_actually_losing_its_data_is_still_caught(self):
+        # The thing the per-area rule was written for: a partial fetch. The
+        # region is a coarser bucket than an area and still catches it.
+        before = self._chunked(12000, ["midlands-a", "midlands-b"])
+        after = {"packages": [
+            {"package": "motor", "region": "midlands", "area": "midlands-a",
+             "laneCount": 0},
+        ]}
+        problems = []
+        check_totals(before, after, problems)
+        self.assertTrue(problems, "a region losing everything must be refused")
+
+    def test_and_a_region_disappearing_entirely_is_caught(self):
+        before = self._chunked(12000, ["midlands-a"])
+        after = {"packages": [
+            {"package": "motor", "region": "north", "area": "north-a",
+             "laneCount": 12000},
+        ]}
+        problems = []
+        check_totals(before, after, problems)
+        self.assertTrue(problems, "midlands vanished and nothing said so")
+
+
 class StillCatchesWhatItAlwaysDid(unittest.TestCase):
     def test_an_empty_build(self):
         problems = []
