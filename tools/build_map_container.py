@@ -352,7 +352,12 @@ def write_container(path, features, kind, zooms, source_date):
     db = sqlite3.connect(path)
     db.executescript(SCHEMA)
 
-    coalesced = (kind == "overview")
+    # "both" builds the two bands into one file: coalesced below the split,
+    # individual above, records present. It is NOT the shipping arrangement -
+    # section 19.1 keeps the low zooms national and the high zooms per area -
+    # but it is the whole design in one file, which is what a measurement on a
+    # device needs.
+    coalesced_below = 11 if kind == "both" else (99 if kind == "area" else 0)
     stats = collections.OrderedDict()
 
     def on_tile(z, x, y, blob, feature_count):
@@ -377,11 +382,11 @@ def write_container(path, features, kind, zooms, source_date):
         got[2] = max(got[2], len(blob))
 
     for zoom in range(zooms[0], zooms[1] + 1):
-        build_tiles(features, zoom, coalesced, on_tile)
+        build_tiles(features, zoom, zoom < coalesced_below, on_tile)
 
     # The overview carries no records: it exists to be looked at, and every
     # legal answer comes from an area container.
-    if not coalesced:
+    if kind != "overview":
         for index, f in enumerate(features):
             props = f["properties"]
             lines = lines_of(f)
@@ -401,10 +406,12 @@ def write_container(path, features, kind, zooms, source_date):
             db.execute("INSERT INTO lanes_bbox VALUES (?,?,?,?,?)",
                        (index + 1, min(lons), max(lons), min(lats), max(lats)))
 
+    bounds = _bounds_of(features)
     for key, value in (("format_version", "1"), ("kind", kind),
-                       ("built_at", source_date),
+                       ("built_at", source_date), ("bounds", bounds),
                        ("min_zoom", str(zooms[0])), ("max_zoom", str(zooms[1])),
-                       ("lane_count", str(0 if coalesced else len(features)))):
+                       ("lane_count",
+                        str(0 if kind == "overview" else len(features)))):
         db.execute("INSERT INTO meta VALUES (?,?)", (key, value))
 
     db.commit()
@@ -413,11 +420,30 @@ def write_container(path, features, kind, zooms, source_date):
     return stats
 
 
+def _bounds_of(features):
+    """west,south,east,north over everything in the container.
+
+    The app needs this to tell "there are no rights of way here" from "I have
+    nothing downloaded for here", which is a distinction a rider's safety turns
+    on - see section 16.3 of the spec.
+    """
+    lons, lats = [], []
+    for f in features:
+        for line in lines_of(f):
+            for lon, lat in line:
+                lons.append(lon)
+                lats.append(lat)
+    if not lons:
+        return ""
+    return "%.6f,%.6f,%.6f,%.6f" % (min(lons), min(lats), max(lons), max(lats))
+
+
 def main():
     ap = argparse.ArgumentParser()
     group = ap.add_mutually_exclusive_group(required=True)
     group.add_argument("--area", action="store_true")
     group.add_argument("--overview", action="store_true")
+    group.add_argument("--both", action="store_true")
     ap.add_argument("out")
     ap.add_argument("packs", nargs="+")
     ap.add_argument("--key", default=os.environ.get(
@@ -427,8 +453,10 @@ def main():
 
     key = base64.b64decode(open(args.key).read().strip())
     features = load_features(args.packs, key)
-    kind = "overview" if args.overview else "area"
-    zooms = OVERVIEW_ZOOMS if args.overview else AREA_ZOOMS
+    kind = "overview" if args.overview else ("both" if args.both else "area")
+    zooms = (OVERVIEW_ZOOMS if args.overview
+             else ((OVERVIEW_ZOOMS[0], AREA_ZOOMS[1]) if args.both
+                   else AREA_ZOOMS))
 
     # From the source, never the clock, so an unchanged area rebuilds
     # byte-identical and nobody downloads it again (section 18.1).
