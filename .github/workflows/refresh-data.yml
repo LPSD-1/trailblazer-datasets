@@ -84,8 +84,22 @@ jobs:
       # The fetch is resumable and skips authorities it already has, so a
       # cached copy turns a 25-minute step into seconds and only picks up
       # what changed.
+      # RESTORE AND SAVE SEPARATELY, so a later failure does not throw the
+      # fetch away.
+      #
+      # `actions/cache` saves in a post step that is SKIPPED when the job fails.
+      # This job has failed on its last three attempts - the trips guard, then
+      # the container guard - so the cache had never once been written, every
+      # run re-scraped 149 councils for twenty-five minutes, and `skip_fetch`
+      # could never work because there was nothing to skip to. Checked rather
+      # than assumed: `gh cache list` showed no rowmaps- entry at all.
+      #
+      # Splitting it and saving with `if: always()` means a failed build still
+      # leaves the next one a warm cache - which is also the polite thing to do
+      # to rowmaps.com, who are hosting this data for nothing.
       - name: Restore the council data cache
-        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25  # v5
+        id: council_cache
+        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25  # v5
         with:
           path: cache
           key: rowmaps-${{ github.run_id }}
@@ -94,6 +108,16 @@ jobs:
       - name: Fetch rights of way
         if: ${{ !inputs.skip_fetch }}
         run: python tools/fetch_rights_of_way.py
+
+      # Immediately after the fetch, and unconditionally. Everything that can
+      # fail from here on has nothing to do with whether the council data is
+      # worth keeping.
+      - name: Keep the council data for the next run
+        if: always() && hashFiles('cache/authorities.json') != ''
+        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25  # v5
+        with:
+          path: cache
+          key: rowmaps-${{ github.run_id }}
 
       # The build now REFUSES to publish if any lane falls outside every
       # region box. Such a lane is in the source data, in no package and on
