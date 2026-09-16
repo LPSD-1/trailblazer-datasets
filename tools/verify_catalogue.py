@@ -44,9 +44,24 @@ def _local_path(file, root, staged=None):
 
     That distinction was invisible while the only things checked were packs:
     those builds are reproducible, so unchanged data gives byte-identical packs
-    and staged and published agree. Containers are not reproducible yet, so
-    reading the published copy compared this build's catalogue against last
-    build's bytes and refused 129 packs that were perfectly correct.
+    and staged and published agree. A run then refused 129 containers that were
+    perfectly correct, because it compared this build's catalogue against last
+    build's bytes.
+
+    WHY THOSE TWO BUILDS DIFFERED IS NOT ESTABLISHED, and an earlier version of
+    this comment asserted it was because container builds are not reproducible.
+    That was a guess dressed as a finding. The measurement behind it compared a
+    local rebuild against the published file and was confounded: the two were
+    written by different SQLite versions (3.50.4 against 3.45.1), which moves
+    31,880 bytes of b-tree layout on its own. Every logical row matched - the
+    built_at stamp, all 824 tiles, all 1,405 lane records - and two local
+    builds on one SQLite were byte-identical.
+
+    So reproducibility is an open question, not a known defect, and it is worth
+    settling before release: if containers really do differ run to run, an
+    unchanged month republishes every one of them and every rider downloads it
+    again. This fix does not depend on the answer. Checking the catalogue
+    against the file we are about to serve is right either way.
     """
     if not isinstance(file, str) or not file:
         return None
