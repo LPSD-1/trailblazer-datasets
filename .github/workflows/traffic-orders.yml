@@ -289,3 +289,21 @@ jobs:
             to publish a pack that falls under the floor rather than quietly
             shipping a country with no closures in it."
           fi
+
+      # AND STAND IT DOWN AGAIN.
+      #
+      # Nothing closed these. Two of the three issues open on 16 September were
+      # for faults that had already fixed themselves - satellite had succeeded
+      # several times since its issue was raised - and an alarm that never
+      # resets is one people learn to scroll past, which is the failure the
+      # alarm exists to prevent.
+      - name: Stand the alarm down if this worked
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          for n in $(gh issue list --label traffic-orders --state open \
+                       --json number --jq '.[].number' 2>/dev/null || true); do
+            gh issue close "$n" --comment "Fixed: $RUN_URL succeeded." || true
+          done

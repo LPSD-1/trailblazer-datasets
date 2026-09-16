@@ -280,8 +280,37 @@ jobs:
         if: failure()
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
-          gh issue create \
-            --title "Ground height build failed: ${{ steps.plan.outputs.id }}" \
-            --body "Run ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }} failed. Staged tiles are cached and the next run resumes from them." \
-            || true
+          # One open issue at a time, like the other jobs here. This one had no
+          # label and no guard, so a source down for a week would open an issue
+          # a day; it never showed only because the job kept passing.
+          EXISTING=$(gh issue list --label height --state open \
+                       --json number --jq '.[0].number' 2>/dev/null || true)
+          if [ -n "$EXISTING" ]; then
+            gh issue comment "$EXISTING" --body "Failed again: $RUN_URL"
+          else
+            gh label create height --color 5319E7 \
+              --description "Automated ground-height build problems" 2>/dev/null || true
+            gh issue create --label height \
+              --title "Ground height build failed: ${{ steps.plan.outputs.id }}" \
+              --body "$RUN_URL failed. Staged tiles are cached and the next run resumes from them."
+          fi
+
+      # AND STAND IT DOWN AGAIN.
+      #
+      # Nothing closed these. Two of the three issues open on 16 September were
+      # for faults that had already fixed themselves — satellite had succeeded
+      # several times since its issue was raised — and an alarm that never
+      # resets is one people learn to scroll past, which is the failure the
+      # alarm exists to prevent.
+      - name: Stand the alarm down if this worked
+        if: success()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          for n in $(gh issue list --label height --state open \
+                       --json number --jq '.[].number' 2>/dev/null || true); do
+            gh issue close "$n" --comment "Fixed: $RUN_URL succeeded." || true
+          done
