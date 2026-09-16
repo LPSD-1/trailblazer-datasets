@@ -151,6 +151,7 @@ jobs:
         run: |
           python tools/test_mvt.py
           python tools/test_build_changeset.py
+          python tools/test_build_containers.py
           python tools/test_sign_release.py
           python tools/build_containers.py \
             --manifest dist/manifest.json \

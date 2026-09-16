@@ -60,8 +60,28 @@ def build_all(manifest_path, out_dir, key, signing_key=None, root="."):
         manifest = json.load(fh)
 
     os.makedirs(out_dir, exist_ok=True)
-    generated = manifest.get("generated") or ""
+
+    # THE MANIFEST'S OWN STAMP IS THE CLOCK, AND MUST NOT REACH A CONTAINER.
+    #
+    # `manifest["generated"]` is when this RUN built the manifest. Stamping it
+    # into every container made every container new on every run: measured on
+    # two CI builds of unchanged council data, one SQLite, `motor-wales.tbmap`
+    # differed in FIVE bytes out of 1,114,112 - `built_at` moving from
+    # 21:47:46Z to 22:52:13Z - and five bytes move the sha256, so every rider
+    # re-downloads all 343 MB for lanes that did not change.
+    #
+    # It also cost a publish. The catalogue check compares a pack against the
+    # file on disk, and containers that were "new" every run made 129 of them
+    # disagree with what was published an hour earlier.
+    #
+    # Each PACK carries its own `generated`, and build_packages keeps that
+    # stamp when the lanes have not changed - that is the whole mechanism that
+    # makes packs rebuild byte-identical. Containers now inherit it, which is
+    # what build_map_container.py has always done when run directly: "From the
+    # source, never the clock". This driver was the way round it.
+    run_stamp = manifest.get("generated") or ""
     by_vehicle = collections.defaultdict(list)
+    stamps_by_vehicle = collections.defaultdict(list)
     entries = []
 
     # Which lanes already have an area drawing them, per vehicle. Packs are
@@ -76,16 +96,20 @@ def build_all(manifest_path, out_dir, key, signing_key=None, root="."):
             raise SystemExit("Missing pack: %s" % source)
         vehicle = pack["package"]
         by_vehicle[vehicle].append(source)
+        # Fall back to the run stamp only for a manifest too old to carry one;
+        # that costs one republish, where the clock costs one every month.
+        pack_stamp = pack.get("generated") or run_stamp
+        stamps_by_vehicle[vehicle].append(pack_stamp)
 
         name = "%s-%s.tbmap" % (vehicle, pack["area"])
         target = os.path.join(out_dir, name)
         features = B.load_features([source], key)
         already = claimed[vehicle]
-        B.write_container(target, features, "area", B.AREA_ZOOMS, generated,
+        B.write_container(target, features, "area", B.AREA_ZOOMS, pack_stamp,
                           tile_exclude=already)
         already.update(f["properties"].get("lane_uid") for f in features)
         entries.append(_entry(target, pack, kind="area", vehicle=vehicle,
-                              lane_count=len(features), generated=generated))
+                              lane_count=len(features), generated=pack_stamp))
         print("  %-42s %6d lanes  %5.2f MB download"
               % (name, len(features), _download_bytes(target) / 1048576.0))
 
@@ -106,10 +130,13 @@ def build_all(manifest_path, out_dir, key, signing_key=None, root="."):
             print("  %-42s %6d lanes  NO OVERVIEW - too dense to draw even at "
                   "z%d" % (name, len(features), B.OVERVIEW_ZOOMS[1]))
             continue
+        # The newest pack it was built from. Deterministic, and it moves only
+        # when one of its sources actually did.
+        overview_stamp = max(stamps_by_vehicle[vehicle])             if stamps_by_vehicle[vehicle] else run_stamp
         B.write_container(target, features, "overview",
-                          (floor, B.OVERVIEW_ZOOMS[1]), generated)
+                          (floor, B.OVERVIEW_ZOOMS[1]), overview_stamp)
         entry = _entry(target, None, kind="overview", vehicle=vehicle,
-                       lane_count=len(features), generated=generated)
+                       lane_count=len(features), generated=overview_stamp)
         entry["minZoom"] = floor
         entries.append(entry)
         print("  %-42s %6d lanes  %5.2f MB download  (overview from z%d)"
@@ -124,7 +151,9 @@ def build_all(manifest_path, out_dir, key, signing_key=None, root="."):
 
     out = {
         "schema": 1,
-        "generated": generated,
+        # This one IS the run: it describes when the manifest was written, and
+        # nothing hashes it.
+        "generated": run_stamp,
         "format": "tbmap",
         "containers": entries,
     }
