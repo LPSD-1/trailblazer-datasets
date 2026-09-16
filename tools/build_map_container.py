@@ -43,6 +43,42 @@ NONCE_LEN = 12
 AREA_ZOOMS = (11, 14)
 OVERVIEW_ZOOMS = (6, 10)
 
+#: The largest a single tile may be, and the reason the overview floor moves.
+#:
+#: MEASURED. An all-vehicle z6 tile was 1,406 kB and took the app from 588 MB to
+#: 1,478 MB; a motor z6 tile is 35.6 kB. This is the line `check_containers.py`
+#: refuses at, and the builder now stays under it by CHOOSING where the overview
+#: starts rather than by hoping.
+MAX_TILE_BYTES = 512 * 1024
+
+
+def lowest_zoom_that_fits(features, low, high, max_tile=MAX_TILE_BYTES):
+    """The lowest zoom in [low, high] whose every tile is under the ceiling.
+
+    WHY THIS IS COMPUTED AND NOT CHOSEN. A motorcyclist's whole national
+    overview fits in five z6 tiles of 35 kB. A walker's does not, and no
+    tolerance fixes it: at 2.2 points per line the simplifier is already at the
+    floor, because a lane cannot be drawn with fewer than two points. So the
+    question is not "what tolerance" but "how far out can this dataset be drawn
+    at all", and the honest way to answer it is to build a zoom and look.
+
+    Returns `high + 1` if even the deepest zoom is too fat, which the caller
+    treats as "no overview for this vehicle" rather than publishing something
+    that would take a rider's phone down.
+    """
+    for zoom in range(low, high + 1):
+        worst = [0]
+
+        def on_tile(z, x, y, blob, count, worst=worst):
+            if len(blob) > worst[0]:
+                worst[0] = len(blob)
+
+        build_tiles(features, zoom, True, on_tile)
+        if worst[0] <= max_tile:
+            return zoom
+    return high + 1
+
+
 #: Traffic orders start at z10 and not at z6.
 #:
 #: MEASURED: carrying them from z6 cost 4.6 MB of the 8.4 MB of tiles in the
@@ -438,6 +474,8 @@ CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT);
 
 
 def write_container(path, features, kind, zooms, source_date):
+    """Write a container. `zooms` is inclusive, and for an overview the caller
+    is expected to have chosen the low end with [lowest_zoom_that_fits]."""
     if os.path.exists(path):
         os.remove(path)
     db = sqlite3.connect(path)
