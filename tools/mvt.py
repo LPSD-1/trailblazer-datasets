@@ -179,6 +179,29 @@ def _clip_segment(ax, ay, bx, by, minx, miny, maxx, maxy):
 # encoding
 # --------------------------------------------------------------------------
 
+def encode_points(points):
+    """Command/parameter integers for a set of points in tile coordinates.
+
+    A single MoveTo carrying every point, which is how MVT encodes a
+    multipoint: repeating the command per point costs a command integer each
+    and says the same thing.
+    """
+    out = []
+    cx = cy = 0
+    kept = []
+    for x, y in points:
+        xi, yi = int(round(x)), int(round(y))
+        kept.append((xi, yi))
+    if not kept:
+        return []
+    out.append((_MOVE_TO & 0x7) | (len(kept) << 3))
+    for x, y in kept:
+        out.append(_zigzag(x - cx))
+        out.append(_zigzag(y - cy))
+        cx, cy = x, y
+    return out
+
+
 def encode_geometry(lines):
     """Command/parameter integers for a set of lines in tile coordinates.
 
@@ -237,8 +260,17 @@ class Layer(object):
     def __len__(self):
         return len(self._features)
 
-    def add(self, lines, properties, feature_id=None):
-        geometry = encode_geometry(lines)
+    def add(self, lines, properties, feature_id=None, geometry_type=LINESTRING):
+        """Add a feature. [lines] is a list of lines, or of points for POINT.
+
+        Traffic orders need both: a closure along a road is a line, and a weight
+        limit at a bridge is a point with no line to draw. They share a layer
+        because they share a source and a tap, and because MVT allows a feature
+        of each type side by side.
+        """
+        geometry = (encode_points([p for line in lines for p in line])
+                    if geometry_type == POINT
+                    else encode_geometry(lines))
         if not geometry:
             return False
         tags = []
@@ -253,7 +285,7 @@ class Layer(object):
             body += _varint_field(1, feature_id)
         if tags:
             body += _packed(2, tags)
-        body += _varint_field(3, LINESTRING)
+        body += _varint_field(3, geometry_type)
         body += _packed(4, geometry)
         self._features.append(_len_delimited(2, body))
         return True

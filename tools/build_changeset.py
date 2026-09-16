@@ -35,21 +35,7 @@ CREATE TABLE tiles (
   PRIMARY KEY (zoom_level, tile_column, tile_row)
 ) WITHOUT ROWID;
 
-CREATE TABLE lanes (
-  rowid             INTEGER PRIMARY KEY,
-  lane_uid          TEXT UNIQUE NOT NULL,
-  lane_class        TEXT NOT NULL,
-  county            TEXT,
-  name              TEXT,
-  designation       TEXT,
-  description       TEXT,
-  authority         TEXT,
-  vehicle_access    INTEGER,
-  length_m          REAL,
-  geometry          BLOB NOT NULL
-);
-
-CREATE TABLE lanes_bbox_rows (
+CREATE TABLE bbox_rows (
   id      INTEGER PRIMARY KEY,
   min_lon REAL, max_lon REAL, min_lat REAL, max_lat REAL
 );
@@ -58,7 +44,7 @@ CREATE TABLE lanes_bbox_rows (
 -- and a right of way a council has REMOVED would stay on a rider's map for as
 -- long as they never did a full download - which is the one direction this app
 -- must not be wrong in.
-CREATE TABLE removed_lanes (lane_uid TEXT PRIMARY KEY);
+CREATE TABLE removed_records (uid TEXT PRIMARY KEY);
 CREATE TABLE removed_tiles (
   zoom_level INTEGER NOT NULL,
   tile_column INTEGER NOT NULL,
@@ -69,9 +55,40 @@ CREATE TABLE removed_tiles (
 CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT);
 """
 
-LANE_COLUMNS = ("lane_uid", "lane_class", "county", "name", "designation",
-                "description", "authority", "vehicle_access", "length_m",
-                "geometry")
+#: The record table and its key, per container kind.
+#:
+#: Orders need this as much as lanes do and arguably more: lane data changes
+#: when a council amends a definitive map, and orders change four times a day.
+#: A national orders container is 8.4 MB, and a rider downloading that every six
+#: hours to learn about a handful of new closures is the case changesets exist
+#: for.
+RECORD_TABLES = {
+    "lanes": "lane_uid",
+    "orders": "tro_uid",
+}
+
+
+def _record_table(db):
+    """Which record table this container carries, and what identifies a row.
+
+    Detected rather than assumed from `kind`, because a container whose meta
+    says one thing and whose schema says another should fail here rather than
+    produce a changeset that silently drops every record.
+    """
+    names = {row[0] for row in db.execute(
+        "SELECT name FROM sqlite_master WHERE type='table'")}
+    found = [t for t in RECORD_TABLES if t in names]
+    if len(found) != 1:
+        raise SystemExit(
+            "Expected exactly one record table (%s); found %s."
+            % (", ".join(sorted(RECORD_TABLES)), sorted(found)))
+    return found[0], RECORD_TABLES[found[0]]
+
+
+def _columns(db, table):
+    """Every column but the rowid, in declaration order."""
+    return [row[1] for row in db.execute("PRAGMA table_info(%s)" % table)
+            if row[1] != "rowid"]
 
 
 def _meta(db):
@@ -140,35 +157,60 @@ def _build(old, new, out_path):
     for (z, x, y) in old_tiles:
         out.execute("INSERT INTO removed_tiles VALUES (?,?,?)", (z, x, y))
 
-    # ---- lanes ------------------------------------------------------------
-    columns = ", ".join(LANE_COLUMNS)
-    before_rows = {}
-    for row in old.execute("SELECT %s FROM lanes" % columns):
-        before_rows[row[0]] = row
+    # ---- records ----------------------------------------------------------
+    table, key = _record_table(new)
+    old_table, _ = _record_table(old)
+    if old_table != table:
+        raise SystemExit("These containers hold different record tables.")
 
-    lane_changed = lane_added = 0
-    for row in new.execute("SELECT rowid, %s FROM lanes" % columns):
+    columns = _columns(new, table)
+    if _columns(old, table) != columns:
+        raise SystemExit(
+            "The two builds have different columns in `%s`. A changeset cannot "
+            "bridge a schema change; the rider needs the whole build." % table)
+
+    # The changeset carries a copy of the source table, so applying it is an
+    # INSERT OR REPLACE and nothing has to know the column list at apply time.
+    out.execute("CREATE TABLE %s (rowid INTEGER PRIMARY KEY, %s)"
+                % (table, ", ".join("%s BLOB" % c for c in columns)))
+
+    key_at = columns.index(key)
+    joined = ", ".join(columns)
+    before_rows = {}
+    for row in old.execute("SELECT %s FROM %s" % (joined, table)):
+        before_rows.setdefault(row[key_at], []).append(row)
+
+    rec_changed = rec_added = 0
+    for row in new.execute("SELECT rowid, %s FROM %s" % (joined, table)):
         rowid, body = row[0], row[1:]
-        uid = body[0]
-        was = before_rows.pop(uid, None)
+        uid = body[key_at]
+        was = before_rows.get(uid)
         if was is None:
-            lane_added += 1
-        elif was == body:
+            rec_added += 1
+        elif body in was:
+            # Unchanged. Removed from the pending set so it is not reported as
+            # deleted - a uid can carry several rows (60 orders nationally do).
+            was.remove(body)
+            if not was:
+                before_rows.pop(uid)
             continue
         else:
-            lane_changed += 1
+            rec_changed += 1
+            was.remove(was[0])
+            if not was:
+                before_rows.pop(uid)
         out.execute(
-            "INSERT INTO lanes VALUES (?,%s)" % ",".join("?" * len(body)),
+            "INSERT INTO %s VALUES (?,%s)" % (table, ",".join("?" * len(body))),
             (rowid,) + body)
         bbox = new.execute(
-            "SELECT min_lon, max_lon, min_lat, max_lat FROM lanes_bbox "
-            "WHERE id = ?", (rowid,)).fetchone()
+            "SELECT min_lon, max_lon, min_lat, max_lat FROM %s_bbox "
+            "WHERE id = ?" % table, (rowid,)).fetchone()
         if bbox:
-            out.execute("INSERT INTO lanes_bbox_rows VALUES (?,?,?,?,?)",
+            out.execute("INSERT INTO bbox_rows VALUES (?,?,?,?,?)",
                         (rowid,) + bbox)
 
     for uid in before_rows:
-        out.execute("INSERT INTO removed_lanes VALUES (?)", (uid,))
+        out.execute("INSERT INTO removed_records VALUES (?)", (uid,))
 
     for key, value in (
             ("format_version", new_meta.get("format_version", "1")),
@@ -188,8 +230,9 @@ def _build(old, new, out_path):
     return {
         "tiles_changed": changed, "tiles_added": added,
         "tiles_removed": len(old_tiles),
-        "lanes_changed": lane_changed, "lanes_added": lane_added,
-        "lanes_removed": len(before_rows),
+        "record_table": table,
+        "records_changed": rec_changed, "records_added": rec_added,
+        "records_removed": len(before_rows),
     }
 
 
@@ -205,7 +248,8 @@ def main():
     delta = os.path.getsize(args.out)
     print(args.out)
     for key in sorted(stats):
-        print("  %-15s %d" % (key, stats[key]))
+        value = stats[key]
+        print("  %-17s %s" % (key, value))
     print("  changeset       %.2f MB" % (delta / 1048576.0))
     print("  whole build     %.2f MB" % (whole / 1048576.0))
     print("  saving          %.1f%%" % (100.0 * (1 - delta / float(whole))))

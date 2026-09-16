@@ -43,6 +43,18 @@ NONCE_LEN = 12
 AREA_ZOOMS = (11, 14)
 OVERVIEW_ZOOMS = (6, 10)
 
+#: Traffic orders start at z10 and not at z6.
+#:
+#: MEASURED: carrying them from z6 cost 4.6 MB of the 8.4 MB of tiles in the
+#: national container, for markings that are sub-pixel at those zooms - a road
+#: closure a few hundred metres long is a fraction of one pixel at z6, and the
+#: biggest z6 tile was 513 kB on its own.
+#:
+#: Nothing legal is lost. A closure is never READ off a tile: routing, the
+#: "is this trip on my phone" check and the lane sheet all query the record
+#: store, which holds every order at every zoom. The tiles only draw them.
+ORDER_ZOOMS = (10, 14)
+
 #: How far past a tile's edge geometry is carried, in tile units.
 #:
 #: A line that stops dead at the boundary shows a seam where the renderer joins
@@ -50,6 +62,79 @@ OVERVIEW_ZOOMS = (6, 10)
 #: GeoJSON sources after measuring - enough to hide the join, small enough not
 #: to pay for every feature twice.
 BUFFER = 64
+
+#: Traffic-order kinds, mirroring `TrafficOrder.kindId` in the app.
+#:
+#: BAKED AT BUILD TIME because the style filters on it, and a style filter can
+#: only read what is on the feature. The app used to stamp this onto every
+#: feature at load, once, for exactly that reason - a step that disappears with
+#: the collection it was stamping.
+#:
+#: An order whose code matches nothing gets no kind and is not drawn, which is
+#: deliberate: an order the app cannot classify must not appear as one it
+#: guessed at.
+#: A feature id that does not move when the data around it does.
+#:
+#: MEASURED, AND IT WAS WRONG FIRST. Ids were the index of the feature in the
+#: build, which meant removing forty expired orders from a national container
+#: shifted every id after them - and since the id is encoded into the tile, that
+#: rewrote 23,390 of 23,500 tiles. The changeset for a six-hourly orders refresh
+#: came to 55% of the whole container: technically correct and completely
+#: useless.
+#:
+#: Derived from the uid instead, so a lane or an order keeps its id for as long
+#: as the source keeps its identifier, and a build differs from the last one
+#: only where the DATA differs. Feature state depends on this too: a rider's
+#: starred lane must still be the same feature after an update.
+#:
+#: 63 bits, because SQLite rowids are signed and MVT ids are unsigned, and the
+#: intersection is what both can hold. Collisions are checked for rather than
+#: assumed away - see [assign_ids].
+def stable_id(uid):
+    return int.from_bytes(hashlib.sha256(uid.encode("utf-8")).digest()[:8],
+                          "big") >> 1
+
+
+def assign_ids(features, key):
+    """{uid: id} for every feature, refusing to guess on a collision.
+
+    At half a million features the chance of a 63-bit collision is far below
+    the chance of a disk error, but "far below" is not "cannot", and two lanes
+    sharing an id would put one rider's star on another rider's lane. If it
+    ever happens the build fails and somebody picks a different derivation,
+    which is a better morning than the alternative.
+    """
+    ids = {}
+    seen = {}
+    for f in features:
+        uid = (f.get("properties") or {}).get(key)
+        if not uid or uid in ids:
+            continue
+        got = stable_id(uid)
+        if got in seen:
+            raise SystemExit(
+                "Feature id collision: %r and %r both hash to %d."
+                % (seen[got], uid, got))
+        seen[got] = uid
+        ids[uid] = got
+    return ids
+
+
+def order_kind(code):
+    code = code or ""
+    if (code in ("miscFootwayClosure", "miscCycleLaneClosure",
+                 "miscPedestrianZone") or "Closure" in code):
+        return "closure"
+    if (code.startswith("bannedMovement") or code in
+            ("mandatoryDirectionOneWay", "miscSuspensionOfOneWay",
+             "miscContraflow")):
+        return "direction"
+    if code.startswith("dimension") or code == "miscSuspensionOfWeightRestriction":
+        return "size"
+    if code == "speedLimitValueBased":
+        return "speed"
+    return None
+
 
 VEHICLES = ("motorcycle", "4x4", "bicycle", "horse", "foot")
 VEHICLE_KEY = {"motorcycle": "v_moto", "4x4": "v_4x4", "bicycle": "v_cycle",
@@ -255,8 +340,9 @@ def coalesce_key(props):
             tuple(props.get(VEHICLE_KEY[v], False) for v in VEHICLES))
 
 
-def build_tiles(features, zoom, coalesced, on_tile):
+def build_tiles(features, zoom, coalesced, on_tile, ids=None):
     """Cut `features` into tiles at `zoom` and hand each to `on_tile`."""
+    ids = ids if ids is not None else assign_ids(features, "lane_uid")
     # Bucket every feature's clipped pieces by tile first, so each tile is
     # encoded once.
     buckets = collections.defaultdict(list)
@@ -287,13 +373,15 @@ def build_tiles(features, zoom, coalesced, on_tile):
                 local.extend(mvt.clip_line(shifted, -BUFFER, -BUFFER,
                                            mvt.EXTENT + BUFFER, mvt.EXTENT + BUFFER))
             if local:
-                buckets[(tx, ty)].append((index, props, local))
+                buckets[(tx, ty)].append(
+                    (ids.get(feature["properties"].get("lane_uid"), 0),
+                     props, local))
 
     for (tx, ty), items in sorted(buckets.items()):
         layer = mvt.Layer("lanes")
         if coalesced:
             groups = collections.OrderedDict()
-            for index, props, local in items:
+            for fid, props, local in sorted(items, key=lambda r: r[0]):
                 key = coalesce_key(props)
                 if key not in groups:
                     groups[key] = (props, [])
@@ -301,10 +389,13 @@ def build_tiles(features, zoom, coalesced, on_tile):
             for props, lines in groups.values():
                 layer.add(lines, props)
         else:
-            for index, props, local in items:
+            # Sorted by id so a tile's bytes depend on its CONTENT and not on
+            # the order features happened to arrive in - which is the other
+            # half of making a rebuild byte-identical.
+            for fid, props, local in sorted(items, key=lambda r: r[0]):
                 # A numeric id is what setFeatureState needs; the uid stays a
                 # property for the tap lookup.
-                layer.add(local, props, feature_id=index + 1)
+                layer.add(local, props, feature_id=fid)
         blob = mvt.encode_tile([layer])
         if blob:
             on_tile(zoom, tx, ty, blob, len(layer))
@@ -381,22 +472,26 @@ def write_container(path, features, kind, zooms, source_date):
         got[1] += len(blob)
         got[2] = max(got[2], len(blob))
 
+    ids = assign_ids(features, "lane_uid")
     for zoom in range(zooms[0], zooms[1] + 1):
-        build_tiles(features, zoom, zoom < coalesced_below, on_tile)
+        build_tiles(features, zoom, zoom < coalesced_below, on_tile, ids)
 
     # The overview carries no records: it exists to be looked at, and every
     # legal answer comes from an area container.
     if kind != "overview":
-        for index, f in enumerate(features):
+        for f in features:
             props = f["properties"]
             lines = lines_of(f)
             lons = [p[0] for line in lines for p in line]
             lats = [p[1] for line in lines for p in line]
             if not lons:
                 continue
+            # The SAME id the tile carries, so a rendered feature and its record
+            # are the same thing to everything downstream.
+            rowid = ids[props["lane_uid"]]
             db.execute(
                 "INSERT INTO lanes VALUES (?,?,?,?,?,?,?,?,?,?,?)",
-                (index + 1, props["lane_uid"], props.get("class"),
+                (rowid, props["lane_uid"], props.get("class"),
                  props.get("county"), props.get("name"),
                  props.get("designation"), props.get("description"),
                  props.get("authority"),
@@ -404,7 +499,7 @@ def write_container(path, features, kind, zooms, source_date):
                  (props.get("lengthKm") or 0) * 1000.0,
                  pack_geometry(lines)))
             db.execute("INSERT INTO lanes_bbox VALUES (?,?,?,?,?)",
-                       (index + 1, min(lons), max(lons), min(lats), max(lats)))
+                       (rowid, min(lons), max(lons), min(lats), max(lats)))
 
     bounds = _bounds_of(features)
     for key, value in (("format_version", "1"), ("kind", kind),
@@ -429,13 +524,194 @@ def _bounds_of(features):
     """
     lons, lats = [], []
     for f in features:
-        for line in lines_of(f):
-            for lon, lat in line:
-                lons.append(lon)
-                lats.append(lat)
+        geom = f.get("geometry") or {}
+        # Orders can be a single point - a weight limit at a bridge - and the
+        # bounds of a container that ignored them would not cover its own data.
+        lines = ([[geom.get("coordinates")]]
+                 if geom.get("type") == "Point" else lines_of(f))
+        for line in lines:
+            for point in line:
+                if not point:
+                    continue
+                lons.append(point[0])
+                lats.append(point[1])
     if not lons:
         return ""
     return "%.6f,%.6f,%.6f,%.6f" % (min(lons), min(lats), max(lons), max(lats))
+
+
+ORDERS_SCHEMA = """
+CREATE TABLE tiles (
+  zoom_level  INTEGER NOT NULL,
+  tile_column INTEGER NOT NULL,
+  tile_row    INTEGER NOT NULL,
+  tile_data   BLOB    NOT NULL,
+  PRIMARY KEY (zoom_level, tile_column, tile_row)
+) WITHOUT ROWID;
+
+CREATE TABLE orders (
+  rowid    INTEGER PRIMARY KEY,
+  -- NOT UNIQUE, and that is the data rather than an oversight. One legal
+  -- instrument can be published as several geometry features: measured on the
+  -- national pack, 60 of 33,960 uids carry more than one, the worst carries
+  -- three, and two of them mix a point with a line. Merging them would invent
+  -- a shape the source does not have - and would have to decide what a single
+  -- order that is both a point and a line IS.
+  tro_uid  TEXT NOT NULL,
+  kind     TEXT,
+  code     TEXT,
+  label    TEXT,
+  name     TEXT,
+  where_   TEXT,
+  ref      TEXT,
+  tra      INTEGER,
+  start_on TEXT,
+  end_on   TEXT,
+  is_point INTEGER NOT NULL,
+  geometry BLOB NOT NULL
+);
+
+CREATE INDEX orders_by_kind ON orders(kind);
+CREATE INDEX orders_by_uid  ON orders(tro_uid);
+CREATE VIRTUAL TABLE orders_bbox USING rtree(id, min_lon, max_lon, min_lat, max_lat);
+CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT);
+"""
+
+
+def order_properties(props):
+    """Only what the style reads. Everything else is one indexed query away."""
+    out = {"kind": order_kind(props.get("code")),
+           "tro_uid": props.get("tro_uid")}
+    return {k: v for k, v in out.items() if v is not None}
+
+
+def _geometry_of(feature):
+    """(lines, is_point) for an order, which may be either."""
+    geom = feature.get("geometry") or {}
+    if geom.get("type") == "Point":
+        return [[geom.get("coordinates")]], True
+    return lines_of(feature), False
+
+
+def build_order_tiles(features, zoom, on_tile, ids=None):
+    """Orders are never coalesced: each one is tapped and each has an id."""
+    ids = ids if ids is not None else assign_ids(features, "tro_uid")
+    buckets = collections.defaultdict(list)
+    for index, feature in enumerate(features):
+        raw, is_point = _geometry_of(feature)
+        if not raw or not raw[0] or raw[0][0] is None:
+            continue
+        lines = project(raw, zoom)
+        if not is_point:
+            lines = [simplify(line, 1.0) for line in lines]
+            lines = [line for line in lines if len(line) >= 2]
+        if not lines:
+            continue
+        props = order_properties(feature.get("properties") or {})
+        if "kind" not in props:
+            continue
+
+        touched = set()
+        for line in lines:
+            xs = [q[0] for q in line]
+            ys = [q[1] for q in line]
+            for tx in range(int(min(xs)) // mvt.EXTENT, int(max(xs)) // mvt.EXTENT + 1):
+                for ty in range(int(min(ys)) // mvt.EXTENT, int(max(ys)) // mvt.EXTENT + 1):
+                    touched.add((tx, ty))
+
+        limit = 1 << zoom
+        for tx, ty in touched:
+            if not (0 <= tx < limit and 0 <= ty < limit):
+                continue
+            ox, oy = tx * mvt.EXTENT, ty * mvt.EXTENT
+            local = []
+            for line in lines:
+                shifted = [(x - ox, y - oy) for x, y in line]
+                if is_point:
+                    local.extend(
+                        [[q] for q in shifted
+                         if -BUFFER <= q[0] <= mvt.EXTENT + BUFFER
+                         and -BUFFER <= q[1] <= mvt.EXTENT + BUFFER])
+                else:
+                    local.extend(mvt.clip_line(
+                        shifted, -BUFFER, -BUFFER,
+                        mvt.EXTENT + BUFFER, mvt.EXTENT + BUFFER))
+            if local:
+                buckets[(tx, ty)].append(
+                    (ids.get(props.get("tro_uid"), 0), props, local, is_point))
+
+    for (tx, ty), items in sorted(buckets.items()):
+        layer = mvt.Layer("orders")
+        for fid, props, local, is_point in sorted(items, key=lambda r: r[0]):
+            layer.add(local, props, feature_id=fid,
+                      geometry_type=mvt.POINT if is_point else mvt.LINESTRING)
+        blob = mvt.encode_tile([layer])
+        if blob:
+            on_tile(zoom, tx, ty, blob, len(layer))
+
+
+def write_orders_container(path, features, zooms, source_date):
+    """Orders get their OWN container, on their own clock.
+
+    Lane data changes when a council amends a definitive map - rarely. Orders
+    change constantly, and a closure a rider does not know about is the single
+    most dangerous thing this app can get wrong. Putting them in the lane
+    container would mean re-downloading a county of geometry to learn that one
+    bridge shut.
+    """
+    if os.path.exists(path):
+        os.remove(path)
+    db = sqlite3.connect(path)
+    db.executescript(ORDERS_SCHEMA)
+    stats = collections.OrderedDict()
+
+    def on_tile(z, x, y, blob, count):
+        tms_y = (1 << z) - 1 - y
+        db.execute("INSERT INTO tiles VALUES (?,?,?,?)", (z, x, tms_y, blob))
+        got = stats.setdefault(z, [0, 0, 0])
+        got[0] += 1
+        got[1] += len(blob)
+        got[2] = max(got[2], len(blob))
+
+    ids = assign_ids(features, "tro_uid")
+    for zoom in range(zooms[0], zooms[1] + 1):
+        build_order_tiles(features, zoom, on_tile, ids)
+
+    kept = 0
+    # A uid can carry several rows - 60 of 33,960 nationally do - so the stable
+    # id identifies the ORDER and a suffix separates its pieces.
+    per_uid = collections.Counter()
+    for f in features:
+        props = f.get("properties") or {}
+        uid = props.get("tro_uid")
+        lines, is_point = _geometry_of(f)
+        if not uid or not lines or not lines[0] or lines[0][0] is None:
+            continue
+        lons = [q[0] for line in lines for q in line]
+        lats = [q[1] for line in lines for q in line]
+        kept += 1
+        rowid = ids[uid] + per_uid[uid]
+        per_uid[uid] += 1
+        db.execute("INSERT INTO orders VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                   (rowid, uid, order_kind(props.get("code")),
+                    props.get("code"), props.get("label"), props.get("name"),
+                    props.get("where"), props.get("ref"), props.get("tra"),
+                    props.get("start"), props.get("end"),
+                    1 if is_point else 0, pack_geometry(lines)))
+        db.execute("INSERT INTO orders_bbox VALUES (?,?,?,?,?)",
+                   (rowid, min(lons), max(lons), min(lats), max(lats)))
+
+    for key, value in (("format_version", "1"), ("kind", "orders"),
+                       ("built_at", source_date),
+                       ("bounds", _bounds_of(features)),
+                       ("min_zoom", str(zooms[0])), ("max_zoom", str(zooms[1])),
+                       ("order_count", str(kept))):
+        db.execute("INSERT INTO meta VALUES (?,?)", (key, value))
+
+    db.commit()
+    db.execute("VACUUM")
+    db.close()
+    return stats
 
 
 def main():
@@ -444,6 +720,7 @@ def main():
     group.add_argument("--area", action="store_true")
     group.add_argument("--overview", action="store_true")
     group.add_argument("--both", action="store_true")
+    group.add_argument("--orders", action="store_true")
     ap.add_argument("out")
     ap.add_argument("packs", nargs="+")
     ap.add_argument("--key", default=os.environ.get(
@@ -452,8 +729,18 @@ def main():
     args = ap.parse_args()
 
     key = base64.b64decode(open(args.key).read().strip())
-    features = load_features(args.packs, key)
-    kind = "overview" if args.overview else ("both" if args.both else "area")
+    if args.orders:
+        # Orders are keyed on tro_uid, are never published in two packs,
+        # and the lane deduplication does not apply to them.
+        features = []
+        for path in sorted(args.packs):
+            features.extend(unpack(path, key).get("features", []))
+    else:
+        features = load_features(args.packs, key)
+    kind = ("overview" if args.overview
+            else "both" if args.both
+            else "orders" if args.orders
+            else "area")
     zooms = (OVERVIEW_ZOOMS if args.overview
              else ((OVERVIEW_ZOOMS[0], AREA_ZOOMS[1]) if args.both
                    else AREA_ZOOMS))
@@ -467,7 +754,12 @@ def main():
     except Exception:
         pass
 
-    stats = write_container(args.out, features, kind, zooms, str(source_date))
+    if args.orders:
+        stats = write_orders_container(
+            args.out, features, ORDER_ZOOMS, str(source_date))
+    else:
+        stats = write_container(args.out, features, kind, zooms,
+                                str(source_date))
 
     size = os.path.getsize(args.out)
     print("%s  %s  %d lanes" % (args.out, kind, len(features)))

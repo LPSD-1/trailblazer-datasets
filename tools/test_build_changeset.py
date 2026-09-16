@@ -81,7 +81,7 @@ def apply_changeset(container, changeset):
     db.execute("BEGIN")
     try:
         db.execute("DELETE FROM lanes WHERE lane_uid IN "
-                   "(SELECT lane_uid FROM cs.removed_lanes)")
+                   "(SELECT uid FROM cs.removed_records)")
         db.execute("DELETE FROM lanes_bbox WHERE id NOT IN "
                    "(SELECT rowid FROM lanes)")
         db.execute("DELETE FROM tiles WHERE (zoom_level, tile_column, tile_row) "
@@ -90,8 +90,8 @@ def apply_changeset(container, changeset):
                    "SELECT zoom_level, tile_column, tile_row, tile_data FROM cs.tiles")
         db.execute("INSERT OR REPLACE INTO lanes SELECT * FROM cs.lanes")
         db.execute("DELETE FROM lanes_bbox WHERE id IN "
-                   "(SELECT id FROM cs.lanes_bbox_rows)")
-        db.execute("INSERT INTO lanes_bbox SELECT * FROM cs.lanes_bbox_rows")
+                   "(SELECT id FROM cs.bbox_rows)")
+        db.execute("INSERT INTO lanes_bbox SELECT * FROM cs.bbox_rows")
         db.execute("UPDATE meta SET value = (SELECT value FROM cs.meta "
                    "WHERE key='to_build') WHERE key='built_at'")
         db.execute("COMMIT")
@@ -139,9 +139,9 @@ def test_applying_gets_the_new_build():
         make_container(new, after, new_tiles, "2026-10-01T00:00:00Z")
 
         stats = build_changeset.build_changeset(old, new, cs)
-        check("one lane amended", stats["lanes_changed"] == 1, stats)
-        check("one lane added", stats["lanes_added"] == 1, stats)
-        check("one lane removed", stats["lanes_removed"] == 1, stats)
+        check("one record amended", stats["records_changed"] == 1, stats)
+        check("one record added", stats["records_added"] == 1, stats)
+        check("one record removed", stats["records_removed"] == 1, stats)
         check("one tile changed", stats["tiles_changed"] == 1, stats)
         check("one tile added", stats["tiles_added"] == 1, stats)
         check("one tile removed", stats["tiles_removed"] == 1, stats)
@@ -191,7 +191,7 @@ def test_an_unchanged_build_is_almost_nothing():
         make_container(old, lanes, tiles, "2026-09-01T00:00:00Z")
         make_container(new, lanes, tiles, "2026-10-01T00:00:00Z")
         stats = build_changeset.build_changeset(old, new, cs)
-        check("no rows", stats["lanes_changed"] == 0 and stats["tiles_changed"] == 0,
+        check("no rows", stats["records_changed"] == 0 and stats["tiles_changed"] == 0,
               stats)
         whole = os.path.getsize(new)
         delta = os.path.getsize(cs)
