@@ -598,6 +598,62 @@ def build(lanes_manifest, base_url, stamp, satellite_index=None,
         key=lambda e: e["vehicle"],
     )
 
+    # AND EVERY BRITISH REGION GETS A COPY, which is what actually delivers it.
+    #
+    # The section above is the right place to DESCRIBE the overviews - it
+    # carries minZoom, and it is where a reader looks for "what covers the
+    # country". It is not a place anything downloads from: the app builds its
+    # pack list from `area["packs"]`, so an overview that lives only up there
+    # is published, signed, and fetched by nobody. A rider would download their
+    # region, get z11-z14, and find an empty map every time they zoomed out -
+    # the one thing the overviews were built for.
+    #
+    # Nor is the national `gb-roads` area a home for them. `packsForArea` in
+    # the app pulls packs across from another area ONLY when the kind is
+    # `routing`; a lane-kind pack sitting there is never reached from the
+    # region a rider is actually downloading.
+    #
+    # So: duplicated into every region, which is how trips are done, and the
+    # app dedupes by id (see CatalogueCountry.allPacks). All four vehicles are
+    # listed; the app offers the one matching what the rider rides.
+    #
+    # `kind` is "lanes" rather than "overview" on purpose. Here it decides the
+    # folder the file lands in and which vehicle filter applies, and both of
+    # those answers are the lane ones. What the container IS stays in its own
+    # meta, where TbMapStore.kind reads it and the tile server orders area
+    # before overview.
+    overview_packs = [
+        {
+            "id": o["id"],
+            "kind": "lanes",
+            "format": "tbmap",
+            "label": o["label"],
+            "file": o["file"],
+            "sha256": o["sha256"],
+            "bytes": o["bytes"],
+            "downloadBytes": o["downloadBytes"],
+            "signature": o.get("signature"),
+            "vehicle": o["vehicle"],
+            "featureCount": o["featureCount"],
+            "generated": o["generated"],
+            "minZoom": o.get("minZoom"),
+        }
+        for o in overviews
+    ]
+    for countries_here in by_continent.values():
+        for country in countries_here:
+            if country["code"] != "GB":
+                continue
+            for area in country["areas"]:
+                # Only where there are lanes to overview. The roads area holds
+                # routing and traffic orders and would just carry the bytes.
+                if not any(pk.get("kind") == "lanes" for pk in area["packs"]):
+                    continue
+                have = {pk["id"] for pk in area["packs"]}
+                for op in overview_packs:
+                    if op["id"] not in have:
+                        area["packs"].append(dict(op))
+
     catalogue = {
         "schema": 2,
         "generated": stamp,

@@ -346,6 +346,29 @@ jobs:
           if not gb or len(gb[0]['areas']) < 5:
               sys.exit('Great Britain lost its regions')
 
+          # A region a rider downloads must bring its overview with it, or the
+          # map is empty every time they zoom out past z11.
+          #
+          # The overviews were published, signed, and listed in their own
+          # top-level section - which nothing downloads from. The app builds
+          # its pack list from an area's `packs`, and `packsForArea` only
+          # reaches into another area for `routing`. So this asks the question
+          # the way the app does: standing in this region, is the overview for
+          # my vehicle among the packs I would be offered?
+          for area in gb[0]['areas']:
+              lane_vehicles = {p.get('vehicle') for p in area['packs']
+                               if p.get('kind') == 'lanes'
+                               and not p['id'].startswith('gb-overview-')}
+              if not lane_vehicles:
+                  continue
+              covered = {p.get('vehicle') for p in area['packs']
+                         if p['id'].startswith('gb-overview-')}
+              missing = lane_vehicles - covered
+              if missing:
+                  sys.exit('%s offers lanes for %s with no overview to draw '
+                           'them zoomed out' % (area['id'],
+                                                ', '.join(sorted(missing))))
+
           print('catalogue OK: %d countries' % len(countries))
           PY
 
