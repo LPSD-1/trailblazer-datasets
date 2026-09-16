@@ -321,11 +321,26 @@ jobs:
 
           # Every pack must be checkable after download, or the app refuses it
           # and a rider sees "could not be checked" instead of a map.
+          #
+          # And every CONTAINER must carry a signature. The app's
+          # `unsignedIsAccepted` is now false: an unsigned container downloads
+          # in full, is refused at mount, and its ground reads as "not
+          # downloaded" - so the rider pays for the bytes and gets an empty
+          # map, with nothing anywhere saying why. This check ran for a year
+          # asking only about sha256, which was right while the transitional
+          # rule stood and became a hole the day it was dropped.
+          unsigned = []
           for country in countries:
               for area in country['areas']:
                   for pack in area['packs']:
                       if not pack.get('sha256') and not pack.get('bytes'):
                           sys.exit('unverifiable pack: %s' % pack['id'])
+                      if pack.get('format') == 'tbmap'                               and not pack.get('signature'):
+                          unsigned.append(pack['id'])
+          if unsigned:
+              sys.exit('%d containers carry no signature, and the app refuses '
+                       'those outright: %s'
+                       % (len(unsigned), ', '.join(sorted(unsigned)[:8])))
 
           gb = [c for c in countries if c['code'] == 'GB']
           if not gb or len(gb[0]['areas']) < 5:
