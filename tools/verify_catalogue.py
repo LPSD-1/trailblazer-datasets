@@ -28,13 +28,25 @@ import sys
 OUR_SITE = "https://lpsd-1.github.io/trailblazer-datasets/"
 
 
-def _local_path(file, root):
+def _local_path(file, root, staged=None):
     """The file on disk behind a pack's `file`, or None if we do not host it.
 
     Packs are addressed three ways: a path relative to the catalogue, an
     absolute URL on our own Pages site, and an absolute URL somewhere else
     entirely (brouter.de for routing, a GitHub release for imagery). Only the
     first two are files this repository can be asked to stand behind.
+
+    STAGED FIRST, because the question is "does the catalogue match the file we
+    are about to serve" and not "does it match the one we served last month".
+    A run builds into `dist/` and the publish step moves it into place
+    afterwards, so at check time the new file is staged and the old one is
+    still sitting at the published path.
+
+    That distinction was invisible while the only things checked were packs:
+    those builds are reproducible, so unchanged data gives byte-identical packs
+    and staged and published agree. Containers are not reproducible yet, so
+    reading the published copy compared this build's catalogue against last
+    build's bytes and refused 129 packs that were perfectly correct.
     """
     if not isinstance(file, str) or not file:
         return None
@@ -44,7 +56,12 @@ def _local_path(file, root):
         return None
     # A published path is always forward-slashed; join it the same way on
     # every platform rather than trusting os.path to read it.
-    return os.path.join(root, *file.split("/"))
+    parts = file.split("/")
+    if staged:
+        candidate = os.path.join(staged, *parts)
+        if os.path.exists(candidate):
+            return candidate
+    return os.path.join(root, *parts)
 
 
 def _rewritten_by_git(paths):
@@ -106,6 +123,10 @@ def main():
     ap.add_argument("--root", default=".",
                     help="where the packs this repository hosts live, for "
                          "the size-and-hash check; '' to skip")
+    ap.add_argument("--staged", default="dist",
+                    help="where a run builds before publishing; checked "
+                         "before --root so the catalogue is compared against "
+                         "the file about to be served, not last build's")
     args = ap.parse_args()
 
     catalogue = load(args.catalogue)
@@ -258,7 +279,7 @@ def main():
     if args.root:
         wrong = []
         for pack in packs_in(catalogue):
-            path = _local_path(pack.get("file"), args.root)
+            path = _local_path(pack.get("file"), args.root, args.staged)
             if path is None or not os.path.exists(path):
                 continue
             with open(path, "rb") as f:

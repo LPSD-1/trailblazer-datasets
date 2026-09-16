@@ -63,10 +63,13 @@ def catalogue_with(pack):
     }
 
 
-def run_verify(root, catalogue_path):
+def run_verify(root, catalogue_path, staged=""):
     return subprocess.run(
         [sys.executable, VERIFY, catalogue_path,
          "--root", root,
+         # Explicit, so a `dist/` in the working directory cannot quietly
+         # become the answer for a test that never mentioned one.
+         "--staged", staged,
          # The other checks compare against indexes this fixture has none of.
          "--satellite", os.path.join(root, "none.json"),
          "--routing", os.path.join(root, "none.json"),
@@ -228,6 +231,105 @@ def test_dropped_traffic_orders_are_refused():
               done.returncode != 0 and "traffic orders" in done.stdout.lower()
               + done.stderr.lower(),
               done.stdout + done.stderr)
+
+
+def test_the_staged_file_is_what_gets_checked():
+    """A run is publishing dist/; the published copy is last build's.
+
+    This refused 129 correct container packs. The check read the file at the
+    PUBLISHED path - last month's bytes - and compared it against this build's
+    catalogue. Packs had hidden it for as long as it existed: their builds are
+    reproducible, so unchanged data gives byte-identical packs and the two
+    copies agree. Containers are not reproducible yet, so every one of them
+    mismatched, on a build whose data was perfectly good.
+    """
+    root = tempfile.mkdtemp()
+    try:
+        published = b"what we served last month"
+        staged_body = b"what this run actually built, and will serve"
+
+        # The published copy, at the path the catalogue names.
+        write_pack(root, published)
+        # The staged copy, where a run builds before the publish step moves it.
+        staged = os.path.join(root, "dist")
+        os.makedirs(os.path.join(staged, "trips"), exist_ok=True)
+        with open(os.path.join(staged, "trips", "gb.tbtrips"), "wb") as f:
+            f.write(staged_body)
+
+        cat = os.path.join(root, "catalogue.json")
+        with open(cat, "w") as f:
+            json.dump(catalogue_with({
+                "id": "gb-trips",
+                "kind": "trips",
+                "label": "Trips",
+                "file": "trips/gb.tbtrips",
+                "sha256": sha_of(staged_body),
+                "bytes": len(staged_body),
+            }), f)
+
+        done = run_verify(root, cat, staged=staged)
+        check("the staged file is what gets checked",
+              done.returncode == 0,
+              done.stdout + done.stderr)
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
+
+
+def test_and_a_staged_file_that_is_wrong_is_still_refused():
+    """The check must still be able to come back red."""
+    root = tempfile.mkdtemp()
+    try:
+        staged_body = b"what this run built"
+        # The published copy matches the catalogue; the staged one does not.
+        # Reading the wrong copy would call this build good.
+        write_pack(root, staged_body)
+        staged = os.path.join(root, "dist")
+        os.makedirs(os.path.join(staged, "trips"), exist_ok=True)
+        with open(os.path.join(staged, "trips", "gb.tbtrips"), "wb") as f:
+            f.write(b"a truncated or corrupted build")
+
+        cat = os.path.join(root, "catalogue.json")
+        with open(cat, "w") as f:
+            json.dump(catalogue_with({
+                "id": "gb-trips",
+                "kind": "trips",
+                "label": "Trips",
+                "file": "trips/gb.tbtrips",
+                "sha256": sha_of(staged_body),
+                "bytes": len(staged_body),
+            }), f)
+
+        done = run_verify(root, cat, staged=staged)
+        check("a wrong staged file is still refused",
+              done.returncode != 0
+              and "do not match" in (done.stdout + done.stderr),
+              done.stdout + done.stderr)
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
+
+
+def test_with_nothing_staged_the_published_file_still_answers():
+    """The ordinary case for a job that is not mid-publish."""
+    root = tempfile.mkdtemp()
+    try:
+        body = b"published and staged are the same thing here"
+        write_pack(root, body)
+        cat = os.path.join(root, "catalogue.json")
+        with open(cat, "w") as f:
+            json.dump(catalogue_with({
+                "id": "gb-trips",
+                "kind": "trips",
+                "label": "Trips",
+                "file": "trips/gb.tbtrips",
+                "sha256": sha_of(body),
+                "bytes": len(body),
+            }), f)
+        done = run_verify(root, cat, staged=os.path.join(root, "no-such-dist"))
+        check("with nothing staged the published file still answers",
+              done.returncode == 0,
+              done.stdout + done.stderr)
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
 
 
 def main():
