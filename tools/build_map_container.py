@@ -448,7 +448,17 @@ def write_container(path, features, kind, zooms, source_date):
     # section 19.1 keeps the low zooms national and the high zooms per area -
     # but it is the whole design in one file, which is what a measurement on a
     # device needs.
-    coalesced_below = 11 if kind == "both" else (99 if kind == "area" else 0)
+    # Zooms BELOW this are coalesced. Written out per kind rather than as a
+    # clever expression, because the clever expression had it backwards: an
+    # area container coalesced at every zoom, so it carried no lane_uid at all
+    # and every record in it was findable and invisible. Nothing noticed until
+    # check_containers.py was written, because the device tests had used the
+    # overview and the combined container.
+    coalesced_below = {
+        "overview": 99,   # every zoom it holds
+        "area": 0,        # none: these are the identifiable ones
+        "both": 11,       # the split in section 19.1
+    }[kind]
     stats = collections.OrderedDict()
 
     def on_tile(z, x, y, blob, feature_count):
