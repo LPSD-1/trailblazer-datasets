@@ -111,43 +111,76 @@ def check_container(path, problems, max_tile=MAX_TILE_BYTES):
             if kind != "overview":
                 problems.append("%s: no record table, and kind is %r not "
                                 "'overview'." % (name, kind))
-            return meta, set()
+            return meta, {"records": set(), "tiles": set(), "kind": kind}
 
-        # (1) tiles and records agree
         in_records = {r[0] for r in db.execute(
             "SELECT %s FROM %s" % (TABLE_KEYS[table], table))}
         in_tiles = _uids_in_tiles(db, table)
-        drawn_only = in_tiles - in_records
-        held_only = in_records - in_tiles
-        if drawn_only:
-            problems.append(
-                "%s: %d feature(s) are in the tiles and not the records - "
-                "drawn and unidentifiable. First: %s"
-                % (name, len(drawn_only), sorted(drawn_only)[0]))
-        if held_only:
-            # Orders below the tile floor are expected: they are held at every
-            # zoom and drawn from z10, which is deliberate.
-            if kind != "orders":
-                problems.append(
-                    "%s: %d record(s) are in no tile - findable and invisible. "
-                    "First: %s" % (name, len(held_only), sorted(held_only)[0]))
-        return meta, in_records
+        # AGREEMENT IS CHECKED PER VEHICLE, NOT PER CONTAINER - see
+        # check_agreement below. A record with no tile in THIS container is the
+        # ordinary case for a boundary lane, whose tiles belong to the
+        # neighbouring area; reporting it here flagged 1,737 perfectly correct
+        # lanes on the first run.
+        return meta, {"records": in_records, "tiles": in_tiles, "kind": kind}
     finally:
         db.close()
 
 
+def check_agreement(containers, problems):
+    """(1) Every feature is both drawn and identifiable, somewhere.
+
+    Gathered across a vehicle's containers rather than within one, because the
+    two rules interact: section 19.2 gives each lane ONE area that draws it and
+    leaves its record in every area that carries it. So the question is not
+    "does this container hold both halves" but "does this vehicle".
+    """
+    by_vehicle = {}
+    for path, found in containers:
+        vehicle = os.path.basename(path).split("-", 1)[0]
+        got = by_vehicle.setdefault(vehicle, {"records": set(), "tiles": set(),
+                                              "kind": found["kind"]})
+        got["records"] |= found["records"]
+        got["tiles"] |= found["tiles"]
+
+    for vehicle, got in sorted(by_vehicle.items()):
+        drawn_only = got["tiles"] - got["records"]
+        if drawn_only:
+            problems.append(
+                "%s: %d feature(s) are drawn and identify nothing - a tap on "
+                "them finds no record. First: %s"
+                % (vehicle, len(drawn_only), sorted(drawn_only)[0]))
+        held_only = got["records"] - got["tiles"]
+        if held_only and got["kind"] != "orders":
+            # Orders are held at every zoom and drawn from z10, deliberately.
+            problems.append(
+                "%s: %d record(s) are in no tile anywhere - findable and "
+                "invisible. First: %s"
+                % (vehicle, len(held_only), sorted(held_only)[0]))
+
+
 def check_no_lane_in_two_areas(containers, problems):
-    """(3) One lane belongs to one area, for tiles."""
+    """(3) One lane belongs to one area, for tiles - WITHIN A VEHICLE.
+
+    ACROSS vehicles it is expected and correct. A bridleway is a right of way
+    for a bicycle, a horse and a walker, so it is published in all three packs;
+    the first run of this check reported a foot container and a bicycle
+    container sharing a uid as a fault, and it is the data being right.
+    A rider only ever mounts one vehicle's containers, so that is the scope the
+    rule has.
+    """
     owner = {}
-    for path, uids in containers:
-        for uid in uids:
-            if uid in owner:
+    for path, found in containers:
+        vehicle = os.path.basename(path).split("-", 1)[0]
+        for uid in found["tiles"]:
+            key = (vehicle, uid)
+            if key in owner:
                 problems.append(
-                    "%s: %s is also in %s. A lane in two areas' tiles is drawn "
-                    "twice, from two simplifications."
-                    % (os.path.basename(path), uid, os.path.basename(owner[uid])))
+                    "%s: %s is also in %s. A lane in two of one vehicle's "
+                    "areas is drawn twice, from two simplifications."
+                    % (os.path.basename(path), uid,
+                       os.path.basename(owner[key])))
                 break
-            owner[uid] = path
+            owner[key] = path
 
 
 def report_total(containers):
@@ -200,10 +233,12 @@ def main():
 
     checked = []
     for path in args.containers:
-        meta, uids = check_container(path, problems, args.max_tile_kb * 1024)
+        meta, found = check_container(path, problems, args.max_tile_kb * 1024)
         if meta.get("kind") in ("area", "both"):
-            checked.append((path, uids))
+            checked.append((path, found))
 
+    if checked:
+        check_agreement(checked, problems)
     if len(checked) > 1:
         check_no_lane_in_two_areas(checked, problems)
     if args.containers:

@@ -473,7 +473,8 @@ CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT);
 """
 
 
-def write_container(path, features, kind, zooms, source_date):
+def write_container(path, features, kind, zooms, source_date,
+                    tile_exclude=None):
     """Write a container. `zooms` is inclusive, and for an overview the caller
     is expected to have chosen the low end with [lowest_zoom_that_fits]."""
     if os.path.exists(path):
@@ -521,8 +522,23 @@ def write_container(path, features, kind, zooms, source_date):
         got[2] = max(got[2], len(blob))
 
     ids = assign_ids(features, "lane_uid")
+
+    # ONE OWNER PER LANE, FOR TILES, ACROSS A VEHICLE'S AREAS.
+    #
+    # A lane straddling a boundary is published in BOTH neighbouring packs so it
+    # is never cut in half. Deduplicating inside one container is not enough:
+    # the copy in the next area is a different container and would be drawn as
+    # well, from a different simplification, so the lane comes out bolder than
+    # its neighbours and a hit test finds two of it.
+    #
+    # RECORDS KEEP THEIR COPY. Whichever area a rider has downloaded must be
+    # able to answer about a lane that runs into it, so only the TILES get an
+    # owner - which is what section 19.2 says and what the guard checks.
+    tiles_from = ([f for f in features
+                   if f["properties"].get("lane_uid") not in tile_exclude]
+                  if tile_exclude else features)
     for zoom in range(zooms[0], zooms[1] + 1):
-        build_tiles(features, zoom, zoom < coalesced_below, on_tile, ids)
+        build_tiles(tiles_from, zoom, zoom < coalesced_below, on_tile, ids)
 
     # The overview carries no records: it exists to be looked at, and every
     # legal answer comes from an area container.

@@ -64,6 +64,12 @@ def build_all(manifest_path, out_dir, key, signing_key=None, root="."):
     by_vehicle = collections.defaultdict(list)
     entries = []
 
+    # Which lanes already have an area drawing them, per vehicle. Packs are
+    # walked in manifest order, which is stable, so the owner of a boundary lane
+    # is the same on every rebuild - and a rebuild that changed it would rewrite
+    # tiles in two areas for no reason.
+    claimed = collections.defaultdict(set)
+
     for pack in manifest.get("packages", []):
         source = os.path.join(root, pack["file"])
         if not os.path.exists(source):
@@ -74,7 +80,10 @@ def build_all(manifest_path, out_dir, key, signing_key=None, root="."):
         name = "%s-%s.tbmap" % (vehicle, pack["area"])
         target = os.path.join(out_dir, name)
         features = B.load_features([source], key)
-        B.write_container(target, features, "area", B.AREA_ZOOMS, generated)
+        already = claimed[vehicle]
+        B.write_container(target, features, "area", B.AREA_ZOOMS, generated,
+                          tile_exclude=already)
+        already.update(f["properties"].get("lane_uid") for f in features)
         entries.append(_entry(target, pack, kind="area", vehicle=vehicle,
                               lane_count=len(features), generated=generated))
         print("  %-42s %6d lanes  %5.2f MB download"
