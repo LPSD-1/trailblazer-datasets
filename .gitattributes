@@ -25,6 +25,14 @@
 # Markdown in this repository still normalise the way everybody expects.
 *.tbtrips  -text
 *.tbpack   -text
+# The container formats. Added late, and that is the point: every format above
+# was listed the day it started being published and `.tbmap` was not, so the
+# rule this whole file exists to state did not cover the thing the app now
+# downloads. It survives today only because SQLite writes a NUL at byte 15 and
+# git's binary heuristic happens to catch it - which is luck, not a rule, and
+# the trips incident below is what luck running out looks like.
+*.tbmap    -text
+*.tbchange -text
 *.tbnames  -text
 *.rd5      -text
 *.pmtiles  -text
