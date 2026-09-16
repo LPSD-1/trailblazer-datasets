@@ -26,6 +26,19 @@ on:
 
 permissions:
   contents: write   # the release asset, and the committed index
+  # WITHOUT THIS THE ALARM CANNOT RING, and this is the job that needs it most.
+  #
+  # Declaring `permissions:` at all REPLACES the default set, so naming only
+  # `contents` left the failure step at the bottom calling createIssue with no
+  # right to do it. The log says so in as many words — "Resource not accessible
+  # by integration (createIssue)" — and the `|| true` that exists to stop a
+  # broken alarm failing an already-failed run swallowed it.
+  #
+  # Every other workflow here already grants it. This one, which runs four times
+  # a day, did not: it failed on every run from 14 September and was found by a
+  # person looking at the Actions tab, which is the exact thing the alarm exists
+  # to make unnecessary.
+  issues: write     # to raise one when a run fails
 
 concurrency:
   group: traffic-orders
@@ -37,9 +50,9 @@ jobs:
     timeout-minutes: 60
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
 
@@ -52,9 +65,16 @@ jobs:
         run: |
           if [ -z "$DATASET_KEY_B64" ]; then
             echo "::error::DATASET_KEY_B64 is not set."
+            echo "Add it under Settings > Secrets and variables > Actions."
+            echo "It must be the same key the shipped app was built with, or"
+            echo "every rider's packages will stop opening."
             exit 1
           fi
           printf '%s' "$DATASET_KEY_B64" > /tmp/dataset.key
+          # 32 bytes, base64 encoded, is 44 characters with padding. A key that
+          # is present but truncated fails later, in the seal, with a message
+          # about cryptography rather than about configuration.
+          test "$(wc -c < /tmp/dataset.key)" -ge 43
 
       - name: Write the D-TRO credentials
         env:
@@ -77,11 +97,22 @@ jobs:
       # The national extract is half a gigabyte and the service cuts it on its
       # own schedule — measured, it served a nine-day-old file all day on 14
       # September. Caching it means four runs a day fetch it once.
+      - name: Today, for the cache key
+        id: day
+        run: echo "date=$(date -u +%Y-%m-%d)" >> "$GITHUB_OUTPUT"
+
+      # KEYED ON THE DAY, NOT THE RUN. `github.run_id` is unique to the run, so
+      # the exact key could never hit: every one of the four runs a day missed,
+      # restored through the prefix, and then wrote a fresh half-gigabyte cache
+      # entry. That is two gigabytes a day against a ten gigabyte allowance,
+      # and what it evicts is the council-data cache the lane refresh depends
+      # on. Keyed on the date, the first run of the day writes one entry and
+      # the other three hit it and write nothing.
       - name: Restore the corpus cache
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: dist/tro/_corpus
-          key: dtro-corpus-${{ github.run_id }}
+          key: dtro-corpus-${{ steps.day.outputs.date }}
           restore-keys: dtro-corpus-
 
       - name: Run the tests before trusting the build
@@ -89,6 +120,8 @@ jobs:
           python tools/test_osgb.py
           python tools/test_tro.py
           python tools/test_tro_merge.py
+          python tools/test_build_tro.py
+          python tools/test_dtro_fetch.py
 
       - name: Build the pack
         run: python tools/build_tro.py --key /tmp/dataset.key
@@ -225,12 +258,34 @@ jobs:
         if: failure()
         env:
           GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           # Silence is the failure mode that matters here. The app shows no
           # closures whether the job is working perfectly in an area nobody
           # publishes in, or has been broken for a fortnight — so a broken run
           # has to say so somewhere a person will see it.
-          gh issue create \
-            --title "Traffic orders build failed" \
-            --body "Run ${{ github.run_id }} failed. Riders keep the last published pack until this is fixed, so orders will quietly go stale." \
-            || true
+          #
+          # ONE OPEN ISSUE AT A TIME, which every other job here already does.
+          # This one runs four times a day, so the moment the permission above
+          # let the alarm ring it would have opened four issues a day about a
+          # single fault — which is its own kind of silence.
+          EXISTING=$(gh issue list --label traffic-orders --state open \
+                       --json number --jq '.[0].number' 2>/dev/null || true)
+          if [ -n "$EXISTING" ]; then
+            gh issue comment "$EXISTING" --body "Failed again: $RUN_URL"
+          else
+            gh label create traffic-orders --color D93F0B \
+              --description "Automated traffic-order build problems" 2>/dev/null || true
+            gh issue create --label traffic-orders \
+              --title "Traffic orders build failed" \
+              --body "$RUN_URL failed. Riders keep the last published pack until this is fixed, so orders will quietly go stale.
+
+          The usual causes, commonest first:
+
+          - **DATASET_KEY_B64 is not set.** Every pack in this repository is sealed
+            with it, and without it the build stops before it starts.
+          - **DTRO_CLIENT_SECRET has expired.** Rotate it with d-tro@dft.gov.uk.
+          - **The service is down, or serving a stale extract.** The build refuses
+            to publish a pack that falls under the floor rather than quietly
+            shipping a country with no closures in it."
+          fi

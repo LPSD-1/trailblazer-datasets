@@ -102,7 +102,38 @@ def download_corpus(out_dir):
     with open(done, "w", encoding="utf-8") as handle:
         handle.write(str(got) + chr(10))
     print("  %.1f MB" % (got / 1e6))
+    _forget_older_cuts(out_dir, keep=name)
     return path
+
+
+def _forget_older_cuts(out_dir, keep):
+    """Drop extracts from earlier cuts.
+
+    The filename carries the cut date, so a new cut arrives under a NEW name
+    and the old one stays beside it for ever. Each is about half a gigabyte and
+    the workflow caches this directory between runs, so it grew by an extract
+    per cut with nothing ever removing one - until it passed the repository's
+    cache allowance and began evicting whatever else was in there, which
+    includes the council-data cache that turns a 25-minute fetch into seconds.
+
+    Only ever removes what this module writes: an extract, its `.done` marker,
+    or an abandoned `.part`.
+    """
+    # Exactly two names survive, and `.part` is not one of them even for the
+    # cut in use: the marker is written only after the size check, so a `.part`
+    # sitting beside a finished file is always the wreckage of a run that died
+    # and is always the same half gigabyte as a real extract.
+    survives = {keep, keep + ".done"}
+    for entry in os.listdir(out_dir):
+        if entry in survives:
+            continue
+        try:
+            os.remove(os.path.join(out_dir, entry))
+            print("  forgot the earlier cut %s" % entry)
+        except OSError:
+            # Best effort. A file that will not delete costs disk, not
+            # correctness: which cut gets used is decided by name above.
+            pass
 
 
 def main():

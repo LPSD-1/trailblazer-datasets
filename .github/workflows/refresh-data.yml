@@ -44,29 +44,26 @@ jobs:
     timeout-minutes: 120
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
 
       - name: Install dependencies
         run: pip install --quiet cryptography
 
-      # The fetch is resumable and skips authorities it already has, so a
-      # cached copy turns a 25-minute step into seconds and only picks up
-      # what changed.
-      - name: Restore the council data cache
-        uses: actions/cache@v4
-        with:
-          path: cache
-          key: rowmaps-${{ github.run_id }}
-          restore-keys: rowmaps-
-
-      - name: Fetch rights of way
-        if: ${{ !inputs.skip_fetch }}
-        run: python tools/fetch_rights_of_way.py
-
+      # BEFORE THE FETCH, NOT AFTER IT.
+      #
+      # This check used to sit below "Fetch rights of way", which walks ninety
+      # council servers. The run on 14 September spent 15m41s doing exactly
+      # that and was then stopped by a missing secret — a test that costs
+      # nothing and could not have passed at any point during those fifteen
+      # minutes. It also puts avoidable load on other people's servers to
+      # produce a result that is thrown away.
+      #
+      # Anything the run cannot proceed without belongs here, at the top,
+      # whatever order the steps that USE it come in.
       - name: Write the packaging key
         env:
           # Repository secret. Public repositories do not expose secrets to
@@ -83,6 +80,20 @@ jobs:
           printf '%s' "$DATASET_KEY_B64" > /tmp/dataset.key
           # 32 bytes, base64 encoded, is 44 characters with padding.
           test "$(wc -c < /tmp/dataset.key)" -ge 43
+
+      # The fetch is resumable and skips authorities it already has, so a
+      # cached copy turns a 25-minute step into seconds and only picks up
+      # what changed.
+      - name: Restore the council data cache
+        uses: actions/cache@v5
+        with:
+          path: cache
+          key: rowmaps-${{ github.run_id }}
+          restore-keys: rowmaps-
+
+      - name: Fetch rights of way
+        if: ${{ !inputs.skip_fetch }}
+        run: python tools/fetch_rights_of_way.py
 
       # The build now REFUSES to publish if any lane falls outside every
       # region box. Such a lane is in the source data, in no package and on
