@@ -34,6 +34,7 @@ import collections
 import gzip
 import hashlib
 import os
+import pathlib
 import sqlite3
 import subprocess
 import sys
@@ -89,7 +90,18 @@ def _uids_in_tiles(db, table):
 
 
 def check_container(path, problems, max_tile=MAX_TILE_BYTES):
-    db = sqlite3.connect("file:%s?mode=ro" % path.replace("\\", "/"), uri=True)
+    # READ-ONLY, THROUGH A PROPER FILE URI.
+    #
+    # "file:%s" % a Windows path gives "file:C:/Users/...", which SQLite reads
+    # as a RELATIVE path called "C:" and refuses with "unable to open database
+    # file". An absolute Windows path needs "file:///C:/Users/...", which
+    # `pathlib` knows how to write and a format string does not.
+    #
+    # It only ever ran on Linux in CI, so this went unnoticed - and it is
+    # exactly the guard worth running locally before spending twenty-five
+    # minutes discovering the same answer from a workflow.
+    db = sqlite3.connect(
+        "%s?mode=ro" % pathlib.Path(path).absolute().as_uri(), uri=True)
     try:
         name = os.path.basename(path)
         meta = _meta(db)
