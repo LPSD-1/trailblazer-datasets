@@ -19,6 +19,7 @@ The pack key is read the same way the real build reads it.
 """
 import argparse
 import glob
+import hashlib
 import json
 import os
 import subprocess
@@ -89,6 +90,51 @@ def main():
         sys.stderr.write(checked.stderr)
         sys.exit("THE GUARD REFUSED THIS BUILD - it would have failed the "
                  "publish, twenty-five minutes in")
+
+    # (3) THE SAME INPUT TWICE, WITH THE CLOCK MOVED.
+    #
+    # This is the bug that shipped, and the existing `--reproducible` check
+    # could not have caught it: that one drives `build_map_container.py`
+    # directly, which takes its stamp from the pack and has always been
+    # deterministic. The clock got in through the BATCH DRIVER -
+    # `build_containers.py` stamped `manifest["generated"]`, this run's own
+    # time, into every container - so an unchanged month rebuilt every one of
+    # them with new bytes and every rider re-downloaded 343 MB for lanes
+    # nobody had amended. Measured: five bytes different out of 1,114,112.
+    #
+    # Nothing in CI runs `--reproducible` either, while two comments in the
+    # workflow say the build is reproducible. This runs here, every time.
+    print("")
+    print("building again with the clock moved...")
+    again_manifest = os.path.join(work, "manifest-later.json")
+    with open(again_manifest, "w", encoding="utf-8") as fh:
+        json.dump(dict(manifest, packages=packages,
+                       generated="2099-01-01T00:00:00Z"), fh)
+    again = os.path.join(work, "again")
+    rebuilt = run(["tools/build_containers.py", "--manifest", again_manifest,
+                   "--root", ROOT, "--out", again, "--key", key])
+    if rebuilt.returncode != 0:
+        sys.stderr.write(rebuilt.stderr[-2000:])
+        sys.exit("the second build failed")
+
+    moved = []
+    for path in containers:
+        name = os.path.basename(path)
+        other = os.path.join(again, name)
+        if not os.path.isfile(other):
+            moved.append("%s: missing from the second build" % name)
+            continue
+        a = hashlib.sha256(open(path, "rb").read()).hexdigest()
+        b = hashlib.sha256(open(other, "rb").read()).hexdigest()
+        if a != b:
+            moved.append("%s: %s vs %s" % (name, a[:12], b[:12]))
+    if moved:
+        for line in moved:
+            print("  NOT REPRODUCIBLE: %s" % line)
+        sys.exit("the clock is getting into the bytes: an unchanged month "
+                 "would republish every container and every rider would "
+                 "download them again")
+    print("  reproducible   %d containers, byte for byte" % len(containers))
 
     # The floors, which is the number the guard and the builder disagreed about.
     with open(os.path.join(out, "manifest.json"), encoding="utf-8") as fh:
