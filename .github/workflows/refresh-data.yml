@@ -370,6 +370,21 @@ jobs:
                            'them zoomed out' % (area['id'],
                                                 ', '.join(sorted(missing))))
 
+              # And every lane pack must say it is the official record. This
+              # is not bookkeeping: `legalBasis` is the difference between a
+              # council's definitive map and somebody's idea of where a byway
+              # goes, and the app shows it to riders. The overviews shipped
+              # without it once, and it took a test in the APP, reading the
+              # already-published catalogue, to notice.
+              for pack in area['packs']:
+                  if pack.get('kind') != 'lanes':
+                      continue
+                  if pack.get('legalBasis') != 'official':
+                      sys.exit('%s in %s does not say it is the official '
+                               'record (legalBasis=%r)'
+                               % (pack['id'], area['id'],
+                                  pack.get('legalBasis')))
+
           print('catalogue OK: %d countries' % len(countries))
           PY
 

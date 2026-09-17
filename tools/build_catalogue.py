@@ -637,6 +637,17 @@ def build(lanes_manifest, base_url, stamp, satellite_index=None,
             "featureCount": o["featureCount"],
             "generated": o["generated"],
             "minZoom": o.get("minZoom"),
+            # THE SAME LEGAL BASIS AS THE AREAS IT IS BUILT FROM, because it is
+            # built from them: an overview is the same council definitive-map
+            # data, coalesced for drawing small. Left off, it published a lane
+            # pack that did not say it was the official record, and
+            # real_catalogue_test.dart caught it against the live catalogue -
+            # "a rider in Derby is offered the Midlands" asserts every lane
+            # pack in a region is `official`, and one of mine was not.
+            #
+            # That assertion is not bookkeeping. It is the difference between
+            # the definitive map and somebody's idea of where a byway goes.
+            "legalBasis": "official",
         }
         for o in overviews
     ]
