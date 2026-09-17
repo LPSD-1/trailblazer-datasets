@@ -75,10 +75,25 @@ def lowest_zoom_that_fits(features, low, high, max_tile=MAX_TILE_BYTES):
     question is not "what tolerance" but "how far out can this dataset be drawn
     at all", and the honest way to answer it is to build a zoom and look.
 
+    EVERY ZOOM THE CONTAINER WILL HOLD, not just the floor. A container built
+    with floor F holds F..high, so all of those have to fit - and tile size is
+    NOT monotonic in zoom. Coalescing merges more the further out you go, so a
+    z4 tile can be smaller than the z5 tile above it.
+
+    This checked the candidate zoom alone, and that is exactly how it failed:
+    for a cyclist z4 fitted, so 4 was returned, and the z5 tile the container
+    also had to carry came out at 535 kB against a 512 kB ceiling. The publish
+    guard caught it and refused the build, which is the guard doing its job -
+    but the builder should not have offered it.
+
+    Each zoom is measured once and the floor chosen from those measurements,
+    rather than re-cutting the whole set per candidate.
+
     Returns `high + 1` if even the deepest zoom is too fat, which the caller
     treats as "no overview for this vehicle" rather than publishing something
     that would take a rider's phone down.
     """
+    worst_at = {}
     for zoom in range(low, high + 1):
         worst = [0]
 
@@ -87,8 +102,11 @@ def lowest_zoom_that_fits(features, low, high, max_tile=MAX_TILE_BYTES):
                 worst[0] = len(blob)
 
         build_tiles(features, zoom, True, on_tile)
-        if worst[0] <= max_tile:
-            return zoom
+        worst_at[zoom] = worst[0]
+
+    for floor in range(low, high + 1):
+        if all(worst_at[z] <= max_tile for z in range(floor, high + 1)):
+            return floor
     return high + 1
 
 
