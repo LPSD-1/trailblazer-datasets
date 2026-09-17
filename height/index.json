@@ -39,6 +39,25 @@
       "generated": "2026-09-14T09:07:14Z"
     },
     {
+      "id": "gb-north-height",
+      "kind": "height",
+      "label": "Ground height - The North",
+      "file": "https://github.com/LPSD-1/trailblazer-datasets/releases/download/height/gb-north-height.pmtiles",
+      "sha256": "75d9640b724d85eb2967ff0f40629f18917e863f70422ed92d45b76f219d39fd",
+      "bytes": 89101927,
+      "bounds": {
+        "west": -3.7,
+        "south": 53.0,
+        "east": 1.85,
+        "north": 55.9
+      },
+      "note": "United Kingdom terrain data (c) Environment Agency copyright and/or database right 2015. All rights reserved. Terrain Tiles hosted by AWS Open Data.",
+      "maxZoom": 12,
+      "encoding": "terrarium",
+      "area": "gb-north",
+      "generated": "2026-09-17T08:51:55Z"
+    },
+    {
       "id": "gb-south-east-height",
       "kind": "height",
       "label": "Ground height - South East",
