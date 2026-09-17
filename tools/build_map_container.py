@@ -41,7 +41,20 @@ HDR_LEN = 6
 NONCE_LEN = 12
 
 AREA_ZOOMS = (11, 14)
-OVERVIEW_ZOOMS = (6, 10)
+# STARTS AT 4, NOT 6, AND THE FLOOR IS STILL MEASURED.
+#
+# `lowest_zoom_that_fits` picks the lowest zoom whose tiles all fit under the
+# ceiling, so this is the lowest zoom it is ALLOWED to consider, not the one it
+# will use: a walker's data still lands at z9 and a motorcyclist's goes as low
+# as it fits.
+#
+# It was 6, which put the floor for every vehicle at 6 at best - and MapLibre
+# draws nothing below a vector source's minzoom. So the map was empty at every
+# zoom below 6 however good the data was, which is what a rider sees as "fully
+# zoomed out, nothing shows; zoom in and it pops back". Great Britain fits the
+# screen at z5 on a phone, so 6 was one zoom short of the view riders actually
+# start from.
+OVERVIEW_ZOOMS = (4, 10)
 
 #: The largest a single tile may be, and the reason the overview floor moves.
 #:
