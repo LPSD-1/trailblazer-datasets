@@ -171,6 +171,28 @@ jobs:
         run: |
           python tools/check_containers.py dist/containers/*.tbmap
 
+      # And the raster archives, which had no guard at all until six of the
+      # ten published imagery packs turned out to be unopenable.
+      #
+      # Every check this pipeline had asked whether the BYTES were the bytes -
+      # sha256, length, "is this a sign-in page". None asked whether the file
+      # was a valid ARCHIVE, so a pack whose root directory broke the PMTiles
+      # 16 KB rule passed every gate, downloaded perfectly onto a rider's
+      # phone, and produced no imagery at all. A checksum proves a file
+      # arrived intact; it says nothing about whether it was ever right.
+      #
+      # Globbed with `|| true` guards so a run that built no imagery this
+      # time - most of them - does not fail on an empty glob.
+      - name: Check the raster archives
+        run: |
+          shopt -s nullglob
+          files=(satellite/*.pmtiles height/*.pmtiles dist/satellite/*.pmtiles dist/height/*.pmtiles)
+          if [ ${#files[@]} -eq 0 ]; then
+            echo "no raster archives built this run"
+          else
+            python tools/check_pmtiles.py "${files[@]}"
+          fi
+
       # Ready-made trips: anchors snapped to real byways in the data we
       # have just built. It REFUSES to publish a trip whose anchors it
       # cannot place on a motor-legal byway, so a transposed digit fails

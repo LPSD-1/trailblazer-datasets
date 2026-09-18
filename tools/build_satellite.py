@@ -221,6 +221,72 @@ def serialise_directory(entries):
     return bytes(out)
 
 
+#: The most a header and root directory may occupy, in bytes.
+#:
+#: NOT OUR NUMBER - it is the PMTiles v3 spec's, and it is the whole reason
+#: leaf directories exist. A reader is entitled to fetch the first 16,384 bytes
+#: in ONE range request and expect the header and the complete root directory
+#: inside them. Everything else goes in leaves the root points at.
+ROOT_LIMIT = 16384
+
+#: What the header itself takes.
+HEADER_LENGTH = 127
+
+
+def build_directories(entries):
+    """Root and leaf directories for `entries`, per the PMTiles v3 spec.
+
+    WHAT THIS FIXES, MEASURED. Every entry used to go in the root and
+    `leaf_length` was written as 0. That is legal only while the compressed
+    root fits in 16,384 bytes, and SIX OF TEN published imagery packs did not:
+    the root of `gb-north-satellite-high` ended at byte 102,706. Those six were
+    refused outright by the app - "CorruptArchive: Root directory is out of
+    bounds" - which is the reader enforcing the spec correctly.
+
+    The failure is silent and it is shaped like a hardware fault: the packs
+    download, they pass their sha256, they sit on the phone taking up 1.1 GB,
+    and the imagery simply is not there. It is also biased towards exactly the
+    packs a rider most wants, because the root grows with the tile count - so
+    every high-detail pack and the whole of the North failed, while the four
+    smallest worked.
+
+    Returns (root_bytes, leaf_bytes, leaf_count). `leaf_bytes` is empty when
+    everything fits in the root, which is the common case for a DEM pack.
+    """
+    root = gzip.compress(serialise_directory(entries), mtime=0)
+    if HEADER_LENGTH + len(root) <= ROOT_LIMIT:
+        return root, b"", 0
+
+    # SMALLEST LEAVES THAT STILL FIT, found by doubling from small.
+    #
+    # Fitting the root is not the only thing worth optimising: a leaf is read
+    # WHOLE to answer one tile, so leaf size is what a rider pays on every
+    # lookup that misses the cache. Halving down from "everything in one leaf"
+    # fits the root on the first try and leaves 300 KB to read per tile;
+    # doubling up from small finds the smallest leaves whose pointers still fit
+    # in 16 KB, which is a few KB per lookup instead.
+    size = 512
+    while size < len(entries) * 2:
+        leaves = bytearray()
+        pointers = []
+        for i in range(0, len(entries), size):
+            chunk = entries[i:i + size]
+            blob = gzip.compress(serialise_directory(chunk), mtime=0)
+            # A LEAF POINTER IS AN ENTRY WITH run_length 0. That is what tells
+            # a reader "this is a directory, not a tile", and its offset is
+            # relative to leaf_offset rather than to data_offset.
+            pointers.append((chunk[0][0], len(leaves), len(blob), 0))
+            leaves.extend(blob)
+        root = gzip.compress(serialise_directory(pointers), mtime=0)
+        if HEADER_LENGTH + len(root) <= ROOT_LIMIT:
+            return root, bytes(leaves), len(pointers)
+        size *= 2
+
+    raise SystemExit(
+        "cannot fit a root directory in %d bytes even with one entry per leaf"
+        % ROOT_LIMIT)
+
+
 def build_header(**f):
     h = bytearray(127)
     h[0:7] = b"PMTiles"
@@ -298,20 +364,19 @@ def write_pmtiles(path, tiles, bbox, min_zoom, max_zoom, metadata,
         else:
             entries.append((tid, offset, length, 1))
 
-    root = gzip.compress(serialise_directory(entries), mtime=0)
+    root, leaves, leaf_count = build_directories(entries)
     metadata_bytes = gzip.compress(
         json.dumps(metadata, separators=(",", ":")).encode("utf-8"), mtime=0)
 
-    header_length = 127
-    root_offset = header_length
+    root_offset = HEADER_LENGTH
     metadata_offset = root_offset + len(root)
     leaf_offset = metadata_offset + len(metadata_bytes)
-    data_offset = leaf_offset
+    data_offset = leaf_offset + len(leaves)
 
     header = build_header(
         root_offset=root_offset, root_length=len(root),
         metadata_offset=metadata_offset, metadata_length=len(metadata_bytes),
-        leaf_offset=leaf_offset, leaf_length=0,
+        leaf_offset=leaf_offset, leaf_length=len(leaves),
         data_offset=data_offset, data_length=len(body),
         addressed=addressed, entries=len(entries), contents=len(offsets),
         min_zoom=min_zoom, max_zoom=max_zoom,
@@ -326,6 +391,9 @@ def write_pmtiles(path, tiles, bbox, min_zoom, max_zoom, metadata,
         f.write(header)
         f.write(root)
         f.write(metadata_bytes)
+        # Leaves sit between the metadata and the tiles, which is where
+        # `leaf_offset` says they are.
+        f.write(leaves)
         f.write(body)
     return len(entries), len(offsets)
 

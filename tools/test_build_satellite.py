@@ -133,3 +133,48 @@ def main():
 
 if __name__ == "__main__":
     sys.exit(main())
+
+
+# --- the root directory limit ------------------------------------------------
+#
+# SIX OF TEN PUBLISHED IMAGERY PACKS COULD NOT BE OPENED, and nothing said so.
+# They downloaded, they matched their sha256, they took up 1.1 GB on the phone,
+# and the app refused every one of them with "CorruptArchive: Root directory is
+# out of bounds" - the reader enforcing the PMTiles v3 rule that the header and
+# the whole root directory must fit in the first 16,384 bytes.
+#
+# The builder put every entry in the root and wrote leaf_length as 0, so the
+# root grew with the tile count. The bias is the cruel part: the bigger the
+# pack, the more certain it was to fail, so every high-detail pack and the
+# whole of the North were dead while the four smallest worked.
+
+def _entries(n):
+    """`n` entries that cannot be run-length collapsed into fewer."""
+    # Non-consecutive ids and varying lengths, so the directory is genuinely
+    # large rather than compressing down to nothing.
+    return [(i * 7, i * 1000, 500 + (i % 97), 1) for i in range(n)]
+
+
+check_true(
+    "a small archive keeps everything in the root",
+    build_satellite.build_directories(_entries(50))[1] == b"",
+)
+
+_root, _leaves, _count = build_satellite.build_directories(_entries(200000))
+check_true(
+    "a big archive spills into leaves",
+    _leaves != b"" and _count > 1,
+)
+check_true(
+    "and the root then fits the spec's 16,384 bytes",
+    build_satellite.HEADER_LENGTH + len(_root) <= build_satellite.ROOT_LIMIT,
+)
+
+# The check that would have caught it: EVERY pack this repo publishes, measured
+# against the limit a reader will actually apply.
+for _n in (1000, 50000, 143637, 400000):
+    _r, _l, _c = build_satellite.build_directories(_entries(_n))
+    check_true(
+        "%d entries produce a conformant root" % _n,
+        build_satellite.HEADER_LENGTH + len(_r) <= build_satellite.ROOT_LIMIT,
+    )
