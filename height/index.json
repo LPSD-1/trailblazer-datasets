@@ -94,6 +94,25 @@
       "encoding": "terrarium",
       "area": "gb-south-west",
       "generated": "2026-09-16T08:43:17Z"
+    },
+    {
+      "id": "gb-wales-height",
+      "kind": "height",
+      "label": "Ground height - Wales",
+      "file": "https://github.com/LPSD-1/trailblazer-datasets/releases/download/height/gb-wales-height.pmtiles",
+      "sha256": "9b153d962228ebf2abd204973ec9b3d577e047c653d2f97dc30eed10c8e43453",
+      "bytes": 43109469,
+      "bounds": {
+        "west": -5.35,
+        "south": 51.35,
+        "east": -2.6,
+        "north": 53.45
+      },
+      "note": "United Kingdom terrain data (c) Environment Agency copyright and/or database right 2015. All rights reserved. Terrain Tiles hosted by AWS Open Data.",
+      "maxZoom": 12,
+      "encoding": "terrarium",
+      "area": "gb-wales",
+      "generated": "2026-09-18T08:23:19Z"
     }
   ]
 }
