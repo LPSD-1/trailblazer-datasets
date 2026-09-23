@@ -28,13 +28,36 @@ The check below is still right, and still needed; what was wrong was the story
 attached to it. It is kept because of the arithmetic in the first paragraph,
 which does not depend on any particular run.
 """
+import json
 import os
+import subprocess
 import sys
+import tempfile
 import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from check_build import check_totals, lane_totals  # noqa: E402
+from check_build import (  # noqa: E402
+    BOUNDS_SLACK,
+    MAX_AREA_DROP,
+    GB_BOUNDS,
+    MAX_CLOSURE_FACTOR,
+    check_authorities,
+    check_closures,
+    check_declared_bounds,
+    check_geometry_in_gb,
+    check_totals,
+    closure_count,
+    coordinates,
+    lane_totals,
+    packages_to_open,
+    write_baseline,
+    load_baseline,
+)
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+ROOT = os.path.dirname(HERE)
+CHECK = os.path.join(HERE, "check_build.py")
 
 
 def manifest(**counts):
@@ -206,6 +229,57 @@ class RechunkingIsNotALoss(unittest.TestCase):
         self.assertTrue(problems, "midlands vanished and nothing said so")
 
 
+class ThePerRegionGate(unittest.TestCase):
+    """MAX_AREA_DROP, which had no test until 0.13 went looking.
+
+    Raising the constant to 1.0 - switching the gate off outright - left the
+    whole suite green, because every case that reached it was already being
+    caught by the national check, the per-type check or the "lost every one of
+    its ways" branch beside it. The threshold itself was unpinned.
+
+    What only this gate can see is one region falling while another grows to
+    cover it: the national total does not move, the vehicle type does not
+    move, and a fifth of the Midlands has gone.
+    """
+
+    @staticmethod
+    def _regions(**counts):
+        return {"packages": [
+            {"package": "motor", "region": region, "area": region,
+             "laneCount": count}
+            for region, count in sorted(counts.items())]}
+
+    BEFORE = _regions.__func__(midlands=3000, north=3000)
+
+    def test_a_region_collapsing_behind_another_one_growing_is_refused(self):
+        # -40% in the Midlands, +40% in the North. National: unchanged.
+        # motor: unchanged. Nothing else in this file can see it.
+        after = self._regions(midlands=1800, north=4200)
+        self.assertEqual(lane_totals(after)[0], lane_totals(self.BEFORE)[0],
+                         "the national total must not move, or this proves "
+                         "nothing about the per-region gate")
+        problems = []
+        check_totals(self.BEFORE, after, problems)
+        self.assertTrue(problems, "a region losing 40% must not publish")
+        self.assertTrue(any("midlands" in p for p in problems))
+
+    def test_exactly_the_threshold_still_publishes(self):
+        share = 1.0 - MAX_AREA_DROP
+        after = self._regions(midlands=int(3000 * share),
+                              north=6000 - int(3000 * share))
+        problems = []
+        check_totals(self.BEFORE, after, problems)
+        self.assertEqual(problems, [])
+
+    def test_a_hair_past_it_does_not(self):
+        share = 1.0 - MAX_AREA_DROP
+        after = self._regions(midlands=int(3000 * share) - 50,
+                              north=6000 - int(3000 * share) + 50)
+        problems = []
+        check_totals(self.BEFORE, after, problems)
+        self.assertTrue(problems)
+
+
 class StillCatchesWhatItAlwaysDid(unittest.TestCase):
     def test_an_empty_build(self):
         problems = []
@@ -224,5 +298,611 @@ class StillCatchesWhatItAlwaysDid(unittest.TestCase):
         self.assertTrue(any("national total" in p for p in problems))
 
 
+# --------------------------------------------------------------- geometry
+#
+# THE HOLE THIS CLOSES: every check above this line counts ways. None of them
+# looks at where a way IS. A lane whose geometry came back as (0, 0) - a blank
+# WKT field, a projection that never ran, a lat/lon pair swapped somewhere
+# between a council and a package - counts as exactly one lane in the manifest,
+# the same as a real one. The totals are perfect and the map draws a byway in
+# the Gulf of Guinea.
+
+
+DERBYSHIRE = [[-1.6200, 53.1300], [-1.6100, 53.1400]]
+
+
+def lanes(*geometries):
+    """A decrypted package holding one feature per geometry given."""
+    return {
+        "features": [
+            {"properties": {"lane_uid": "lane-%d" % i}, "geometry": geom}
+            for i, geom in enumerate(geometries)
+        ]
+    }
+
+
+def line(coords):
+    return {"type": "LineString", "coordinates": coords}
+
+
+class GeometryOutsideGreatBritain(unittest.TestCase):
+    def test_a_real_lane_is_not_objected_to(self):
+        problems = []
+        check_geometry_in_gb(lanes(line(DERBYSHIRE)), "motor-midlands", problems)
+        self.assertEqual(problems, [])
+
+    def test_null_island_is_refused(self):
+        # The shape of a blank geometry field surviving the parse.
+        problems = []
+        check_geometry_in_gb(lanes(line([[0.0, 0.0], [0.0, 0.0]])),
+                             "motor-midlands", problems)
+        self.assertTrue(problems, "a lane at (0, 0) must not publish")
+        self.assertIn("outside Great Britain", problems[0])
+
+    def test_the_message_names_the_lane_and_the_place(self):
+        problems = []
+        check_geometry_in_gb(lanes(line([[0.0, 0.0]])), "motor-midlands",
+                             problems)
+        self.assertIn("lane-0", problems[0])
+        self.assertIn("motor-midlands", problems[0])
+
+    def test_a_lane_in_france_is_refused(self):
+        problems = []
+        check_geometry_in_gb(lanes(line([[2.3522, 48.8566]])), "motor-south-east",
+                             problems)
+        self.assertTrue(problems)
+
+    def test_eastings_and_northings_that_never_went_through_the_projection(self):
+        # OSGB36 metres, which is what a definitive map arrives in. Published
+        # raw they are a number pair that looks perfectly reasonable.
+        problems = []
+        check_geometry_in_gb(lanes(line([[414000.0, 365000.0]])), "motor-north",
+                             problems)
+        self.assertTrue(problems, "grid metres are not degrees")
+
+    def test_a_lat_lon_pair_the_wrong_way_round(self):
+        # 53.13, -1.62 is Derbyshire. Written lat-first it is longitude 53,
+        # which is Turkmenistan, and nothing else in this file would notice.
+        problems = []
+        check_geometry_in_gb(lanes(line([[53.13, -1.62]])), "motor-midlands",
+                             problems)
+        self.assertTrue(problems)
+
+    def test_only_the_strays_are_counted(self):
+        problems = []
+        check_geometry_in_gb(
+            lanes(line(DERBYSHIRE), line([[0.0, 0.0]]), line(DERBYSHIRE)),
+            "motor-midlands", problems)
+        self.assertEqual(len(problems), 1)
+        self.assertIn("1 way(s)", problems[0])
+
+    def test_a_multilinestring_is_walked(self):
+        problems = []
+        check_geometry_in_gb(
+            lanes({"type": "MultiLineString",
+                   "coordinates": [[[-1.62, 53.13]], [[0.0, 0.0]]]}),
+            "gb-tro", problems)
+        self.assertTrue(problems, "nesting must not smuggle a stray past")
+
+    def test_a_point_is_walked(self):
+        # The traffic-order pack holds points as well as lines.
+        problems = []
+        check_geometry_in_gb(lanes({"type": "Point", "coordinates": [0.0, 0.0]}),
+                             "gb-tro", problems)
+        self.assertTrue(problems)
+
+    def test_a_geometrycollection_is_walked(self):
+        problems = []
+        check_geometry_in_gb(
+            lanes({"type": "GeometryCollection",
+                   "geometries": [line([[0.0, 0.0]])]}),
+            "gb-tro", problems)
+        self.assertTrue(problems)
+
+    def test_a_nan_coordinate_is_refused(self):
+        problems = []
+        check_geometry_in_gb(lanes(line([[float("nan"), 53.13]])), "motor-north",
+                             problems)
+        self.assertTrue(problems, "NaN compares false against every bound")
+
+    def test_elevation_on_a_position_does_not_confuse_the_walk(self):
+        problems = []
+        check_geometry_in_gb(lanes(line([[-1.62, 53.13, 220.0]])),
+                             "motor-midlands", problems)
+        self.assertEqual(problems, [])
+
+    def test_geometry_gets_no_slack_even_where_a_region_box_would(self):
+        # A declared region box is allowed BOUNDS_SLACK past the box because
+        # it is a padded bucket boundary. A way is not: it is ground somebody
+        # can stand on, and there is none at 2.2E.
+        problems = []
+        check_geometry_in_gb(lanes(line([[2.20, 52.00]])), "motor-east-anglia",
+                             problems)
+        self.assertTrue(problems)
+        self.assertLess(2.20, GB_BOUNDS[2] + BOUNDS_SLACK,
+                        "this point must be inside the slack, or the test "
+                        "proves nothing about the slack")
+
+    def test_the_box_is_the_whole_of_gb_not_the_published_coverage(self):
+        # Scotland is not published today. The gate must not become the reason
+        # it cannot be, so this pins the box rather than the coverage.
+        west, south, east, north = GB_BOUNDS
+        self.assertLess(west, -6.0)
+        self.assertGreater(north, 58.0)  # Shetland
+        for point in coordinates(line([[-3.20, 55.95]])):   # Edinburgh
+            self.assertFalse(point[0] < west or point[0] > east
+                             or point[1] < south or point[1] > north)
+
+
+class DeclaredRegionBounds(unittest.TestCase):
+    """The cheap half of the same gate: what the index claims about itself."""
+
+    @staticmethod
+    def _manifest(bounds):
+        return {"packages": [], "regions": [{"id": "midlands",
+                                             "bounds": bounds}]}
+
+    def test_the_published_bounds_are_accepted(self):
+        problems = []
+        check_declared_bounds(self._manifest(
+            {"west": -3.25, "south": 51.90, "east": 0.15, "north": 53.60}),
+            problems)
+        self.assertEqual(problems, [])
+
+    def test_a_region_in_the_atlantic_is_refused(self):
+        problems = []
+        check_declared_bounds(self._manifest(
+            {"west": -20.0, "south": 51.90, "east": 0.15, "north": 53.60}),
+            problems)
+        self.assertTrue(problems)
+        self.assertIn("midlands", problems[0])
+
+    def test_the_padded_east_anglia_box_is_accepted(self):
+        # Read off the published manifest: East Anglia and The North both run
+        # east to 1.85, past the catalogue's 1.80, because the box is rounded
+        # outwards past Lowestoft. Measured tight, this gate fired on the live
+        # manifest - a gate that fires on the normal case gets turned off.
+        problems = []
+        check_declared_bounds(self._manifest(
+            {"west": -0.40, "south": 51.50, "east": 1.85, "north": 53.05}),
+            problems)
+        self.assertEqual(problems, [])
+
+    def test_but_a_box_that_has_genuinely_left_the_country_is_not(self):
+        problems = []
+        check_declared_bounds(self._manifest(
+            {"west": -0.40, "south": 51.50, "east": 3.50, "north": 53.05}),
+            problems)
+        self.assertTrue(problems, "3.5E is the Netherlands")
+
+    def test_a_region_with_no_bounds_is_refused(self):
+        problems = []
+        check_declared_bounds({"regions": [{"id": "midlands"}]}, problems)
+        self.assertTrue(problems)
+
+    def test_an_unreadable_corner_is_refused(self):
+        problems = []
+        check_declared_bounds(self._manifest(
+            {"west": "-3.25", "south": 51.90, "east": 0.15, "north": 53.60}),
+            problems)
+        self.assertTrue(problems)
+
+    def test_a_manifest_with_no_regions_is_not_a_problem(self):
+        problems = []
+        check_declared_bounds({"packages": []}, problems)
+        self.assertEqual(problems, [])
+
+    def test_the_build_actually_published_passes(self):
+        # A gate that fires on the live data is a gate somebody turns off.
+        path = os.path.join(ROOT, "manifest.json")
+        if not os.path.isfile(path):
+            self.skipTest("no published manifest in this checkout")
+        with open(path, encoding="utf8") as fh:
+            published = json.load(fh)
+        problems = []
+        check_declared_bounds(published, problems)
+        self.assertEqual(problems, [], "the published manifest must pass")
+
+
+# --------------------------------------------------------------- closures
+
+
+def tro_index(count):
+    return {"generated": "2026-09-06",
+            "packs": [{"id": "gb-tro", "kind": "tro", "features": count}]}
+
+
+class ClosureCount(unittest.TestCase):
+    """36,584 live restrictions on the 6 September cut, read off tro/index.json.
+
+    A rider shown no closure rides into one, and the count is the only thing
+    that separates a quiet week from a truncated extract. build_tro.py:359
+    refuses to BUILD below two thirds of last time - one direction, inside the
+    builder, over a file it is about to overwrite. Nothing compared the counts
+    at publish time, and nothing at all watched the count going UP: duplicated
+    rows, or an expiry filter that stopped filtering, both publish cleanly.
+    """
+
+    def test_a_steady_count_publishes(self):
+        problems = []
+        check_closures(tro_index(36584), tro_index(35110), problems)
+        self.assertEqual(problems, [])
+
+    def test_a_truncated_extract_is_refused(self):
+        # The case build_tro.py's floor was written for, caught again on the
+        # far side of the build.
+        problems = []
+        check_closures(tro_index(36584), tro_index(400), problems)
+        self.assertTrue(problems)
+        self.assertIn("fell", problems[0])
+
+    def test_a_count_that_triples_is_refused(self):
+        # Nothing anywhere watched this direction before.
+        problems = []
+        check_closures(tro_index(36584), tro_index(146336), problems)
+        self.assertTrue(problems, "four times the orders is not a busy week")
+        self.assertIn("rose", problems[0])
+
+    def test_exactly_the_factor_still_publishes(self):
+        # The boundary, both sides of it. Named so that moving the constant
+        # moves this test rather than silently widening the gate.
+        problems = []
+        check_closures(tro_index(10000),
+                       tro_index(int(10000 * MAX_CLOSURE_FACTOR)), problems)
+        self.assertEqual(problems, [])
+
+    def test_a_hair_past_the_factor_does_not(self):
+        problems = []
+        check_closures(tro_index(10000),
+                       tro_index(int(10000 * MAX_CLOSURE_FACTOR) + 100),
+                       problems)
+        self.assertTrue(problems)
+
+    def test_the_same_boundary_downwards(self):
+        problems = []
+        check_closures(tro_index(30000),
+                       tro_index(int(30000 / MAX_CLOSURE_FACTOR)), problems)
+        self.assertEqual(problems, [])
+        problems = []
+        check_closures(tro_index(30000),
+                       tro_index(int(30000 / MAX_CLOSURE_FACTOR) - 100),
+                       problems)
+        self.assertTrue(problems)
+
+    def test_no_closures_at_all_is_never_true(self):
+        problems = []
+        check_closures(tro_index(36584), tro_index(0), problems)
+        self.assertTrue(problems)
+        self.assertIn("never true", problems[0])
+
+    def test_an_index_with_no_count_in_it_is_refused(self):
+        problems = []
+        check_closures(tro_index(36584), {"packs": [{"id": "gb-tro"}]}, problems)
+        self.assertTrue(problems)
+
+    def test_a_build_that_wrote_no_index_did_not_lose_anything(self):
+        # The lanes workflow builds no traffic orders. If that read as "every
+        # closure vanished" this gate would refuse every monthly lane publish,
+        # and a gate that fires on the normal case gets --forced forever.
+        problems = []
+        check_closures(tro_index(36584), None, problems)
+        self.assertEqual(problems, [])
+
+    def test_a_first_closure_build_has_nothing_to_compare(self):
+        problems = []
+        check_closures(None, tro_index(36584), problems)
+        self.assertEqual(problems, [])
+
+    def test_the_count_is_summed_over_every_pack(self):
+        self.assertEqual(closure_count(
+            {"packs": [{"features": 10}, {"features": 5}]}), 15)
+        self.assertIsNone(closure_count({"packs": []}))
+        self.assertIsNone(closure_count(None))
+        self.assertIsNone(closure_count({"packs": [{"features": True}]}),
+                          "a bool is not a count")
+
+
+# -------------------------------------------------------------- rebaseline
+#
+# The pivot drops foot, horse and bicycle entirely: 863,976 of 875,827 ways,
+# 98.6% of the national total, fifty times MAX_NATIONAL_DROP. check_build.py
+# would refuse that build, and it is right to - from inside this file a
+# deliberate cutover and a collapsed fetch look identical. The question is what
+# gets it through, and --force gets it through leaving nothing behind.
+
+
+PIVOT = manifest(motor=11851)
+
+
+class Rebaselining(unittest.TestCase):
+    def setUp(self):
+        self.dir = tempfile.mkdtemp()
+        self.path = os.path.join(self.dir, "build_baseline.json")
+
+    def tearDown(self):
+        for name in os.listdir(self.dir):
+            os.remove(os.path.join(self.dir, name))
+        os.rmdir(self.dir)
+
+    def _record(self, previous=PUBLISHED, new=PIVOT, reason="the pivot"):
+        return write_baseline(self.path, previous, new, reason)
+
+    def _edit(self, **changes):
+        with open(self.path, encoding="utf8") as fh:
+            record = json.load(fh)
+        record.update(changes)
+        with open(self.path, "w", encoding="utf8") as fh:
+            json.dump(record, fh)
+
+    # --- without a record ---------------------------------------------
+
+    def test_the_cutover_is_refused_with_no_baseline_at_all(self):
+        problems = []
+        dropped = load_baseline(self.path, PUBLISHED, problems)
+        self.assertEqual(dropped, frozenset())
+        check_totals(PUBLISHED, PIVOT, problems, dropped)
+        self.assertTrue(problems, "a 98.6% fall must not publish unrecorded")
+        self.assertTrue(any("national total" in p for p in problems))
+
+    # --- with one -----------------------------------------------------
+
+    def test_a_recorded_cutover_publishes(self):
+        self._record()
+        problems = []
+        dropped = load_baseline(self.path, PUBLISHED, problems)
+        self.assertEqual(dropped, frozenset(["foot", "horse", "bicycle"]))
+        check_totals(PUBLISHED, PIVOT, problems, dropped)
+        self.assertEqual(problems, [])
+
+    def test_the_record_says_what_changed(self):
+        record = self._record(reason="phase 1.2: motor only")
+        self.assertEqual(record["dropped"], ["bicycle", "foot", "horse"])
+        self.assertEqual(record["supersedes"]["total"], 875827)
+        self.assertEqual(record["becomes"]["total"], 11851)
+        self.assertEqual(record["nationalDrop"], 0.9865)
+        self.assertEqual(record["reason"], "phase 1.2: motor only")
+        self.assertTrue(record["recorded"])
+        with open(self.path, encoding="utf8") as fh:
+            self.assertEqual(json.load(fh)["dropped"],
+                             ["bicycle", "foot", "horse"])
+
+    # --- what it does NOT excuse --------------------------------------
+
+    def test_it_does_not_excuse_a_drop_in_what_is_left(self):
+        # The whole point. Motor is the dataset after the pivot; a baseline
+        # that let motor fall too would be --force with a JSON file attached.
+        self._record()
+        problems = []
+        dropped = load_baseline(self.path, PUBLISHED, problems)
+        check_totals(PUBLISHED, manifest(motor=9000), problems, dropped)
+        self.assertTrue(problems, "motor is still gated at 2%")
+        self.assertTrue(any("motor" in p for p in problems))
+
+    def test_it_does_not_excuse_a_region_vanishing_from_what_is_left(self):
+        self._record()
+        gone = {"packages": [p for p in PIVOT["packages"]
+                             if p["region"] != "region-0"]}
+        problems = []
+        dropped = load_baseline(self.path, PUBLISHED, problems)
+        check_totals(PUBLISHED, gone, problems, dropped)
+        self.assertTrue(problems)
+
+    def test_a_record_with_no_reason_is_not_a_record(self):
+        self._record()
+        self._edit(reason="   ")
+        problems = []
+        dropped = load_baseline(self.path, PUBLISHED, problems)
+        self.assertEqual(dropped, frozenset(), "it must not apply")
+        self.assertIn("silent bypass", problems[0])
+        check_totals(PUBLISHED, PIVOT, problems, dropped)
+        self.assertTrue(any("national total" in p for p in problems),
+                        "and the drop it was meant to excuse is still refused")
+
+    def test_it_stops_applying_once_the_cutover_has_published(self):
+        # Self-expiring, and this is what stops it becoming a standing licence
+        # to lose 98% of the data every month afterwards. Once manifest.json IS
+        # the motor-only build, the record no longer describes it.
+        self._record()
+        problems = []
+        dropped = load_baseline(self.path, PIVOT, problems)
+        self.assertEqual(dropped, frozenset())
+        check_totals(PIVOT, manifest(motor=200), problems, dropped)
+        self.assertTrue(problems, "a later collapse is refused again")
+
+    def test_a_record_describing_some_other_build_does_not_apply(self):
+        self._record()
+        self._edit(supersedes={"total": 123456, "packages": {}})
+        problems = []
+        self.assertEqual(load_baseline(self.path, PUBLISHED, problems),
+                         frozenset())
+
+    def test_a_record_whose_drop_did_not_happen_is_refused(self):
+        # A stale record left in the tree while the build still ships foot
+        # data: it must not sit there quietly excusing a type that is present.
+        self._record()
+        problems = []
+        dropped = load_baseline(self.path, PUBLISHED, problems)
+        check_totals(PUBLISHED, manifest(motor=11851, foot=300000), problems,
+                     dropped)
+        self.assertTrue(any("still carries" in p for p in problems))
+
+    def test_a_record_naming_nothing_changes_nothing(self):
+        self._record(previous=PUBLISHED, new=PUBLISHED)
+        problems = []
+        self.assertEqual(load_baseline(self.path, PUBLISHED, problems),
+                         frozenset())
+        self.assertEqual(problems, [])
+
+    def test_a_first_publish_under_a_baseline_is_still_a_first_publish(self):
+        self._record()
+        problems = []
+        check_totals(None, PIVOT, problems, frozenset(["foot"]))
+        self.assertEqual(problems, [])
+
+
+class TheCommandLine(unittest.TestCase):
+    """main() wiring. A gate nothing calls is decoration."""
+
+    def setUp(self):
+        self.dir = tempfile.mkdtemp()
+
+    def tearDown(self):
+        for root, _, files in os.walk(self.dir, topdown=False):
+            for name in files:
+                os.remove(os.path.join(root, name))
+            if root != self.dir:
+                os.rmdir(root)
+        os.rmdir(self.dir)
+
+    def _write(self, name, data):
+        path = os.path.join(self.dir, name)
+        with open(path, "w", encoding="utf8") as fh:
+            json.dump(data, fh)
+        return path
+
+    def _run(self, *args):
+        return subprocess.run(
+            [sys.executable, CHECK] + list(args),
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+            universal_newlines=True)
+
+    def test_the_cutover_is_refused_and_then_recorded_and_then_published(self):
+        previous = self._write("manifest.json", PUBLISHED)
+        new = self._write("new.json", PIVOT)
+        baseline = os.path.join(self.dir, "build_baseline.json")
+        common = ["--previous", previous, "--new", new,
+                  "--cache", os.path.join(self.dir, "cache"),
+                  "--baseline", baseline,
+                  "--closures-previous", os.path.join(self.dir, "none.json"),
+                  "--closures-new", os.path.join(self.dir, "none.json")]
+
+        refused = self._run(*common)
+        self.assertEqual(refused.returncode, 1, refused.stdout)
+        self.assertIn("NOT publishing", refused.stdout)
+
+        recorded = self._run(*(common + ["--rebaseline", "--reason",
+                                         "phase 1.2 drops foot, horse, bicycle"]))
+        self.assertEqual(recorded.returncode, 2, recorded.stdout)
+        self.assertIn("NOTHING WAS PUBLISHED", recorded.stdout)
+        self.assertTrue(os.path.isfile(baseline))
+
+        allowed = self._run(*common)
+        self.assertIn("REBASELINED", allowed.stdout)
+        # The authority floor still fires - there is no cache in this temp
+        # directory - so the exit code is 1 for that reason alone. What is
+        # being read here is that the 98.6% drop is no longer among the
+        # problems listed.
+        self.assertNotIn("national total", allowed.stdout)
+        self.assertIn("phase 1.2 drops foot, horse, bicycle", allowed.stdout)
+
+    def test_rebaseline_without_a_reason_writes_nothing(self):
+        previous = self._write("manifest.json", PUBLISHED)
+        new = self._write("new.json", PIVOT)
+        baseline = os.path.join(self.dir, "build_baseline.json")
+        out = self._run("--previous", previous, "--new", new,
+                        "--baseline", baseline, "--rebaseline")
+        self.assertNotEqual(out.returncode, 0)
+        self.assertIn("--reason", out.stdout)
+        self.assertFalse(os.path.isfile(baseline))
+
+
+class WhichPackagesGetOpened(unittest.TestCase):
+    """The geometry check is only as wide as the set of packages opened."""
+
+    @staticmethod
+    def _index(**counts):
+        built = manifest(**counts)
+        for i, pkg in enumerate(built["packages"]):
+            pkg["file"] = "packages/%s-%d.tbpack" % (pkg["package"], i)
+        return built
+
+    def test_every_motor_package_is_opened(self):
+        built = self._index(motor=11851, foot=635242)
+        chosen = packages_to_open(built)
+        motor = [p for p in built["packages"] if p["package"] == "motor"]
+        self.assertEqual(len([p for p in chosen if p["package"] == "motor"]),
+                         len(motor), "all four motor areas, not just one")
+
+    def test_one_of_every_other_type_is_sampled(self):
+        built = self._index(motor=11851, foot=635242, horse=114367)
+        chosen = packages_to_open(built)
+        self.assertEqual(len([p for p in chosen if p["package"] == "foot"]), 1)
+        self.assertEqual(len([p for p in chosen if p["package"] == "horse"]), 1)
+
+    def test_the_sample_is_the_largest_of_its_type(self):
+        built = {"packages": [
+            {"package": "foot", "region": "a", "laneCount": 10,
+             "file": "packages/foot-a.tbpack"},
+            {"package": "foot", "region": "b", "laneCount": 900,
+             "file": "packages/foot-b.tbpack"},
+            {"package": "motor", "region": "a", "laneCount": 5,
+             "file": "packages/motor-a.tbpack"},
+        ]}
+        chosen = packages_to_open(built)
+        foot = [p for p in chosen if p["package"] == "foot"]
+        self.assertEqual([p["laneCount"] for p in foot], [900])
+
+
+class TheAuthorityFloorStillFires(unittest.TestCase):
+    """An existing gate, on its existing case: a half-down source.
+
+    MIN_AUTHORITIES has never had a test. It is the check standing between a
+    fetch that reached 80 councils and a map with a third of the country
+    missing, so it gets one here rather than being taken on trust.
+    """
+
+    def setUp(self):
+        self.dir = tempfile.mkdtemp()
+
+    def tearDown(self):
+        for root, dirs, files in os.walk(self.dir, topdown=False):
+            for name in files:
+                os.remove(os.path.join(root, name))
+            for name in dirs:
+                os.rmdir(os.path.join(root, name))
+        os.rmdir(self.dir)
+
+    def _cache(self, answered, known=150):
+        codes = ["auth-%03d" % i for i in range(known)]
+        with open(os.path.join(self.dir, "authorities.json"), "w",
+                  encoding="utf8") as fh:
+            json.dump(codes, fh)
+        for code in codes[:answered]:
+            folder = os.path.join(self.dir, code)
+            os.makedirs(folder)
+            with open(os.path.join(folder, "rows.json"), "w",
+                      encoding="utf8") as fh:
+                fh.write("[1]")
+
+    def test_a_half_down_source_is_refused(self):
+        self._cache(answered=139)
+        problems = []
+        check_authorities(self.dir, problems)
+        self.assertTrue(problems)
+        self.assertIn("139 of 150", problems[0])
+
+    def test_a_full_fetch_is_not(self):
+        self._cache(answered=141)
+        problems = []
+        check_authorities(self.dir, problems)
+        self.assertEqual(problems, [])
+
+    def test_no_cache_at_all_is_refused(self):
+        problems = []
+        check_authorities(os.path.join(self.dir, "nothing"), problems)
+        self.assertTrue(problems)
+
+    def test_an_empty_file_does_not_count_as_an_answer(self):
+        self._cache(answered=150)
+        for name in os.listdir(self.dir):
+            folder = os.path.join(self.dir, name)
+            if os.path.isdir(folder):
+                open(os.path.join(folder, "rows.json"), "w").close()
+        problems = []
+        check_authorities(self.dir, problems)
+        self.assertTrue(problems, "an empty file is not data")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
