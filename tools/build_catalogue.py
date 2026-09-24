@@ -194,26 +194,28 @@ def mirrored_routing(path):
 
 
 def routing_packs(country, tile_sizes, mirror=None, mirror_base=""):
-    """Routing packs for one country - Great Britain, and no other.
+    """Routing packs for one country, one per 5-degree tile it touches.
 
-    GB ONLY, AND SIX TILES OF IT. Step 1.6.
+    GREAT BRITAIN IS SIX TILES; EVERY OTHER COUNTRY IS WHAT ITS BOX TOUCHES.
 
-    This used to emit a pack for every tile every country's box touched,
-    forty countries deep, which is where the catalogue's 526 distinct routing
-    files and 7.9 GB came from. Not one of those riders exists: the app
-    publishes lanes in England and Wales. A country with nothing else in it
-    therefore ends up with no areas at all, and `build` drops it - which is
-    the intended result, not an accident of the filter.
+    Step 1.6 cut this to Great Britain alone - 526 files and 7.9 GB became six
+    tiles and 293 MB. On 24 Sep 2026 the owner, asked directly whether the
+    other 40 countries' routing should go, chose to KEEP it: a rider may take
+    the bike abroad. So the `code != "gb"` early return is gone. What step 1.6
+    measured still stands for Britain itself: its bounding box grazes the N45
+    row (France, northern Spain) and the N60 row (Shetland), and a British
+    download should not carry them - so GB_ROUTING_TILES still filters GB, and
+    only GB. France gets the N45 row as its own, which is also where the three
+    mirrored N45 tiles belong; with France gone, verify_catalogue.py refused
+    them as "mirrored but absent".
     """
     _, code, label, w, s, e, n = country
-    if code != "gb":
-        return []
     mirror = mirror or {}
     packs = []
     for name, lon, lat in tiles_covering(w, s, e, n):
         if name not in tile_sizes:
             continue  # ocean, or nothing mapped there
-        if name not in GB_ROUTING_TILES:
+        if code == "gb" and name not in GB_ROUTING_TILES:
             # The bounding box grazes two rows of tiles that hold no ground a
             # British rider routes over. Listing them cost 193.2 MB and bought
             # a download nobody wanted.

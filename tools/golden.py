@@ -589,8 +589,8 @@ def digests(root):
 # EXPECTED-BEGIN (rewritten by --bless; do not edit by hand)
 EXPECTED_SQLITE = "3.50.4"
 EXPECTED = {
-    "catalogue.json": {"bytes": 5213,
-        "sha256": "f0a0e4e9c065f73606f8382894f4e10fb971a587d699fd018c88a6ce3374d7ef"},
+    "catalogue.json": {"bytes": 7788,
+        "sha256": "82ebf9099a47da46b68968dfc7fb510f5ce5649d76b0e3ad4e203690aad35eb9"},
     "changes/gb-south-west/20260101T000000Z-20260102T030405Z.tbchange": {"bytes": 36864,
         "sha256": "728759392bcde498a441ff86da39d64c180df0898b1eec19a63c8c920de4ff22"},
     "changes/index.json": {"bytes": 509,

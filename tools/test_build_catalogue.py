@@ -80,9 +80,24 @@ ok(sum(p["bytes"] for p in widened) - total == 193163753,
    "France, northern Spain and Shetland (got %d)"
    % (sum(p["bytes"] for p in widened) - total))
 
-ok(bc.routing_packs(FR, WORLD_TILES) == [],
-   "France gets no routing packs at all - the other 40 countries are where "
-   "the 526 came from")
+# THE OWNER KEPT THE OTHER COUNTRIES (24 Sep 2026). Step 1.6 had France
+# return nothing; this is the reversal, and the reason the three mirrored N45
+# tiles have somewhere to be listed again.
+fr = bc.routing_packs(FR, WORLD_TILES)
+fr_ids = sorted(p["id"] for p in fr)
+ok(len(fr) > 0, "France gets routing packs again (got %d)" % len(fr))
+ok("E0_N45" in fr_ids and "E5_N45" in fr_ids,
+   "including the N45 row that GB leaves out: %s" % ", ".join(fr_ids))
+ok(all(p["file"].startswith(bc.ROUTING_INDEX) for p in fr),
+   "unmirrored tiles are fetched from upstream")
+mirror = {"E0_N45": {"sha256": "b" * 64, "bytes": 127261650}}
+fr_m = {p["id"]: p for p in bc.routing_packs(
+    FR, WORLD_TILES, mirror, "https://example.org/rel/")}
+ok(fr_m["E0_N45"]["file"] == "https://example.org/rel/E0_N45.rd5"
+   and fr_m["E0_N45"]["sha256"] == "b" * 64,
+   "and a tile we mirror is served from our copy, with its real hash")
+ok(len(bc.routing_packs(GB, WORLD_TILES)) == 6,
+   "while Great Britain is still six tiles, not twelve")
 
 
 print("\nno pack carries a vehicle field (step 1.7)")
