@@ -843,19 +843,37 @@ jobs:
           # reaches into another area for `routing`. So this asks the question
           # the way the app does: standing in this region, is the overview for
           # my vehicle among the packs I would be offered?
+          # BOTH SHAPES, and the hyphen is the whole reason this is written
+          # out rather than a prefix test. Before the pivot every overview
+          # was `gb-overview-<vehicle>`; after it there is ONE overview with
+          # the id `gb-overview` and no `vehicle` key at all, because step
+          # 1.7 removes it. `startswith('gb-overview-')` is false for that
+          # id, so the single overview was counted as an ordinary lane pack,
+          # covered nothing, and `missing` came out as {None}.
+          #
+          # The failure was not even the honest one: `', '.join(sorted({None}))`
+          # raises TypeError, so the cutover build died with a stack trace
+          # instead of the sentence this check exists to print. A gate that
+          # crashes tells you less than a gate that fails.
+          def _is_overview(p):
+              return p['id'] == 'gb-overview' or p['id'].startswith('gb-overview-')
+
           for area in gb[0]['areas']:
               lane_vehicles = {p.get('vehicle') for p in area['packs']
                                if p.get('kind') == 'lanes'
-                               and not p['id'].startswith('gb-overview-')}
+                               and not _is_overview(p)}
               if not lane_vehicles:
                   continue
               covered = {p.get('vehicle') for p in area['packs']
-                         if p['id'].startswith('gb-overview-')}
+                         if _is_overview(p)}
               missing = lane_vehicles - covered
               if missing:
+                  # `str(v)` because a post-pivot pack has no vehicle: the
+                  # value is None and None does not sort against a string.
                   sys.exit('%s offers lanes for %s with no overview to draw '
-                           'them zoomed out' % (area['id'],
-                                                ', '.join(sorted(missing))))
+                           'them zoomed out'
+                           % (area['id'],
+                              ', '.join(sorted(str(v) for v in missing))))
 
               # And every lane pack must say it is the official record. This
               # is not bookkeeping: `legalBasis` is the difference between a

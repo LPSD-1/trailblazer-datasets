@@ -501,6 +501,10 @@ def check_totals(previous, new, problems, dropped=frozenset()):
                 % (", ".join(still_here),
                    ", ".join("%d %s ways" % (new_packages[n], n)
                              for n in still_here)))
+        # HELD BEFORE THE EXCLUSION, because the region check on a zero
+        # baseline needs the regions the old build actually covered - and
+        # excluding the dropped partitions removes every one of them.
+        old_areas_before_drop = dict(old_areas)
         new_total, new_areas, new_packages = excluding(
             dropped, new_areas, new_packages)
         old_total, old_areas, old_packages = excluding(
@@ -508,6 +512,52 @@ def check_totals(previous, new, problems, dropped=frozenset()):
         print("  excluding %s: %d -> %d ways"
               % (", ".join(sorted(dropped)), old_total, new_total))
         if old_total == 0:
+            # BLIND IS NOT PASS, and this returned as though it were.
+            #
+            # On the cutover the baseline drops all four old partitions,
+            # so the excluded old total is 0 by construction and every
+            # ratio below divides by zero. The old code returned here -
+            # silently, printing "OK to publish" - which skipped
+            # MAX_NATIONAL_DROP, the per-vehicle loop, MAX_AREA_DROP and
+            # the vanished-region check, all at once, on the ONE build
+            # they exist for.
+            #
+            # MEASURED: a synthetic cutover holding 105 ways across six
+            # regions, two of them at ZERO, printed "OK to publish" and
+            # exited 0. A guard that waves through a gutted build is worse
+            # than no guard, because somebody is relying on it.
+            #
+            # There is no percentage to compute against nothing, and that
+            # part is honest. What follows is what CAN be checked without
+            # a baseline, plus a statement of what could not - so the
+            # operator reads "these gates did not run" rather than "OK".
+            print("  NO COMPARABLE BASELINE: every gate that needs a "
+                  "before-and-after is BLIND on this build, not passed.")
+            print("    not run: national drop, per-type drop, area drop, "
+                  "vanished regions")
+
+            # A region holding nothing is data loss whatever the baseline
+            # says, and needs no ratio to see.
+            empty = sorted(k for k, v in new_areas.items() if v == 0)
+            if empty:
+                problems.append(
+                    "these regions hold no ways at all: %s. A region at "
+                    "zero is a partial fetch, not an amendment."
+                    % ", ".join(empty))
+
+            # And the REGIONS should survive a change of partition even
+            # though the partition names do not. An area key is
+            # "package/region", so comparing the region half asks the one
+            # question that still means something: is the country still
+            # covered?
+            def _regions(areas):
+                return {k.split("/", 1)[1] for k in areas if "/" in k}
+
+            lost = _regions(old_areas_before_drop) - _regions(new_areas)
+            if lost:
+                problems.append(
+                    "regions the old build covered and this one does not: "
+                    "%s" % ", ".join(sorted(lost)))
             return
         if new_total == 0:
             problems.append(
