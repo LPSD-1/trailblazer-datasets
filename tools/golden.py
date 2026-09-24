@@ -423,8 +423,8 @@ EXPECTED_SQLITE = "3.50.4"
 EXPECTED = {
     "catalogue.json": {"bytes": 3697,
         "sha256": "5443d7283b15961b8f0c3b96658a7b51d4478e2107afd7a070a046e47a49813d"},
-    "containers/manifest.json": {"bytes": 982,
-        "sha256": "f7cac79e19e3cf83523df320cfbf568e801dc30b574ecc2db805eac648ff9126"},
+    "containers/manifest.json": {"bytes": 1003,
+        "sha256": "8e976af0efddaf6646a6b633f79bffd7fe781157f0a353fa020d201eff7ff4f9"},
     "containers/ways-overview.tbmap": {"bytes": 57344,
         "sha256": "d23343592dadec69f070bfc22a6d7dbeb49008939e0cd9e8b0edccd0eb16b38f"},
     "containers/ways-south-west.tbmap": {"bytes": 65536,

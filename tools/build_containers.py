@@ -62,7 +62,37 @@ def _download_bytes(path):
         return len(gzip.compress(fh.read(), mtime=0))
 
 
-def build_all(manifest_path, out_dir, key, signing_key=None, root="."):
+def _add_pois(target, features, region, cache, log=print):
+    """Put the POI tables into an area container, and say how many.
+
+    AN EMPTY TABLE IS NOT A MISSING TABLE, and the app reads the difference.
+    `TbMapStore.hasPois` is table presence, so a container with the tables and
+    no rows says "we looked here and there is nothing", while a container
+    without them says "nobody has fetched this region". A rider looking for
+    fuel needs those told apart - the first is an answer and the second is a
+    gap - and it is the same distinction `bounds` exists for.
+
+    Returns the POI count, or None when this region has no cache, which is the
+    state of every region until `build_pois.py fetch` has been run for it.
+    """
+    import build_pois as PO
+    if not cache or not os.path.isdir(os.path.join(cache, region)):
+        return None
+    bounds = B._bounds_of(features)
+    if not bounds:
+        return None
+    # The container's OWN bounds, not the region's nominal box: a POI outside
+    # the ways we actually shipped is one the rider cannot reach from anything
+    # in this file, and it belongs to whichever area does cover it.
+    bbox = tuple(float(v) for v in bounds.split(","))
+    pois, _dates = PO.load_cached(cache, region, bbox, log=lambda *a: None)
+    PO.write_pois(target, pois)
+    log("    %-40s %6d POIs" % ("", len(pois)))
+    return len(pois)
+
+
+def build_all(manifest_path, out_dir, key, signing_key=None, root=".",
+              poi_cache=None):
     with open(manifest_path, "r", encoding="utf-8") as fh:
         manifest = json.load(fh)
 
@@ -115,8 +145,16 @@ def build_all(manifest_path, out_dir, key, signing_key=None, root="."):
                           context_scope=context_scope,
                           context_note=context_note)
         claimed.update(f["properties"].get("lane_uid") for f in features)
-        entries.append(_entry(target, pack, kind="area", dataset=dataset,
-                              lane_count=len(features), generated=pack_stamp))
+        # POIs AFTER THE WAYS, into the same file. Same container, own tables -
+        # WAYS-SCHEMA.md - so a rider who downloads an area gets the fuel and
+        # the toilets with it and there is no second download to forget.
+        poi_count = _add_pois(target, features, pack["area"], poi_cache)
+        entry = _entry(target, pack, kind="area", dataset=dataset,
+                       lane_count=len(features), generated=pack_stamp)
+        # NULL, NOT ZERO, when nothing was fetched. The app shows "no POI data
+        # for this area" rather than "no fuel in Wales".
+        entry["poiCount"] = poi_count
+        entries.append(entry)
         print("  %-42s %6d ways  %5.2f MB download"
               % (name, len(features), _download_bytes(target) / 1048576.0))
 
@@ -220,6 +258,12 @@ def main():
     ap.add_argument("--out", default="dist/containers")
     ap.add_argument("--root", default=".")
     ap.add_argument("--key", default=os.environ.get("DATASET_KEY_FILE"))
+    # OFF UNLESS POINTED AT A CACHE. Every region without one is built exactly
+    # as before, with no POI tables at all, so turning this on is a per-region
+    # decision made by whether `build_pois.py fetch` has been run for it.
+    ap.add_argument("--poi-cache", default=os.environ.get("POI_CACHE"),
+                    help="the build_pois.py cache directory; regions with a "
+                         "cache get POI tables in their area container")
     args = ap.parse_args()
 
     if not args.key:
@@ -238,7 +282,8 @@ def main():
         print("  WARNING: no signing key; containers will be unsigned.")
 
     print("Building containers")
-    out = build_all(args.manifest, args.out, key, signing_key, args.root)
+    out = build_all(args.manifest, args.out, key, signing_key, args.root,
+                    poi_cache=args.poi_cache)
     total = sum(e["downloadBytes"] for e in out["containers"])
     print("\n  %d containers, %.1f MB if a rider downloaded every one"
           % (len(out["containers"]), total / 1048576.0))

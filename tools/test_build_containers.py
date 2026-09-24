@@ -146,7 +146,31 @@ def _way(uid, way_class, moto, fourxfour, lon, lat, authority="Derbyshire"):
     }
 
 
-def _pipeline():
+def _poi_cache(tmp, region, pois):
+    """A build_pois.py cache for one region, in the shape `load_cached` reads.
+
+    Written here rather than fetched: `load_cached` insists on a file per
+    CATEGORY and raises if one is missing, which is the behaviour that makes a
+    half-fetched region fail loudly instead of publishing three categories and
+    calling it POI coverage.
+    """
+    import build_pois as PO
+    cache = os.path.join(tmp, "poi-cache")
+    os.makedirs(os.path.join(cache, region), exist_ok=True)
+    for name, _ in PO.CATEGORIES:
+        mine = [e for e in pois if e["category"] == name]
+        with io.open(PO.cache_path(cache, region, name), "w",
+                     encoding="utf-8") as fh:
+            fh.write(json.dumps({
+                "fetched_at": "2026-03-04",
+                "elements": [{
+                    "type": "node", "id": e["id"],
+                    "lat": e["lat"], "lon": e["lon"], "tags": e["tags"],
+                } for e in mine]}))
+    return cache
+
+
+def _pipeline(poi_cache=None):
     """packs -> containers, the way the real build runs it."""
     tmp = tempfile.mkdtemp(prefix="tbways-pipeline-")
     real_dist = P.dist_dir
@@ -169,7 +193,7 @@ def _pipeline():
         with io.open(mpath, "w", encoding="utf-8") as fh:
             fh.write(json.dumps(manifest))
         out = C.build_all(mpath, os.path.join(tmp, "containers"), KEY, None,
-                          tmp)
+                          tmp, poi_cache=poi_cache(tmp) if poi_cache else None)
         return out, tmp
     finally:
         P.dist_dir = real_dist
@@ -251,21 +275,6 @@ def test_the_container_holds_the_schemas_ways_table():
         shutil.rmtree(tmp, ignore_errors=True)
 
 
-def main():
-    for fn in list(globals().values()):
-        if callable(fn) and getattr(fn, "__name__", "").startswith("test_"):
-            fn()
-    if _failed:
-        print("FAILED:")
-        for f in _failed:
-            print("  " + f)
-        return 1
-    print("ok: %d checks" % _passed)
-    return 0
-
-
-if __name__ == "__main__":
-    sys.exit(main())
 
 # --- the manifest must not carry a run clock -------------------------------
 #
@@ -310,3 +319,132 @@ def test_two_runs_over_identical_data_produce_an_identical_manifest():
     again = max((e.get("generated") or "" for e in entries), default="")
     assert again == newest
     print("  identical containers give an identical manifest stamp (%s)" % newest)
+
+
+# --- POIs travel in the container the ways travel in (spec 6, WAYS-SCHEMA) ---
+#
+# WHAT THIS IS GUARDING. `build_pois.py` was complete - fetch, categorise,
+# dedupe, clip, write_pois - and NOTHING CALLED IT. No published container had
+# a `pois` table, while the app's reader had `poisNear` and `hasPois` and a
+# `Poi` class ready to use them. A reader ahead of its writer reports "no fuel
+# in this area" in exactly the voice it would use if it had looked.
+
+def _node(uid, category, lat, lon, tags):
+    return {"id": uid, "category": category, "lat": lat, "lon": lon,
+            "tags": tags}
+
+
+def test_an_area_container_carries_the_pois_of_its_region():
+    def cache(tmp):
+        # Midlands ways sit at -1.70,52.50 and run +0.01; these two are inside
+        # that box and the third is 3 degrees east of it.
+        return _poi_cache(tmp, "midlands", [
+            _node(1, "fuel", 52.505, -1.695, {"amenity": "fuel"}),
+            _node(2, "toilets", 52.503, -1.698, {"amenity": "toilets"}),
+            _node(3, "fuel", 52.505, 1.500, {"amenity": "fuel"}),
+        ])
+    out, tmp = _pipeline(poi_cache=cache)
+    try:
+        path = os.path.join(tmp, "containers", "ways-midlands.tbmap")
+        db = sqlite3.connect(path)
+        names = {r[0] for r in db.execute(
+            "SELECT name FROM sqlite_master WHERE name IN "
+            "('pois','pois_bbox')")}
+        check("the area container gained both POI objects",
+              names == {"pois", "pois_bbox"}, "got %r" % sorted(names))
+        rows = db.execute("SELECT poi_uid, category FROM pois "
+                          "ORDER BY poi_uid").fetchall()
+        check("it holds the POIs inside its own bounds", len(rows) == 2,
+              "got %d: %r" % (len(rows), rows))
+        check("and their categories survived",
+              sorted(c for _, c in rows) == ["fuel", "toilets"],
+              "got %r" % sorted(c for _, c in rows))
+        # CLIPPED TO THE CONTAINER, NOT TO THE REGION'S NOMINAL BOX. A POI a
+        # rider cannot reach from any way in this file belongs to whichever
+        # area does cover it, and shipping it twice is how a fuel station
+        # appears in Wales.
+        lons = [r[0] for r in db.execute("SELECT lon FROM pois")]
+        check("a POI outside the ways it was built from is not carried",
+              all(l < 0 for l in lons), "got %r" % lons)
+        n_bbox = db.execute("SELECT count(*) FROM pois_bbox").fetchone()[0]
+        check("every POI has an rtree row", n_bbox == 2, "got %d" % n_bbox)
+        # The join the app's `poisNear` makes: bbox hit -> record, by rowid.
+        joined = db.execute("SELECT count(*) FROM pois p JOIN pois_bbox b "
+                            "ON b.id = p.rowid").fetchone()[0]
+        check("the rtree id and the record are the same thing", joined == 2,
+              "got %d" % joined)
+        db.close()
+
+        entries = {e["id"]: e for e in out["containers"]}
+        got = entries["gb-midlands"].get("poiCount")
+        check("the manifest says how many POIs the area carries", got == 2,
+              "got %r" % (got,))
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_a_region_with_no_cache_gets_no_poi_tables_and_a_null_count():
+    """NULL IS NOT ZERO, and the app shows a different sentence for each.
+
+    Wales has no cache in this fixture. Its container must come out exactly as
+    it did before POIs existed - no tables - and its manifest entry must say
+    `None`, so the app can write "no POI data for this area" rather than "no
+    fuel in Wales".
+    """
+    def cache(tmp):
+        return _poi_cache(tmp, "midlands", [
+            _node(1, "fuel", 52.505, -1.695, {"amenity": "fuel"})])
+    out, tmp = _pipeline(poi_cache=cache)
+    try:
+        db = sqlite3.connect(os.path.join(tmp, "containers", "ways-wales.tbmap"))
+        names = {r[0] for r in db.execute(
+            "SELECT name FROM sqlite_master WHERE name IN "
+            "('pois','pois_bbox')")}
+        check("an unfetched region has no POI tables at all", names == set(),
+              "got %r" % sorted(names))
+        db.close()
+        entries = {e["id"]: e for e in out["containers"]}
+        wales = entries["gb-wales"].get("poiCount", "MISSING")
+        check("and its count is null, not zero", wales is None,
+              "got %r" % (wales,))
+        mids = entries["gb-midlands"].get("poiCount")
+        check("while the fetched one carries a number", mids == 1,
+              "got %r" % (mids,))
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_the_overview_carries_no_pois():
+    """The overview carries no records on purpose; POIs are records."""
+    def cache(tmp):
+        return _poi_cache(tmp, "midlands", [
+            _node(1, "fuel", 52.505, -1.695, {"amenity": "fuel"})])
+    out, tmp = _pipeline(poi_cache=cache)
+    try:
+        db = sqlite3.connect(os.path.join(tmp, "containers",
+                                          "ways-overview.tbmap"))
+        names = {r[0] for r in db.execute(
+            "SELECT name FROM sqlite_master WHERE name IN "
+            "('pois','pois_bbox')")}
+        check("the overview has no POI tables", names == set(),
+              "got %r" % sorted(names))
+        db.close()
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def main():
+    for fn in list(globals().values()):
+        if callable(fn) and getattr(fn, "__name__", "").startswith("test_"):
+            fn()
+    if _failed:
+        print("FAILED:")
+        for f in _failed:
+            print("  " + f)
+        return 1
+    print("ok: %d checks" % _passed)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

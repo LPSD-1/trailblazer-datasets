@@ -288,6 +288,49 @@ LANES = [
 ]
 
 
+#: POIs travel in the same container as the ways (WAYS-SCHEMA.md), and the
+#: reader has `poisNear` for them - so they belong in the contract test for the
+#: same reason the ways do: `build_pois.write_pois` writes these columns in
+#: Python and `TbMapStore.poisNear` SELECTs them in Dart, and nothing else
+#: compares the two.
+#:
+#: One per shape that can go wrong, not one per category:
+#:   a null name and null opening hours - both columns are nullable and a
+#:     reader that assumes a name throws on the first unnamed car park
+#:   a name with an apostrophe and a non-ASCII letter, through JSON, SQLite
+#:     TEXT and Dart's UTF-8, as the ways already prove for their own names
+#:   two in one category, so `categories:` filtering has something to exclude
+#:     AND something to keep
+#:   one far enough away to be outside the default pad, so a query that
+#:     ignored the bbox would return it and be caught
+POIS = [
+    {"poi_uid": "node/1001", "category": "fuel", "name": "Hilltop Services",
+     "lat": 53.0505, "lon": -1.7395, "opening_hours": "24/7",
+     "source_date": "2026-01-02"},
+    {"poi_uid": "node/1002", "category": "fuel", "name": None,
+     "lat": 53.0508, "lon": -1.7388, "opening_hours": None,
+     "source_date": "2026-01-02"},
+    {"poi_uid": "node/1003", "category": "toilets",
+     "name": "Ty Bach / Caffi'r Bryn", "lat": 53.0502, "lon": -1.7402,
+     "opening_hours": "Mo-Su 08:00-18:00", "source_date": "2026-01-02"},
+    {"poi_uid": "node/1004", "category": "food", "name": "Far Cafe",
+     "lat": 53.2000, "lon": -1.5000, "opening_hours": None,
+     "source_date": "2026-01-02"},
+]
+
+
+def write_fixture_pois(path):
+    """THE REAL WRITER, not a copy of its INSERT.
+
+    `build_pois.write_pois` is what puts POIs into a published container, so a
+    fixture that wrote its own INSERT would prove the reader agrees with this
+    file rather than with the pipeline - which is the exact fault the whole
+    contract test exists to catch.
+    """
+    import build_pois as PO
+    return PO.write_pois(path, POIS)
+
+
 def features():
     """The fixture as the builder expects to receive it.
 
@@ -408,6 +451,11 @@ def build(outdir, key_path):
         sys.stdout.write(done.stdout or "")
         sys.stderr.write(done.stderr or "")
         raise SystemExit("the builder did not produce a container")
+
+    # POIs go in AFTER the ways, which is the order build_containers uses:
+    # the container builder writes the ways and the POI writer adds its two
+    # tables to the file it produced.
+    write_fixture_pois(container)
     return container, done.stdout
 
 
@@ -596,6 +644,7 @@ def contract(container):
         "builder": "tools/build_map_container.py",
         "written": facts,
         "lanes": lanes,
+        "pois": POIS,
         "expect": {
             "kind": "area",
             "built_at": GENERATED,

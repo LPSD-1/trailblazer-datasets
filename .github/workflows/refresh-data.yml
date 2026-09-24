@@ -70,6 +70,10 @@ on:
         description: 'Publish even if the safety checks object (read them first)'
         type: boolean
         default: false
+      refresh_pois:
+        description: 'Re-fetch POIs for every region, whatever the cache says'
+        type: boolean
+        default: false
 
 permissions:
   contents: write   # to commit the rebuilt packages
@@ -201,6 +205,47 @@ jobs:
       # manifest here would have built THIS month's containers out of LAST
       # month's packs, published them under this month's hashes, and nothing
       # would have looked wrong.
+      # POIs ON A SLOW CLOCK, AND THAT IS THE POINT.
+      #
+      # POIs travel inside the area container (WAYS-SCHEMA.md), so re-fetching
+      # them rewrites container bytes - and container bytes are what a rider
+      # re-downloads. On the 4x-daily ways clock that would be up to 121
+      # republishes a month over a fuel station that has not moved: the same
+      # fault the manifest run stamp had, arriving through a different door.
+      #
+      # So the CACHE decides, not the schedule. The fetch runs for a region
+      # with no cache, or one whose oldest `fetched_at` is over 30 days old,
+      # or when somebody asks. Between refreshes the ways build reads the same
+      # cache and produces the same POI bytes, four times a day, unchanged.
+      #
+      # The cache lives under `cache/`, which the restore and save steps above
+      # already carry, so this adds no CI state of its own.
+      - name: Does any region need its POIs refreshed?
+        id: poi_age
+        run: |
+          python tools/poi_staleness.py >> "$GITHUB_OUTPUT"
+
+      - name: Fetch POIs for the regions that need them
+        if: ${{ steps.poi_age.outputs.regions != '' || inputs.refresh_pois }}
+        run: |
+          set -u
+          REGIONS="${{ steps.poi_age.outputs.regions }}"
+          if [ "${{ inputs.refresh_pois }}" = "true" ]; then
+            REGIONS="south-west,south-east,east-anglia,midlands,wales,north"
+          fi
+          for region in $(echo "$REGIONS" | tr ',' ' '); do
+            echo "::group::POIs for $region"
+            # OVERPASS IS SOMEBODY ELSE'S SERVER and this is a courtesy call,
+            # so a region that will not come back does NOT fail the lane
+            # build. The container then keeps the POIs it already had, or gets
+            # none and no POI tables - and the manifest's poiCount says which,
+            # null for "nobody has fetched this" against a number for "we
+            # looked".
+            python tools/build_pois.py fetch --region "$region" --refresh \
+              || echo "  $region did not come back; keeping what we have"
+            echo "::endgroup::"
+          done
+
       - name: Build the map containers
         env:
           # Signing closes the hole the sealing never did: the pack key ships
@@ -219,6 +264,7 @@ jobs:
             --manifest dist/manifest.json \
             --root dist \
             --key /tmp/dataset.key \
+            --poi-cache cache/pois \
             --out dist/containers
 
       # The guard for the new format. check_build.py still guards the packs.
