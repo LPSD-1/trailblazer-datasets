@@ -104,6 +104,29 @@ VOLATILE = {
 #: enough to build in about a second, varied enough to exercise a motor pack
 #: (byways only), a bicycle pack (byways, restricted byways and a bridleway),
 #: and both container kinds - area and overview.
+#: Rows that exist to be EXCLUDED, plus one that must survive.
+#:
+#: The golden could not notice the change that matters most - a footpath
+#: leaking back in - because there was no footpath to leak. Same for a context
+#: way beyond the 1 km radius. Both are here now, and so is a bridleway INSIDE
+#: the radius, because a filter that drops everything passes a drop-only test.
+#:
+#: THEY GO AFTER COUNCIL_ROWS, NOT BEFORE. The mutation check perturbs
+#: rows[0] by index; putting a dropped row there mutates something the build
+#: discards, and the check reports "UNCHANGED - the build ignored the change"
+#: while looking like it ran. It did exactly that for one commit.
+EXCLUSION_ROWS = [
+    ("footpath", "ON|900|9/9",
+     "FP|ON:99|0.400|none|-3.90800|50.56200|-3.90300|50.56400",
+     [[-3.90800, 50.56200], [-3.90550, 50.56300], [-3.90300, 50.56400]]),
+    ("bridleway", "ON|901|9/8",
+     "BR|ON:98|0.350|none|-2.10000|51.90000|-2.09500|51.90300",
+     [[-2.10000, 51.90000], [-2.09750, 51.90150], [-2.09500, 51.90300]]),
+    ("bridleway", "ON|902|9/7",
+     "BR|ON:97|0.120|none|-3.90800|50.56150|-3.90600|50.56250",
+     [[-3.90800, 50.56150], [-3.90700, 50.56200], [-3.90600, 50.56250]]),
+]
+
 COUNCIL_ROWS = [
     ("byway_open_to_all_traffic", "ON|100|2/10",
      "BO|ON:22|0.144|none|-3.90876|50.56111|-3.90112|50.56480",
@@ -149,7 +172,7 @@ PACKAGES_BUILT = (P.DATASET,)
 
 def _rows(mutate=False):
     rows = [(t, ref, desc, [list(p) for p in coords])
-            for (t, ref, desc, coords) in COUNCIL_ROWS]
+            for (t, ref, desc, coords) in COUNCIL_ROWS + EXCLUSION_ROWS]
     if mutate:
         rows[0][3][0][0] += MUTATION
     return rows
@@ -199,10 +222,33 @@ def build_into(out_dir, run_stamp=RUN_STAMP, pack_stamp=PACK_STAMP,
             # Every carried row type, in one package. Footpaths are excluded by
             # ROW_RULES itself now, so there is nothing to filter here beyond
             # what the rules already decided.
-            carried = {t for t, rule in P.ROW_RULES.items()
-                       if rule.get("carry", True)}
+            # The key is "carried", not "carry". My first fix used
+            # rule.get("carry", True), which is False-proof in the worst way:
+            # the key does not exist, so it defaulted True and quietly built
+            # 435,299 FOOTPATHS into the golden expectation - the exact data
+            # this phase exists to remove. Caught by probing the constant
+            # rather than trusting the fix.
+            carried = {t for t, rule in P.ROW_RULES.items() if rule["carried"]}
             chosen = [f for f in features
                       if f["properties"]["rowType"] in carried]
+
+            # STEP 1.2c, APPLIED HERE TOO - and it was not, which this file
+            # claimed otherwise about.
+            #
+            # golden.py says "every stage is the SHIPPING code path", and it
+            # went normalise -> write_package while the near-context filter
+            # lives in build_packages.main(). So the golden could not have
+            # noticed the far-context rule breaking. Proved by putting a
+            # bridleway 130 km from any byway in the fixture: it was carried.
+            motor = [f for f in chosen
+                     if not P.ROW_RULES[f["properties"]["rowType"]]["context"]]
+            context = [f for f in chosen
+                       if P.ROW_RULES[f["properties"]["rowType"]]["context"]]
+            near = P.near_motor_ways(context, motor)
+            near_uids = {f["properties"]["lane_uid"] for f in near}
+            chosen = [f for f in chosen
+                      if not P.ROW_RULES[f["properties"]["rowType"]]["context"]
+                      or f["properties"]["lane_uid"] in near_uids]
             entries.append(P.write_package(
                 pkg_name, REGION_ID, REGION_LABEL, None, chosen,
                 GOLDEN_KEY, pack_stamp))
@@ -376,19 +422,19 @@ def digests(root):
 EXPECTED_SQLITE = "3.50.4"
 EXPECTED = {
     "catalogue.json": {"bytes": 3697,
-        "sha256": "92b2812bbf5be22e3bd3a890331175034dd9ef8f1c48c0e34189e5857a2bba3b"},
+        "sha256": "385dafa582171705a5ae7d87e771a83b1bff11f7355716a42b852bde005f5df5"},
     "containers/manifest.json": {"bytes": 982,
-        "sha256": "6453231c3a3bc344a660a087b3e038ea1ae6a7c2d64bb35feb093e27d14d0cc0"},
+        "sha256": "bc743d4672514eb1a3c74d654625671c59751210fcfdef5c4664e093e39186e1"},
     "containers/ways-overview.tbmap": {"bytes": 49152,
-        "sha256": "cb5e43432098843aa2da56da9b8c4fe88f827a689e9f63061070495eb985ace0"},
+        "sha256": "2f28aa3e72959077e4bdbc78cb97a2b1d96a04fa46fc222235d3755f959709dc"},
     "containers/ways-south-west.tbmap": {"bytes": 57344,
-        "sha256": "99b902e09a64f84d463a4266063d7171e09c3b8c4424ad44193ff1f99385362e"},
+        "sha256": "0b1fbc21bd45fe27a874a66054e94010eaf6763b76c45c593112018d7ea086e5"},
     "manifest.json": {"bytes": 1763,
-        "sha256": "b6300c0b76e9ae01a19564854f0eb2a48fa6c124524d3b348be1256486d0ec6b"},
-    "packages/ways-south-west.tbpack": {"bytes": 1250,
-        "sha256": "69acfac9ed7cbd5a4ae33314e569bbbec187da6301f55f54be9343c26f55b912"},
+        "sha256": "a3ed35b8e5901205aff544954fadc557a9b4daa42595140eab69506f39510b71"},
+    "packages/ways-south-west.tbpack": {"bytes": 1110,
+        "sha256": "bf64666f28b1ed5af9634fda6560252472f63eb4178a98eb771b92c0e31c7e04"},
     "packages/ways-south-west.tbpack.sha256": {"bytes": 89,
-        "sha256": "cf970c594b5590910072408f5209a5a6936181ca1c96e3092b39cf3ed84c92e7"},
+        "sha256": "d77ef6c295afaf208f0be0045d5f44817c7c151d7c997ee99061a5fce5ab7cc4"},
 }
 # EXPECTED-END
 
