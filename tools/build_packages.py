@@ -28,6 +28,7 @@ import gzip
 import hashlib
 import hmac
 import json
+import math
 import os
 import sys
 from collections import Counter
@@ -47,57 +48,99 @@ VERSION = 1
 ALG_AES_GCM_256 = 1
 NONCE_LEN = 12
 
-# ---- what each right of way means for a vehicle ------------------------------
-# Straight from the Highways Act and the definitive map categories. No judgement
-# calls here: a BOAT is open to all traffic, a restricted byway is not open to
-# mechanically propelled vehicles, and so on.
+# ---- what each right of way IS, and what that means for a motor vehicle ----
+#
+# docs/WAYS-SCHEMA.md is the contract. One dataset, classed per way, replacing
+# four overlapping builds of the same ways: `bicycle` and `horse` were
+# byte-identical because they WERE the same bridleway data built twice.
+#
+# Straight from the Highways Act and the definitive map categories. No
+# judgement calls: a BOAT is open to all traffic, a restricted byway is not
+# open to mechanically propelled vehicles, and a bridleway never was.
+#
+# FOOTPATHS ARE NOT CARRIED. 435,299 of them, 627 MB, and not one has any
+# bearing on where a motor vehicle may legally go. They are read from the cache
+# so the build can still say how many it declined, and then dropped.
 ROW_RULES = {
     "byway_open_to_all_traffic": {
-        "lane_class": "full-access",
+        "way_class": "boat",
         "designation": "Byway open to all traffic (BOAT)",
-        "vehicles": ["motorcycle", "4x4", "bicycle", "horse", "foot"],
+        "legal_tier": "statutory",
+        "motorbike_ok": 1,
+        "fourxfour_ok": 1,
+        "access_reason": "Byway open to all traffic: a public right of way "
+                         "for every kind of traffic, including motor "
+                         "vehicles.",
+        "access_evidence": "statutory",
+        "carried": True,
+        "context": False,
     },
     "restricted_byway": {
-        "lane_class": "restricted",
+        "way_class": "restricted_byway",
         "designation": "Restricted byway",
-        "vehicles": ["bicycle", "horse", "foot"],
+        "legal_tier": "statutory",
+        "motorbike_ok": 0,
+        "fourxfour_ok": 0,
+        "access_reason": "Restricted byway: no mechanically propelled "
+                         "vehicles. Shown so you can see where a byway ends.",
+        "access_evidence": "statutory",
+        "carried": True,
+        "context": True,
     },
     "bridleway": {
-        "lane_class": "restricted",
+        "way_class": "bridleway",
         "designation": "Public bridleway",
-        "vehicles": ["bicycle", "horse", "foot"],
+        "legal_tier": "statutory",
+        "motorbike_ok": 0,
+        "fourxfour_ok": 0,
+        "access_reason": "Public bridleway: horse, foot and pedal cycle only "
+                         "- no mechanically propelled vehicles. Shown so you "
+                         "can see where a byway ends.",
+        "access_evidence": "statutory",
+        "carried": True,
+        "context": True,
     },
     "footpath": {
-        "lane_class": "restricted",
+        "way_class": "footpath",
         "designation": "Public footpath",
-        "vehicles": ["foot"],
+        "legal_tier": "statutory",
+        "motorbike_ok": 0,
+        "fourxfour_ok": 0,
+        "access_reason": "Public footpath: on foot only.",
+        "access_evidence": "statutory",
+        "carried": False,
+        "context": False,
     },
 }
 
-# Which types go into which downloadable package. A rider picks their vehicle
-# and gets only what is legally relevant to it.
-PACKAGES = {
-    "motor": {
-        "label": "Motorcycle and 4x4",
-        "types": ["byway_open_to_all_traffic"],
-        "note": "Byways open to all traffic - the lanes you may legally ride.",
-    },
-    "bicycle": {
-        "label": "Bicycle",
-        "types": ["byway_open_to_all_traffic", "restricted_byway", "bridleway"],
-        "note": "Byways and bridleways.",
-    },
-    "horse": {
-        "label": "Horse",
-        "types": ["byway_open_to_all_traffic", "restricted_byway", "bridleway"],
-        "note": "Byways and bridleways.",
-    },
-    "foot": {
-        "label": "On foot",
-        "types": list(ROW_RULES),
-        "note": "Every recorded right of way.",
-    },
-}
+#: The one dataset. There is no vehicle here and there must not be one: the
+#: rider's vehicle is a filter the app applies to the derived access columns,
+#: not a partition of the download.
+DATASET = "ways"
+
+DATASET_LABEL = "Green lanes and byways"
+
+#: Step 1.2c, DECIDED: carry context ways only where they meet a motor-legal
+#: way.
+#:
+#: MEASURED over the full published population (10,342 BOATs, 89,300 bridleways
+#: and restricted byways): 73.6% of context ways are nowhere near a BOAT. They
+#: are carried for exactly one job - answering "the byway ends here" at the
+#: point where it ends - and that question cannot arise a mile from any byway.
+#:
+#: WHAT THIS COSTS, AND WHY THE METADATA MUST SAY SO. A rider who looks at a
+#: hillside and sees no bridleway must not read that as "there is no bridleway
+#: here". There is; we did not carry it. CONTEXT_NOTE travels into every
+#: container's meta and the manifest, and the app is required to show it
+#: wherever it draws context ways. An absence in our data must never be
+#: presented as an absence on the ground.
+CONTEXT_SCOPE = "near-byways-only"
+CONTEXT_RADIUS_KM = 1.0
+CONTEXT_NOTE = (
+    "Bridleways and restricted byways are shown only within %g km of a byway "
+    "open to all traffic. Where none is shown, this map has not looked - it "
+    "does not mean there is none on the ground."
+) % CONTEXT_RADIUS_KM
 
 # These boxes must TILE England and Wales with no hole between them.
 #
@@ -176,6 +219,76 @@ OGL = ("Contains public sector information licensed under the Open Government "
 # Region-sized packages broke this badly - the Midlands on foot was 137 MB of
 # JSON and 168,132 ways, which would have killed the app outright on any phone.
 MAX_PLAIN_BYTES = 12 * 1024 * 1024
+
+
+# ---- step 1.2c: which context ways are near enough to be worth carrying ----
+
+#: One kilometre, in degrees, at GB latitudes. Latitude is a constant
+#: 1/110.574 deg per km; longitude is taken at 54 deg N, the middle of the
+#: published coverage, where a degree is 111.320*cos(54) = 65.4 km. Using the
+#: MIDDLE latitude makes the cell slightly too wide in Cornwall and slightly
+#: too narrow in Northumberland, so the grid is only an index - every candidate
+#: pair is then measured properly by [_km_between].
+_KM_LAT = 1.0 / 110.574
+_KM_LON = 1.0 / 65.40
+
+
+def _km_between(a, b):
+    """Equirectangular distance in km. Good to better than 0.1% over 1 km."""
+    (lon1, lat1), (lon2, lat2) = a, b
+    mid = math.radians((lat1 + lat2) / 2.0)
+    x = math.radians(lon2 - lon1) * math.cos(mid)
+    y = math.radians(lat2 - lat1)
+    return 6371.0088 * math.hypot(x, y)
+
+
+def near_motor_ways(context, motor, radius_km=CONTEXT_RADIUS_KM):
+    """-> the context ways within [radius_km] of a motor-legal way.
+
+    Vertex to vertex, over a grid of [radius_km] cells so only the nine cells
+    around a point are ever searched. Vertex proximity rather than true
+    segment distance, which is an approximation in one direction only: it can
+    call a way far when a long straight segment passes close between two
+    vertices. The source is densely sampled - measured median vertex spacing is
+    tens of metres, not kilometres - so the cases where that bites are rare,
+    and the error drops a way rather than admitting one.
+    """
+    if not motor:
+        return []
+    cells = {}
+    for f in motor:
+        for lon, lat in f["geometry"]["coordinates"]:
+            cells.setdefault(
+                (int(lon / (_KM_LON * radius_km)),
+                 int(lat / (_KM_LAT * radius_km))), []).append((lon, lat))
+
+    out = []
+    for f in context:
+        hit = False
+        for lon, lat in f["geometry"]["coordinates"]:
+            cx = int(lon / (_KM_LON * radius_km))
+            cy = int(lat / (_KM_LAT * radius_km))
+            for dx in (-1, 0, 1):
+                for dy in (-1, 0, 1):
+                    for point in cells.get((cx + dx, cy + dy), ()):
+                        if _km_between((lon, lat), point) <= radius_km:
+                            hit = True
+                            break
+                    if hit:
+                        break
+                if hit:
+                    break
+            if hit:
+                break
+        if hit:
+            out.append(f)
+    return out
+
+
+#: A fixed-width stand-in, replaced with the pack's real cut date in
+#: sealed_at(). It has to be the same LENGTH as the date it becomes, because
+#: split_by_authority decides the container split from the serialised size.
+SOURCE_DATE_PLACEHOLDER = "0000-00-00"
 
 
 def slugify(text):
@@ -436,14 +549,27 @@ def normalise(feature, authority_code, authority_name, row_type):
         "type": "Feature",
         "properties": {
             "lane_uid": uid,
-            "class": rule["lane_class"],
+            "class": rule["way_class"],
             "county": authority_name,
             "name": name,
             "designation": rule["designation"],
-            "vehicles": rule["vehicles"],
             "rowType": row_type,
             "authority": authority_name,
             "authorityCode": authority_code,
+            # LEGAL PROVENANCE, per way and never per pack. A region may hold
+            # statutory and OSM-derived ways side by side once the world tier
+            # lands, and the map colours them differently.
+            "legal_tier": rule["legal_tier"],
+            "source": "rowmaps:%s" % slugify(authority_name),
+            # Overwritten with this pack's cut date at seal time; fixed width
+            # so the size accounting in split_by_authority stays exact.
+            "source_date": SOURCE_DATE_PLACEHOLDER,
+            # DERIVED ACCESS, with its reason. Never a bare boolean: a rider
+            # who is not shown a lane is owed the sentence saying why.
+            "motorbike_ok": rule["motorbike_ok"],
+            "fourxfour_ok": rule["fourxfour_ok"],
+            "access_reason": rule["access_reason"],
+            "access_evidence": rule["access_evidence"],
             # Licence condition. Travels with every feature.
             "attribution": OGL,
             **({"lengthKm": extra["length_km"]} if "length_km" in extra else {}),
@@ -541,7 +667,7 @@ def in_region(feature, box):
 
 
 def write_package(pkg_name, region_id, region_label, area_label, features,
-                  key, stamp, published=None):
+                  key, stamp, published=None, note=None):
     """Seal one downloadable piece.
 
     [area_label] is None when the whole region fits in one package; then the
@@ -551,7 +677,6 @@ def write_package(pkg_name, region_id, region_label, area_label, features,
     It is what lets an unchanged package keep the date it was cut - and
     therefore keep its bytes. See the comment on the seal below.
     """
-    spec = PACKAGES[pkg_name]
     area_id = region_id if area_label is None else \
         "%s-%s" % (region_id, slugify(area_label))
     shown = region_label if area_label is None else area_label
@@ -570,15 +695,26 @@ def write_package(pkg_name, region_id, region_label, area_label, features,
             % (pkg_name, area_id, len(uids) - len(set(uids)), ", ".join(worst)))
 
     def sealed_at(cut):
-        """Exactly the bytes this package publishes as, cut on [cut]."""
+        """Exactly the bytes this package publishes as, cut on [cut].
+
+        `source_date` is stamped HERE rather than in normalise(), because it is
+        the date this data was cut and that is what the reproducibility
+        mechanism below establishes. Setting it earlier would freeze the run
+        clock into every way and hand every rider a fresh download a month.
+        """
+        day = cut[:10]
+        for f in features:
+            f["properties"]["source_date"] = day
         collection = {
             "type": "FeatureCollection",
             "generated": cut,
             "package": pkg_name,
             "region": region_id,
             "area": area_id,
-            "label": "%s - %s" % (spec["label"], shown),
-            "note": spec["note"],
+            "label": "%s - %s" % (DATASET_LABEL, shown),
+            "note": note or "",
+            "contextScope": CONTEXT_SCOPE,
+            "contextNote": CONTEXT_NOTE,
             "attribution": OGL,
             "features": features,
         }
@@ -645,8 +781,9 @@ def write_package(pkg_name, region_id, region_label, area_label, features,
         "regionLabel": region_label,
         "area": area_id,
         "areaLabel": shown,
-        "label": "%s - %s" % (spec["label"], shown),
-        "note": spec["note"],
+        "label": "%s - %s" % (DATASET_LABEL, shown),
+        "note": note or "",
+        "contextScope": CONTEXT_SCOPE,
         "file": "packages/" + fname,
         "sha256": digest,
         "bytes": len(sealed),
@@ -659,12 +796,20 @@ def write_package(pkg_name, region_id, region_label, area_label, features,
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--key", required=True, help="base64 32-byte key file")
-    ap.add_argument("--only", help="comma-separated package names")
     ap.add_argument("--allow-orphans", action="store_true",
                     help="publish even though some lanes match no region")
+    ap.add_argument("--context", choices=("near", "all", "none"),
+                    default="near",
+                    help="step 1.2c. 'near' carries bridleways and restricted "
+                         "byways within 1 km of a byway open to all traffic; "
+                         "'all' carries every one of them; 'none' carries "
+                         "BOATs alone. The decision is 'near', and the "
+                         "measurement for all three prints either way.")
+    ap.add_argument("--measure-only", action="store_true",
+                    help="print the step 1.2c measurement and write nothing")
     ap.add_argument("--previous",
                     default=os.path.join(repo_root(), "manifest.json"),
-                    help="the published manifest. A package whose lanes have "
+                    help="the published manifest. A package whose ways have "
                          "not changed since it keeps the date it was cut, and "
                          "so rebuilds byte for byte. Pass '' to rebuild "
                          "everything as new.")
@@ -677,92 +822,140 @@ def main():
     print("reading cache...")
     by_type = load_all(authorities)
     for t, fs in by_type.items():
-        print("  %-26s %7d" % (t, len(fs)))
+        carried = "carried" if ROW_RULES[t]["carried"] else "NOT CARRIED"
+        print("  %-26s %7d  %s" % (t, len(fs), carried))
+
+    motor = by_type.get("byway_open_to_all_traffic", [])
+    context_all = [f for t, fs in by_type.items() if ROW_RULES[t]["context"]
+                   for f in fs]
+
+    # STEP 1.2c, MEASURED BOTH WAYS, ON EVERY RUN.
+    #
+    # A decision recorded once in a document drifts away from the data under
+    # it. This prints the number the decision rests on at the moment the
+    # decision is applied, so a build where it stopped being true says so
+    # instead of quietly carrying on.
+    print("")
+    print("step 1.2c - how much context to carry")
+    near = near_motor_ways(context_all, motor)
+    near_uids = set(f["properties"]["lane_uid"] for f in near)
+    far = len(context_all) - len(near)
+    pct = (lambda n: 100.0 * n / len(context_all) if context_all else 0.0)
+    print("  byways open to all traffic         %7d" % len(motor))
+    print("  context ways (bridleway + restr.)  %7d" % len(context_all))
+    print("    within %.1f km of a byway         %7d  (%.1f%%)"
+          % (CONTEXT_RADIUS_KM, len(near), pct(len(near))))
+    print("    nowhere near one                 %7d  (%.1f%%)"
+          % (far, pct(far)))
+    for name, n in (("none", len(motor)),
+                    ("near", len(motor) + len(near)),
+                    ("all", len(motor) + len(context_all))):
+        mark = "  <- DECIDED (1.2c)" if name == "near" else ""
+        print("  option %-4s total ways in dataset  %7d%s" % (name, n, mark))
+
+    if args.context == "near":
+        pool = motor + [f for f in context_all
+                        if f["properties"]["lane_uid"] in near_uids]
+    elif args.context == "all":
+        pool = motor + context_all
+    else:
+        pool = list(motor)
+    print("  building with --context %s: %d ways" % (args.context, len(pool)))
+
+    if args.measure_only:
+        return
+
+    note = "Byways open to all traffic - the lanes you may legally ride."
+    if args.context == "near":
+        note = note + " " + CONTEXT_NOTE
 
     stamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    wanted = [p.strip() for p in args.only.split(",")] if args.only \
-        else list(PACKAGES)
 
     published = published_packages(args.previous)
     if published:
-        print("\ncomparing against %d published packages in %s"
+        print("")
+        print("comparing against %d published packages in %s"
               % (len(published), args.previous))
 
     entries = []
-    orphans = []
-    print("\nbuilding packages (vehicle x region)...")
-    for pkg_name in wanted:
-        pool = []
-        for t in PACKAGES[pkg_name]["types"]:
-            pool.extend(by_type.get(t, []))
-        if not pool:
-            print("  %-9s SKIPPED - nothing to package" % pkg_name)
+    placed = set()
+    print("")
+    print("building ONE dataset per region (no vehicle partition)...")
+    for region_id, region_label, box in REGIONS:
+        features = [f for f in pool if in_region(f, box)]
+        if not features:
             continue
-        placed = set()
-        for region_id, region_label, box in REGIONS:
-            features = [f for f in pool if in_region(f, box)]
-            if not features:
-                continue
-            placed.update(f["properties"]["lane_uid"] for f in features)
-            for area_label, part in split_by_authority(features):
-                entry = write_package(pkg_name, region_id, region_label,
-                                      area_label, part, key, stamp,
-                                      published=published)
-                entries.append(entry)
-                over = "  OVER BUDGET" \
-                    if entry["plainBytes"] > MAX_PLAIN_BYTES else ""
-                # Worth seeing per package, because it is what decides whether
-                # a rider spends their data on this build at all.
-                state = "unchanged" if entry["generated"] != stamp else ""
-                print("  %-9s %-34s %6d lanes  %5.1f MB sealed "
-                      "(%5.1f MB plain) %-9s%s"
-                      % (pkg_name, entry["area"], entry["laneCount"],
-                         entry["bytes"] / 1048576,
-                         entry["plainBytes"] / 1048576, state, over))
+        placed.update(f["properties"]["lane_uid"] for f in features)
+        for area_label, part in split_by_authority(features):
+            entry = write_package(DATASET, region_id, region_label,
+                                  area_label, part, key, stamp,
+                                  published=published, note=note)
+            entries.append(entry)
+            over = "  OVER BUDGET" \
+                if entry["plainBytes"] > MAX_PLAIN_BYTES else ""
+            state = "unchanged" if entry["generated"] != stamp else ""
+            print("  %-42s %6d ways  %5.1f MB sealed (%5.1f MB plain) %-9s%s"
+                  % (entry["area"], entry["laneCount"],
+                     entry["bytes"] / 1048576.0,
+                     entry["plainBytes"] / 1048576.0, state, over))
 
-        orphans.extend(
-            f for f in pool if f["properties"]["lane_uid"] not in placed)
+    orphans = [f for f in pool if f["properties"]["lane_uid"] not in placed]
 
-    # A lane that fell outside every region box.
+    # A way that fell outside every region box.
     #
-    # There was no check at all here, and REGIONS is six hand-written boxes
-    # covering an island with a very awkward shape. Anything they miss is
-    # simply not published: it is in the source data, it is in no package, no
-    # rider ever sees it, and the build prints a page of healthy-looking
-    # numbers either way. That is the worst kind of data bug - the product is
-    # quietly smaller than it claims and nothing says so.
+    # REGIONS is six hand-written boxes over an island with a very awkward
+    # shape. Anything they miss is simply not published: it is in the source
+    # data, in no package, no rider ever sees it, and the build prints a page
+    # of healthy-looking numbers either way.
     if orphans:
-        # Split the ones we have decided not to serve from the ones that are a
-        # genuine hole. Without this the monthly refresh would have failed on
-        # 1 October on a single Scottish lane and published nothing at all -
-        # and the obvious fix under time pressure is --allow-orphans, which
-        # would then have hidden every real hole afterwards.
-        known = {f["properties"]["lane_uid"] for f in orphans if unserved(f)}
+        known = set(f["properties"]["lane_uid"] for f in orphans
+                    if unserved(f))
         genuine = [f for f in orphans
                    if f["properties"]["lane_uid"] not in known]
 
         if known:
-            print("\n%d lanes are on ground this dataset does not serve "
+            print("")
+            print("%d ways are on ground this dataset does not serve "
                   "(see UNSERVED); left out deliberately." % len(known))
 
         if genuine:
             report_orphans(genuine)
             if not args.allow_orphans:
                 sys.exit(
-                    "refusing to publish: %d lanes belong to no region. Widen "
+                    "refusing to publish: %d ways belong to no region. Widen "
                     "the boxes in REGIONS to cover them, add them to UNSERVED "
                     "if this dataset genuinely does not serve that ground, or "
                     "pass --allow-orphans for a one-off."
                     % len(genuine))
 
+    by_class = Counter(f["properties"]["class"] for f in pool)
+    print("")
+    print("ways by class, whole dataset:")
+    for name, n in sorted(by_class.items()):
+        print("  %-20s %7d" % (name, n))
+    not_carried = dict((t, len(fs)) for t, fs in by_type.items()
+                       if not ROW_RULES[t]["carried"])
+    if not_carried:
+        print("not carried: %s" % not_carried)
+
     manifest = {
         "schema": 1,
+        "schemaVersion": 1,
         "generated": stamp,
         "attribution": OGL,
         "licence": "OGL-3.0",
         "source": "Local highway authority definitive maps via rowmaps.com",
         "authorities": len(authorities),
         "maxPlainBytes": MAX_PLAIN_BYTES,
+        "dataset": DATASET,
+        # Step 1.2c travels WITH THE DATA, not only in a decision document.
+        # The app is required to show contextNote wherever it draws context
+        # ways, so their absence is never read as absence on the ground.
+        "contextScope": CONTEXT_SCOPE if args.context == "near" else args.context,
+        "contextRadiusKm": CONTEXT_RADIUS_KM,
+        "contextNote": CONTEXT_NOTE if args.context == "near" else "",
+        "wayClassCounts": dict(sorted(by_class.items())),
+        "notCarried": not_carried,
         "regions": [
             {"id": r, "label": lab,
              "bounds": {"west": b[0], "south": b[1], "east": b[2], "north": b[3]}}
@@ -770,20 +963,18 @@ def main():
         ],
         "packages": entries,
     }
-    with open(os.path.join(dist_dir(), "manifest.json"), "w", encoding="utf8") as fh:
+    with open(os.path.join(dist_dir(), "manifest.json"), "w",
+              encoding="utf8") as fh:
         json.dump(manifest, fh, indent=1)
 
-    print("\nwrote %s" % os.path.join(dist_dir(), "manifest.json"))
+    print("")
+    print("wrote %s" % os.path.join(dist_dir(), "manifest.json"))
     print("timestamp: %s" % stamp)
 
-    # The number the publish step acts on, so it is in the log either way.
     same = [e for e in entries if e["generated"] != stamp]
     if published:
         print("%d of %d packages are byte-identical to the published build"
               % (len(same), len(entries)))
-        if len(same) == len(entries) and len(entries) == len(published):
-            print("nothing here has changed since %s - a rider who already "
-                  "has this data downloads nothing" % args.previous)
 
 
 if __name__ == "__main__":

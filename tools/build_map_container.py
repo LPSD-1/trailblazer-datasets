@@ -203,30 +203,19 @@ def order_kind(code):
     return None
 
 
-VEHICLES = ("motorcycle", "4x4", "bicycle", "horse", "foot")
-VEHICLE_KEY = {"motorcycle": "v_moto", "4x4": "v_4x4", "bicycle": "v_cycle",
-               "horse": "v_horse", "foot": "v_foot"}
-
-#: Bit per vehicle, in [VEHICLES] order, for the record store's
-#: `vehicle_access` column.
-#:
-#: MEASURED: as a JSON array this column was 48 bytes a row - 103 kB for one
-#: region, on a par with the whole geometry table - to say one of thirty-two
-#: things. It is also a better column: "which lanes may a motorcycle use" is
-#: `vehicle_access & 1` rather than a LIKE over text.
-#:
-#: NULL still means "no finding", which is not the same as zero. The app leans
-#: on that distinction: an empty vehicle list from a drifted upstream id means
-#: the source said nothing, and is handled quite differently from the source
-#: saying "nobody".
-def vehicle_mask(vehicles):
-    if vehicles is None:
-        return None
-    mask = 0
-    for i, name in enumerate(VEHICLES):
-        if name in vehicles:
-            mask |= 1 << i
-    return mask
+# THE VEHICLE PARTITION IS GONE (step 1.2).
+#
+# What stood here was VEHICLES, VEHICLE_KEY and vehicle_mask(): five vehicles,
+# a bit each, and a `vehicle_access` column on every record. It was a good
+# column - MEASURED, the JSON array it replaced cost 48 bytes a row, 103 kB for
+# one region, to say one of thirty-two things - and it is still the wrong
+# shape, because it was there to serve a partition that published the same
+# bridleway four times.
+#
+# What replaces it is `motorbike_ok` and `fourxfour_ok` with `access_reason`
+# and `access_evidence` beside them: a verdict a rider can be told the reason
+# for, rather than a bitmask they can only be filtered by. The mask is
+# reconstructed for the transitional `lanes` view and stored nowhere.
 
 
 # --------------------------------------------------------------------------
@@ -387,10 +376,20 @@ def pack_geometry(lines):
 # --------------------------------------------------------------------------
 
 def tile_properties(props, with_uid):
-    out = {"class": props.get("class"), "county": props.get("county")}
-    vehicles = props.get("vehicles") or []
-    for name in VEHICLES:
-        out[VEHICLE_KEY[name]] = name in vehicles
+    """What the style may ask of a drawn way, and nothing more.
+
+    The five per-vehicle booleans are gone with the vehicle partition. What
+    decides a colour now is the CLASS and the TIER, because WAYS-SCHEMA.md's
+    one rule is exactly that: rideable only where `way_class = 'boat'` and
+    `legal_tier = 'statutory'`. Both are on the tile so the style can express
+    the rule rather than approximate it, and `moto`/`fourxfour` carry the
+    derived verdict for the vehicle filter.
+    """
+    out = {"class": props.get("class"),
+           "county": props.get("county"),
+           "tier": props.get("legal_tier"),
+           "moto": bool(props.get("motorbike_ok")),
+           "fourxfour": bool(props.get("fourxfour_ok"))}
     if with_uid:
         out["lane_uid"] = props.get("lane_uid")
     return {k: v for k, v in out.items() if v is not None}
@@ -403,8 +402,8 @@ def coalesce_key(props):
     feature at low zoom. What this must NOT include is anything per-lane - a
     uid, a name, a length - or the grouping achieves nothing.
     """
-    return (props.get("class"), props.get("county"),
-            tuple(props.get(VEHICLE_KEY[v], False) for v in VEHICLES))
+    return (props.get("class"), props.get("county"), props.get("tier"),
+            props.get("moto", False), props.get("fourxfour", False))
 
 
 def build_tiles(features, zoom, coalesced, on_tile, ids=None):
@@ -481,37 +480,119 @@ CREATE TABLE tiles (
   PRIMARY KEY (zoom_level, tile_column, tile_row)
 ) WITHOUT ROWID;
 
-CREATE TABLE lanes (
-  rowid             INTEGER PRIMARY KEY,
-  lane_uid          TEXT UNIQUE NOT NULL,
-  lane_class        TEXT NOT NULL,
-  county            TEXT,
-  name              TEXT,
-  designation       TEXT,
-  description       TEXT,
-  authority         TEXT,
-  vehicle_access    INTEGER,       -- bitmask; NULL means "no finding"
-  length_m          REAL,
-  geometry          BLOB NOT NULL
+-- docs/WAYS-SCHEMA.md. ONE table, classed per way, replacing the five
+-- vehicle-partitioned `lanes` tables that published the same bridleway four
+-- times over. Column for column as the contract states it; the rowid is set
+-- explicitly on insert so a record, its rtree row and the id inside the
+-- vector tile are the same integer.
+CREATE TABLE ways (
+  way_uid      TEXT PRIMARY KEY,
+  way_class    TEXT NOT NULL,
+  designation  TEXT,
+  name         TEXT,
+  authority    TEXT NOT NULL,
+  county       TEXT,
+
+  legal_tier   TEXT NOT NULL,
+  source       TEXT NOT NULL,
+  source_date  TEXT NOT NULL,
+
+  surface      TEXT,
+  smoothness   TEXT,
+  tracktype    TEXT,
+  width_m      REAL,
+  min_width_m  REAL,
+  barriers     TEXT,
+
+  climb_m         REAL,
+  sustained_pct   REAL,
+
+  motorbike_ok    INTEGER NOT NULL,
+  fourxfour_ok    INTEGER NOT NULL,
+  access_reason   TEXT NOT NULL,
+  access_evidence TEXT NOT NULL,
+
+  length_m     REAL NOT NULL,
+  geometry     BLOB NOT NULL
 );
 
-CREATE INDEX lanes_by_county ON lanes(county);
-CREATE INDEX lanes_by_class  ON lanes(lane_class);
+CREATE INDEX ways_by_county ON ways(county);
+CREATE INDEX ways_by_class  ON ways(way_class);
+CREATE INDEX ways_by_tier   ON ways(legal_tier);
 
-CREATE VIRTUAL TABLE lanes_bbox USING rtree(id, min_lon, max_lon, min_lat, max_lat);
+CREATE VIRTUAL TABLE ways_bbox USING rtree(id, min_lon, max_lon, min_lat, max_lat);
 
 CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT);
 """
 
+# TRANSITIONAL. Delete these two views in phase 2, with the reader.
+#
+# Six tools and the app's own store still say `SELECT ... FROM lanes`. Renaming
+# the table in one step would have taken every one of them red at once - and
+# the ones that read are not the ones I own. The views keep every READER
+# working against the new table while the pivot lands; they cost nothing on
+# disk and nothing at query time for the record lookups that use them.
+#
+# What they do NOT survive is a WRITER. `DELETE FROM lanes` and
+# `DROP TABLE lanes` are errors against a view, and tools/validate_container.py
+# does both in its own mutation self-test. That file is not mine to change and
+# is reported as a blocker rather than edited.
+#
+# `vehicle_access` is reconstructed rather than stored, because the column is
+# what the pivot exists to delete. The arithmetic is exact for the three
+# classes this dataset carries: bicycle|horse|foot is always set (28), and
+# motorcycle (1) and 4x4 (2) come from the derived access columns - so a BOAT
+# reads 31 and a bridleway or restricted byway reads 28, which is what the
+# vehicle-partitioned build wrote.
+COMPAT_VIEWS = """
+CREATE VIEW lanes AS
+  SELECT rowid            AS rowid,
+         way_uid          AS lane_uid,
+         way_class        AS lane_class,
+         county           AS county,
+         name             AS name,
+         designation      AS designation,
+         access_reason    AS description,
+         authority        AS authority,
+         28 + (CASE WHEN motorbike_ok THEN 1 ELSE 0 END)
+            + (CASE WHEN fourxfour_ok THEN 2 ELSE 0 END) AS vehicle_access,
+         length_m         AS length_m,
+         geometry         AS geometry
+  FROM ways;
+
+CREATE VIEW lanes_bbox AS
+  SELECT id, min_lon, max_lon, min_lat, max_lat FROM ways_bbox;
+"""
+
+
+#: `access_evidence` may never be 'none' where the way is hidden from a 4x4.
+#:
+#: WAYS-SCHEMA.md states it as a rule and F1 measured why: we have physical
+#: evidence on under 10% of ways, so a build that starts hiding lanes on no
+#: evidence would be hiding them on nothing. This is the assertion, at the only
+#: place that can see every row.
+def check_access_evidence(features):
+    bad = [f["properties"].get("way_uid") or f["properties"].get("lane_uid")
+           for f in features
+           if not f["properties"].get("fourxfour_ok")
+           and (f["properties"].get("access_evidence") or "none") == "none"]
+    if bad:
+        raise SystemExit(
+            "FATAL: %d ways are closed to a 4x4 with access_evidence 'none' "
+            "(e.g. %s). WAYS-SCHEMA.md: hiding a lane requires evidence."
+            % (len(bad), ", ".join(str(u) for u in bad[:3])))
+
 
 def write_container(path, features, kind, zooms, source_date,
-                    tile_exclude=None):
+                    tile_exclude=None, context_scope=None, context_note=None):
     """Write a container. `zooms` is inclusive, and for an overview the caller
     is expected to have chosen the low end with [lowest_zoom_that_fits]."""
     if os.path.exists(path):
         os.remove(path)
     db = sqlite3.connect(path)
     db.executescript(SCHEMA)
+    if kind != "overview":
+        check_access_evidence(features)
 
     # "both" builds the two bands into one file: coalesced below the split,
     # individual above, records present. It is NOT the shipping arrangement -
@@ -584,24 +665,70 @@ def write_container(path, features, kind, zooms, source_date,
             # The SAME id the tile carries, so a rendered feature and its record
             # are the same thing to everything downstream.
             rowid = ids[props["lane_uid"]]
+            # PHYSICAL and TERRAIN are written NULL on purpose, not forgotten.
+            # OSM attributes (step 1.3) and the DEM-derived climb and sustained
+            # gradient (step 1.4) are produced by other builds and joined in
+            # later. NULL is the schema's "unknown", and WAYS-SCHEMA.md is
+            # explicit that unknown is not 'no'.
             db.execute(
-                "INSERT INTO lanes VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                "INSERT INTO ways (rowid, way_uid, way_class, designation, "
+                "name, authority, county, legal_tier, source, source_date, "
+                "motorbike_ok, fourxfour_ok, access_reason, access_evidence, "
+                "length_m, geometry) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (rowid, props["lane_uid"], props.get("class"),
-                 props.get("county"), props.get("name"),
-                 props.get("designation"), props.get("description"),
-                 props.get("authority"),
-                 vehicle_mask(props.get("vehicles")),
+                 props.get("designation"), props.get("name"),
+                 props.get("authority") or "Unknown", props.get("county"),
+                 props.get("legal_tier") or "statutory",
+                 props.get("source") or "unknown",
+                 props.get("source_date") or source_date,
+                 1 if props.get("motorbike_ok") else 0,
+                 1 if props.get("fourxfour_ok") else 0,
+                 props.get("access_reason") or "",
+                 props.get("access_evidence") or "none",
                  (props.get("lengthKm") or 0) * 1000.0,
                  pack_geometry(lines)))
-            db.execute("INSERT INTO lanes_bbox VALUES (?,?,?,?,?)",
+            db.execute("INSERT INTO ways_bbox VALUES (?,?,?,?,?)",
                        (rowid, min(lons), max(lons), min(lats), max(lats)))
 
+    db.executescript(COMPAT_VIEWS)
+
     bounds = _bounds_of(features)
-    for key, value in (("format_version", "1"), ("kind", kind),
-                       ("built_at", source_date), ("bounds", bounds),
-                       ("min_zoom", str(zooms[0])), ("max_zoom", str(zooms[1])),
-                       ("lane_count",
-                        str(0 if kind == "overview" else len(features)))):
+    tiers = collections.Counter(
+        (f["properties"].get("legal_tier") or "statutory") for f in features)
+    classes = collections.Counter(
+        (f["properties"].get("class") or "unknown") for f in features)
+    authorities = sorted({f["properties"].get("authority")
+                          for f in features if f["properties"].get("authority")})
+    rows = [("format_version", "1"),
+            ("schema_version", "1"),
+            ("kind", kind),
+            # `built_at` is the SOURCE date, never the clock. A run stamp here
+            # moved five bytes in a 1.1 MB container and made every rider
+            # re-download 343 MB of lanes that had not changed.
+            ("built_at", source_date),
+            ("bounds", bounds),
+            ("min_zoom", str(zooms[0])), ("max_zoom", str(zooms[1])),
+            ("lane_count",
+             str(0 if kind == "overview" else len(features))),
+            ("way_count", str(0 if kind == "overview" else len(features))),
+            ("class_counts", json.dumps(dict(sorted(classes.items())),
+                                        sort_keys=True)),
+            ("legal_tier_counts", json.dumps(dict(sorted(tiers.items())),
+                                             sort_keys=True)),
+            ("authorities", json.dumps(authorities))]
+    # WHAT IS NOT IN HERE, IN THE CONTAINER THAT IS NOT CARRYING IT.
+    #
+    # Step 1.2c carries bridleways and restricted byways only where they meet a
+    # motor-legal way. A rider looking at a blank hillside must be able to find
+    # out that we did not look there - the alternative is the app implying that
+    # a bridleway is absent on the ground when it is absent from the download.
+    # The builder passes this through; the app has to say it.
+    if context_scope:
+        rows.append(("context_scope", context_scope))
+    if context_note:
+        rows.append(("context_note", context_note))
+    for key, value in rows:
         db.execute("INSERT INTO meta VALUES (?,?)", (key, value))
 
     db.commit()

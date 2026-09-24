@@ -136,7 +136,15 @@ COUNCIL_ROWS = [
 #: away, real enough that a rider would be sent to the wrong gate.
 MUTATION = 0.0001
 
-PACKAGES_BUILT = ("motor", "bicycle")
+#: One dataset now, not a per-vehicle pair.
+#:
+#: Phase 1 replaced build_packages.PACKAGES (motor/bicycle/horse/foot, each a
+#: separate build of overlapping ways) with a single `ways` dataset classed per
+#: way. This file was written against the old shape and crashed on
+#: `P.PACKAGES` the moment that landed - the cross-phase break the build
+#: partition could not catch, because the two steps were owned by different
+#: agents in different phases and neither wrote to the other's files.
+PACKAGES_BUILT = (P.DATASET,)
 
 
 def _rows(mutate=False):
@@ -188,9 +196,13 @@ def build_into(out_dir, run_stamp=RUN_STAMP, pack_stamp=PACK_STAMP,
 
         entries = []
         for pkg_name in PACKAGES_BUILT:
-            types = P.PACKAGES[pkg_name]["types"]
+            # Every carried row type, in one package. Footpaths are excluded by
+            # ROW_RULES itself now, so there is nothing to filter here beyond
+            # what the rules already decided.
+            carried = {t for t, rule in P.ROW_RULES.items()
+                       if rule.get("carry", True)}
             chosen = [f for f in features
-                      if f["properties"]["rowType"] in types]
+                      if f["properties"]["rowType"] in carried]
             entries.append(P.write_package(
                 pkg_name, REGION_ID, REGION_LABEL, None, chosen,
                 GOLDEN_KEY, pack_stamp))
@@ -363,28 +375,20 @@ def digests(root):
 # EXPECTED-BEGIN (rewritten by --bless; do not edit by hand)
 EXPECTED_SQLITE = "3.50.4"
 EXPECTED = {
-    "catalogue.json": {"bytes": 8059,
-        "sha256": "3d45c33d2c090f163da4afc6ecd0777d1c3f41a6859b02eab88bed5299ddcedf"},
-    "containers/bicycle-overview.tbmap": {"bytes": 45056,
-        "sha256": "6eea95a4415a69cee9aa2903a5343d2a26a1427ffc552589c99cf48cae5f0c8e"},
-    "containers/bicycle-south-west.tbmap": {"bytes": 53248,
-        "sha256": "0c37f215914956102cda49a020a9a939a21840f9688718c5f36d8fb4577c32f4"},
-    "containers/manifest.json": {"bytes": 1873,
-        "sha256": "65ed36411fd52cb689de16d9845097309b1f9893b93f0327398d909c98a90158"},
-    "containers/motor-overview.tbmap": {"bytes": 45056,
-        "sha256": "3dfe914bbbc297477606a9bf4b2d44f00a725505d619b1bf0bd80b7c5ac3bbde"},
-    "containers/motor-south-west.tbmap": {"bytes": 53248,
-        "sha256": "7a5eeb8991eef5d9860d57d4271efdc6889dd50a50a15812e8b12ad633e1fc6e"},
-    "manifest.json": {"bytes": 2230,
-        "sha256": "daaa2000b7393d6b62bf38a6c641914aecd1b535070e7c5d80e766b159afdd5b"},
-    "packages/bicycle-south-west.tbpack": {"bytes": 961,
-        "sha256": "66584ec615e4a1068aae83d5f5fcbf6b7d79a7993eec410781eaa4a50800c363"},
-    "packages/bicycle-south-west.tbpack.sha256": {"bytes": 92,
-        "sha256": "722cdc2abfee7bbe801eb641ad11b8092d49cc1e58a10b3e6441e2be732fcdd8"},
-    "packages/motor-south-west.tbpack": {"bytes": 790,
-        "sha256": "6b221b32b06e9d91fa51dabfbf1c9b54e066bd1df3b29f22148a9614176a0366"},
-    "packages/motor-south-west.tbpack.sha256": {"bytes": 90,
-        "sha256": "f9d8c1ccbe464cb49375516de1a8494865167ff86ac72c8ddccb2a953af1e2d3"},
+    "catalogue.json": {"bytes": 3697,
+        "sha256": "92b2812bbf5be22e3bd3a890331175034dd9ef8f1c48c0e34189e5857a2bba3b"},
+    "containers/manifest.json": {"bytes": 982,
+        "sha256": "6453231c3a3bc344a660a087b3e038ea1ae6a7c2d64bb35feb093e27d14d0cc0"},
+    "containers/ways-overview.tbmap": {"bytes": 49152,
+        "sha256": "cb5e43432098843aa2da56da9b8c4fe88f827a689e9f63061070495eb985ace0"},
+    "containers/ways-south-west.tbmap": {"bytes": 57344,
+        "sha256": "99b902e09a64f84d463a4266063d7171e09c3b8c4424ad44193ff1f99385362e"},
+    "manifest.json": {"bytes": 1763,
+        "sha256": "b6300c0b76e9ae01a19564854f0eb2a48fa6c124524d3b348be1256486d0ec6b"},
+    "packages/ways-south-west.tbpack": {"bytes": 1250,
+        "sha256": "69acfac9ed7cbd5a4ae33314e569bbbec187da6301f55f54be9343c26f55b912"},
+    "packages/ways-south-west.tbpack.sha256": {"bytes": 89,
+        "sha256": "cf970c594b5590910072408f5209a5a6936181ca1c96e3092b39cf3ed84c92e7"},
 }
 # EXPECTED-END
 
@@ -422,10 +426,14 @@ def bless(root):
              if got.get(rel) != EXPECTED.get(rel)]
     print("blessed %d artefacts; %d changed" % (len(got), len(moved)))
     for rel in moved:
+        # An artefact can be in EXPECTED and NOT in got - phase 1 renamed
+        # every pack from motor-*/bicycle-* to ways-*, so blessing crashed on
+        # the first artefact that had gone away rather than changed. Both
+        # directions are ordinary.
         print("  %-44s %s -> %s"
               % (rel,
                  (EXPECTED.get(rel) or {}).get("sha256", "(new)")[:16],
-                 got[rel]["sha256"][:16]))
+                 (got.get(rel) or {}).get("sha256", "(gone)")[:16]))
 
 
 def check_expected(root):

@@ -100,6 +100,278 @@ def in_grid(easting, northing):
 _PLACES = 5
 
 
+# ---------------------------------------------------------------------------
+# ORDER TYPE, AND WHICH VEHICLE IT BITES
+# ---------------------------------------------------------------------------
+#
+# PIVOT-SPEC.md §5.3, transcribed into a table this file can be checked
+# against, because "there is an order here" is not a fact a 4x4 filter can use.
+#
+# Until now the pack carried `code` (the D-TRO enum) and `label` (words for a
+# human). Both reach the app; neither tells it whether the order is about the
+# rider's vehicle. A width limit and a pedestrian zone are the same shade of
+# red on the map today, and one of them is the ONLY official evidence we hold
+# that a lane is closed to a 4x4 and open to a motorbike.
+#
+# THE THREE VERDICTS, and why there are three and not two:
+#
+#   "yes"        the order binds this vehicle, whatever it is.
+#   "sometimes"  it binds it depending on the individual vehicle - its weight,
+#                its width, its height. A verdict that cannot be taken from
+#                the order alone.
+#   "no"         it cannot bind this vehicle at all.
+#
+# §5.3 words the middle one three ways - "rarely", "often", "maybe" - and
+# those are priors, not rules: a 3.5 t limit stops almost every 4x4 with a
+# trailer and no motorbike ever, and neither fact is in the order. So the
+# spec's own word is carried as prose in `note`, for the rider to read, and
+# the computable verdict stays three-valued. Collapsing "often" into "yes"
+# would hide legal lanes; collapsing it into "no" would send a rider up one.
+ORDER_TYPES = {
+    # --- the five §5.3 rows that are a KIND of restriction -----------------
+    "prohibition": {
+        "label": "Prohibition of driving",
+        "effect": "Way shut to motors",
+        "bike": "yes", "bike_note": "yes",
+        "x4": "yes", "x4_note": "yes",
+    },
+    "weight": {
+        "label": "Weight limit",
+        "effect": "Vehicles over N tonnes",
+        "bike": "sometimes", "bike_note": "rarely",
+        "x4": "sometimes", "x4_note": "often",
+    },
+    "width": {
+        "label": "Width limit",
+        "effect": "Vehicles over N metres",
+        "bike": "no", "bike_note": "no",
+        "x4": "sometimes", "x4_note": "often",
+    },
+    "height": {
+        "label": "Height limit",
+        "effect": "Under a structure",
+        "bike": "no", "bike_note": "no",
+        "x4": "sometimes", "x4_note": "maybe",
+    },
+    "oneway": {
+        "label": "One way",
+        "effect": "Direction of travel",
+        "bike": "yes", "bike_note": "yes",
+        "x4": "yes", "x4_note": "yes",
+    },
+    # --- kinds the corpus carries that §5.3 does not name -----------------
+    # Left out of §5.3's table but present in tro.INTERESTING, so they must
+    # land somewhere. Each is placed by the same question: can it stop this
+    # vehicle, and does that depend on the vehicle?
+    "turn": {
+        "label": "Banned turn",
+        "effect": "Direction of travel at a junction",
+        "bike": "yes", "bike_note": "yes",
+        "x4": "yes", "x4_note": "yes",
+    },
+    "length": {
+        "label": "Length limit",
+        "effect": "Vehicles over N metres long",
+        "bike": "no", "bike_note": "no",
+        "x4": "sometimes", "x4_note": "maybe - a 4x4 with a trailer",
+    },
+    "speed": {
+        "label": "Speed limit",
+        "effect": "How fast, not whether",
+        "bike": "yes", "bike_note": "yes",
+        "x4": "yes", "x4_note": "yes",
+    },
+    "footway": {
+        "label": "Footway or cycle lane closed",
+        "effect": "Not the carriageway",
+        "bike": "no", "bike_note": "no",
+        "x4": "no", "x4_note": "no",
+    },
+    # A SUSPENSION LIFTS A RESTRICTION. It is carried because a rider who has
+    # been told about a weight limit needs to know when it stops applying —
+    # but drawing it as a restriction in its own right would shut a road the
+    # authority has just reopened.
+    "suspension": {
+        "label": "Restriction suspended",
+        "effect": "Lifts an earlier order; imposes nothing",
+        "bike": "no", "bike_note": "no",
+        "x4": "no", "x4_note": "no",
+    },
+    # THE FAIL-SAFE, and it fails towards telling the rider. Anything
+    # reaching here has already passed tro.INTERESTING, whose whole test is
+    # "can it stop a vehicle, turn it round, or catch it by its size" — so an
+    # unmapped code is a restriction of a kind this build has not met, not a
+    # parking bay. "no" here would silently drop a new closure kind from every
+    # 4x4's map on the day D-TRO started publishing it.
+    "other": {
+        "label": "Restriction",
+        "effect": "A kind this build does not recognise",
+        "bike": "sometimes", "bike_note": "unrecognised - read the order",
+        "x4": "sometimes", "x4_note": "unrecognised - read the order",
+    },
+}
+
+# D-TRO's own enum, from tro.INTERESTING, to the type above.
+#
+# KEPT HERE RATHER THAN IN tro.py deliberately: that module's job is to say
+# what a record contains, and this one's is to say what it means for a rider.
+_CODE_TYPE = {
+    "miscRoadClosure": "prohibition",
+    "miscLaneClosure": "prohibition",
+    "movementOrderProhibitedAccess": "prohibition",
+    "miscPedestrianZone": "prohibition",
+    "miscFootwayClosure": "footway",
+    "miscCycleLaneClosure": "footway",
+    "mandatoryDirectionOneWay": "oneway",
+    "miscContraflow": "oneway",
+    "bannedMovementNoRightTurn": "turn",
+    "bannedMovementNoLeftTurn": "turn",
+    "bannedMovementNoUTurn": "turn",
+    "dimensionMaximumWeightStructural": "weight",
+    "dimensionMaximumWidth": "width",
+    "dimensionMaximumHeightStructural": "height",
+    "dimensionMaximumLength": "length",
+    "miscSuspensionOfOneWay": "suspension",
+    "miscSuspensionOfWeightRestriction": "suspension",
+    "speedLimitValueBased": "speed",
+}
+
+# §5.3's other two rows — Seasonal/TTRO and Experimental — are not a KIND of
+# restriction, they are the FORM of the instrument. A temporary order shuts a
+# road exactly as a permanent one does; what differs is that it stops.
+#
+# Splitting them out is not tidiness, it is the rule in §5.4 that a dated
+# seasonal way is NOT shut. A seasonal prohibition folded into `prohibition`
+# would draw a lane closed all year for a restriction that runs in May.
+ORDER_FORMS = {
+    "permanent": {
+        "label": "Permanent",
+        "when": "in force between its dates",
+    },
+    "seasonal": {
+        "label": "Seasonal or temporary (TTRO)",
+        "when": "inside its dates only - outside them the way is not shut",
+    },
+    "experimental": {
+        "label": "Experimental",
+        "when": "in force now, but a trial that may lapse",
+    },
+}
+
+# THE FORM IS READ FROM THE ORDER'S OWN TITLE, and that is a weaker signal
+# than the rest of this file uses. D-TRO has no published field saying "this
+# is an experimental order" that reaches tools/tro.py, so the only evidence
+# available here is how the instrument names itself — and legal instruments
+# are titled by statute, so "(Experimental) Order 2026" is a real signal
+# rather than a guess at prose.
+#
+# It is a heuristic and it is written down as one. The structural fix belongs
+# in tools/tro.py, which reads the record: see the note in main().
+_EXPERIMENTAL = re.compile(r"\bexperimental\b", re.I)
+_TEMPORARY = re.compile(r"\b(seasonal|temporar(?:y|ily)|ttro|t\.t\.r\.o)\b",
+                        re.I)
+
+
+def order_type(code):
+    """The D-TRO regulation code as one of §5.3's kinds."""
+    return _CODE_TYPE.get(code, "other")
+
+
+def order_form(feature):
+    """Whether the instrument is permanent, seasonal/temporary, or a trial.
+
+    Title first, dates second. An order that names itself experimental is
+    experimental whatever its dates say; an order with both a start AND an end
+    is time-bounded, which is what a TTRO is, whatever it calls itself.
+    """
+    title = " ".join(str(feature.get(key) or "") for key in ("name", "ref"))
+    if _EXPERIMENTAL.search(title):
+        return "experimental"
+    if _TEMPORARY.search(title):
+        return "seasonal"
+    if feature.get("start") and feature.get("end"):
+        return "seasonal"
+    return "permanent"
+
+
+def vehicles_for(otype, oform="permanent"):
+    """Which vehicles an order of this type and form bites.
+
+    The one function the app, the ways builder and the check below all read,
+    so the table cannot drift between them.
+    """
+    row = dict(ORDER_TYPES.get(otype) or ORDER_TYPES["other"])
+    form = ORDER_FORMS.get(oform) or ORDER_FORMS["permanent"]
+    row["form"] = oform if oform in ORDER_FORMS else "permanent"
+    row["when"] = form["when"]
+    return row
+
+
+# The only order types that are OFFICIAL evidence a lane is shut to a 4x4 and
+# open to a motorbike (spec §5.3: "Weight and width orders feed §4 directly —
+# they are the only official source of 4x4-specific restriction we have").
+#
+# F1 measured that OSM gives us width on ~10% of byways and a 4x4-blocking
+# barrier on under 2%, so this short list is most of what the 4x4 filter can
+# stand on. Height and length are NOT in it: §5.3 says "maybe" for both, and
+# a bridge limit is typically over three metres, which stops no 4x4. They are
+# carried as advice, which is what an unquantified maybe is worth.
+HIDES_FOURXFOUR = ("weight", "width")
+ADVISES_FOURXFOUR = ("height", "length")
+SHUTS_TO_MOTORS = ("prohibition",)
+
+
+def way_access(orders):
+    """The WAYS-SCHEMA verdict for a way these orders touch.
+
+    `orders` is an iterable of (otype, oform) pairs - every order matched to
+    the way. Returns the four schema columns as a dict:
+    motorbike_ok, fourxfour_ok, access_reason, access_evidence.
+
+    WHY THIS LIVES HERE AND NOT IN THE WAYS BUILDER. WAYS-SCHEMA.md says
+    `access_evidence` must never be 'none' on a way where fourxfour_ok = 0 -
+    hiding a lane requires evidence. That rule is only keepable if the thing
+    that decides to hide and the thing that records why are the same call.
+
+    A SEASONAL OR EXPERIMENTAL ORDER DOES NOT SHUT THE WAY HERE. Spec §5.4:
+    a dated seasonal way is not shut. The dates travel with the feature and
+    the app applies them against the day being ridden, which is the only place
+    that knows what day that is. Deciding it in a build would decide it once,
+    on a server, for a file somebody opens a fortnight later - the same
+    mistake the corpus-date comment above this file exists to prevent.
+    """
+    motorbike_ok, fourxfour_ok = 1, 1
+    reasons, evidence = [], "none"
+    for otype, oform in orders:
+        row = ORDER_TYPES.get(otype) or ORDER_TYPES["other"]
+        dated = oform in ("seasonal", "experimental")
+        if otype in SHUTS_TO_MOTORS and not dated:
+            motorbike_ok, fourxfour_ok = 0, 0
+            reasons.append(row["label"])
+            evidence = "order"
+        elif otype in HIDES_FOURXFOUR and not dated:
+            fourxfour_ok = 0
+            reasons.append("%s (%s for a 4x4)" % (row["label"], row["x4_note"]))
+            evidence = "order"
+        elif otype in SHUTS_TO_MOTORS or otype in HIDES_FOURXFOUR:
+            reasons.append("%s, %s" % (row["label"],
+                                       ORDER_FORMS[oform]["when"]))
+            evidence = "order"
+        elif otype in ADVISES_FOURXFOUR:
+            reasons.append("%s (%s)" % (row["label"], row["x4_note"]))
+            evidence = "order"
+    return {
+        "motorbike_ok": motorbike_ok,
+        "fourxfour_ok": fourxfour_ok,
+        "access_reason": "; ".join(reasons) if reasons
+                         else "No order restricts this way",
+        # Never 'none' where fourxfour_ok is 0: the branch that sets the 0 is
+        # the branch that sets the evidence, three lines apart, so the two
+        # cannot come adrift. The check below asserts it anyway.
+        "access_evidence": evidence,
+    }
+
+
 def parse_wkt(text):
     """`SRID=27700;LINESTRING(...)` to (kind, [(easting, northing), ...])."""
     match = _WKT.match((text or "").strip())
@@ -194,6 +466,19 @@ def _wrap(geometry, first, feature, dtro_id):
         "code": feature["code"],
         "label": feature["label"],
     }
+    # THE TYPE, CARRIED SEPARATELY FROM THE CODE.
+    #
+    # `code` is D-TRO's enum and `label` is words for a human; neither is a
+    # thing the 4x4 filter can switch on without holding its own copy of §5.3,
+    # which is how two copies of a safety table drift apart. `otype` is §5.3's
+    # row, resolved here, once, beside the table it comes from.
+    otype = order_type(feature["code"])
+    oform = order_form(feature)
+    properties["otype"] = otype
+    # Only when it is not the default. Written on every feature it would add
+    # about a quarter of a megabyte to say "permanent" 33,000 times.
+    if oform != "permanent":
+        properties["oform"] = oform
     # The order this came from. Carried so a delta can REPLACE everything one
     # order contributed, rather than trying to match feature by feature: an
     # amended order routinely changes how many stretches it covers, and a
@@ -290,9 +575,221 @@ def corpus_date(path):
     return datetime.date.today().isoformat()
 
 
+# ---------------------------------------------------------------------------
+# THE CHECK: one order of each §5.3 type, through the real build
+# ---------------------------------------------------------------------------
+#
+# Run with `--check-order-types`. It writes a corpus CSV in the shape D-TRO
+# publishes, feeds it to `read_corpus` — the same function the national build
+# calls, not a reimplementation — and asserts what each order resolves to.
+#
+# It lives in this file rather than in tools/test_build_tro.py because the
+# table it checks lives in this file, and a safety table and the assertion
+# that it is right should not be able to move apart by one of them being
+# edited and the other not being run.
+_CHECK_TODAY = "2026-06-01"
+_CHECK_LINE = ("SRID=27700;LINESTRING(464946.33 293262.84, "
+               "464918.98 293239.27)")
+
+
+def _check_record(code, name, start="2026-05-01T00:00:00", end=None,
+                  speed=None):
+    """One D-TRO record, trimmed to the fields tools/tro.py reads."""
+    validity = {"start": start}
+    if end is not None:
+        validity["end"] = end
+    regulation = {"timeZone": "Europe/London",
+                  "condition": [{"timeValidity": validity}]}
+    if speed is not None:
+        regulation["speedLimitValueBased"] = {"type": "maximumSpeedLimit",
+                                              "mphValue": speed}
+    else:
+        regulation["generalRegulation"] = {"regulationType": code}
+    return {"source": {
+        "troName": name,
+        "reference": "149816802",
+        "traCreator": 2460,
+        "currentTraOwner": 2460,
+        "provision": [{
+            "reference": "149816802/44819603",
+            "regulation": [regulation],
+            "regulatedPlace": [{
+                "type": "regulationLocation",
+                "description": "Hooton Lane",
+                "linearGeometry": {"linestring": _CHECK_LINE},
+            }],
+        }],
+    }}
+
+
+# Every row of PIVOT-SPEC.md §5.3, and what it must come out as.
+#   (case, record, expected otype, oform, bike verdict, 4x4 verdict)
+_CHECK_CASES = [
+    ("prohibition of driving",
+     ("miscRoadClosure", "THE DERBYSHIRE (HOOTON LANE) ORDER 2026", None),
+     "prohibition", "permanent", "yes", "yes"),
+    ("weight limit",
+     ("dimensionMaximumWeightStructural",
+      "THE DERBYSHIRE (HOOTON LANE) ORDER 2026", None),
+     "weight", "permanent", "sometimes", "sometimes"),
+    ("width limit",
+     ("dimensionMaximumWidth", "THE DERBYSHIRE (HOOTON LANE) ORDER 2026",
+      None),
+     "width", "permanent", "no", "sometimes"),
+    ("height limit",
+     ("dimensionMaximumHeightStructural",
+      "THE DERBYSHIRE (HOOTON LANE) ORDER 2026", None),
+     "height", "permanent", "no", "sometimes"),
+    ("one-way",
+     ("mandatoryDirectionOneWay", "THE DERBYSHIRE (HOOTON LANE) ORDER 2026",
+      None),
+     "oneway", "permanent", "yes", "yes"),
+    ("seasonal / TTRO",
+     ("miscRoadClosure",
+      "THE DERBYSHIRE (HOOTON LANE) (TEMPORARY PROHIBITION) ORDER 2026",
+      "2026-11-01T00:00:00"),
+     "prohibition", "seasonal", "yes", "yes"),
+    ("experimental",
+     ("miscRoadClosure",
+      "THE DERBYSHIRE (HOOTON LANE) (EXPERIMENTAL) ORDER 2026", None),
+     "prohibition", "experimental", "yes", "yes"),
+]
+
+
+def check_order_types(mutate=False):
+    """Prove an order of each §5.3 type resolves to the right vehicles.
+
+    `mutate` is the falsifier, and it exists for the same reason golden.py's
+    does: a check nobody has watched go red is a check nobody has watched. It
+    misfiles a width limit as a road closure - the single most dangerous
+    confusion in the table, because it turns "no 4x4s" into "nobody at all"
+    and hides a lane a motorbike may legally ride.
+    """
+    import tempfile
+
+    if mutate:
+        _CODE_TYPE["dimensionMaximumWidth"] = "prohibition"
+
+    rows = []
+    for _name, (code, title, end), _t, _f, _b, _x in _CHECK_CASES:
+        speed = None
+        rows.append(_check_record(code, title, end=end, speed=speed))
+
+    handle, path = tempfile.mkstemp(suffix=".csv", prefix="tro-check-")
+    os.close(handle)
+    try:
+        with open(path, "w", encoding="utf-8", newline="") as fh:
+            writer = csv.writer(fh)
+            writer.writerow(["Id", "SchemaVersion", "Data"])
+            for i, record in enumerate(rows):
+                writer.writerow(["check-%d" % i, "3.4.0",
+                                 json.dumps(record)])
+        built, records, skipped = read_corpus(path, _CHECK_TODAY)
+    finally:
+        os.unlink(path)
+
+    print("order types - %d records in, %d features out, %d unreadable"
+          % (records, len(built), skipped))
+    if len(built) != len(_CHECK_CASES):
+        print("FAIL: %d features from %d cases - an order was dropped "
+              "before it could be typed" % (len(built), len(_CHECK_CASES)))
+        return 1
+
+    failures = []
+    width = max(len(case[0]) for case in _CHECK_CASES)
+    print("%-*s  %-12s %-12s  %-9s %-9s" % (width, "spec 5.3 order", "otype",
+                                            "form", "bike", "4x4"))
+    for case, feature in zip(_CHECK_CASES, built):
+        name, _record, want_type, want_form, want_bike, want_x4 = case
+        props = feature["properties"]
+        got_type = props.get("otype")
+        got_form = props.get("oform", "permanent")
+        verdict = vehicles_for(got_type, got_form)
+        got_bike, got_x4 = verdict["bike"], verdict["x4"]
+        ok = (got_type == want_type and got_form == want_form
+              and got_bike == want_bike and got_x4 == want_x4)
+        print("%-*s  %-12s %-12s  %-9s %-9s  %s"
+              % (width, name, got_type, got_form, got_bike, got_x4,
+                 "ok" if ok else "WRONG"))
+        if not ok:
+            failures.append(
+                "%s: wanted (%s, %s, bike=%s, 4x4=%s), got (%s, %s, bike=%s,"
+                " 4x4=%s)" % (name, want_type, want_form, want_bike, want_x4,
+                              got_type, got_form, got_bike, got_x4))
+
+    # THE SECOND HALF, and the one the ways schema turns on: weight and width
+    # must reach `access_evidence = 'order'` with fourxfour_ok = 0, because
+    # they are the only official 4x4-specific restriction we hold.
+    print()
+    expected_access = {
+        "weight": (1, 0, "order"),
+        "width": (1, 0, "order"),
+        "height": (1, 1, "order"),      # §5.3 says "maybe" - advice, not a hide
+        "prohibition": (0, 0, "order"),
+        "oneway": (1, 1, "none"),       # direction, not access
+    }
+    for otype, (want_bike_ok, want_x4_ok, want_ev) in sorted(
+            expected_access.items()):
+        got = way_access([(otype, "permanent")])
+        ok = (got["motorbike_ok"] == want_bike_ok
+              and got["fourxfour_ok"] == want_x4_ok
+              and got["access_evidence"] == want_ev)
+        print("way_access(%-12s) -> motorbike_ok=%d fourxfour_ok=%d "
+              "evidence=%-9s %s  [%s]"
+              % (otype, got["motorbike_ok"], got["fourxfour_ok"],
+                 got["access_evidence"], "ok" if ok else "WRONG",
+                 got["access_reason"]))
+        if not ok:
+            failures.append(
+                "way_access(%s): wanted (%d, %d, %s), got (%d, %d, %s)"
+                % (otype, want_bike_ok, want_x4_ok, want_ev,
+                   got["motorbike_ok"], got["fourxfour_ok"],
+                   got["access_evidence"]))
+
+    # A seasonal prohibition is NOT shut (spec §5.4), and it still carries its
+    # evidence, so the rider is told why the lane is amber rather than green.
+    seasonal = way_access([("prohibition", "seasonal")])
+    if seasonal["fourxfour_ok"] != 1 or seasonal["access_evidence"] != "order":
+        failures.append("a seasonal prohibition shut the way: %r" % seasonal)
+    else:
+        print("way_access(seasonal prohibition) -> fourxfour_ok=1 "
+              "evidence=order  ok  [%s]" % seasonal["access_reason"])
+
+    # WAYS-SCHEMA.md: access_evidence must never be 'none' where
+    # fourxfour_ok = 0. Asserted over every type and form this build can emit,
+    # not over the cases above, because the rule is about the whole table.
+    for otype in ORDER_TYPES:
+        for oform in ORDER_FORMS:
+            got = way_access([(otype, oform)])
+            if got["fourxfour_ok"] == 0 and got["access_evidence"] == "none":
+                failures.append(
+                    "(%s, %s) hides a lane from a 4x4 with no evidence"
+                    % (otype, oform))
+
+    # Every code tools/tro.py can emit must have a home in the table. A new
+    # one appearing upstream would otherwise land in "other" silently.
+    from tro import INTERESTING, SPEED_LIMIT
+    unmapped = sorted(set(list(INTERESTING) + [SPEED_LIMIT]) - set(_CODE_TYPE))
+    if unmapped:
+        failures.append("codes tro.py emits with no spec-5.3 type: %s"
+                        % ", ".join(unmapped))
+
+    print()
+    if failures:
+        for line in failures:
+            print("FAIL: %s" % line)
+        print("%d of %d checks failed" % (len(failures),
+                                          len(_CHECK_CASES)
+                                          + len(expected_access)))
+        return 1
+    print("all %d spec-5.3 order types resolve to the right vehicles; "
+          "weight and width reach access_evidence='order'" % len(_CHECK_CASES))
+    return 0
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--key", required=True, help="base64 32-byte key file")
+    ap.add_argument("--key", help="base64 32-byte key file")
     ap.add_argument("--csv", help="a local dtros_all.csv; otherwise fetched")
     ap.add_argument("--out", default=os.path.join(ROOT, "dist", "tro"))
     ap.add_argument("--index", default=os.path.join(ROOT, "tro", "index.json"),
@@ -305,7 +802,24 @@ def main():
                     help="publish even if the count has collapsed against the "
                          "last run - for a genuine change, never to get a red "
                          "build green")
+    ap.add_argument("--check-order-types", action="store_true",
+                    help="run one order of each spec 5.3 type through the "
+                         "real build and print what each resolves to. No key, "
+                         "no network, no corpus")
+    ap.add_argument("--mutate", action="store_true",
+                    help="with --check-order-types: misfile a width limit as "
+                         "a road closure, to show the check can go red")
     args = ap.parse_args()
+
+    if args.check_order_types:
+        return check_order_types(mutate=args.mutate)
+
+    # Checked here rather than by `required=True`, so --check-order-types can
+    # run in a checkout with no secrets - which is what makes it a check the
+    # tests can run and not just the publishing job.
+    if not args.key:
+        ap.error("--key is required to build the pack "
+                 "(--check-order-types needs no key)")
 
     path = args.csv
     if not path:
@@ -388,6 +902,18 @@ def main():
         "attribution": "Contains public sector information licensed under the "
                        "Open Government Licence v3.0. Source: Department for "
                        "Transport D-TRO service.",
+        # THE RESOLUTION TABLE TRAVELS WITH THE PACK.
+        #
+        # Every feature carries `otype`, and this says what each one means for
+        # each vehicle. Shipping the table beside the data rather than baking
+        # it into the app is what stops the two versions of §5.3 — the one the
+        # builder applied and the one the app believes — from ever disagreeing:
+        # an app reading a pack built before a type existed sees the type it
+        # was told about, not a type it has to guess at.
+        #
+        # It costs about a kilobyte, once, against 36,000 features.
+        "order_types": ORDER_TYPES,
+        "order_forms": ORDER_FORMS,
         "features": built,
     }
 

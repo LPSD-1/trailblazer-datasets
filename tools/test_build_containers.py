@@ -22,9 +22,14 @@ containers, and moving one pack's own stamp changed that pack's container and
 its overview and nothing else.
 """
 import ast
+import glob
 import io
+import json
 import os
+import shutil
+import sqlite3
 import sys
+import tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SOURCE = os.path.join(HERE, "build_containers.py")
@@ -105,6 +110,143 @@ def test_the_run_stamp_still_describes_the_manifest():
     src = io.open(SOURCE, encoding="utf-8").read()
     check("the manifest still records when it was written",
           'manifest.get("generated")' in src)
+
+
+# --------------------------------------------------------------------------
+# step 1.2 - ONE dataset, and no vehicle anywhere in it
+# --------------------------------------------------------------------------
+#
+# This half DOES build, because the thing under test is what comes out. It
+# needs no published key: a pack is sealed with a fixture key and opened with
+# the same one, which is exactly the path the real build takes.
+
+sys.path.insert(0, HERE)
+import build_containers as C           # noqa: E402
+import build_packages as P             # noqa: E402
+
+KEY = bytes(range(32))
+
+
+def _way(uid, way_class, moto, fourxfour, lon, lat, authority="Derbyshire"):
+    return {
+        "type": "Feature",
+        "geometry": {"type": "LineString",
+                     "coordinates": [(lon, lat), (lon + 0.01, lat + 0.01)]},
+        "properties": {
+            "lane_uid": uid, "class": way_class, "county": authority,
+            "name": uid, "designation": way_class, "authority": authority,
+            "legal_tier": "statutory", "source": "rowmaps:derbyshire",
+            "source_date": "2026-03-04", "motorbike_ok": moto,
+            "fourxfour_ok": fourxfour,
+            "access_reason": "because the definitive map says so",
+            "access_evidence": "statutory", "lengthKm": 1.2,
+        },
+    }
+
+
+def _pipeline():
+    """packs -> containers, the way the real build runs it."""
+    tmp = tempfile.mkdtemp(prefix="tbways-pipeline-")
+    real_dist = P.dist_dir
+    P.dist_dir = lambda: tmp
+    try:
+        packs = []
+        for region, label, lon, lat in (("midlands", "Midlands", -1.70, 52.50),
+                                        ("wales", "Wales", -3.40, 52.20)):
+            feats = [_way("%s-boat" % region, "boat", 1, 1, lon, lat),
+                     _way("%s-bw" % region, "bridleway", 0, 0, lon + .02, lat)]
+            packs.append(P.write_package(
+                P.DATASET, region, label, None, feats, KEY,
+                "2026-03-04T05:06:07Z", note="n"))
+        manifest = {
+            "schema": 1, "generated": "2026-09-24T09:00:00Z",
+            "dataset": P.DATASET, "contextScope": P.CONTEXT_SCOPE,
+            "contextNote": P.CONTEXT_NOTE, "packages": packs,
+        }
+        mpath = os.path.join(tmp, "manifest.json")
+        with io.open(mpath, "w", encoding="utf-8") as fh:
+            fh.write(json.dumps(manifest))
+        out = C.build_all(mpath, os.path.join(tmp, "containers"), KEY, None,
+                          tmp)
+        return out, tmp
+    finally:
+        P.dist_dir = real_dist
+
+
+def test_one_dataset_comes_out_not_five():
+    out, tmp = _pipeline()
+    try:
+        files = sorted(os.path.basename(f) for f in
+                       glob.glob(os.path.join(tmp, "containers", "*.tbmap")))
+        # Two regions in, two areas plus ONE overview out. The old build
+        # produced an overview per vehicle and 109 containers for GB.
+        check("one container per region and a single overview",
+              files == ["ways-midlands.tbmap", "ways-overview.tbmap",
+                        "ways-wales.tbmap"], "got %r" % files)
+        check("exactly one overview",
+              len([e for e in out["containers"]
+                   if e["kind"] == "overview"]) == 1)
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_no_entry_names_a_vehicle():
+    # A pack that names a vehicle is a pack that publishes the same bridleway
+    # four times. Its absence IS the step.
+    out, tmp = _pipeline()
+    try:
+        offenders = [e["id"] for e in out["containers"] if "vehicle" in e]
+        check("no container entry carries a vehicle", offenders == [],
+              "got %r" % offenders)
+        check("the manifest names the dataset instead",
+              out.get("dataset") == "ways", "got %r" % out.get("dataset"))
+        check("and every entry agrees",
+              all(e.get("dataset") == "ways" for e in out["containers"]))
+        ids = sorted(e["id"] for e in out["containers"])
+        check("ids no longer carry a vehicle suffix",
+              ids == ["gb-midlands", "gb-overview", "gb-wales"],
+              "got %r" % ids)
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_the_scope_of_the_context_reaches_every_container():
+    # Step 1.2c. A rider must be able to find out we did not look, rather than
+    # read a blank hillside as a hillside with no bridleway on it.
+    out, tmp = _pipeline()
+    try:
+        check("the container manifest records the scope",
+              out.get("contextScope") == "near-byways-only",
+              "got %r" % out.get("contextScope"))
+        missing = []
+        for f in glob.glob(os.path.join(tmp, "containers", "*.tbmap")):
+            db = sqlite3.connect(f)
+            meta = dict(db.execute("SELECT key, value FROM meta"))
+            db.close()
+            if meta.get("context_scope") != "near-byways-only" or \
+                    "on the ground" not in meta.get("context_note", ""):
+                missing.append(os.path.basename(f))
+        check("every container carries it, overview included", missing == [],
+              "silent: %r" % missing)
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_the_container_holds_the_schemas_ways_table():
+    out, tmp = _pipeline()
+    try:
+        db = sqlite3.connect(os.path.join(tmp, "containers",
+                                          "ways-midlands.tbmap"))
+        classes = sorted(r[0] for r in
+                         db.execute("SELECT way_class FROM ways"))
+        check("the ways table came through the real pipeline",
+              classes == ["boat", "bridleway"], "got %r" % classes)
+        check("and no footpath reached it",
+              db.execute("SELECT COUNT(*) FROM ways WHERE way_class = "
+                         "'footpath'").fetchone()[0] == 0)
+        db.close()
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
 
 
 def main():

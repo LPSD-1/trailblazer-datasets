@@ -366,6 +366,225 @@ build_packages.dist_dir = _real_dist
 shutil.rmtree(_tmp, ignore_errors=True)
 
 
+# --- ONE DATASET, CLASSED PER WAY (step 1.2, docs/WAYS-SCHEMA.md) ------------
+#
+# What this replaced: PACKAGES = motor/bicycle/horse/foot, four separate builds
+# of overlapping ways. `bicycle` and `horse` were byte-identical, because they
+# were the same bridleway data built twice, and the four of them produced 109
+# containers on disk.
+
+check_true("there is no vehicle partition left to build",
+           not hasattr(build_packages, "PACKAGES"))
+check("there is one dataset and it is named for what it holds",
+      build_packages.DATASET, "ways")
+
+# The classes, exactly as the schema words them. A rename here silently
+# restyles the map: the one rule the schema exists to enforce is written
+# against `way_class = 'boat'`.
+check("the schema's classes are what the builder emits",
+      sorted(r["way_class"] for r in build_packages.ROW_RULES.values()),
+      ["boat", "bridleway", "footpath", "restricted_byway"])
+
+# FOOTPATHS ARE NOT CARRIED. 435,299 of them, 627 MB, and not one has any
+# bearing on where a motor vehicle may legally go.
+check("footpaths are not carried",
+      build_packages.ROW_RULES["footpath"]["carried"], False)
+for _t in ("byway_open_to_all_traffic", "restricted_byway", "bridleway"):
+    check_true("%s is carried" % _t, build_packages.ROW_RULES[_t]["carried"])
+
+# Context is what the near-set filter applies to, and it must never include a
+# BOAT: filtering the rideable ways by proximity to themselves would drop
+# isolated byways, which are the ones a rider travels for.
+check("only bridleways and restricted byways are context",
+      sorted(t for t, r in build_packages.ROW_RULES.items() if r["context"]),
+      ["bridleway", "restricted_byway"])
+check("a byway open to all traffic is never context",
+      build_packages.ROW_RULES["byway_open_to_all_traffic"]["context"], False)
+
+
+# --- the derived access columns, and the rule the schema exists to enforce ---
+
+# > A way is drawn rideable only when way_class = 'boat' and
+# > legal_tier = 'statutory'.
+check("only a BOAT is open to a motorbike",
+      sorted(r["way_class"] for r in build_packages.ROW_RULES.values()
+             if r["motorbike_ok"]), ["boat"])
+check("only a BOAT is open to a 4x4",
+      sorted(r["way_class"] for r in build_packages.ROW_RULES.values()
+             if r["fourxfour_ok"]), ["boat"])
+
+# > access_evidence must never be 'none' on a way where fourxfour_ok = 0 -
+# > hiding a lane requires evidence, and F1 measured that we have it for under
+# > 10%.
+for _t, _r in sorted(build_packages.ROW_RULES.items()):
+    if not _r["fourxfour_ok"]:
+        check("%s is closed to a 4x4 on recorded evidence" % _t,
+              _r["access_evidence"] != "none", True)
+    check_true("%s says why, in words a rider can read" % _t,
+               len(_r["access_reason"]) > 20)
+
+
+# --- normalise() writes the schema, not the old lane shape -------------------
+
+_raw = {
+    "geometry": {"type": "LineString",
+                 "coordinates": [(-1.70, 52.50), (-1.69, 52.51)]},
+    "properties": {"Name": "ON|100|2/10", "Description": "BO|ON:22|0.144|none"},
+}
+_row = build_packages.normalise(_raw, "DE", "Derbyshire",
+                                "byway_open_to_all_traffic")["properties"]
+check("the class is the schema's class", _row["class"], "boat")
+check("the legal tier is carried per way", _row["legal_tier"], "statutory")
+check("the source names the authority it came from",
+      _row["source"], "rowmaps:derbyshire")
+check("the source date is a fixed-width placeholder until the pack is sealed",
+      len(_row["source_date"]), 10)
+check("a BOAT is open to a motorbike", _row["motorbike_ok"], 1)
+check("and to a 4x4", _row["fourxfour_ok"], 1)
+check("with statutory evidence", _row["access_evidence"], "statutory")
+check_true("the vehicle list is gone with the partition",
+           "vehicles" not in _row)
+
+_bw = build_packages.normalise(_raw, "DE", "Derbyshire",
+                               "bridleway")["properties"]
+check("a bridleway is closed to a motorbike", _bw["motorbike_ok"], 0)
+check("and to a 4x4", _bw["fourxfour_ok"], 0)
+check_true("and says so in a sentence, not a boolean",
+           "no mechanically propelled vehicles" in _bw["access_reason"])
+
+
+# --- step 1.2c: the near-set filter ------------------------------------------
+#
+# MEASURED over the full published population: 10,342 BOATs and 89,300
+# bridleways and restricted byways, of which 15,366 (17.2%) lie within 1 km of
+# a BOAT and 73,934 (82.8%) do not. Carrying only the near set takes the
+# dataset from 99,642 ways to 25,708.
+#
+# These checks are the mechanism, not the national figure: a filter that
+# returned everything, or nothing, or measured degrees as kilometres would pass
+# none of them.
+
+_boat = lane([(-1.700, 52.500), (-1.699, 52.500)], uid="boat")
+_touching = lane([(-1.699, 52.500), (-1.698, 52.501)], uid="touching")
+_near = lane([(-1.700, 52.5045), (-1.699, 52.5045)], uid="near")   # ~500 m N
+_far = lane([(-1.700, 52.600), (-1.699, 52.600)], uid="far")       # ~11 km N
+
+_kept = [f["properties"]["lane_uid"] for f in
+         build_packages.near_motor_ways([_touching, _near, _far], [_boat])]
+check("a context way that meets a byway is carried - the whole reason it is "
+      "carried at all", "touching" in _kept, True)
+check("one 500 m away is still carried", "near" in _kept, True)
+check("one 11 km away is not", "far" in _kept, False)
+check("and nothing else came along with them", sorted(_kept),
+      ["near", "touching"])
+
+# The boundary, both sides of it, on the same axis so the distance is exact.
+# 1 km north is 0.009044 deg of latitude.
+_just_in = lane([(-1.700, 52.500 + 0.00895)], uid="in")
+_just_out = lane([(-1.700, 52.500 + 0.00915)], uid="out")
+check("just inside the radius is carried",
+      [f["properties"]["lane_uid"] for f in
+       build_packages.near_motor_ways([_just_in], [_boat])], ["in"])
+check("just outside it is not",
+      [f["properties"]["lane_uid"] for f in
+       build_packages.near_motor_ways([_just_out], [_boat])], [])
+
+# The grid is an index over nine cells, so a way in a DIAGONAL neighbour cell
+# must still be measured. A filter that only looked in its own cell would pass
+# every check above and drop these.
+_diag = lane([(-1.700 + 0.0100, 52.500 + 0.0060)], uid="diag")   # ~0.9 km
+check("a way in a diagonal neighbouring cell is still found",
+      [f["properties"]["lane_uid"] for f in
+       build_packages.near_motor_ways([_diag], [_boat])], ["diag"])
+
+# Longitude is not latitude. At 52.5 N a degree of longitude is 68 km and a
+# degree of latitude is 111 km, so a filter using one grid step for both is
+# wrong by 60% in one direction.
+_east = lane([(-1.700 + 0.0133, 52.500)], uid="east")            # ~0.9 km E
+check("the radius is kilometres, not degrees, going east",
+      [f["properties"]["lane_uid"] for f in
+       build_packages.near_motor_ways([_east], [_boat])], ["east"])
+_east_far = lane([(-1.700 + 0.0200, 52.500)], uid="east-far")    # ~1.35 km E
+check("and a way 1.35 km east is out, though it is closer in degrees than "
+      "the 1 km one to the north",
+      [f["properties"]["lane_uid"] for f in
+       build_packages.near_motor_ways([_east_far], [_boat])], [])
+
+# THE GRID STEP IS A KILOMETRE ON BOTH AXES, AND ONE CONSTANT FOR BOTH IS A
+# SILENT UNDER-COUNT.
+#
+# A degree of latitude is 111 km everywhere; a degree of longitude is 65 km at
+# GB latitudes. A filter that used the latitude step for both still measures
+# each candidate pair correctly - so every single-pair check above passes - and
+# quietly builds a grid too fine in the east-west direction, whose nine cells
+# no longer reach a kilometre. The ways it then drops depend on where the cell
+# boundaries happen to fall, which is why this sweeps the base longitude
+# instead of testing one pair: MEASURED, the wrong constant misses 481 of 3,800
+# genuinely-near pairs, and there are base longitudes at which it misses none.
+_km_per_deg_lon = build_packages._km_between((-1.70, 54.0),
+                                             (-1.70 + build_packages._KM_LON,
+                                              54.0))
+check_true("one grid step east is one kilometre, not one of latitude",
+           0.97 <= _km_per_deg_lon <= 1.03)
+
+_missed = []
+for _j in range(60):
+    _base = -1.70 + _j * 0.0007
+    _b = lane([(_base, 52.50)], uid="sweep-boat")
+    for _km in (0.80, 0.85, 0.90, 0.95):
+        _c = lane([(_base + _km / 65.40, 52.50)], uid="sweep-%s" % _km)
+        if not build_packages.near_motor_ways([_c], [_b]):
+            _missed.append((round(_base, 4), _km))
+check("no way inside the radius is missed, wherever the cells fall",
+      _missed, [])
+
+# No byways at all is not "carry everything": it is a region with nothing to
+# ride, and the context has nothing to give context to.
+check("no byways means no context carried",
+      build_packages.near_motor_ways([_touching, _near], []), [])
+
+
+# --- the absence must be sayable ---------------------------------------------
+#
+# A rider who looks at a hillside and sees no bridleway must not read that as
+# "there is no bridleway here". There is; we did not carry it. If this string
+# ever goes missing the app has nothing to show, and our gap becomes a claim
+# about the ground.
+check("the carried scope is named", build_packages.CONTEXT_SCOPE,
+      "near-byways-only")
+check_true("and there is a sentence the app can show a rider",
+           "does not mean there is none on the ground"
+           in build_packages.CONTEXT_NOTE)
+check_true("which says how far we looked",
+           "1 km" in build_packages.CONTEXT_NOTE)
+
+
+# --- the pack's sealed body carries the schema and the scope -----------------
+
+_dist2 = tempfile.mkdtemp(prefix="tbways-test-")
+_real_dist2 = build_packages.dist_dir
+build_packages.dist_dir = lambda: _dist2
+_entry = build_packages.write_package(
+    build_packages.DATASET, "midlands", "Midlands", None,
+    [build_packages.normalise(_raw, "DE", "Derbyshire",
+                              "byway_open_to_all_traffic")],
+    KEY, "2026-03-04T05:06:07Z", note="n")
+with open(os.path.join(_dist2, "packages",
+                       os.path.basename(_entry["file"])), "rb") as fh:
+    _blob = fh.read()
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM as _A
+_body = json.loads(gzip.decompress(
+    _A(KEY).decrypt(_blob[6:18], _blob[18:], _blob[:18])))
+check("the pack is named for the dataset, not a vehicle",
+      _entry["file"], "packages/ways-midlands.tbpack")
+check("the sealed pack records what scope of context it holds",
+      _body["contextScope"], "near-byways-only")
+check("the source date on a way is the date the pack was cut",
+      _body["features"][0]["properties"]["source_date"], "2026-03-04")
+build_packages.dist_dir = _real_dist2
+shutil.rmtree(_dist2, ignore_errors=True)
+
+
 if FAILURES:
     print("FAILED (%d)\n" % len(FAILURES))
     for f in FAILURES:

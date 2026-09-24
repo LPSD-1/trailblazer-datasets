@@ -1,0 +1,27 @@
+{
+  "becomes": {
+    "packages": {
+      "ways": 31369
+    },
+    "total": 31369
+  },
+  "dropped": [
+    "bicycle",
+    "foot",
+    "horse",
+    "motor"
+  ],
+  "nationalDrop": 0.9671,
+  "reason": "Pivot step 1.2: the vehicle partition is retired. motor, bicycle, horse and foot were four builds of overlapping ways - bicycle and horse were byte-identical, being the same bridleway data built twice - and they published 109 containers, which froze a phone. They are replaced by ONE dataset, 'ways', classed per way to docs/WAYS-SCHEMA.md. Footpaths (435,299 ways, 627 MB) are not carried: they have no bearing on where a motor vehicle may legally go. Bridleways and restricted byways are carried only within 1 km of a byway open to all traffic (step 1.2c, measured: 15,366 of 89,300 are near one), and every container records context_scope='near-byways-only' with the sentence the app must show, so their absence is never read as absence on the ground. Distinct ways 954,137 rows -> 25,708; every BOAT is kept (10,342 distinct, 12,702 rows across overlapping regions), so nothing a motor rider may legally use has been lost.",
+  "recorded": "2026-09-24T03:29:50Z",
+  "supersedes": {
+    "generated": "2026-09-17T10:21:22Z",
+    "packages": {
+      "bicycle": 123940,
+      "foot": 693555,
+      "horse": 123940,
+      "motor": 12702
+    },
+    "total": 954137
+  }
+}

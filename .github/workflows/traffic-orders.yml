@@ -123,6 +123,25 @@ jobs:
           python tools/test_build_tro.py
           python tools/test_dtro_fetch.py
 
+      # ONE ORDER OF EACH TYPE, THROUGH THE REAL BUILD.
+      #
+      # A different question from the tests above. They ask whether the code
+      # does what it did yesterday; this asks whether an order of each kind in
+      # PIVOT-SPEC.md 5.3 still resolves to the right vehicles - and weight and
+      # width orders are the only OFFICIAL evidence we hold that a lane is shut
+      # to a 4x4 and open to a motorbike.
+      #
+      # It needs no key, no credentials and no corpus: it writes its own CSV in
+      # the shape D-TRO publishes and feeds it to read_corpus, the same
+      # function the national build calls. So it can run before anything is
+      # fetched, and a wrong table stops the run rather than shipping.
+      #
+      # Shown red by `--mutate`, which misfiles a width limit as a road
+      # closure: "no 4x4s" becomes "nobody at all", and a lane a motorbike may
+      # legally ride disappears from its map.
+      - name: An order of each type resolves to the right vehicles
+        run: python tools/build_tro.py --check-order-types
+
       - name: Build the pack
         run: python tools/build_tro.py --key /tmp/dataset.key
 

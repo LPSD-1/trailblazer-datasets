@@ -32,8 +32,22 @@ the app can check the download exactly, the way it checks a lane pack.
 A TILE AT A TIME
 ----------------
 Same shape as the imagery build: a budget per run, resumable, and a run either
-publishes finished tiles or publishes nothing. Tiles covering countries where
-we publish lanes come first, because those are the riders we have.
+publishes finished tiles or publishes nothing.
+
+GREAT BRITAIN ONLY (plan step 1.6)
+----------------------------------
+This used to mirror every tile the catalogue offered - 526 distinct files,
+7.9 GB - for a product that publishes lanes in England and Wales and nowhere
+else. Six tiles cover Great Britain, 293 MB, and they are named below rather
+than derived, because a derived set is one nobody can check at a glance and
+the GB bounding box grazes two rows of tiles that hold no British ground.
+
+IT DOES NOT DELETE ANYTHING.
+Tiles already mirrored and published that fall outside the six are LISTED, not
+removed. Deleting a published release asset is not a thing to do in the same
+change that stops fetching: a rider mid-download holds a URL that would stop
+answering. The list is the input to that separate, deliberate step, which is
+`tools/prune_published.py` under a human.
 """
 import argparse
 import hashlib
@@ -52,6 +66,28 @@ USER_AGENT = "trailblazer-offline-maps mirror (contact: the repo owner)"
 # room to spare; this guards against the index listing something absurd.
 MAX_TILE_BYTES = 1024 * 1024 * 1024
 
+# THE SIX TILES GREAT BRITAIN NEEDS, in the 5x5-degree scheme brouter.de uses.
+#
+# Written out rather than computed from a bounding box. The UK box in
+# build_catalogue.py is (-8.7, 49.8) to (1.8, 60.9), and a box that size
+# touches TWELVE tiles: it grazes the N45 row (45-50N, which is France and
+# northern Spain) by two tenths of a degree at its southern edge, and the N60
+# row (60-65N) at its northern. Neither row carries ground a British rider
+# routes over, and between them they are 193,163,753 bytes - 193.2 MB of the
+# 486.5 MB the catalogue offered for "the United Kingdom". Three of those six
+# are already mirrored (the N45 row, 191,627,782 bytes); this run lists them
+# and leaves them alone.
+#
+# N60 is the one worth stating out loud: it holds Shetland, and dropping it
+# means a rider on Unst cannot route. That is deliberate and it is recorded -
+# we publish no lanes north of the England/Wales border at all, so there is
+# nothing there to route between. If Scotland ever ships, this tuple is where
+# it starts.
+GB_ROUTING_TILES = (
+    "W10_N50", "W5_N50", "E0_N50",   # England and Wales, south of 55N
+    "W10_N55", "W5_N55", "E0_N55",   # northern England, and the border
+)
+
 
 def published_tiles():
     """What brouter.de currently lists, and how big it says each one is."""
@@ -68,33 +104,37 @@ def published_tiles():
     return sizes
 
 
-def tiles_we_need(catalogue):
-    """Every routing tile the catalogue offers, most wanted first.
+def tiles_we_need():
+    """The tiles we mirror: Great Britain, and nothing else.
 
-    Tiles covering a country where we publish LANES come first. Those are the
-    riders we actually have, and they are the ones currently pulling 139 MB
-    from somebody else.
+    It used to be "every routing tile the catalogue offers", which is the
+    whole world, because the 5x5 grid covers everything for free. Free to
+    LIST is not free to HOST or to keep fresh, and no rider has ever been
+    offered a lane outside England and Wales.
     """
-    priority, rest = [], []
+    return list(GB_ROUTING_TILES)
+
+
+def catalogue_routing(catalogue):
+    """Every routing tile id the catalogue currently offers, with its size."""
+    offered = {}
     for continent in catalogue.get("continents", []):
         for country in continent.get("countries", []):
-            has_lanes = any(
-                p.get("kind") == "lanes"
-                for area in country.get("areas", [])
-                for p in area.get("packs", [])
-            )
             for area in country.get("areas", []):
                 for pack in area.get("packs", []):
-                    if pack.get("kind") != "routing":
-                        continue
-                    (priority if has_lanes else rest).append(pack["id"])
-    seen = set()
-    out = []
-    for name in priority + rest:
-        if name not in seen:
-            seen.add(name)
-            out.append(name)
-    return out
+                    if pack.get("kind") == "routing":
+                        offered[pack["id"]] = pack.get("bytes", 0)
+    return offered
+
+
+def prunable(held, scope):
+    """Tiles we have already mirrored that are no longer in scope.
+
+    Returned, printed, and then left exactly where they are. See the module
+    docstring: stopping the fetch and deleting the asset are two changes, and
+    doing them together is how a rider's half-finished download becomes a 404.
+    """
+    return sorted(name for name in held if name not in set(scope))
 
 
 def fetch(name, expected, out_dir):
@@ -148,6 +188,11 @@ def main():
                          "about a gigabyte, which is a polite hour.")
     ap.add_argument("--refresh-after-days", type=int, default=30,
                     help="re-mirror a tile older than this")
+    ap.add_argument("--dry-run", action="store_true",
+                    help="say what this run would fetch and what would be "
+                         "pruned, write nothing, download nothing. This is "
+                         "how step 1.6's gate is read without pulling "
+                         "293 MB to read it.")
     args = ap.parse_args()
 
     with open(args.catalogue, encoding="utf-8") as f:
@@ -160,8 +205,42 @@ def main():
     held = index.setdefault("tiles", {})
 
     sizes = published_tiles()
-    wanted = tiles_we_need(catalogue)
+    wanted = tiles_we_need()
     now = time.time()
+
+    # BEFORE AND AFTER, printed every run, because the whole point of this
+    # step is a number that fell and a reader who can check it fell.
+    offered = catalogue_routing(catalogue)
+    print("catalogue offers %d distinct routing files, %d bytes (%.0f MB)"
+          % (len(offered), sum(offered.values()),
+             sum(offered.values()) / 1e6))
+    in_scope = {n: offered[n] for n in wanted if n in offered}
+    missing_from_catalogue = [n for n in wanted if n not in offered]
+    print("GB scope is %d tiles, %d bytes (%.1f MB)%s"
+          % (len(wanted), sum(in_scope.values()),
+             sum(in_scope.values()) / 1e6,
+             "" if not missing_from_catalogue
+             else "  (not yet in the catalogue: %s)"
+                  % ", ".join(missing_from_catalogue)))
+    for name in wanted:
+        print("  %-8s %12d bytes" % (name, in_scope.get(name, 0)))
+
+    # WHAT WOULD BE PRUNED, AND IS NOT.
+    #
+    # A tile we host and no longer want is a release asset plus an index
+    # entry. Removing either here would delete published data in the change
+    # that stops fetching it; this run only says which they are.
+    retired = prunable(held, wanted)
+    if retired:
+        retired_bytes = sum(held[n].get("bytes", 0) for n in retired)
+        print("\nWOULD PRUNE (not pruned by this run): %d mirrored tile(s), "
+              "%d bytes (%.1f MB)"
+              % (len(retired), retired_bytes, retired_bytes / 1e6))
+        for name in retired:
+            print("  %-8s %12d bytes  %s.rd5"
+                  % (name, held[name].get("bytes", 0), name))
+        print("  Deliberate step: tools/prune_published.py, run by a human "
+              "once no rider is mid-download.")
 
     todo = []
     for name in wanted:
@@ -178,13 +257,20 @@ def main():
                 "upstream_bytes") != sizes[name]:
             todo.append(name)
 
-    print("%d tiles offered, %d already ours, %d to do"
-          % (len(wanted), len(held), len(todo)))
+    print("\n%d tiles in scope, %d already ours (%d of them in scope), "
+          "%d to do" % (len(wanted), len(held),
+                        len(held) - len(retired), len(todo)))
     if not todo:
         print("nothing due")
         return 0
 
     batch = todo[:args.budget]
+    if args.dry_run:
+        print("\ndry run: would fetch %d tile(s)" % len(batch))
+        for name in batch:
+            print("  %s  %.0f MB" % (name, sizes[name] / 1e6))
+        return 0
+
     done = []
     for name in batch:
         try:

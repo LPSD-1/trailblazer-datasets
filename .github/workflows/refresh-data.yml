@@ -15,7 +15,51 @@ name: Refresh lane data
 # way round, and the reason the frequency could be revisited.
 on:
   schedule:
-    - cron: '17 3 1 * *'   # 03:17 UTC on the 1st
+    # FOUR TIMES A DAY, not monthly. PIVOT-SPEC.md 5.6: "lane data" is the
+    # whole legal picture - the ways AND the orders against them - and a rider
+    # is never more than six hours behind a change of any kind.
+    #
+    # Cron is UTC and the window is local, so this lands at 04:23, 10:23, 16:23
+    # and 22:23 British Summer Time, an hour earlier in winter. Minutes off the
+    # hour so it does not queue behind everybody else's cron, and :23 past an
+    # ODD hour keeps it an hour clear of traffic-orders.yml at '23 2,8,14,20'.
+    #
+    # WHAT MAKES THIS AFFORDABLE IS THE PUBLISH STEP, NOT THIS LINE. Councils
+    # do not republish a definitive map four times a day, so 120 of these 121
+    # runs a month must cost riders nothing. The step at the bottom is what
+    # guarantees that: the build is reproducible, so it diffs the rebuilt packs
+    # and containers against the published ones and exits before moving
+    # anything when they are identical. Check often, publish on change.
+    #
+    # MEASURED, AND IT DOES NOT HOLD YET. Two golden builds of the same region
+    # six hours apart, with the council data untouched:
+    #
+    #     every .tbmap byte-identical - 4 of 4
+    #     containers/manifest.json    - DIFFERS, one field:
+    #         "generated": "2026-03-01T00:00:00Z"
+    #      -> "generated": "2026-03-01T01:04:59Z"
+    #
+    # That file sits INSIDE the containers/ tree the Publish step diffs, so the
+    # step says "publish" on a run where nothing moved. The top-level
+    # manifest.json and catalogue.json are already held back for exactly this
+    # reason - the run stamp - and containers/manifest.json was missed. At a
+    # monthly cadence it cost 12 needless republishes a year and nobody saw it.
+    # On this line it costs 121 a month: 121 commits, 121 catalogue rebuilds,
+    # and the "update available" badge on every rider's phone four times a day
+    # for data that has not changed. WAYS-SCHEMA.md says it in as many words -
+    # "built_at must not leak into any pack's content hash".
+    #
+    # THE FIX IS ONE LINE IN THE PUBLISH STEP, and it is not in this agent's
+    # file set to make. Either exclude the field there -
+    #     diff -rq -x manifest.json containers dist/containers
+    # holding containers/manifest.json back with the other two - or stop
+    # build_containers.py stamping a run clock into it at all, which is better
+    # because it makes the tree a function of the data and nothing else.
+    #
+    # UNTIL THAT LANDS, this line is a bandwidth bill rather than a feature.
+    # If the diff is weakened again later, it goes back to monthly on the same
+    # commit.
+    - cron: '23 3,9,15,21 * * *'   # 04:23, 10:23, 16:23, 22:23 BST
   workflow_dispatch:
     inputs:
       skip_fetch:
@@ -122,9 +166,26 @@ jobs:
       # The build now REFUSES to publish if any lane falls outside every
       # region box. Such a lane is in the source data, in no package and on
       # nobody's phone, and nothing used to say so.
+      # EVERY tools/test_*.py runs, by glob, so a new one is wired in by
+      # existing. Three suites written in phase 1 - the gradient reader, the
+      # OSM attribute matcher and the POI extractor - were each complete and
+      # each unreachable from CI, because the wiring is a named line per test
+      # and nobody owned the file that names them.
+      - name: Run every tool suite
+        run: |
+          for t in tools/test_*.py; do
+            echo "--- $t"
+            python "$t" || exit 1
+          done
+
+      # The golden build: one region end to end, byte-compared against a
+      # stored expectation. It refuses a change nobody has blessed.
+      - name: Golden build
+        run: |
+          python tools/golden.py
+
       - name: Build the packages
         run: |
-          python tools/test_build_packages.py
           python tools/build_packages.py --key /tmp/dataset.key
 
       # THE CONTAINERS ARE WHAT A RIDER DOWNLOADS. The packs above are where

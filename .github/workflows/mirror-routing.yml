@@ -1,21 +1,37 @@
 name: Mirror routing tiles
 
-# Weekly, a handful of tiles at a time, until we host the lot.
+# Weekly, until we host all six.
 #
 # Every rider who plans a route offline in Britain currently pulls a 139 MB
 # tile from brouter.de — a volunteer-run service we have no agreement with and
-# no fallback for. Across the catalogue that is 7.9 GB of somebody else's
-# bandwidth, spent by an app that charges money. It will not fail by sending us
-# a bill; it will fail by being blocked, and then offline routing stops working
-# for every rider at once, on a moor, with the app reporting a download failure
-# it cannot explain.
+# no fallback for. It will not fail by sending us a bill; it will fail by being
+# blocked, and then offline routing stops working for every rider at once, on a
+# moor, with the app reporting a download failure it cannot explain.
 #
 # GitHub releases have no total size limit and no bandwidth limit, so hosting
 # it ourselves costs nothing and removes the dependency.
 #
-# Tiles covering countries where we publish LANES go first: those are the
-# riders we actually have. Until a tile is mirrored the catalogue keeps
-# pointing upstream, so the switchover is gradual and nothing breaks halfway.
+# SIX TILES, NOT FIVE HUNDRED (plan step 1.6).
+#
+# This job used to work through every tile the catalogue offered — 526 distinct
+# files, 7.9 GB — on the argument that the 5x5 grid covers the world for free.
+# Free to LIST is not free to host or to keep fresh, and the app publishes
+# lanes in England and Wales and nowhere else. Great Britain needs SIX tiles,
+# 293 MB: W10_N50, W5_N50, E0_N50, W10_N55, W5_N55, E0_N55.
+#
+# IT DELETES NOTHING. The box grazes six tiles carrying no British ground —
+# the N45 row (France and northern Spain, two tenths of a degree below the
+# box's southern edge) and the N60 row (Shetland, where we publish no lanes) —
+# 193,163,753 bytes of the 486,484,824 the catalogue offered for "the United
+# Kingdom". Three of them are already mirrored, 191,627,782 bytes, and they
+# fall out of scope. They are LISTED in the log and in the job summary and left
+# exactly where they are: stopping the fetch and deleting a published release
+# asset are two changes, and a rider mid-download holds a URL that would stop
+# answering. The prune step below only removes tiles UPSTREAM has withdrawn,
+# which these are not.
+#
+# Until a tile is mirrored the catalogue keeps pointing upstream, so the
+# switchover is gradual and nothing breaks halfway.
 on:
   schedule:
     - cron: '23 4 * * 2'   # 04:23 UTC on Tuesdays
@@ -61,6 +77,30 @@ jobs:
             echo "did=false" >> "$GITHUB_OUTPUT"
           else
             echo "did=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      # WHERE A HUMAN WILL ACTUALLY SEE IT.
+      #
+      # The tool prints what has fallen out of scope and refuses to act on it,
+      # which is right — but a list buried 200 lines into a weekly job's log
+      # is a list nobody reads, and then the tiles sit published for ever with
+      # nothing saying why. Onto the run summary, every week, until somebody
+      # runs tools/prune_published.py against them deliberately.
+      - name: What has fallen out of scope
+        if: always()
+        run: |
+          if grep -q '^WOULD PRUNE' /tmp/mirror.log; then
+            {
+              echo "### Mirrored routing tiles no longer in scope"
+              echo
+              echo 'These are still published. Nothing here deletes them.'
+              echo 'Deleting them is a separate, deliberate step:'
+              echo '`tools/prune_published.py`, run by a person.'
+              echo
+              echo '```'
+              sed -n '/^WOULD PRUNE/,/^$/p' /tmp/mirror.log
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
           fi
 
       # Before anything is published: what we mirrored must be something the
@@ -135,6 +175,42 @@ jobs:
           REPO_URL="${{ github.server_url }}/${{ github.repository }}"
           export REPO_URL
           bash tools/rebuild_catalogue.sh manifest.json dist/catalogue.json
+
+          # THE TWO READINGS STEPS 1.6 AND 1.7 ARE GATED ON, taken from the
+          # catalogue this job is about to publish rather than from a figure
+          # somebody typed. Routing files and bytes; any pack still carrying a
+          # `vehicle` key; and what a rider downloading the whole UK gets.
+          #
+          # `--check-no-vehicle` is ENFORCED: build_catalogue.py no longer
+          # emits the key, so a catalogue that has one means something else
+          # put it back and the partition is growing again.
+          #
+          # `--check-default-uk` is NOT enforced yet, and that is recorded
+          # rather than quiet. It reads 2,196 MB today because the lane
+          # containers are still vehicle-partitioned — four datasets over the
+          # same ground, 915 MB of which 627 MB is footpaths the ways schema
+          # does not carry at all. Step 1.2 collapses them; against a
+          # reconstructed post-1.2 container set this same command reads
+          # 1,224 MB, under the 1,500 MB budget by 276 MB. TURN THE FLAG ON IN
+          # THE LINE BELOW THE DAY 1.2 LANDS — not later, or the budget goes
+          # back to being a sentence in a document.
+          #
+          # NOT PIPED INTO tee. The default shell here is `bash -e`, without
+          # pipefail, so a refusal on the left of a pipe is swallowed and the
+          # step goes green - which is precisely the shape of gate this plan's
+          # own rules forbid. Captured, shown, appended, and then the exit
+          # status is asserted on a line of its own.
+          REPORT_FAILED=
+          python tools/build_catalogue.py --report dist/catalogue.json \
+            --check-no-vehicle > /tmp/catalogue-report.txt || REPORT_FAILED=1
+          cat /tmp/catalogue-report.txt
+          {
+            echo '### Catalogue'
+            echo '```'
+            cat /tmp/catalogue-report.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          [ -z "$REPORT_FAILED" ]
           # Refuses to publish a catalogue that lost something already
           # published. The catalogue is rebuilt from scratch, so a job that
           # forgets an index DELETES what another job published - silently, in

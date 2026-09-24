@@ -7,13 +7,21 @@ Produces schema 2: continent -> country -> area -> packs. Every pack says what
 kind it is (basemap, lanes, routing, gpx), how big it is, and - for lane data -
 whether its legal standing is official or community-mapped.
 
-Routing data is the 5x5-degree tile scheme, worldwide. Deliberately NOT cut to
-our own regions: that works for one country and falls apart across a continent,
-where the tile grid already covers everything for free.
+Routing data was the 5x5-degree tile scheme, WORLDWIDE, on the argument that
+the grid covers everything for free. Step 1.6 of the pivot plan settled that:
+free to LIST is not free to host, to keep fresh or to stand behind, and the
+listing was 526 distinct files and 7.9 GB for a product that publishes lanes
+in England and Wales and nowhere else. Routing is now the six tiles that cover
+Great Britain, 293 MB - see GB_ROUTING_TILES.
+
+NO PACK CARRIES A `vehicle` FIELD (step 1.7). One dataset, classed per way,
+replaces the foot/bicycle/horse/motor partition that built the same bridleway
+four times over; see docs/WAYS-SCHEMA.md, which is the contract. A `vehicle`
+key here is what that partition looked like from the app's side, so its
+absence is the thing worth checking, and `--check-no-vehicle` checks it.
 
 Packs are addressed as absolute URLs on a GitHub release rather than paths
-beside this file, because GitHub Pages caps a site at 1 GB and the routing
-tiles alone are 9.3 GB.
+beside this file, because GitHub Pages caps a site at 1 GB.
 """
 import argparse
 import hashlib
@@ -91,6 +99,26 @@ CONTINENT_LABELS = {
 
 ROUTING_INDEX = "https://brouter.de/brouter/segments4/"
 
+# THE SIX TILES GREAT BRITAIN NEEDS. Step 1.6.
+#
+# The same tuple as tools/mirror_routing.py, and deliberately written out in
+# both rather than imported: one is a fetcher and one is a publisher, they run
+# in different jobs, and a set derived from the UK bounding box below is not
+# the set anybody means. That box is (-8.7, 49.8) to (1.8, 60.9) and touches
+# TWELVE tiles - it grazes the N45 row (France and northern Spain) by two
+# tenths of a degree, and the N60 row (Shetland, where we publish no lanes).
+# Those six extra tiles were 193,163,753 bytes - 193.2 MB of the 486,484,824
+# the catalogue offered for "the United Kingdom", covering ground no rider
+# here can route over.
+GB_ROUTING_TILES = frozenset((
+    "W10_N50", "W5_N50", "E0_N50",
+    "W10_N55", "W5_N55", "E0_N55",
+))
+
+# The budget in §2 of the pivot plan, in DECIMAL megabytes, because that is
+# the arithmetic the plan does ("~1,708 MB ... fails by 208 MB").
+DEFAULT_UK_BUDGET_BYTES = 1_500_000_000
+
 ATTRIBUTION = (
     "Map and routing data (c) OpenStreetMap contributors, ODbL. "
     "United Kingdom rights of way contain public sector information licensed "
@@ -166,13 +194,30 @@ def mirrored_routing(path):
 
 
 def routing_packs(country, tile_sizes, mirror=None, mirror_base=""):
-    """Routing packs for one country, one per 5-degree tile it touches."""
+    """Routing packs for one country - Great Britain, and no other.
+
+    GB ONLY, AND SIX TILES OF IT. Step 1.6.
+
+    This used to emit a pack for every tile every country's box touched,
+    forty countries deep, which is where the catalogue's 526 distinct routing
+    files and 7.9 GB came from. Not one of those riders exists: the app
+    publishes lanes in England and Wales. A country with nothing else in it
+    therefore ends up with no areas at all, and `build` drops it - which is
+    the intended result, not an accident of the filter.
+    """
     _, code, label, w, s, e, n = country
+    if code != "gb":
+        return []
     mirror = mirror or {}
     packs = []
     for name, lon, lat in tiles_covering(w, s, e, n):
         if name not in tile_sizes:
             continue  # ocean, or nothing mapped there
+        if name not in GB_ROUTING_TILES:
+            # The bounding box grazes two rows of tiles that hold no ground a
+            # British rider routes over. Listing them cost 193.2 MB and bought
+            # a download nobody wanted.
+            continue
         packs.append({
             # The tile name IS the id, exactly as published, because the app
             # saves a pack as "<id>.rd5" and the routing engine opens tiles by
@@ -216,7 +261,13 @@ def _tile_label(lon, lat):
 
 
 def load_containers(path):
-    """{(vehicle, area): entry} from the container build, or {} if there is none.
+    """{(dataset, area): entry} from the container build, or {} if none.
+
+    `dataset` is whatever the container manifest calls the thing - today's
+    manifest still says `vehicle` and names four of them, and after step 1.2
+    there is one dataset and no such key, at which point `dataset` is None.
+    Both shapes are read here so that this file is not the thing that has to
+    land in the same commit as the builder.
 
     A MISSING FILE IS NOT A QUIET FALLBACK. The catalogue that comes out will
     have lane entries with no file, `verify_catalogue.py` will refuse it, and
@@ -229,11 +280,27 @@ def load_containers(path):
         manifest = json.load(fh)
     out = {}
     for entry in manifest.get("containers", []):
+        dataset = entry.get("vehicle")
         if entry.get("kind") == "area":
-            out[(entry["vehicle"], entry["area"])] = entry
+            out[(dataset, entry["area"])] = entry
         elif entry.get("kind") == "overview":
-            out[(entry["vehicle"], None)] = entry
+            out[(dataset, None)] = entry
     return out
+
+
+def container_for(containers, dataset, area_id):
+    """The container covering this ground, partitioned or not.
+
+    Exact match first, because while the vehicle partition still exists there
+    are four containers over the same ground and picking one at random would
+    publish a walker's data under a rider's id. Once 1.2 has collapsed them
+    there is exactly one, and no `dataset` to match it by.
+    """
+    entry = containers.get((dataset, area_id))
+    if entry is not None:
+        return entry
+    same_ground = [v for (_, a), v in containers.items() if a == area_id]
+    return same_ground[0] if len(same_ground) == 1 else None
 
 
 def lane_areas(lanes_manifest, containers=None):
@@ -283,9 +350,14 @@ def lane_areas(lanes_manifest, containers=None):
         # produce, which is a broken build rather than a mixed one: it is left
         # POINTING AT NOTHING rather than silently falling back to a format the
         # app can no longer read.
-        container = containers.get((pkg["package"], area_id))
+        dataset = pkg.get("package")
+        container = container_for(containers, dataset, area_id)
         area["packs"].append({
-            "id": "gb-%s-%s" % (area_id, pkg["package"]),
+            # NO VEHICLE IN THE ID EITHER, once there is no vehicle. While the
+            # partition still exists the id has to keep saying which of the
+            # four this is, or four packs collapse onto one id and three
+            # downloads vanish.
+            "id": "gb-%s-%s" % (area_id, dataset or "ways"),
             "kind": "lanes",
             "format": "tbmap",
             "label": pkg["label"],
@@ -296,7 +368,15 @@ def lane_areas(lanes_manifest, containers=None):
             "signature": (container or {}).get("signature"),
             "legacyFile": pkg["file"],
             "plainBytes": pkg.get("plainBytes", 0),
-            "vehicle": pkg["package"],
+            # NO `vehicle` KEY. Step 1.7.
+            #
+            # It was the app-facing half of the partition that built the same
+            # bridleway into a bicycle pack and a horse pack byte-identically,
+            # produced 109 containers and froze a phone. What a way permits is
+            # a property of the WAY now - `motorbike_ok`, `fourxfour_ok` and
+            # `access_reason` in docs/WAYS-SCHEMA.md - and it is carried
+            # inside the container, per way, with its evidence. A pack cannot
+            # answer that question and must not look as though it can.
             "featureCount": pkg.get("laneCount", 0),
             # England and Wales publish a legal register of rights of way.
             # Nowhere else in this catalogue can claim that yet.
@@ -567,21 +647,25 @@ def build(lanes_manifest, base_url, stamp, satellite_index=None,
 
     # WHERE THE LANES OF THE COUNTRY ARE, BEFORE ANY AREA IS DOWNLOADED.
     #
-    # One per vehicle, and per vehicle for a measured reason: a single national
+    # There WAS one per vehicle, for a measured reason: a single national
     # overview across every vehicle type put 462,684 points in one z6 tile and
-    # took the app to 1.5 GB. A motorcyclist's is 10,114 lanes and 0.42 MB.
+    # took the app to 1.5 GB. The motor one is 10,114 lanes and 0.42 MB.
+    #
+    # That reason was about the WALKERS' 627 MB of footpaths, which the ways
+    # schema does not carry at all (docs/WAYS-SCHEMA.md: "Footpaths are not
+    # carried"). Whatever the container build hands over is listed here; this
+    # file no longer partitions it, and after step 1.2 there is one.
     #
     # `minZoom` travels with it because the FLOOR MOVES: the builder picks the
-    # lowest zoom whose tiles all fit under the ceiling, which is z6 for a
-    # motorcyclist and z9 for a walker. The app needs it to say where the lanes
-    # come back rather than drawing an empty map and leaving a rider to wonder.
+    # lowest zoom whose tiles all fit under the ceiling. The app needs it to
+    # say where the lanes come back rather than drawing an empty map and
+    # leaving a rider to wonder.
     overviews = sorted(
         (
             {
                 "id": entry["id"],
                 "kind": "overview",
                 "format": "tbmap",
-                "vehicle": entry["vehicle"],
                 "label": entry["label"],
                 "file": entry["file"],
                 "sha256": entry["sha256"],
@@ -592,10 +676,12 @@ def build(lanes_manifest, base_url, stamp, satellite_index=None,
                 "featureCount": entry["laneCount"],
                 "generated": entry["generated"],
             }
-            for (vehicle, area), entry in (containers or {}).items()
+            for (_dataset, area), entry in (containers or {}).items()
             if area is None
         ),
-        key=lambda e: e["vehicle"],
+        # By id, not by vehicle: there is no vehicle to sort by any more, and
+        # a stable order is what keeps two builds of unchanged data identical.
+        key=lambda e: e["id"],
     )
 
     # AND EVERY BRITISH REGION GETS A COPY, which is what actually delivers it.
@@ -614,12 +700,11 @@ def build(lanes_manifest, base_url, stamp, satellite_index=None,
     # region a rider is actually downloading.
     #
     # So: duplicated into every region, which is how trips are done, and the
-    # app dedupes by id (see CatalogueCountry.allPacks). All four vehicles are
-    # listed; the app offers the one matching what the rider rides.
+    # app dedupes by id (see CatalogueCountry.allPacks).
     #
     # `kind` is "lanes" rather than "overview" on purpose. Here it decides the
-    # folder the file lands in and which vehicle filter applies, and both of
-    # those answers are the lane ones. What the container IS stays in its own
+    # folder the file lands in, and that answer is the lane one. What the
+    # container IS stays in its own
     # meta, where TbMapStore.kind reads it and the tile server orders area
     # before overview.
     overview_packs = [
@@ -633,7 +718,6 @@ def build(lanes_manifest, base_url, stamp, satellite_index=None,
             "bytes": o["bytes"],
             "downloadBytes": o["downloadBytes"],
             "signature": o.get("signature"),
-            "vehicle": o["vehicle"],
             "featureCount": o["featureCount"],
             "generated": o["generated"],
             "minZoom": o.get("minZoom"),
@@ -702,24 +786,193 @@ def build(lanes_manifest, base_url, stamp, satellite_index=None,
     return catalogue
 
 
+# --- what a rider in Britain actually downloads -----------------------------
+#
+# Step 1.7's gate, and it needed care, because "the UK" has two readings and
+# they land either side of the 1.5 GB line in §2 of the pivot plan. Stated
+# here rather than in prose so the verdict does not depend on who runs it.
+
+# Everything in the DEFAULT download. `basemap` is here conditionally: see
+# `_is_opt_in` - the standard imagery tier is in, the high-detail tier is not.
+DEFAULT_KINDS = ("lanes", "overview", "routing", "names", "height", "tro",
+                 "trips", "pois", "basemap")
+
+# The tier id a satellite pack carries when it is the opt-in one. Areas built
+# before the tiers existed carry no `detail` at all and are standard: they are
+# maxZoom 13, which is exactly what the standard tier is.
+OPT_IN_DETAIL = "high"
+
+
+def packs_in(catalogue):
+    """Every pack entry in the catalogue, duplicates included."""
+    for continent in catalogue.get("continents", []):
+        for country in continent.get("countries", []):
+            for area in country.get("areas", []):
+                for pack in area.get("packs", []):
+                    yield country.get("code"), area.get("id"), pack
+
+
+def _is_opt_in(pack):
+    """True for a pack outside the default download.
+
+    High-detail imagery only, today. It is twice the pixels over the SAME
+    10 m source - what improves is how it is drawn, not what it can show -
+    and it is 917.3 MB over four regions. A rider who is never told about it
+    loses nothing they could have seen; a rider who gets it by default loses
+    the budget.
+    """
+    return (pack.get("kind") == "basemap"
+            and (pack.get("detail") or {}).get("id") == OPT_IN_DETAIL)
+
+
+def packs_carrying_vehicle(catalogue):
+    """Every pack id that still carries a `vehicle` key. Step 1.7's gate.
+
+    Reads the top-level `overviews` too. They are not in `area["packs"]`, so
+    a check that walked only the areas would return zero while four vehicle-
+    partitioned entries sat in the catalogue the app parses.
+    """
+    guilty = []
+    for _code, area_id, pack in packs_in(catalogue):
+        if "vehicle" in pack:
+            guilty.append("%s/%s" % (area_id, pack.get("id")))
+    for entry in catalogue.get("overviews", []):
+        if "vehicle" in entry:
+            guilty.append("overviews/%s" % entry.get("id"))
+    return guilty
+
+
+def default_uk_download(catalogue, country="GB"):
+    """The bytes a rider gets when they take the default for the whole UK.
+
+    Distinct by pack id, because the catalogue duplicates on purpose: trips
+    and the national overviews are listed into every region so a rider who
+    takes one region still gets them, and the app dedupes by id
+    (CatalogueCountry.allPacks). Summing entries counts them six times.
+    """
+    default, opt_in = {}, {}
+    for code, _area_id, pack in packs_in(catalogue):
+        if code != country:
+            continue
+        kind = pack.get("kind")
+        if kind not in DEFAULT_KINDS:
+            continue
+        where = opt_in if _is_opt_in(pack) else default
+        where.setdefault(kind, {})[pack.get("id")] = pack.get("bytes", 0) or 0
+    return default, opt_in
+
+
+def _kind_total(group, kind):
+    return sum(group.get(kind, {}).values())
+
+
+def report_default_uk(catalogue, budget=DEFAULT_UK_BUDGET_BYTES,
+                      country="GB"):
+    """Print the default download, the opt-in, and whether it fits.
+
+    Returns True when the default fits. The caller decides whether that is a
+    gate; `--check-default-uk` makes it one.
+    """
+    default, opt_in = default_uk_download(catalogue, country)
+    total = sum(sum(v.values()) for v in default.values())
+    opt_total = sum(sum(v.values()) for v in opt_in.values())
+
+    print("\nDEFAULT %s DOWNLOAD - what a rider gets by taking the default "
+          "for the whole country" % country)
+    for kind in DEFAULT_KINDS:
+        if kind not in default:
+            continue
+        packs = default[kind]
+        print("  %-9s %3d pack(s)  %12d bytes  %8.1f MB"
+              % (kind, len(packs), sum(packs.values()),
+                 sum(packs.values()) / 1e6))
+    if "pois" not in default:
+        # Not missing. WAYS-SCHEMA.md puts `pois` in the SAME container as the
+        # ways, own table, so their bytes are already inside the lanes line
+        # above. A zero here would read as "no POIs shipped".
+        print("  %-9s carried inside the ways container (WAYS-SCHEMA.md), "
+              "not a separate pack" % "pois")
+    print("  %-9s %26d bytes  %8.1f MB" % ("TOTAL", total, total / 1e6))
+    print("  budget    %26d bytes  %8.1f MB" % (budget, budget / 1e6))
+    verdict = "UNDER by %.1f MB" if total <= budget else "OVER by %.1f MB"
+    print("  %-9s %s" % ("verdict", verdict % (abs(budget - total) / 1e6)))
+
+    print("\nOPT-IN, OUTSIDE THE BUDGET")
+    if not opt_in:
+        print("  none in this catalogue")
+    for kind, packs in sorted(opt_in.items()):
+        print("  %-9s %3d pack(s)  %12d bytes  %8.1f MB"
+              % (kind, len(packs), sum(packs.values()),
+                 sum(packs.values()) / 1e6))
+    if opt_total:
+        # BOTH READINGS, because the gate's verdict must not depend on which
+        # one the reader had in mind. High detail is an alternative tier over
+        # the same ground, so a rider who chooses it does not also keep the
+        # standard pack - but the app does not stop them holding both.
+        # A standard pack and its high counterpart are the same ground:
+        # "gb-north-satellite-standard" and "gb-north-satellite-high". The
+        # ground is the id with the tier suffix taken off.
+        replaced = {o.rsplit("-", 1)[0] for o in opt_in.get("basemap", {})}
+        superseded = sum(b for pid, b in default.get("basemap", {}).items()
+                         if pid.rsplit("-", 1)[0] in replaced)
+        instead = total - superseded + opt_total
+        print("  default + opt-in, both held     %12d bytes  %8.1f MB  (%s)"
+              % (total + opt_total, (total + opt_total) / 1e6,
+                 "over" if total + opt_total > budget else "under"))
+        print("  high detail INSTEAD of standard %12d bytes  %8.1f MB  (%s)"
+              % (instead, instead / 1e6,
+                 "over" if instead > budget else "under"))
+        print("  Either reading is over the %.1f MB budget, which is why "
+              "high detail is opt-in and outside it."
+              % (budget / 1e6))
+    return total <= budget
+
+
 def summarise(catalogue):
-    total = 0
+    """What is on offer, counted in FILES.
+
+    An entry is not a file. Trips and the national overviews are listed into
+    every British region on purpose - so a rider who takes one region still
+    gets them, and the app dedupes by id - and this used to add each copy up
+    again. That is the same double count that had the routing figure at 732
+    files and 16.3 GB when it is 526 and 7.9, and it was quoted for weeks.
+    """
+    total, entries = 0, 0
     print("\ncatalogue:")
     for continent in catalogue["continents"]:
-        cbytes = 0
+        seen = {}
         for country in continent["countries"]:
             for area in country["areas"]:
                 for pack in area["packs"]:
-                    cbytes += pack["bytes"]
-        total += cbytes
-        print("  %-16s %2d countries  %8.1f GB"
+                    entries += 1
+                    seen[pack["id"]] = pack["bytes"]
+        total += sum(seen.values())
+        print("  %-16s %2d countries  %4d files  %8.1f GB"
               % (continent["label"], len(continent["countries"]),
-                 cbytes / (1024 ** 3)))
-    print("  %-16s %8.1f GB total" % ("", total / (1024 ** 3)))
+                 len(seen), sum(seen.values()) / (1024 ** 3)))
+    print("  %-16s %8.1f GB total, over %d entries"
+          % ("", total / (1024 ** 3), entries))
 
 
 def main():
     ap = argparse.ArgumentParser()
+    # READ A CATALOGUE INSTEAD OF BUILDING ONE.
+    #
+    # The two gates below are the ones step 1.6 and 1.7 are read by, and a
+    # gate you can only reach by rebuilding from a live network and a full
+    # container set is a gate nobody runs. This reads the published file.
+    ap.add_argument("--report", metavar="CATALOGUE",
+                    help="report on an existing catalogue and exit: the "
+                         "default UK download, and any pack still carrying a "
+                         "vehicle field. Builds nothing.")
+    ap.add_argument("--check-default-uk", action="store_true",
+                    help="exit 1 if the default UK download is over budget")
+    ap.add_argument("--check-no-vehicle", action="store_true",
+                    help="exit 1 if any pack carries a `vehicle` field")
+    ap.add_argument("--budget", type=int, default=DEFAULT_UK_BUDGET_BYTES,
+                    help="the default-download budget in bytes "
+                         "(default %d, which is 1.5 GB decimal)"
+                         % DEFAULT_UK_BUDGET_BYTES)
     ap.add_argument("--lanes", default="dist/manifest.json",
                     help="the Great Britain lane manifest")
     ap.add_argument("--base-url", default="", help="where packs are hosted")
@@ -746,6 +999,10 @@ def main():
     ap.add_argument("--out", default="dist/catalogue.json")
     args = ap.parse_args()
 
+    if args.report:
+        with open(args.report, encoding="utf8") as fh:
+            return 0 if gates(json.load(fh), args) else 1
+
     from datetime import datetime, timezone
     stamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
@@ -764,7 +1021,52 @@ def main():
 
     summarise(catalogue)
     print("\nwrote %s" % args.out)
+    if not gates(catalogue, args):
+        return 1
+    return 0
+
+
+def gates(catalogue, args):
+    """The two readings step 1.6 and 1.7 are gated on. True if both pass.
+
+    They PRINT either way and only FAIL when asked to, because this runs in
+    the middle of a publish job and a build that refuses on a figure nobody
+    has agreed yet is a build somebody disables.
+    """
+    ok = True
+
+    routing = {}
+    for code, _area, pack in packs_in(catalogue):
+        if pack.get("kind") == "routing":
+            routing[pack.get("id")] = pack.get("bytes", 0) or 0
+    print("\nROUTING: %d distinct file(s), %d bytes (%.1f MB)"
+          % (len(routing), sum(routing.values()),
+             sum(routing.values()) / 1e6))
+    # Every one when the set is the six it should be; a sample otherwise,
+    # because 526 lines of tile names is how a reading stops being read.
+    shown = sorted(routing)
+    for name in shown[:12]:
+        print("  %-8s %12d bytes" % (name, routing[name]))
+    if len(shown) > 12:
+        print("  ... and %d more" % (len(shown) - 12))
+
+    guilty = packs_carrying_vehicle(catalogue)
+    print("\nVEHICLE FIELD: %d pack(s) carry one" % len(guilty))
+    for entry in guilty[:10]:
+        print("  %s" % entry)
+    if guilty and args.check_no_vehicle:
+        print("REFUSED: a pack carrying `vehicle` is the partition that built "
+              "the same bridleway four times (docs/WAYS-SCHEMA.md).",
+              file=sys.stderr)
+        ok = False
+
+    fits = report_default_uk(catalogue, args.budget)
+    if not fits and args.check_default_uk:
+        print("REFUSED: the default UK download is over budget.",
+              file=sys.stderr)
+        ok = False
+    return ok
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main() or 0)
