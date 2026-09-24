@@ -52,7 +52,13 @@ SQLITE_MAGIC = b"SQLite format 3\x00"
 FORMAT_VERSION = "1"
 REQUIRED_TABLES = ("tiles", "bbox_rows", "removed_records", "removed_tiles",
                    "meta")
-RECORD_TABLES = {"lanes": "lane_uid", "orders": "tro_uid"}
+#: `ways` first, for the reason build_changeset.py gives at length: a
+#: changeset carries the record table of the container it describes, and since
+#: step 1.2 that is `ways`. With it missing, this validator refused every
+#: changeset the pipeline can now produce - and it never said so out loud,
+#: because its selftest was crashing further up on a container path the pivot
+#: had renamed.
+RECORD_TABLES = {"ways": "way_uid", "lanes": "lane_uid", "orders": "tro_uid"}
 REQUIRED_META = ("format_version", "kind", "from_build", "to_build")
 
 
@@ -275,10 +281,23 @@ def report(paths):
 
 def _corruptions():
     def sql(*statements):
+        """Apply SQL to a copy of a good changeset.
+
+        `{records}` AND `{uid}` COME FROM THE FILE. A changeset carries the
+        record table of the container it describes, so since step 1.2 that is
+        `ways` with a `way_uid` - and every statement here said `lanes`. They
+        threw "no such table: lanes", which means the corruption was never
+        applied, which means the refusal it was supposed to prove was never
+        proved.
+        """
         def apply(path):
             db = sqlite3.connect(path)
+            names = {r[0] for r in db.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'")}
+            records = "ways" if "ways" in names else "lanes"
+            uid = "way_uid" if records == "ways" else "lane_uid"
             for s in statements:
-                db.execute(s)
+                db.execute(s.format(records=records, uid=uid))
             db.commit()
             db.close()
         return apply
@@ -302,11 +321,11 @@ def _corruptions():
         ("a format version the app does not apply",
          sql("UPDATE meta SET value='2' WHERE key='format_version'")),
         ("nothing to apply",
-         sql("DELETE FROM tiles", "DELETE FROM lanes",
+         sql("DELETE FROM tiles", "DELETE FROM {records}",
              "DELETE FROM bbox_rows", "DELETE FROM removed_records",
              "DELETE FROM removed_tiles")),
         ("a lane both written and removed",
-         sql("INSERT INTO removed_records SELECT lane_uid FROM lanes "
+         sql("INSERT INTO removed_records SELECT {uid} FROM {records} "
              "LIMIT 1")),
         ("a tile both written and removed",
          sql("INSERT INTO removed_tiles SELECT zoom_level, tile_column, "
@@ -317,8 +336,8 @@ def _corruptions():
          sql("UPDATE tiles SET tile_data = x'' "
              "WHERE zoom_level = (SELECT MIN(zoom_level) FROM tiles)")),
         ("a record with no uid",
-         sql("UPDATE lanes SET lane_uid = '' "
-             "WHERE rowid = (SELECT MIN(rowid) FROM lanes)")),
+         sql("UPDATE {records} SET {uid} = '' "
+             "WHERE rowid = (SELECT MIN(rowid) FROM {records})")),
         ("a removal naming nothing",
          sql("INSERT INTO removed_records VALUES ('')")),
         ("a bbox row for a record that is not here",
@@ -326,7 +345,7 @@ def _corruptions():
         ("a bbox row inside out",
          sql("UPDATE bbox_rows SET min_lon = 9.0 "
              "WHERE id = (SELECT MIN(id) FROM bbox_rows)")),
-        ("the record table dropped", sql("DROP TABLE lanes")),
+        ("the record table dropped", sql("DROP TABLE {records}")),
         ("the removals table dropped", sql("DROP TABLE removed_records")),
         ("truncated mid-file", truncate),
         ("an error page saved with the right extension", rubbish),

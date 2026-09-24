@@ -62,7 +62,22 @@ CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT);
 #: A national orders container is 8.4 MB, and a rider downloading that every six
 #: hours to learn about a handful of new closures is the case changesets exist
 #: for.
+#: `ways` WAS MISSING, AND THAT STOPPED CHANGESETS ALTOGETHER.
+#:
+#: This detection asks sqlite_master for type='table' only - correctly, since
+#: the compat `lanes` is a VIEW and diffing through it would drop every column
+#: the pivot added. But with `ways` absent from this map the search found
+#: NOTHING in a post-pivot container and raised "Expected exactly one record
+#: table; found []", so no changeset could be built for any container the
+#: pipeline now produces.
+#:
+#: That is the mechanism the 4x-daily refresh rests on: a rider downloading a
+#: whole container every six hours to learn about a handful of new closures is
+#: the case changesets exist for. It had been dead since step 1.2 and the only
+#: thing that would have said so - `validate_changeset.py --selftest` - was
+#: itself crashing earlier, on a container path that no longer existed.
 RECORD_TABLES = {
+    "ways": "way_uid",
     "lanes": "lane_uid",
     "orders": "tro_uid",
 }

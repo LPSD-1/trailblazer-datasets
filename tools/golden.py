@@ -301,9 +301,28 @@ def artefacts(root):
     return sorted(out)
 
 
-def container_path(out_dir, vehicle="motor", area=REGION_ID):
+def container_path(out_dir, dataset=None, area=REGION_ID):
+    """Where `build_into` actually writes a container.
+
+    IT STILL SAID `motor`. Step 1.2 replaced the vehicle partition with one
+    dataset - the whole reason 109 containers became 7 - and this helper went
+    on building `motor-<area>.tbmap`, a name nothing has written since. It
+    takes no argument at its two call sites, so nothing type-checked it and
+    nothing read it; it simply returned a path to a file that is not there.
+
+    WHAT THAT COST. `validate_container.py --selftest` and
+    `validate_changeset.py --selftest` are the only things that call it, and
+    both died on the missing file - so the two validators step 0.12 is marked
+    `done` for had not run since the pivot. A cross-phase break of exactly the
+    kind the build partition cannot catch, because the two files are in
+    different groups and neither changed.
+
+    Defaults to `build_packages.DATASET`, so the next rename moves it too.
+    """
+    if dataset is None:
+        dataset = P.DATASET
     return os.path.join(out_dir, "containers",
-                        "%s-%s.tbmap" % (vehicle, area))
+                        "%s-%s.tbmap" % (dataset, area))
 
 
 def catalogue_path(out_dir):

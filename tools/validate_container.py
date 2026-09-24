@@ -59,7 +59,20 @@ SQLITE_MAGIC = b"SQLite format 3\x00"
 FORMAT_VERSION = "1"
 
 KINDS = ("area", "overview", "both", "orders")
-RECORD_TABLES = {"lanes": "lane_uid", "orders": "tro_uid"}
+#: The record tables, and the column that identifies a row in each.
+#:
+#: `ways` WAS MISSING, and the consequence was quiet. A post-pivot container
+#: carries a `ways` table and a `lanes` compatibility VIEW over it, and
+#: `_tables` lists views alongside tables - so this map matched `lanes`, the
+#: validator read every published container THROUGH THE VIEW, and never once
+#: looked at `way_uid`, `legal_tier`, `source_date` or `access_evidence`. The
+#: view carries none of them. The tool whose job is to refuse a bad container
+#: was blind to the entire schema the pivot exists to ship.
+RECORD_TABLES = {"ways": "way_uid", "lanes": "lane_uid", "orders": "tro_uid"}
+
+#: The compat objects, and what they are a view OF. A container holding both
+#: is the expected arrangement, not an ambiguity - see _record_problems.
+COMPAT_OF = {"lanes": "ways"}
 REQUIRED_META = ("format_version", "kind", "built_at", "bounds",
                  "min_zoom", "max_zoom")
 
@@ -68,6 +81,11 @@ REFUSE, NOTE = "refuse", "note"
 
 def _meta(db):
     return {k: v for k, v in db.execute("SELECT key, value FROM meta")}
+
+
+def _views(db):
+    return {r[0] for r in db.execute(
+        "SELECT name FROM sqlite_master WHERE type = 'view'")}
 
 
 def _tables(db):
@@ -229,6 +247,20 @@ def _tile_problems(db, meta, records, out):
 def _record_problems(db, tables, meta, kind, out):
     """Appends to [out]; returns how many records the container holds."""
     found = [t for t in RECORD_TABLES if t in tables]
+
+    # A COMPAT VIEW BESIDE ITS OWN TABLE IS NOT TWO RECORD TABLES. The pivot
+    # ships `lanes` as a view over `ways` precisely so an app built before it
+    # keeps working, so a container with both is the normal arrangement and
+    # the TABLE is the authoritative one. Refusing here would refuse every
+    # container the pipeline now builds; not resolving it at all is how the
+    # validator ended up reading them all through the view.
+    #
+    # Two real TABLES is still the ambiguity the rule was written for.
+    views = _views(db)
+    for compat, base in COMPAT_OF.items():
+        if compat in found and base in found and compat in views:
+            found.remove(compat)
+
     if len(found) > 1:
         out.append((REFUSE, "two record tables (%s); nothing downstream knows "
                             "which is authoritative" % ", ".join(sorted(found))))
@@ -244,7 +276,24 @@ def _record_problems(db, tables, meta, kind, out):
         return 0
 
     table = found[0]
-    count = db.execute("SELECT COUNT(*) FROM %s" % table).fetchone()[0]
+    try:
+        count = db.execute("SELECT COUNT(*) FROM %s" % table).fetchone()[0]
+    except sqlite3.Error as error:
+        # A RECORD TABLE THAT IS THERE AND WILL NOT READ.
+        #
+        # The pivot ships `lanes` as a compatibility VIEW over `ways`, and a
+        # view outlives the table under it: drop `ways` and `lanes` is still
+        # listed in sqlite_master, still looks like a record table here, and
+        # throws "no such table: main.ways" the moment anything selects from
+        # it. That is a real shape for a damaged file to take, and this
+        # function threw the error straight out of the validator - so the one
+        # tool whose job is to refuse a bad container CRASHED on one instead,
+        # and a crash is not a refusal: `validate` returns a count of bad
+        # containers, and a process that died returns nothing at all.
+        out.append((REFUSE, "the record table %r will not read (%s); a view "
+                            "whose table is gone reads as present and answers "
+                            "nothing" % (table, error)))
+        return 0
 
     # THE TABLE IS ALWAYS CREATED; only the ROWS say what a container claims.
     # Refusing on the table's presence refused all four published overviews,
@@ -292,18 +341,61 @@ def _record_problems(db, tables, meta, kind, out):
             out.append((REFUSE, "%d %s entries point at rows that are not "
                                 "there" % (dangling, rtree)))
 
-    if table == "lanes":
+    # WRITTEN AGAINST WHICHEVER TABLE IS THERE. This read `if table ==
+    # "lanes"`, so the moment the validator was taught to look at `ways` it
+    # stopped checking geometry and ids at all - and the selftest said so, in
+    # as many words: "MISSED a lane with no geometry". Two of the strongest
+    # refusals in this file had been skipping every post-pivot container.
+    uid = RECORD_TABLES[table]
+    if uid:
         blank = db.execute(
-            "SELECT COUNT(*) FROM lanes WHERE geometry IS NULL "
-            "OR LENGTH(geometry) = 0").fetchone()[0]
+            "SELECT COUNT(*) FROM %s WHERE geometry IS NULL "
+            "OR LENGTH(geometry) = 0" % table).fetchone()[0]
         if blank:
-            out.append((REFUSE, "%d lanes have no geometry" % blank))
+            out.append((REFUSE, "%d rows in %s have no geometry"
+                        % (blank, table)))
         nameless = db.execute(
-            "SELECT COUNT(*) FROM lanes WHERE lane_uid IS NULL "
-            "OR lane_uid = ''").fetchone()[0]
+            "SELECT COUNT(*) FROM %s WHERE %s IS NULL OR %s = ''"
+            % (table, uid, uid)).fetchone()[0]
         if nameless:
-            out.append((REFUSE, "%d lanes have no lane_uid, so the app cannot "
-                                "dedupe them across areas" % nameless))
+            out.append((REFUSE, "%d rows in %s have no %s, so the app cannot "
+                                "dedupe them across areas"
+                        % (nameless, table, uid)))
+
+    # AND THE ONE RULE THE SCHEMA EXISTS TO ENFORCE, checked at the only place
+    # that can see every row of a published file.
+    #
+    # `build_map_container.check_access_evidence` asserts this over the
+    # FEATURES going in. Nothing asserted it over the container coming out, so
+    # a build that wrote the column correctly and a repack that did not would
+    # look identical from here. F1 measured that we have physical evidence on
+    # under 10% of ways, so a build that started hiding lanes on no evidence
+    # would be hiding them on nothing - and a hidden lane is the one failure a
+    # rider can never see.
+    if table == "ways":
+        unevidenced = db.execute(
+            "SELECT COUNT(*) FROM ways WHERE fourxfour_ok = 0 "
+            "AND (access_evidence IS NULL OR access_evidence IN ('', 'none'))"
+        ).fetchone()[0]
+        if unevidenced:
+            out.append((REFUSE,
+                        "%d ways are closed to a 4x4 with no evidence. "
+                        "WAYS-SCHEMA.md: hiding a lane requires evidence, and "
+                        "a wrongly hidden lane is invisible to the rider it "
+                        "happened to" % unevidenced))
+
+        # PROVENANCE IS THE PRODUCT. A way with no tier or no date cannot be
+        # shown on the record card, which is the one thing the market scan
+        # found nobody else shipping.
+        untraceable = db.execute(
+            "SELECT COUNT(*) FROM ways WHERE legal_tier IS NULL "
+            "OR legal_tier = '' OR source IS NULL OR source = '' "
+            "OR source_date IS NULL OR source_date = ''").fetchone()[0]
+        if untraceable:
+            out.append((REFUSE,
+                        "%d ways carry no legal tier, source or date; the "
+                        "record card cannot cite what it was told"
+                        % untraceable))
     return count
 
 
@@ -340,10 +432,32 @@ def _corruptions():
     """(what was done to a good container). Every one MUST be refused."""
 
     def sql(*statements):
+        """Apply SQL to a copy of a good container.
+
+        `{records}` and `{bbox}` IN A STATEMENT ARE FILLED FROM THE FILE, not
+        assumed. The pivot turned `lanes` and `lanes_bbox` into compatibility
+        VIEWS over a `ways` table, and a view cannot be written to: four of
+        the corruptions below - DELETE, UPDATE and DROP - died with "cannot
+        modify lanes because it is a view" the moment the selftest was pointed
+        at a post-pivot container.
+
+        That mattered more than it sounds. A corruption that CANNOT BE APPLIED
+        is not a corruption that was caught, and this selftest is the only
+        evidence step 0.12 has that the validator refuses anything at all. It
+        would have gone on reporting its own total while a third of what it
+        proves had stopped happening.
+
+        Written to whichever the file actually has, so one selftest covers
+        both shapes for as long as both are in riders' hands.
+        """
         def apply(path):
             db = sqlite3.connect(path)
+            objects = {r[0] for r in db.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'")}
+            records = "ways" if "ways" in objects else "lanes"
+            bbox = "%s_bbox" % records
             for s in statements:
-                db.execute(s)
+                db.execute(s.format(records=records, bbox=bbox))
             db.commit()
             db.close()
         return apply
@@ -363,7 +477,7 @@ def _corruptions():
         ("tiles at coordinates nobody asks for",
          sql("INSERT INTO tiles VALUES (11, 99999, 4, x'00')")),
         ("nothing in it at all",
-         sql("DELETE FROM tiles", "DELETE FROM lanes",
+         sql("DELETE FROM tiles", "DELETE FROM {records}",
              "UPDATE meta SET value='0' WHERE key='lane_count'")),
         # `tiles` is WITHOUT ROWID, so it has no rowid to select on - the first
         # draft of this corruption died with "no such column: rowid", which is
@@ -378,14 +492,29 @@ def _corruptions():
         ("a format version the app cannot read",
          sql("UPDATE meta SET value='2' WHERE key='format_version'")),
         ("lane_count disagrees with the rows",
-         sql("DELETE FROM lanes WHERE rowid = (SELECT MIN(rowid) FROM lanes)")),
+         sql("DELETE FROM {records} WHERE rowid = (SELECT MIN(rowid) FROM {records})")),
         ("a lane with no r-tree row",
-         sql("DELETE FROM lanes_bbox WHERE id = (SELECT MIN(id) "
-             "FROM lanes_bbox)")),
+         sql("DELETE FROM {bbox} WHERE id = (SELECT MIN(id) "
+             "FROM {bbox})")),
         ("a lane with no geometry",
-         sql("UPDATE lanes SET geometry = x'' "
-             "WHERE rowid = (SELECT MIN(rowid) FROM lanes)")),
-        ("the record table dropped", sql("DROP TABLE lanes")),
+         sql("UPDATE {records} SET geometry = x'' "
+             "WHERE rowid = (SELECT MIN(rowid) FROM {records})")),
+        ("the record table dropped", sql("DROP TABLE {records}")),
+
+        # THE TWO PIVOT RULES, corrupted so they are shown to bite. A check
+        # added without a corruption beside it is a claim: this file's whole
+        # authority is that every rule in it has been watched to fail.
+        #
+        # Written against `ways` and not `{records}` on purpose. On a
+        # pre-pivot container these columns do not exist and the statement
+        # throws, which is the loud answer - a corruption that silently did
+        # nothing would be counted as applied and refused.
+        ("a way hidden from a 4x4 on no evidence",
+         sql("UPDATE ways SET fourxfour_ok = 0, access_evidence = 'none' "
+             "WHERE rowid = (SELECT MIN(rowid) FROM ways)")),
+        ("a way that cannot say where it came from",
+         sql("UPDATE ways SET legal_tier = '', source = '', "
+             "source_date = '' WHERE rowid = (SELECT MIN(rowid) FROM ways)")),
         ("truncated mid-file", truncate),
         ("not a database at all", rubbish),
     ]
