@@ -228,8 +228,9 @@ def test_a_way_hidden_on_no_evidence_refuses_the_build():
 
 
 def test_the_meta_says_what_the_container_holds():
-    db, tmp, _ = _built(context_scope="near-byways-only",
-                        context_note="we looked within 1 km of a byway")
+    db, tmp, _ = _built(context_scope="none",
+                        context_note="Bridleways and restricted byways are "
+                                     "not on this map")
     try:
         meta = dict(db.execute("SELECT key, value FROM meta"))
         check("schema_version starts at 1", meta.get("schema_version") == "1",
@@ -244,10 +245,10 @@ def test_the_meta_says_what_the_container_holds():
               ["Derbyshire", "Staffordshire"])
         # STEP 1.2c. Their absence must never read as absence on the ground.
         check("the container says what scope of context it carries",
-              meta.get("context_scope") == "near-byways-only",
+              meta.get("context_scope") == "none",
               "got %r" % meta.get("context_scope"))
         check("and carries the sentence the app has to show",
-              "1 km" in meta.get("context_note", ""))
+              "not on this map" in meta.get("context_note", ""))
         # built_at is the SOURCE date. A run stamp here moved five bytes in a
         # 1.1 MB container and made every rider re-download 343 MB.
         check("built_at is the source date, not the clock",

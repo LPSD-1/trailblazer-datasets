@@ -126,6 +126,18 @@ becomes:       {"ways": 31369}, total 31369
 recorded:      2026-09-24T03:29:50Z
 ```
 
+> **AMENDED 2026-09-24, after this rehearsal.** The owner superseded step
+> 1.2c's `near` set with **byways only** ("Carry only ways a motor vehicle may
+> use"), so a correct cutover now holds ~12,702 rows, 60% short of 31,369 —
+> which `MAX_REBASELINE_SHORTFALL` would refuse as a collapsed fetch.
+> `becomes` was re-recorded **31,369 → 12,702** (derived: the `near` build's
+> 12,702 BOAT rows plus 0 OSM-track rows; not measured, no checkout holds the
+> full cache), `nationalDrop` 0.9671 → 0.9867, and the reason text carries the
+> decision and this history. `supersedes` is unchanged, so the record still
+> applies. `test_check_build.py` now tests the committed file itself
+> (`TheCommittedBaseline`). The figures in runs C and D below are the
+> rehearsal's, against the record as it then stood.
+
 `supersedes.total` of 954,137 equals the published total exactly, so
 `load_baseline` finds it **still applies** — confirmed in the output of runs
 B, C and D, which all print `REBASELINED against …`.
@@ -200,7 +212,8 @@ configuration is unguarded.
 left to compare" from "everything was rebaselined". If `old_total == 0` after
 exclusion, the build must be gated on something else — the recorded
 `becomes.total` in the baseline is exactly the right yardstick, and it is
-already in the file. A cutover that lands within, say, 10% of 31,369 is the
+already in the file. A cutover that lands within, say, 10% of 31,369 (12,702
+since the byways-only amendment above) is the
 build that was signed off; 105 is not. Add the case to
 `tools/test_check_build.py` with all four types dropped, and confirm it fails
 before the change.

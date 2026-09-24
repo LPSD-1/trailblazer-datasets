@@ -186,8 +186,8 @@ def _pipeline(poi_cache=None):
                 "2026-03-04T05:06:07Z", note="n"))
         manifest = {
             "schema": 1, "generated": "2026-09-24T09:00:00Z",
-            "dataset": P.DATASET, "contextScope": P.CONTEXT_SCOPE,
-            "contextNote": P.CONTEXT_NOTE, "packages": packs,
+            # What the DEFAULT build writes, from the same helper main() uses.
+            "dataset": P.DATASET, **P.context_fields(), "packages": packs,
         }
         mpath = os.path.join(tmp, "manifest.json")
         with io.open(mpath, "w", encoding="utf-8") as fh:
@@ -238,19 +238,23 @@ def test_no_entry_names_a_vehicle():
 
 def test_the_scope_of_the_context_reaches_every_container():
     # Step 1.2c. A rider must be able to find out we did not look, rather than
-    # read a blank hillside as a hillside with no bridleway on it.
+    # read a blank hillside as a hillside with no bridleway on it. Byways only
+    # since the owner's decision of 2026-09-24 ('near' before it), so the
+    # scope is 'none' and the note says no bridleway is carried at all.
     out, tmp = _pipeline()
     try:
         check("the container manifest records the scope",
-              out.get("contextScope") == "near-byways-only",
+              out.get("contextScope") == "none",
               "got %r" % out.get("contextScope"))
         missing = []
         for f in glob.glob(os.path.join(tmp, "containers", "*.tbmap")):
             db = sqlite3.connect(f)
             meta = dict(db.execute("SELECT key, value FROM meta"))
             db.close()
-            if meta.get("context_scope") != "near-byways-only" or \
-                    "on the ground" not in meta.get("context_note", ""):
+            note = meta.get("context_note", "")
+            if (meta.get("context_scope") != "none"
+                    or "on the ground" not in note
+                    or "not on this map" not in note or "1 km" in note):
                 missing.append(os.path.basename(f))
         check("every container carries it, overview included", missing == [],
               "silent: %r" % missing)

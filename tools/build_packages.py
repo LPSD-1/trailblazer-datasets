@@ -150,36 +150,94 @@ DATASET = "ways"
 
 DATASET_LABEL = "Green lanes and byways"
 
-#: Step 1.2c, DECIDED: carry context ways only where they meet a motor-legal
-#: way.
+#: Step 1.2c: how much CONTEXT to carry. Context is the bridleways and
+#: restricted byways - rights of way no motor vehicle may use (ROW_RULES
+#: "context": True).
+#:
+#: DECIDED BY THE OWNER, 2026-09-24: BYWAYS ONLY, which is `--context none`.
+#: His choice, verbatim: "Carry only ways a motor vehicle may use. Smaller
+#: download, but the byway-ends warning and red 'no motor vehicles' lanes go."
+#: So the dataset carries every byway open to all traffic and every OSM track
+#: (motorbike_ok=1, "check locally" - also a way a motor vehicle may use), and
+#: no bridleway and no restricted byway at all. Footpaths were never carried.
+#:
+#: THIS SUPERSEDES 'near', decided and measured earlier the same day: carry
+#: context ways only within CONTEXT_RADIUS_KM of a motor-legal way, for one job
+#: - answering "the byway ends here" at the point where it ends. The owner
+#: traded that job for the smaller download. The measurement is kept, here and
+#: in the printout main() makes on every run, because it is the evidence the
+#: trade was made against and --context near still builds it:
 #:
 #: MEASURED over the full published population (10,342 BOATs, 89,300 bridleways
 #: and restricted byways): **82.8% of context ways are nowhere near a BOAT**,
-#: leaving 15,366 (17.2%) carried. They are carried for exactly one job -
-#: answering "the byway ends here" at the point where it ends - and that
-#: question cannot arise a mile from any byway.
+#: leaving 15,366 (17.2%) that 'near' would carry - 25,708 distinct ways
+#: against 10,342 for 'none', and 31,369 rows across overlapping regions
+#: against 12,702.
 #:
 #: SAID 73.6% UNTIL 2026-09-24, AND THAT FIGURE IS SUPERSEDED. It came from a
 #: grid-cell approximation, and the build itself reproduces it at a 1.5 km
 #: radius - which is what adjacent ~1 km cells actually measure, not the 1 km
-#: this ships. The plan's step 1.2c row carries the correction; this comment,
+#: 'near' uses. The plan's step 1.2c row carries the correction; this comment,
 #: which is the one a reader of the pipeline finds first, did not, and the
 #: stale number was copied out of here into three other files before anybody
 #: noticed. A measurement lives in one place or it lives in none.
 #:
-#: WHAT THIS COSTS, AND WHY THE METADATA MUST SAY SO. A rider who looks at a
-#: hillside and sees no bridleway must not read that as "there is no bridleway
-#: here". There is; we did not carry it. CONTEXT_NOTE travels into every
-#: container's meta and the manifest, and the app is required to show it
-#: wherever it draws context ways. An absence in our data must never be
-#: presented as an absence on the ground.
-CONTEXT_SCOPE = "near-byways-only"
+#: WHAT THIS COSTS, AND WHY THE METADATA MUST STILL SAY SO. A rider who looks
+#: at a hillside and sees no bridleway must not read that as "there is no
+#: bridleway here". There may well be; this map does not carry any. The note
+#: for the option built travels into every sealed pack, the manifest and every
+#: container's meta, and the app shows it verbatim on the lane sheet and the
+#: record card. An absence in our data must never be presented as an absence on
+#: the ground - and with NO context carried that is truer than it ever was.
+CONTEXT_OPTIONS = ("none", "near", "all")
+DEFAULT_CONTEXT = "none"
 CONTEXT_RADIUS_KM = 1.0
-CONTEXT_NOTE = (
-    "Bridleways and restricted byways are shown only within %g km of a byway "
-    "open to all traffic. Where none is shown, this map has not looked - it "
-    "does not mean there is none on the ground."
-) % CONTEXT_RADIUS_KM
+
+#: What each option publishes as `contextScope` - in the manifest, every sealed
+#: pack body and, as `context_scope`, every container's meta. It names what was
+#: BUILT, never what was once decided.
+CONTEXT_SCOPES = {
+    "none": "none",
+    "near": "near-byways-only",
+    "all": "all",
+}
+
+#: The sentence the app shows verbatim (`context_note`). Empty only for 'all',
+#: the one build that left no context way out and so has nothing to say.
+CONTEXT_NOTES = {
+    "none": (
+        "Bridleways and restricted byways are not on this map: it carries "
+        "only the ways a motor vehicle may use. Where none is shown, this map "
+        "has not looked - it does not mean there is none on the ground."
+    ),
+    "near": (
+        "Bridleways and restricted byways are shown only within %g km of a "
+        "byway open to all traffic. Where none is shown, this map has not "
+        "looked - it does not mean there is none on the ground."
+    ) % CONTEXT_RADIUS_KM,
+    "all": "",
+}
+
+#: What the DEFAULT build publishes. Derived, so they cannot disagree with
+#: DEFAULT_CONTEXT; a build with another --context uses context_fields().
+CONTEXT_SCOPE = CONTEXT_SCOPES[DEFAULT_CONTEXT]
+CONTEXT_NOTE = CONTEXT_NOTES[DEFAULT_CONTEXT]
+
+
+def context_fields(context=DEFAULT_CONTEXT):
+    """-> the manifest's three step-1.2c fields, for what [context] built.
+
+    `contextRadiusKm` is null unless the build measured a radius: with no
+    context carried, or all of it, there is no radius to report, and a 1.0
+    there would describe a filter that never ran.
+    """
+    if context not in CONTEXT_OPTIONS:
+        raise ValueError("unknown context option %r" % (context,))
+    return {
+        "contextScope": CONTEXT_SCOPES[context],
+        "contextRadiusKm": CONTEXT_RADIUS_KM if context == "near" else None,
+        "contextNote": CONTEXT_NOTES[context],
+    }
 
 # These boxes must TILE England and Wales with no hole between them.
 #
@@ -260,7 +318,11 @@ OGL = ("Contains public sector information licensed under the Open Government "
 MAX_PLAIN_BYTES = 12 * 1024 * 1024
 
 
-# ---- step 1.2c: which context ways are near enough to be worth carrying ----
+# ---- step 1.2c: which ways the dataset carries -----------------------------
+#
+# The default carries no context way at all (see DEFAULT_CONTEXT); the
+# near-set filter below is what --context near builds, and what the per-run
+# measurement prints for every option.
 
 #: One kilometre, in degrees, at GB latitudes. Latitude is a constant
 #: 1/110.574 deg per km; longitude is taken at 54 deg N, the middle of the
@@ -322,6 +384,45 @@ def near_motor_ways(context, motor, radius_km=CONTEXT_RADIUS_KM):
         if hit:
             out.append(f)
     return out
+
+
+def is_context(feature):
+    """A bridleway or a restricted byway: carried, and no motor may use it."""
+    return ROW_RULES[feature["properties"]["rowType"]]["context"]
+
+
+def select_ways(features, context=DEFAULT_CONTEXT, near_uids=None):
+    """Step 1.2c, applied -> the [features] the dataset carries, in input order.
+
+    ONE FUNCTION, CALLED BY main() AND BY golden.py. The golden used to carry
+    its own copy of the near filter, so the day the decision moved the golden
+    would have gone on building - and blessing - the decision it replaced.
+
+    Footpaths go first, on ROW_RULES "carried". Then, for [context]:
+
+      none  every way a motor vehicle may use - BOATs and OSM tracks - and no
+            context way at all. THE DEFAULT, by the owner's decision of
+            2026-09-24;
+      near  those, plus the context ways within CONTEXT_RADIUS_KM of one;
+      all   those, plus every context way.
+
+    [near_uids] is the near set main() has already measured, so the build
+    does not walk the grid twice; None computes it here.
+    """
+    if context not in CONTEXT_OPTIONS:
+        raise ValueError("unknown context option %r" % (context,))
+    carried = [f for f in features
+               if ROW_RULES[f["properties"]["rowType"]]["carried"]]
+    if context == "all":
+        return carried
+    if context == "none":
+        return [f for f in carried if not is_context(f)]
+    if near_uids is None:
+        motor = [f for f in carried if not is_context(f)]
+        near_uids = set(f["properties"]["lane_uid"] for f in near_motor_ways(
+            [f for f in carried if is_context(f)], motor))
+    return [f for f in carried
+            if not is_context(f) or f["properties"]["lane_uid"] in near_uids]
 
 
 #: A fixed-width stand-in, replaced with the pack's real cut date in
@@ -706,8 +807,14 @@ def in_region(feature, box):
 
 
 def write_package(pkg_name, region_id, region_label, area_label, features,
-                  key, stamp, published=None, note=None):
+                  key, stamp, published=None, note=None,
+                  context=DEFAULT_CONTEXT):
     """Seal one downloadable piece.
+
+    [context] is the step 1.2c option these [features] were selected under,
+    and it decides the scope and the note sealed into the pack. It used to be
+    read from module constants, so a --context all build sealed "shown only
+    within 1 km" into packs that carried every bridleway.
 
     [area_label] is None when the whole region fits in one package; then the
     area IS the region and the app shows the region's name.
@@ -719,6 +826,7 @@ def write_package(pkg_name, region_id, region_label, area_label, features,
     area_id = region_id if area_label is None else \
         "%s-%s" % (region_id, slugify(area_label))
     shown = region_label if area_label is None else area_label
+    scope = context_fields(context)
 
     # The app dedupes on lane_uid when it loads neighbouring areas together, so a
     # non-unique id inside one package is data the rider will never see. This
@@ -752,8 +860,8 @@ def write_package(pkg_name, region_id, region_label, area_label, features,
             "area": area_id,
             "label": "%s - %s" % (DATASET_LABEL, shown),
             "note": note or "",
-            "contextScope": CONTEXT_SCOPE,
-            "contextNote": CONTEXT_NOTE,
+            "contextScope": scope["contextScope"],
+            "contextNote": scope["contextNote"],
             "attribution": OGL,
             "features": features,
         }
@@ -822,7 +930,7 @@ def write_package(pkg_name, region_id, region_label, area_label, features,
         "areaLabel": shown,
         "label": "%s - %s" % (DATASET_LABEL, shown),
         "note": note or "",
-        "contextScope": CONTEXT_SCOPE,
+        "contextScope": scope["contextScope"],
         "file": "packages/" + fname,
         "sha256": digest,
         "bytes": len(sealed),
@@ -837,13 +945,15 @@ def main():
     ap.add_argument("--key", required=True, help="base64 32-byte key file")
     ap.add_argument("--allow-orphans", action="store_true",
                     help="publish even though some lanes match no region")
-    ap.add_argument("--context", choices=("near", "all", "none"),
-                    default="near",
-                    help="step 1.2c. 'near' carries bridleways and restricted "
-                         "byways within 1 km of a byway open to all traffic; "
-                         "'all' carries every one of them; 'none' carries "
-                         "BOATs alone. The decision is 'near', and the "
-                         "measurement for all three prints either way.")
+    ap.add_argument("--context", choices=CONTEXT_OPTIONS,
+                    default=DEFAULT_CONTEXT,
+                    help="step 1.2c. 'none' carries only ways a motor vehicle "
+                         "may use - BOATs and OSM tracks; 'near' adds "
+                         "bridleways and restricted byways within 1 km of "
+                         "one; 'all' adds every one of them. The decision is "
+                         "'none' (the owner, 2026-09-24; it superseded "
+                         "'near'), and the measurement for all three prints "
+                         "either way.")
     ap.add_argument("--measure-only", action="store_true",
                     help="print the step 1.2c measurement and write nothing")
     ap.add_argument("--previous",
@@ -864,9 +974,15 @@ def main():
         carried = "carried" if ROW_RULES[t]["carried"] else "NOT CARRIED"
         print("  %-26s %7d  %s" % (t, len(fs), carried))
 
-    motor = by_type.get("byway_open_to_all_traffic", [])
-    context_all = [f for t, fs in by_type.items() if ROW_RULES[t]["context"]
-                   for f in fs]
+    # In ROW_RULES order, so the pool is the same list on every run.
+    every = [f for t in ROW_RULES for f in by_type.get(t, [])]
+    # EVERY way a motor vehicle may use, not the BOATs alone. This read
+    # by_type["byway_open_to_all_traffic"], so an OSM track - carried, and
+    # motorbike_ok=1 - reached no pool under any option.
+    motor = [f for f in every
+             if ROW_RULES[f["properties"]["rowType"]]["carried"]
+             and not is_context(f)]
+    context_all = [f for f in every if is_context(f)]
 
     # STEP 1.2c, MEASURED BOTH WAYS, ON EVERY RUN.
     #
@@ -880,7 +996,7 @@ def main():
     near_uids = set(f["properties"]["lane_uid"] for f in near)
     far = len(context_all) - len(near)
     pct = (lambda n: 100.0 * n / len(context_all) if context_all else 0.0)
-    print("  byways open to all traffic         %7d" % len(motor))
+    print("  motor-legal ways (BOAT + OSM track) %7d" % len(motor))
     print("  context ways (bridleway + restr.)  %7d" % len(context_all))
     print("    within %.1f km of a byway         %7d  (%.1f%%)"
           % (CONTEXT_RADIUS_KM, len(near), pct(len(near))))
@@ -889,24 +1005,20 @@ def main():
     for name, n in (("none", len(motor)),
                     ("near", len(motor) + len(near)),
                     ("all", len(motor) + len(context_all))):
-        mark = "  <- DECIDED (1.2c)" if name == "near" else ""
+        mark = ("  <- DECIDED (owner, 2026-09-24)"
+                if name == DEFAULT_CONTEXT else "")
         print("  option %-4s total ways in dataset  %7d%s" % (name, n, mark))
 
-    if args.context == "near":
-        pool = motor + [f for f in context_all
-                        if f["properties"]["lane_uid"] in near_uids]
-    elif args.context == "all":
-        pool = motor + context_all
-    else:
-        pool = list(motor)
+    pool = select_ways(every, args.context, near_uids=near_uids)
     print("  building with --context %s: %d ways" % (args.context, len(pool)))
 
     if args.measure_only:
         return
 
+    scope = context_fields(args.context)
     note = "Byways open to all traffic - the lanes you may legally ride."
-    if args.context == "near":
-        note = note + " " + CONTEXT_NOTE
+    if scope["contextNote"]:
+        note = note + " " + scope["contextNote"]
 
     stamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
@@ -928,7 +1040,8 @@ def main():
         for area_label, part in split_by_authority(features):
             entry = write_package(DATASET, region_id, region_label,
                                   area_label, part, key, stamp,
-                                  published=published, note=note)
+                                  published=published, note=note,
+                                  context=args.context)
             entries.append(entry)
             over = "  OVER BUDGET" \
                 if entry["plainBytes"] > MAX_PLAIN_BYTES else ""
@@ -987,12 +1100,10 @@ def main():
         "authorities": len(authorities),
         "maxPlainBytes": MAX_PLAIN_BYTES,
         "dataset": DATASET,
-        # Step 1.2c travels WITH THE DATA, not only in a decision document.
-        # The app is required to show contextNote wherever it draws context
-        # ways, so their absence is never read as absence on the ground.
-        "contextScope": CONTEXT_SCOPE if args.context == "near" else args.context,
-        "contextRadiusKm": CONTEXT_RADIUS_KM,
-        "contextNote": CONTEXT_NOTE if args.context == "near" else "",
+        # Step 1.2c travels WITH THE DATA, not only in a decision document,
+        # and says what THIS build carried: the app shows contextNote verbatim,
+        # so their absence is never read as absence on the ground.
+        **scope,
         "wayClassCounts": dict(sorted(by_class.items())),
         "notCarried": not_carried,
         "regions": [

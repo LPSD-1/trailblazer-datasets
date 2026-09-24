@@ -404,14 +404,25 @@ check("footpaths are not carried",
 for _t in ("byway_open_to_all_traffic", "restricted_byway", "bridleway"):
     check_true("%s is carried" % _t, build_packages.ROW_RULES[_t]["carried"])
 
-# Context is what the near-set filter applies to, and it must never include a
-# BOAT: filtering the rideable ways by proximity to themselves would drop
-# isolated byways, which are the ones a rider travels for.
+# Context is what step 1.2c leaves out, and it must never include a BOAT:
+# filtering the rideable ways by proximity to themselves would drop isolated
+# byways, which are the ones a rider travels for.
 check("only bridleways and restricted byways are context",
       sorted(t for t, r in build_packages.ROW_RULES.items() if r["context"]),
       ["bridleway", "restricted_byway"])
 check("a byway open to all traffic is never context",
       build_packages.ROW_RULES["byway_open_to_all_traffic"]["context"], False)
+
+# THE OWNER'S WORDS ARE "carry only ways a motor vehicle may use", and the
+# build implements that as "carried and not context". The two are the same
+# rule only while every carried non-context way admits a motor and every
+# context way admits none - so that equivalence is checked, not assumed. A new
+# carried class that no motor may use, left with context False, would
+# otherwise ride into the byways-only build unremarked.
+for _t, _r in sorted(build_packages.ROW_RULES.items()):
+    if _r["carried"]:
+        check("%s: context exactly when no motor vehicle may use it" % _t,
+              _r["context"], not (_r["motorbike_ok"] or _r["fourxfour_ok"]))
 
 
 # --- the derived access columns, and the rule the schema exists to enforce ---
@@ -586,16 +597,36 @@ check("no byways means no context carried",
 # --- the absence must be sayable ---------------------------------------------
 #
 # A rider who looks at a hillside and sees no bridleway must not read that as
-# "there is no bridleway here". There is; we did not carry it. If this string
-# ever goes missing the app has nothing to show, and our gap becomes a claim
-# about the ground.
-check("the carried scope is named", build_packages.CONTEXT_SCOPE,
-      "near-byways-only")
+# "there is no bridleway here". There may be; we did not carry it. If this
+# string ever goes missing the app has nothing to show, and our gap becomes a
+# claim about the ground.
+#
+# THE DEFAULT IS BYWAYS ONLY, by the owner's decision of 2026-09-24 - it
+# superseded 'near', which carried bridleways and restricted byways within
+# 1 km of a byway. The app shows the note verbatim, so the default note must
+# not go on claiming a radius the build no longer measures.
+check("the decided option is byways only", build_packages.DEFAULT_CONTEXT,
+      "none")
+check("the carried scope names what the default builds",
+      build_packages.CONTEXT_SCOPE, "none")
 check_true("and there is a sentence the app can show a rider",
            "does not mean there is none on the ground"
            in build_packages.CONTEXT_NOTE)
-check_true("which says how far we looked",
-           "1 km" in build_packages.CONTEXT_NOTE)
+check_true("which says bridleways and restricted byways are not carried",
+           "Bridleways and restricted byways are not on this map"
+           in build_packages.CONTEXT_NOTE)
+check_true("and claims no radius, because none was measured",
+           "km" not in build_packages.CONTEXT_NOTE)
+check("the 'near' option still says how far it looked",
+      "1 km" in build_packages.CONTEXT_NOTES["near"], True)
+check("a build carrying everything has nothing to apologise for",
+      build_packages.CONTEXT_NOTES["all"], "")
+check("the default's manifest fields report no radius",
+      build_packages.context_fields(),
+      {"contextScope": "none", "contextRadiusKm": None,
+       "contextNote": build_packages.CONTEXT_NOTE})
+check("and 'near' reports the one it used",
+      build_packages.context_fields("near")["contextRadiusKm"], 1.0)
 
 
 # --- the pack's sealed body carries the schema and the scope -----------------
@@ -617,11 +648,211 @@ _body = json.loads(gzip.decompress(
 check("the pack is named for the dataset, not a vehicle",
       _entry["file"], "packages/ways-midlands.tbpack")
 check("the sealed pack records what scope of context it holds",
-      _body["contextScope"], "near-byways-only")
+      _body["contextScope"], "none")
+check("and the sentence that goes with it",
+      _body["contextNote"], build_packages.CONTEXT_NOTE)
+check("the manifest entry agrees", _entry["contextScope"], "none")
+
+# THE PACK SAYS WHAT IT WAS BUILT WITH, NOT WHAT THE MODULE DEFAULT IS.
+# write_package read the scope and note from constants, so a --context all
+# build sealed "shown only within 1 km" into packs holding every bridleway.
+_entry_near = build_packages.write_package(
+    build_packages.DATASET, "wales", "Wales", None,
+    [build_packages.normalise(_raw, "DE", "Derbyshire",
+                              "byway_open_to_all_traffic")],
+    KEY, "2026-03-04T05:06:07Z", note="n", context="near")
+with open(os.path.join(_dist2, "packages",
+                       os.path.basename(_entry_near["file"])), "rb") as fh:
+    _blob = fh.read()
+_body_near = json.loads(gzip.decompress(
+    _A(KEY).decrypt(_blob[6:18], _blob[18:], _blob[:18])))
+check("a 'near' pack is sealed with the 'near' scope",
+      (_body_near["contextScope"], _entry_near["contextScope"]),
+      ("near-byways-only", "near-byways-only"))
+check_true("and the 'near' sentence", "1 km" in _body_near["contextNote"])
 check("the source date on a way is the date the pack was cut",
       _body["features"][0]["properties"]["source_date"], "2026-03-04")
 build_packages.dist_dir = _real_dist2
 shutil.rmtree(_dist2, ignore_errors=True)
+
+
+# --- select_ways: step 1.2c applied, the one function main() and golden call -
+
+def _way(row_type, ref, coords):
+    return build_packages.normalise(
+        {"geometry": {"type": "LineString", "coordinates": coords},
+         "properties": {"Name": "ON|%s" % ref, "Description": ""}},
+        "DE", "Derbyshire", row_type)
+
+
+#: One of everything, placed so that 'near' would carry the context ways
+#: marked near. A fixture with no near bridleway passes a byways-only test
+#: whatever the default is, because 'near' would drop it too.
+_SEL = [
+    _way("byway_open_to_all_traffic", "boat-a",
+         [(-1.700, 52.500), (-1.699, 52.500)]),
+    _way("bridleway", "bw-touching", [(-1.699, 52.500), (-1.698, 52.501)]),
+    _way("restricted_byway", "rb-near",
+         [(-1.700, 52.5045), (-1.699, 52.5045)]),
+    _way("bridleway", "bw-far", [(-1.700, 52.600), (-1.699, 52.600)]),
+    _way("footpath", "fp", [(-1.700, 52.501), (-1.699, 52.501)]),
+    _way("osm_track", "track", [(-1.650, 52.550), (-1.649, 52.551)]),
+    _way("byway_open_to_all_traffic", "boat-b",
+         [(-1.600, 52.450), (-1.599, 52.451)]),
+]
+
+
+def _refs(features):
+    return [f["properties"]["name"].split()[-1] for f in features]
+
+
+check("the default carries every BOAT and OSM track, and nothing else",
+      _refs(build_packages.select_ways(_SEL)),
+      ["boat-a", "track", "boat-b"])
+check("'none' is that default, spelled out",
+      _refs(build_packages.select_ways(_SEL, "none")),
+      ["boat-a", "track", "boat-b"])
+check("'near' adds the context ways within 1 km of a motor-legal way",
+      _refs(build_packages.select_ways(_SEL, "near")),
+      ["boat-a", "bw-touching", "rb-near", "track", "boat-b"])
+check("'all' adds every context way, and still no footpath",
+      _refs(build_packages.select_ways(_SEL, "all")),
+      ["boat-a", "bw-touching", "rb-near", "bw-far", "track", "boat-b"])
+try:
+    build_packages.select_ways(_SEL, "near-byways-only")
+    check("an unknown option is refused, not read as 'all'", "accepted",
+          "ValueError")
+except ValueError:
+    pass
+
+
+# --- THE DEFAULT BUILD, END TO END: byways only ------------------------------
+#
+# The owner's decision of 2026-09-24, verbatim: "Carry only ways a motor
+# vehicle may use." This runs build_packages.main() - the argparse default,
+# load_all, select_ways, write_package and the manifest - over a cache holding
+# one of every row type, and reads back what was SEALED. Put the default back
+# to 'near' and the bridleway and restricted byway beside the BOAT are carried
+# and this goes red; the --context near run below proves the fixture is one
+# where that would happen.
+#
+# It also carries an OSM track, which main() used to drop under every option:
+# it built its pool from by_type["byway_open_to_all_traffic"] alone.
+
+import base64  # noqa: E402
+import contextlib  # noqa: E402
+import io  # noqa: E402
+
+_E2E_ROWS = {
+    "byway_open_to_all_traffic": [
+        ("100|1/1", [(-1.700, 52.500), (-1.699, 52.500)]),
+        ("100|1/2", [(-1.600, 52.450), (-1.599, 52.451)]),
+    ],
+    "bridleway": [
+        ("200|2/1", [(-1.699, 52.500), (-1.698, 52.501)]),      # touching
+        ("200|2/2", [(-1.700, 52.600), (-1.699, 52.600)]),      # ~11 km
+    ],
+    "restricted_byway": [
+        ("300|3/1", [(-1.700, 52.5045), (-1.699, 52.5045)]),    # ~500 m
+    ],
+    "footpath": [
+        ("400|4/1", [(-1.700, 52.501), (-1.699, 52.501)]),
+    ],
+    "osm_track": [
+        ("500|5/1", [(-1.650, 52.550), (-1.649, 52.551)]),
+    ],
+}
+
+
+def _e2e(*extra):
+    """main() over the fixture cache -> (manifest, [sealed bodies], root).
+
+    Runs with --previous '' so the repository's published manifest.json is
+    never read, and with cache_dir/dist_dir pointed at a scratch directory so
+    the checkout is never written.
+    """
+    root = tempfile.mkdtemp(prefix="tbways-e2e-")
+    cache, dist = os.path.join(root, "cache"), os.path.join(root, "dist")
+    os.makedirs(os.path.join(cache, "DE"))
+    os.makedirs(dist)
+    with open(os.path.join(cache, "authorities.json"), "w") as fh:
+        json.dump({"DE": "Derbyshire"}, fh)
+    for row_type, rows in _E2E_ROWS.items():
+        with open(os.path.join(cache, "DE", "%s.json" % row_type), "w") as fh:
+            json.dump({"type": "FeatureCollection", "features": [
+                {"type": "Feature",
+                 "properties": {"Name": "DE|%s" % ref, "Description": ""},
+                 "geometry": {"type": "LineString", "coordinates": coords}}
+                for ref, coords in rows]}, fh)
+    keyfile = os.path.join(root, "key.b64")
+    with open(keyfile, "w") as fh:
+        fh.write(base64.b64encode(KEY).decode("ascii"))
+
+    real = (build_packages.cache_dir, build_packages.dist_dir, sys.argv)
+    build_packages.cache_dir = lambda: cache
+    build_packages.dist_dir = lambda: dist
+    sys.argv = (["build_packages.py", "--key", keyfile, "--previous", ""]
+                + list(extra))
+    try:
+        with contextlib.redirect_stdout(io.StringIO()):
+            build_packages.main()
+    finally:
+        build_packages.cache_dir, build_packages.dist_dir, sys.argv = real
+
+    manifest, bodies = None, []
+    mpath = os.path.join(dist, "manifest.json")
+    if os.path.isfile(mpath):
+        with open(mpath, encoding="utf8") as fh:
+            manifest = json.load(fh)
+        for entry in manifest["packages"]:
+            with open(os.path.join(dist, entry["file"]), "rb") as fh:
+                blob = fh.read()
+            bodies.append(json.loads(gzip.decompress(
+                _A(KEY).decrypt(blob[6:18], blob[18:], blob[:18]))))
+    return manifest, bodies, root
+
+
+_m, _bodies, _root = _e2e()
+_sealed = [f["properties"] for b in _bodies for f in b["features"]]
+check("the default build seals no bridleway and no restricted byway",
+      sorted(p["class"] for p in _sealed
+             if p["class"] in ("bridleway", "restricted_byway")), [])
+check("and every BOAT and OSM track, once each",
+      sorted((p["class"], p["name"].split()[-1]) for p in _sealed),
+      [("boat", "1/1"), ("boat", "1/2"), ("osm_track", "5/1")])
+check("and no footpath", [p for p in _sealed if p["class"] == "footpath"], [])
+check("the manifest says byways only",
+      (_m["contextScope"], _m["contextRadiusKm"], _m["contextNote"]),
+      ("none", None, build_packages.CONTEXT_NOTE))
+check("its class counts agree", _m["wayClassCounts"],
+      {"boat": 2, "osm_track": 1})
+check("every sealed pack says so too",
+      sorted(set((b["contextScope"], b["contextNote"]) for b in _bodies)),
+      [("none", build_packages.CONTEXT_NOTE)])
+check("and every manifest entry",
+      sorted(set(e["contextScope"] for e in _m["packages"])), ["none"])
+check_true("the pack note no longer promises a 1 km radius",
+           all("1 km" not in e["note"] for e in _m["packages"]))
+shutil.rmtree(_root, ignore_errors=True)
+
+# The fixture is one where the old decision WOULD carry context: without this
+# the checks above could pass because nothing was near enough to be kept.
+_m, _bodies, _root = _e2e("--context", "near")
+check("under --context near the same cache carries the near context ways",
+      sorted((f["properties"]["class"], f["properties"]["name"].split()[-1])
+             for b in _bodies for f in b["features"]),
+      [("boat", "1/1"), ("boat", "1/2"), ("bridleway", "2/1"),
+       ("osm_track", "5/1"), ("restricted_byway", "3/1")])
+check("and says it did",
+      (_m["contextScope"], _m["contextRadiusKm"]), ("near-byways-only", 1.0))
+shutil.rmtree(_root, ignore_errors=True)
+
+# --measure-only prints the step 1.2c figures and writes NOTHING. It is how a
+# baseline total can be taken; a measurement that published would be a build.
+_m, _bodies, _root = _e2e("--measure-only")
+check("--measure-only writes nothing at all",
+      os.listdir(os.path.join(_root, "dist")), [])
+shutil.rmtree(_root, ignore_errors=True)
 
 
 if FAILURES:

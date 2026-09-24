@@ -128,7 +128,10 @@ def build_all(manifest_path, out_dir, key, signing_key=None, root=".",
     run_stamp = manifest.get("generated") or ""
     dataset = manifest.get("dataset") or "ways"
     # Step 1.2c travels into every container, so the app can say what it did
-    # not look for. An empty scope is a build that carried everything.
+    # not look for. Copied from the manifest and never decided here: the scope
+    # is what build_packages.py built ('none' - byways only - by default since
+    # the owner's decision of 2026-09-24), and an empty one is a build that
+    # carried everything.
     context_scope = manifest.get("contextScope") or None
     context_note = manifest.get("contextNote") or None
 

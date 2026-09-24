@@ -811,11 +811,14 @@ def write_container(path, features, kind, zooms, source_date,
             ("authorities", json.dumps(authorities))]
     # WHAT IS NOT IN HERE, IN THE CONTAINER THAT IS NOT CARRYING IT.
     #
-    # Step 1.2c carries bridleways and restricted byways only where they meet a
-    # motor-legal way. A rider looking at a blank hillside must be able to find
-    # out that we did not look there - the alternative is the app implying that
-    # a bridleway is absent on the ground when it is absent from the download.
-    # The builder passes this through; the app has to say it.
+    # Step 1.2c decides how many bridleways and restricted byways are carried -
+    # since 2026-09-24, by the owner's decision, none at all (scope 'none';
+    # the 'near' set it superseded carried those within 1 km of a byway). A
+    # rider looking at a blank hillside must be able to find out that we did
+    # not look there - the alternative is the app implying that a bridleway is
+    # absent on the ground when it is absent from the download. The scope and
+    # note are whatever build_packages.py says it BUILT; this passes them
+    # through, and the app shows the note verbatim.
     if context_scope:
         rows.append(("context_scope", context_scope))
     if context_note:

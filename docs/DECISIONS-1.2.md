@@ -20,17 +20,37 @@ checked rather than assumed: all **534,941** rebuilt ways produce exactly the
 
 ## 1.2c — how much context to carry
 
-**DECIDED: the near set.** Bridleways and restricted byways are carried only
-within **1.0 km** of a byway open to all traffic.
+**DECIDED, 2026-09-24, by the owner: `none` — byways only.** His choice,
+verbatim: *"Carry only ways a motor vehicle may use. Smaller download, but the
+byway-ends warning and red 'no motor vehicles' lanes go."* The dataset carries
+every byway open to all traffic and every OSM track (`motorbike_ok = 1`,
+"check locally" — also a way a motor vehicle may use), and **no bridleway and
+no restricted byway**. `build_packages.py --context` now defaults to `none`;
+`near` and `all` still build, and the measurement of all three still prints on
+every run.
+
+**SUPERSEDED — the near set.** Decided and measured earlier the same day:
+bridleways and restricted byways carried only within **1.0 km** of a byway open
+to all traffic. Everything below this line down to *The condition this decision
+carries* is that decision's record, kept because it is the evidence the owner
+traded against: the 15,366 near context ways were carried for one job, the
+byway-ends warning, and he gave that job up for the smaller download.
 
 Measured, vertex to vertex, with each candidate pair measured properly rather
 than by grid cell:
 
 | option | context ways | total ways | GB containers | largest container | total download |
 |---|---|---|---|---|---|
-| `none` — byways only | 0 | 10,342 | — | — | — |
-| **`near` — within 1 km** | **15,366 (17.2%)** | **25,708** | **7** | 12.56 MB | **14.5 MB** |
+| **`none` — byways only (DECIDED 2026-09-24)** | **0** | **10,342** | — | — | — |
+| `near` — within 1 km (superseded) | 15,366 (17.2%) | 25,708 | 7 | 12.56 MB | 14.5 MB |
 | `all` | 89,300 | 99,642 | 16 | 12.52 MB | 54.5 MB |
+
+The `none` row's container and download figures were not measured — no
+checkout holds the full cache. Its row count across overlapping regional
+containers is **12,702**: the BOAT rows of the `near` build (below), plus 0
+OSM-track rows, since no source produces `osm_track` yet. That derived figure
+is what `tools/build_baseline.json` now records as `becomes.total`; the first
+full byways-only build is the measurement.
 
 **73,934 context ways (82.8%) are nowhere near a byway.** They are carried for
 exactly one job — answering *"the byway ends here"* at the point where it ends
@@ -68,24 +88,37 @@ admitting one, and by at most half a segment length.
 
 **Their absence must never read as absence on the ground.** A rider who looks
 at a hillside and sees no bridleway must be able to find out that we did not
-look there. So the scope travels with the data, not only in this document:
+look there. So the scope travels with the data, not only in this document —
+and with byways only it is truer than it was under `near`, because now no
+bridleway is carried anywhere:
 
-- `build_packages.py` writes `contextScope: "near-byways-only"`,
-  `contextRadiusKm: 1.0` and `contextNote` into the pack manifest and into
-  every sealed pack body;
+- `build_packages.py` writes what the build actually selected:
+  `contextScope: "none"`, `contextRadiusKm: null` (no radius was measured) and
+  `contextNote` into the pack manifest, and the scope and note into every
+  sealed pack body. `context_fields()` is the one place the three are decided,
+  and `select_ways()` the one place the ways are — `golden.py` calls both
+  rather than keeping a copy;
 - `build_containers.py` passes both into **every container, overview included**;
 - `build_map_container.py` writes them to `meta` as `context_scope` and
   `context_note`.
 
-The sentence, verbatim:
+The sentence, verbatim, since 2026-09-24:
+
+> Bridleways and restricted byways are not on this map: it carries only the
+> ways a motor vehicle may use. Where none is shown, this map has not looked -
+> it does not mean there is none on the ground.
+
+Under `near` it was, and `--context near` still writes:
 
 > Bridleways and restricted byways are shown only within 1 km of a byway open
 > to all traffic. Where none is shown, this map has not looked — it does not
 > mean there is none on the ground.
 
-**The app is required to show it wherever it draws context ways.** Until it
-does, this decision is only half kept. `test_build_containers.py` fails if any
-container is silent about it.
+**The app shows it verbatim** — on the lane sheet and the record card, read
+from `meta.context_note` — so the wording is decided here and nowhere else.
+`test_build_containers.py` fails if any container is silent about it, and
+`test_build_packages.py` fails if the default build seals a bridleway or a
+restricted byway, or a note claiming a radius.
 
 ---
 
@@ -126,6 +159,10 @@ and that is what the 8× ruler above is standing in for.**
 ---
 
 ## What else this build reads
+
+*The `near` build's figures, recorded before the owner's byways-only decision
+superseded it. The byways-only build keeps the `boat` column and loses the
+other two.*
 
 - **Containers for GB: 7** (`ls containers/*.tbmap | wc -l`), against a gate of
   ≤ 16.

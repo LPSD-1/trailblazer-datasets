@@ -158,6 +158,11 @@ VOLATILE = {
 #: way beyond the 1 km radius. Both are here now, and so is a bridleway INSIDE
 #: the radius, because a filter that drops everything passes a drop-only test.
 #:
+#: Since 2026-09-24 the default is byways only, so EVERY bridleway and
+#: restricted byway here - near or far - is one the build must drop, and the
+#: five BOATs are what must survive. The rows stay: a context way leaking back
+#: in is now the change this fixture exists to catch.
+#:
 #: THEY GO AFTER COUNCIL_ROWS, NOT BEFORE. The mutation check perturbs
 #: rows[0] by index; putting a dropped row there mutates something the build
 #: discards, and the check reports "UNCHANGED - the build ignored the change"
@@ -275,27 +280,18 @@ def build_into(out_dir, run_stamp=RUN_STAMP, pack_stamp=PACK_STAMP,
             # 435,299 FOOTPATHS into the golden expectation - the exact data
             # this phase exists to remove. Caught by probing the constant
             # rather than trusting the fix.
-            carried = {t for t, rule in P.ROW_RULES.items() if rule["carried"]}
-            chosen = [f for f in features
-                      if f["properties"]["rowType"] in carried]
-
-            # STEP 1.2c, APPLIED HERE TOO - and it was not, which this file
-            # claimed otherwise about.
             #
-            # golden.py says "every stage is the SHIPPING code path", and it
-            # went normalise -> write_package while the near-context filter
-            # lives in build_packages.main(). So the golden could not have
-            # noticed the far-context rule breaking. Proved by putting a
+            # STEP 1.2c, THROUGH THE SAME FUNCTION main() CALLS, AT ITS
+            # DEFAULT. golden.py says "every stage is the SHIPPING code path",
+            # and it went normalise -> write_package while the near-context
+            # filter lived in build_packages.main() - proved by putting a
             # bridleway 130 km from any byway in the fixture: it was carried.
-            motor = [f for f in chosen
-                     if not P.ROW_RULES[f["properties"]["rowType"]]["context"]]
-            context = [f for f in chosen
-                       if P.ROW_RULES[f["properties"]["rowType"]]["context"]]
-            near = P.near_motor_ways(context, motor)
-            near_uids = {f["properties"]["lane_uid"] for f in near}
-            chosen = [f for f in chosen
-                      if not P.ROW_RULES[f["properties"]["rowType"]]["context"]
-                      or f["properties"]["lane_uid"] in near_uids]
+            # The fix for that was a COPY of the near filter here, and a copy
+            # does not move when the decision does: on 2026-09-24 the owner
+            # made the default byways-only, and the copy would have gone on
+            # building - and blessing - the 'near' set the real build no
+            # longer publishes. select_ways() is the one place that decides.
+            chosen = P.select_ways(features)
             entries.append(P.write_package(
                 pkg_name, REGION_ID, REGION_LABEL, None, chosen,
                 GOLDEN_KEY, pack_stamp))
@@ -308,6 +304,11 @@ def build_into(out_dir, run_stamp=RUN_STAMP, pack_stamp=PACK_STAMP,
             "source": "golden fixture - eight Dartmoor rights of way",
             "authorities": 1,
             "maxPlainBytes": P.MAX_PLAIN_BYTES,
+            # What step 1.2c carried, as build_packages.main() writes it. The
+            # golden manifest left these out, so no golden container carried
+            # `context_note` and the one sentence the app must show about an
+            # absence was the one thing this build never byte-checked.
+            **P.context_fields(),
             "regions": [
                 {"id": r, "label": lab,
                  "bounds": {"west": b[0], "south": b[1],
@@ -589,23 +590,23 @@ def digests(root):
 EXPECTED_SQLITE = "3.50.4"
 EXPECTED = {
     "catalogue.json": {"bytes": 5213,
-        "sha256": "024954d7b28e95d4659ccee1783414d39c6c46a62a1145c924f408875227bb37"},
+        "sha256": "f0a0e4e9c065f73606f8382894f4e10fb971a587d699fd018c88a6ce3374d7ef"},
     "changes/gb-south-west/20260101T000000Z-20260102T030405Z.tbchange": {"bytes": 36864,
-        "sha256": "807337510128bc0b853901b9f94a0bfaa8f14270cdc09fbfb51d3d228ded73c7"},
+        "sha256": "728759392bcde498a441ff86da39d64c180df0898b1eec19a63c8c920de4ff22"},
     "changes/index.json": {"bytes": 509,
-        "sha256": "1d4c4a46f6205af08c16e439d47a46fc507f6e51a09b13acdb13855e4c360865"},
-    "containers/manifest.json": {"bytes": 1003,
-        "sha256": "31c9983cf26cb706f8858357cb232e7af7cf596fbe2f89b8924ac258192cb1a4"},
+        "sha256": "40bc88d472d2e1e01106268cd572f70f407e7ce9818fe0e3478d6a0bdd441367"},
+    "containers/manifest.json": {"bytes": 1203,
+        "sha256": "b51e984af327fc8b43ba91d0770fb0e7e39701d2a2902bf9d1eb992c8113d59e"},
     "containers/ways-overview.tbmap": {"bytes": 57344,
-        "sha256": "361619bce5febb761512afb7eacea7e44f2c18d0b81dbe9624be97832e0dcf89"},
+        "sha256": "1d63e75650bbef91b5ff0e7d68536223e5064bd25e75007041592d3095b38d14"},
     "containers/ways-south-west.tbmap": {"bytes": 65536,
-        "sha256": "3c5a608e0820e46e1e1cef877ed124ada15390a3b02d92a786e4e367be016af0"},
-    "manifest.json": {"bytes": 1763,
-        "sha256": "a3ed35b8e5901205aff544954fadc557a9b4daa42595140eab69506f39510b71"},
-    "packages/ways-south-west.tbpack": {"bytes": 1110,
-        "sha256": "bf64666f28b1ed5af9634fda6560252472f63eb4178a98eb771b92c0e31c7e04"},
+        "sha256": "cbe03bad8a75128350d879908abe21a68ff8cb59d73b5816ccdee11f6be11536"},
+    "manifest.json": {"bytes": 2017,
+        "sha256": "4871f46be15f77cd296cc4b3ad2d00eb2ede5c104a0452ea26d27a1a2415a0a5"},
+    "packages/ways-south-west.tbpack": {"bytes": 976,
+        "sha256": "9e9e78c6d01effa0b949a5dd92f335fa6d1a632e704aa89ddf72ae4d77e3c852"},
     "packages/ways-south-west.tbpack.sha256": {"bytes": 89,
-        "sha256": "d77ef6c295afaf208f0be0045d5f44817c7c151d7c997ee99061a5fce5ab7cc4"},
+        "sha256": "23bca9a13b0409481989e883271af2898db6468553c4b2e16a7a985a0920746c"},
     "published/rivers/south-west.json": {"bytes": 348,
         "sha256": "1de8695dab724afd7106d65d362db0fcf718d107e399fca75b9f43e336857036"},
     "published/wet/south-west.json": {"bytes": 384,

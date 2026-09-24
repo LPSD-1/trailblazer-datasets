@@ -996,6 +996,68 @@ class TheAuthorityFloorStillFires(unittest.TestCase):
         self.assertTrue(problems, "an empty file is not data")
 
 
+class TheCommittedBaseline(unittest.TestCase):
+    """tools/build_baseline.json ITSELF, against the build it has to admit.
+
+    Every other rebaseline test writes its own record, so none of them could
+    notice the committed one predicting the wrong build. It did: it was
+    recorded at 31,369 rows for step 1.2c's 'near' set, and the owner then
+    chose byways only (2026-09-24) - a build of ~12,702 rows, 60% short of
+    that prediction and so refused by MAX_REBASELINE_SHORTFALL as a collapsed
+    fetch. The decided cutover would not have published.
+    """
+
+    PATH = os.path.join(HERE, "build_baseline.json")
+
+    def _record(self):
+        with open(self.PATH, encoding="utf8") as fh:
+            return json.load(fh)
+
+    def _check(self, new):
+        record = self._record()
+        # The published build it supersedes, rebuilt from its own figures so
+        # that load_baseline finds the record still applies.
+        old = manifest(**record["supersedes"]["packages"])
+        problems, becomes = [], []
+        dropped = load_baseline(self.PATH, old, problems, becomes)
+        with contextlib.redirect_stdout(io.StringIO()):
+            check_totals(old, new, problems, dropped,
+                         becomes[0] if becomes else None)
+        return dropped, problems
+
+    def test_it_still_applies_to_the_published_build(self):
+        record = self._record()
+        self.assertEqual(sum(record["supersedes"]["packages"].values()),
+                         record["supersedes"]["total"])
+        dropped, _ = self._check(manifest(ways=12702))
+        self.assertEqual(dropped,
+                         frozenset(["bicycle", "foot", "horse", "motor"]))
+
+    def test_it_predicts_the_byways_only_build(self):
+        # 12,702 BOAT rows across overlapping regions, plus 0 osm_track rows
+        # (none is sourced yet). docs/DECISIONS-1.2.md has the derivation.
+        record = self._record()
+        self.assertEqual(record["becomes"],
+                         {"packages": {"ways": 12702}, "total": 12702})
+        self.assertEqual(
+            record["nationalDrop"],
+            round((record["supersedes"]["total"] - 12702)
+                  / float(record["supersedes"]["total"]), 4))
+        self.assertIn("2026-09-24", record["reason"])
+        self.assertIn("Byways only".lower(), record["reason"].lower())
+
+    def test_the_decided_byways_only_cutover_publishes(self):
+        _, problems = self._check(manifest(ways=12702))
+        self.assertEqual(problems, [],
+                         "the owner's byways-only build must publish")
+
+    def test_a_collapsed_fetch_is_still_refused(self):
+        # The guard must not have been loosened to let the smaller build in.
+        _, problems = self._check(manifest(ways=9000))
+        self.assertTrue(any("collapsed fetch" in p for p in problems),
+                        problems)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
 

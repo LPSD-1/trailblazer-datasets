@@ -12,6 +12,8 @@ built twice. That partition produced 109 containers and froze a phone. One
 table, classed per way, replaces it: **109 containers become 7** — six regions and one overview.
 
 > Said **15** until 2026-09-24, which was the figure before step 1.2c decided the context near-set and before the region list settled at six. The spec and the plan both say 7 and this file, the contract they cite, said something else.
+>
+> The near-set was itself superseded the same day: the owner chose **byways only** (see Classes). 7 is the `near` build's measured count; the byways-only build is smaller and has not been built in full.
 
 ## Table
 
@@ -70,6 +72,16 @@ CREATE VIRTUAL TABLE ways_bbox USING rtree(id, min_lon, max_lon, min_lat, max_la
 | `osm_track` | Outside England and Wales; OSM-derived | amber, "verify locally" |
 
 **Footpaths are not carried.** 627 MB, no bearing on a motor vehicle.
+
+**Bridleways and restricted byways are not carried either — byways only.**
+Step 1.2c, decided by the owner on 2026-09-24: *"Carry only ways a motor
+vehicle may use."* It superseded the earlier `near` decision (carry them within
+1 km of a BOAT, 15,366 ways, for the byway-ends warning); see
+`DECISIONS-1.2.md`. The two classes stay in this table because the reader maps
+them and `--context near|all` still builds them, but the published dataset
+holds `boat` and `osm_track` only. Every container says so in
+`meta.context_scope = 'none'` and `meta.context_note`, which the app shows
+verbatim so the absence is never read as absence on the ground.
 
 ## The rule the schema exists to enforce
 

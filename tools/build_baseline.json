@@ -1,9 +1,10 @@
 {
+  "amended": "2026-09-24T21:08:16Z",
   "becomes": {
     "packages": {
-      "ways": 31369
+      "ways": 12702
     },
-    "total": 31369
+    "total": 12702
   },
   "dropped": [
     "bicycle",
@@ -11,8 +12,8 @@
     "horse",
     "motor"
   ],
-  "nationalDrop": 0.9671,
-  "reason": "Pivot step 1.2: the vehicle partition is retired. motor, bicycle, horse and foot were four builds of overlapping ways - bicycle and horse were byte-identical, being the same bridleway data built twice - and they published 109 containers, which froze a phone. They are replaced by ONE dataset, 'ways', classed per way to docs/WAYS-SCHEMA.md. Footpaths (435,299 ways, 627 MB) are not carried: they have no bearing on where a motor vehicle may legally go. Bridleways and restricted byways are carried only within 1 km of a byway open to all traffic (step 1.2c, measured: 15,366 of 89,300 are near one), and every container records context_scope='near-byways-only' with the sentence the app must show, so their absence is never read as absence on the ground. Distinct ways 954,137 rows -> 25,708; every BOAT is kept (10,342 distinct, 12,702 rows across overlapping regions), so nothing a motor rider may legally use has been lost.",
+  "nationalDrop": 0.9867,
+  "reason": "Pivot step 1.2: the vehicle partition is retired. motor, bicycle, horse and foot were four builds of overlapping ways - bicycle and horse were byte-identical, being the same bridleway data built twice - and they published 109 containers, which froze a phone. They are replaced by ONE dataset, 'ways', classed per way to docs/WAYS-SCHEMA.md. Footpaths (435,299 ways, 627 MB) are not carried: they have no bearing on where a motor vehicle may legally go. BYWAYS ONLY, by the owner's decision of 2026-09-24: \"Carry only ways a motor vehicle may use. Smaller download, but the byway-ends warning and red 'no motor vehicles' lanes go.\" No bridleway and no restricted byway is carried, and every container records context_scope='none' with the sentence the app shows, so their absence is never read as absence on the ground. Every BOAT is kept (10,342 distinct, 12,702 rows across overlapping regions) and every OSM track (none is sourced yet, so 0 rows), so nothing a motor rider may legally use has been lost: 954,137 rows -> 12,702. HISTORY: this record was first written at 03:29:50Z predicting 31,369 rows (25,708 distinct ways) under step 1.2c's 'near' decision - bridleways and restricted byways within 1 km of a byway open to all traffic, measured 15,366 of 89,300 near one - which the owner superseded the same day. becomes was re-recorded 31,369 -> 12,702 at the amendment: DERIVED, not measured, as the 12,702 BOAT rows that 'near' build published plus 0 osm_track rows, because no checkout holds the full cache (cache/ here has 4 of 149 authorities, BOATs only). The first full byways-only build is the measurement; check_build.py refuses one more than 20% short of this.",
   "recorded": "2026-09-24T03:29:50Z",
   "supersedes": {
     "generated": "2026-09-17T10:21:22Z",
