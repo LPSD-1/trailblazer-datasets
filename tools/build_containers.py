@@ -157,11 +157,26 @@ def build_all(manifest_path, out_dir, key, signing_key=None, root="."):
             signature, _ = sign_release.sign_file(path, signing_key)
             entry["signature"] = base64.b64encode(signature).decode("ascii")
 
+    # THE NEWEST CONTAINER, NOT THE CLOCK.
+    #
+    # "nothing hashes it" was true and beside the point. refresh-data.yml's
+    # Publish step DIFFS the containers/ tree, so a field that moves every run
+    # makes the tree differ every run and publish every run. The top-level
+    # manifest.json and catalogue.json are already held back for exactly this
+    # reason; this one was missed. Monthly that is 12 needless republishes a
+    # year and nobody noticed. On the 4x-daily clock step 1.9 puts the ways
+    # build on, it is 121 a month - 121 commits, 121 catalogue rebuilds, and
+    # "update available" on every rider's phone four times a day for data that
+    # has not moved.
+    #
+    # So this is derived from the containers themselves. Identical data in,
+    # identical manifest out, and the tree becomes a function of the data and
+    # nothing else - which is what WAYS-SCHEMA.md asks for when it says
+    # `built_at` must not leak into any pack's content hash.
+    newest = max((e.get("generated") or "" for e in entries), default="")
     out = {
         "schema": 1,
-        # This one IS the run: it describes when the manifest was written, and
-        # nothing hashes it.
-        "generated": run_stamp,
+        "generated": newest or run_stamp,
         "format": "tbmap",
         "dataset": dataset,
         "contextScope": context_scope or "",

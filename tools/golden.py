@@ -424,7 +424,7 @@ EXPECTED = {
     "catalogue.json": {"bytes": 3697,
         "sha256": "385dafa582171705a5ae7d87e771a83b1bff11f7355716a42b852bde005f5df5"},
     "containers/manifest.json": {"bytes": 982,
-        "sha256": "bc743d4672514eb1a3c74d654625671c59751210fcfdef5c4664e093e39186e1"},
+        "sha256": "422662c1f359f929fa7f72b8d76aae95f01eaf457fd6a4f71223fa233c985059"},
     "containers/ways-overview.tbmap": {"bytes": 49152,
         "sha256": "2f28aa3e72959077e4bdbc78cb97a2b1d96a04fa46fc222235d3755f959709dc"},
     "containers/ways-south-west.tbmap": {"bytes": 57344,

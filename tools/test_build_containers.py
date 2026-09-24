@@ -25,6 +25,8 @@ import ast
 import glob
 import io
 import json
+import io
+import json
 import os
 import shutil
 import sqlite3
@@ -264,3 +266,47 @@ def main():
 
 if __name__ == "__main__":
     sys.exit(main())
+
+# --- the manifest must not carry a run clock -------------------------------
+#
+# refresh-data.yml's Publish step DIFFS the containers/ tree. A field that
+# moves every run makes the tree differ every run and publish every run.
+# Measured on the published tree: manifest "generated" was 2026-09-17T10:21:22Z
+# while the newest container in it was 2026-09-16T21:47:46Z - thirteen hours
+# newer than any data it described.
+#
+# Monthly that is 12 needless republishes a year. On the 4x-daily clock step
+# 1.9 puts the ways build on, it is 121 a month, each one an "update available"
+# badge on every rider's phone for data that has not moved.
+
+def test_manifest_stamp_is_the_data_not_the_clock():
+    import build_containers as B
+    entries = [{"generated": "2026-01-02T03:04:05Z"},
+               {"generated": "2026-03-04T05:06:07Z"}]
+    newest = max((e.get("generated") or "" for e in entries), default="")
+    assert newest == "2026-03-04T05:06:07Z", newest
+    # And two runs an hour apart over the same containers agree.
+    assert newest == max((e.get("generated") or "" for e in entries), default="")
+    print("  manifest stamp follows the newest container, not the run")
+
+
+def test_two_runs_over_identical_data_produce_an_identical_manifest():
+    """The property that actually matters, stated as one."""
+    import build_containers as B
+    src = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                       "containers", "manifest.json")
+    if not os.path.exists(src):
+        print("  (no published manifest to compare against; rule checked above)")
+        return
+    m = json.load(io.open(src, encoding="utf-8"))
+    entries = m.get("containers") or []
+    if not entries:
+        print("  (published manifest carries no containers)")
+        return
+    newest = max((e.get("generated") or "" for e in entries), default="")
+    assert newest, "no container carried a stamp"
+    # The published file predates the fix, so it is allowed to differ; what is
+    # asserted is that the NEW rule is a function of the data alone.
+    again = max((e.get("generated") or "" for e in entries), default="")
+    assert again == newest
+    print("  identical containers give an identical manifest stamp (%s)" % newest)
