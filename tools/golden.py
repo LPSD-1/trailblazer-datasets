@@ -62,6 +62,7 @@ sys.path.insert(0, HERE)
 import build_packages as P          # noqa: E402
 import build_containers as C        # noqa: E402
 import build_catalogue as K         # noqa: E402
+import publish_changesets as X      # noqa: E402
 
 # --------------------------------------------------------------------------
 # the fixed inputs
@@ -323,6 +324,7 @@ def build_into(out_dir, run_stamp=RUN_STAMP, pack_stamp=PACK_STAMP,
                     GOLDEN_KEY, None, root=out_dir)
 
         conditions_dir = write_condition_feeds(out_dir)
+        changes_index = write_golden_changesets(out_dir)
 
         catalogue = K.build(
             manifest_path, BASE_URL, CATALOGUE_STAMP,
@@ -330,7 +332,7 @@ def build_into(out_dir, run_stamp=RUN_STAMP, pack_stamp=PACK_STAMP,
                 os.path.join(out_dir, "containers", "manifest.json")),
             satellite_index=None, trips_index=None, names_dir=None,
             height_index=None, routing_mirror_index=None, tro_path=None,
-            conditions_dir=conditions_dir)
+            conditions_dir=conditions_dir, changes_index=changes_index)
         with open(os.path.join(out_dir, "catalogue.json"), "w",
                   encoding="utf8") as fh:
             json.dump(catalogue, fh, indent=1)
@@ -339,6 +341,85 @@ def build_into(out_dir, run_stamp=RUN_STAMP, pack_stamp=PACK_STAMP,
         P.dist_dir, K.routing_index = dist_dir, routing_index
 
     return artefacts(out_dir)
+
+
+#: The build the golden's "previous" containers claim to be.
+#:
+#: Fixed, like every other input here. It is an INPUT to the changeset, so a
+#: clock in its place would put a run stamp into catalogue.json through the
+#: changeset's own sha256 - which is regression number two at the top of this
+#: file, arriving through a door that did not exist when it was written.
+PREVIOUS_BUILD = "2026-01-01T00:00:00Z"
+
+#: The name the golden's "previous" build gave the way the new one renamed.
+PREVIOUS_NAME = "Golden lane, as it was"
+
+
+def write_golden_changesets(out_dir):
+    """Build the `.tbchange` this build publishes, and hand back its index.
+
+    WHY THE GOLDEN COVERS THIS AT ALL. The catalogue is the only place the app
+    can learn a changeset exists, and for a long time it could not: both halves
+    of the feature were written, neither was joined to the other, and
+    catalogue.json contained zero occurrences of "tbchange". A join with
+    nothing byte-comparing it is a join that comes apart in a cleanup pass and
+    nobody notices until a rider is downloading the country again.
+
+    So the golden builds one, from fixed inputs, exactly as the pipeline does:
+    the containers this run produced, against a PREVIOUS build synthesised from
+    them by renaming one way and stamping an earlier `built_at`. The changeset's
+    sha256 lands in catalogue.json, so any change to the changeset format, the
+    diff, or the fields the catalogue carries moves bytes this file checks.
+
+    The previous tree is scaffolding and is built outside `out_dir`, so it
+    never becomes an artefact. `changes/` IS an artefact: it is published.
+    """
+    containers = os.path.join(out_dir, "containers")
+    if not os.path.isdir(containers):
+        return None
+    previous = tempfile.mkdtemp(prefix="tb-golden-prev-")
+    try:
+        shutil.copytree(containers, previous, dirs_exist_ok=True)
+        for name in sorted(os.listdir(previous)):
+            if name.endswith(".tbmap"):
+                _age(os.path.join(previous, name))
+        out = os.path.join(out_dir, "changes")
+        # NO base_url, because the pipeline passes none: a changeset is
+        # committed beside catalogue.json and the app resolves it against the
+        # index's own `baseUrl`, exactly as it does a container. A golden that
+        # fixed an absolute URL would be fixing a shape nothing ships.
+        X.publish(previous, containers, out)
+        index = os.path.join(out, "index.json")
+        return index if os.path.isfile(index) else None
+    finally:
+        shutil.rmtree(previous, ignore_errors=True)
+
+
+def _age(path):
+    """Turn a container into a plausible earlier build of itself.
+
+    ONE ROW, BY LOWEST ROWID, to a fixed name: the smallest change that is
+    still a change, chosen so the result does not depend on iteration order,
+    on the clock, or on how many ways the fixture happens to carry.
+    """
+    db = sqlite3.connect(path)
+    try:
+        names = {r[0] for r in db.execute(
+            "SELECT name FROM sqlite_master WHERE type='table'")}
+        table = next((t for t in ("ways", "lanes", "orders") if t in names),
+                     None)
+        if table:
+            row = db.execute(
+                "SELECT rowid FROM %s ORDER BY rowid LIMIT 1" % table
+            ).fetchone()
+            if row:
+                db.execute("UPDATE %s SET name=? WHERE rowid=?" % table,
+                           (PREVIOUS_NAME, row[0]))
+        db.execute("UPDATE meta SET value=? WHERE key='built_at'",
+                   (PREVIOUS_BUILD,))
+        db.commit()
+    finally:
+        db.close()
 
 
 def write_condition_feeds(out_dir):
@@ -507,8 +588,12 @@ def digests(root):
 # EXPECTED-BEGIN (rewritten by --bless; do not edit by hand)
 EXPECTED_SQLITE = "3.50.4"
 EXPECTED = {
-    "catalogue.json": {"bytes": 4746,
-        "sha256": "19edd01635f99f8dab2d984e389c7bf8eba34191fb9ad64f556c82831fb9afac"},
+    "catalogue.json": {"bytes": 5213,
+        "sha256": "024954d7b28e95d4659ccee1783414d39c6c46a62a1145c924f408875227bb37"},
+    "changes/gb-south-west/20260101T000000Z-20260102T030405Z.tbchange": {"bytes": 36864,
+        "sha256": "807337510128bc0b853901b9f94a0bfaa8f14270cdc09fbfb51d3d228ded73c7"},
+    "changes/index.json": {"bytes": 509,
+        "sha256": "1d4c4a46f6205af08c16e439d47a46fc507f6e51a09b13acdb13855e4c360865"},
     "containers/manifest.json": {"bytes": 1003,
         "sha256": "31c9983cf26cb706f8858357cb232e7af7cf596fbe2f89b8924ac258192cb1a4"},
     "containers/ways-overview.tbmap": {"bytes": 57344,

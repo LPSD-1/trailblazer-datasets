@@ -642,6 +642,70 @@ jobs:
               "build_trips.py rejected one or more trips, so trips/gb.tbtrips was left as published. Lane data was published normally. Run the workflow logs for which anchors failed and by how far."
           fi
 
+      # ===================================================================
+      # THE CHANGESETS: WHAT A RIDER FETCHES INSTEAD OF THE COUNTRY.
+      #
+      # This step is the half that did not exist. `build_changeset.py` could
+      # write a `.tbchange` and the app's `ContainerUpdate` could apply one,
+      # and nothing in this workflow ever built one: the only changeset line
+      # here was `python tools/test_build_changeset.py`, which runs the TESTS.
+      # `find . -name "*.tbchange"` returned nothing and catalogue.json
+      # contained zero occurrences of the word, so the app could not learn a
+      # changeset existed and every update was the whole container.
+      #
+      # WHAT IT IS WORTH. Containers are hundreds of megabytes and this
+      # workflow runs four times a day. Measured on the containers this
+      # repository publishes, a twelve-lane council revision comes out at
+      # 0.24% to 0.49% of the whole build - 36 kB against 15 MB. That is the
+      # difference between an app a rider keeps current on a phone tether and
+      # one they update at home over wifi when they remember.
+      #
+      # IT MUST RUN BEFORE THE CATALOGUE, because `changes/index.json` is what
+      # build_catalogue.py reads to announce them - by default, so that the
+      # imagery and routing jobs pick them up too rather than deleting every
+      # changeset within a day, which is what happened to trips, imagery and
+      # the routing mirror in turn.
+      #
+      # AND BEFORE THE PUBLISH STEP MOVES ANYTHING, because the diff is
+      # between the containers this repository HAS published - `containers/`,
+      # from the checkout - and the ones this run built in `dist/containers`.
+      # After the move both are the same tree and there is nothing to diff.
+      #
+      # A rider two updates behind is why `--keep` exists: each run holds the
+      # bytes of exactly one older build, so it can write exactly one
+      # changeset, and the window is what lets the app walk 104->105->106 for
+      # somebody who missed a run. Six is a day and a half at this cadence.
+      #
+      # NO --base-url, deliberately. The changesets are committed to this
+      # repository and served beside catalogue.json, exactly as the containers
+      # are, so a RELATIVE path is what the app resolves against the index's
+      # own `baseUrl`. An absolute URL here would be a second place the hosting
+      # is written down, and the routing mirror has already cost this
+      # repository an outage for exactly that - every mirrored tile URL
+      # collapsing to a bare filename against the Pages root.
+      - name: Build the changesets
+        env:
+          TB_SIGNING_KEY_PEM: ${{ secrets.TB_SIGNING_KEY_PEM }}
+        run: |
+          python tools/test_publish_changesets.py
+          python tools/publish_changesets.py \
+            --old containers \
+            --new dist/containers \
+            --out changes \
+            --keep 6
+          # THE GATE RUNS ON THE ARTEFACTS THAT SHIP. validate_changeset.py
+          # had a --selftest and nothing had ever run it over a published
+          # file; publish_changesets.py checks each one as it writes it, and
+          # this checks the whole retained window, including the ones earlier
+          # runs left behind.
+          shopt -s nullglob
+          built=(changes/*/*.tbchange)
+          if [ ${#built[@]} -eq 0 ]; then
+            echo "no changesets in the window; every update is a whole download"
+          else
+            python tools/validate_changeset.py "${built[@]}"
+          fi
+
       # Every index, not just the lanes.
       #
       # This rebuilds catalogue.json from scratch, so anything NOT passed here
@@ -846,10 +910,22 @@ jobs:
           # job and its hash is carried in the catalogue: publishing a rebuilt
           # trips pack against a held-back catalogue would hand riders a
           # download that fails its own checksum.
+          # `changes` is in the question with `git status`, not `git diff`,
+          # because on the first run after changesets existed the whole tree is
+          # UNTRACKED and `git diff` cannot see it. Left out, the first run
+          # whose containers happened to be identical would build the changes
+          # index, exit here without committing it, and do the same thing again
+          # six hours later - the join present in every run and published in
+          # none, which is the shape of the defect this whole feature is.
+          #
+          # It cannot cause a needless publish: nothing is written into
+          # `changes` unless a container's built_at actually moved, and
+          # index.json carries no run stamp for exactly that reason.
           if [ -d packages ] \
              && diff -rq packages dist/packages >/dev/null 2>&1 \
              && [ -d containers ] \
              && diff -rq containers dist/containers >/dev/null 2>&1 \
+             && [ -z "$(git status --porcelain -- changes)" ] \
              && git diff --quiet -- trips/gb.tbtrips; then
             echo "Councils published nothing new. Leaving the last build in place."
             echo "Every pack is byte-identical to the published one, so nobody"
@@ -868,7 +944,7 @@ jobs:
 
           git config user.name  'Trail Blazer data bot'
           git config user.email 'noreply@github.com'
-          git add -A packages containers manifest.json catalogue.json trips/gb.tbtrips
+          git add -A packages containers changes manifest.json catalogue.json trips/gb.tbtrips
 
           # The lane count is the number worth seeing in the commit list: it is
           # the one that moves when a council amends its map.
@@ -895,7 +971,7 @@ jobs:
           # untouched. `git reset` (mixed) moves HEAD and the index to the new
           # tip and leaves the working tree alone, so re-adding only the
           # generated paths stages our output against it and nothing else.
-          GENERATED="packages containers manifest.json catalogue.json trips/gb.tbtrips"
+          GENERATED="packages containers changes manifest.json catalogue.json trips/gb.tbtrips"
           for attempt in 1 2 3; do
             if git push; then
               echo "published on attempt ${attempt}"

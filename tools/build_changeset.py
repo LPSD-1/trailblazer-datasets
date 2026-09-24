@@ -248,7 +248,41 @@ def _build(old, new, out_path):
         "record_table": table,
         "records_changed": rec_changed, "records_added": rec_added,
         "records_removed": len(before_rows),
+        # WHAT IT WEIGHS, AND WHAT IT WOULD REPLACE. The catalogue publishes
+        # both, and the app refuses a chain that is not actually smaller than
+        # the container - so the figures have to leave this function rather
+        # than being printed and thrown away.
+        "bytes": os.path.getsize(out_path),
+        "from_build": old_meta.get("built_at", ""),
+        "to_build": new_meta.get("built_at", ""),
     }
+
+
+#: The most of a container a changeset may weigh and still be published.
+MAX_RATIO = 0.75
+
+
+def is_worth_publishing(changeset_bytes, whole_bytes, max_ratio=MAX_RATIO):
+    """Whether this changeset is small enough to be worth a rider's data.
+
+    DO NOT PUBLISH A CHANGESET BIGGER THAN THE THING IT REPLACES. It is not a
+    theoretical case: a container whose tiles were ALL re-cut - a zoom range
+    changing, a tile encoder improving - has every tile in the diff plus a
+    schema and a removal table on top, so the "saving" goes negative. The rider
+    then pays twice, once for a download larger than the container and again
+    for the work of applying it, and ends up exactly where a plain download
+    would have put them.
+
+    Measured on the two published South West builds - see
+    tools/test_publish_changesets.py, which measures it again on every run
+    rather than trusting this sentence.
+
+    [max_ratio] is deliberately well under 1.0. A changeset at 95% of the
+    container saves nothing worth the risk of applying it in place.
+    """
+    if whole_bytes <= 0:
+        return False
+    return changeset_bytes < whole_bytes * max_ratio
 
 
 def main():
@@ -256,6 +290,12 @@ def main():
     ap.add_argument("old")
     ap.add_argument("new")
     ap.add_argument("out")
+    ap.add_argument("--require-smaller", action="store_true",
+                    help="exit 1 if the changeset is not worth publishing; "
+                         "the file is still written so it can be looked at")
+    ap.add_argument("--max-ratio", type=float, default=MAX_RATIO,
+                    help="the most of the whole build a changeset may weigh "
+                         "(default %g)" % MAX_RATIO)
     args = ap.parse_args()
 
     stats = build_changeset(args.old, args.new, args.out)
@@ -268,6 +308,12 @@ def main():
     print("  changeset       %.2f MB" % (delta / 1048576.0))
     print("  whole build     %.2f MB" % (whole / 1048576.0))
     print("  saving          %.1f%%" % (100.0 * (1 - delta / float(whole))))
+    print("  ratio           %.3f" % (delta / float(whole)))
+    if not is_worth_publishing(delta, whole, args.max_ratio):
+        print("  NOT WORTH PUBLISHING: a rider would fetch more than the "
+              "whole build and then have to apply it.")
+        if args.require_smaller:
+            return 1
     return 0
 
 

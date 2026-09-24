@@ -667,10 +667,126 @@ def names_packs(names_dir, base_url):
     return out
 
 
+def changesets_index(path):
+    """What `publish_changesets.py` announced, keyed for attachment.
+
+    Returns (builds, by_pack): the build each container is AT, and the
+    `.tbchange` files published against it.
+
+    THE APP COULD NOT LEARN A CHANGESET EXISTED. Both halves of this feature
+    were written and neither was joined to the other - `build_changeset.py`
+    could write one, the app's `ContainerUpdate` could apply one, and nothing
+    in the published index ever said one had been published: catalogue.json
+    contained zero occurrences of "tbchange". These two fields are the join,
+    and without them a rider re-downloads hundreds of megabytes to learn that
+    twelve lanes were amended.
+
+    A MISSING INDEX IS FINE and means exactly one thing: no changesets, so
+    every download is the whole container - which is what happened before this
+    existed. Read the same tolerant way `satellite_packs` reads its own feed,
+    because a changeset is an optimisation and a broken one must never cost a
+    rider the pack itself.
+    """
+    if not path or not os.path.isfile(path):
+        return {}, {}
+    try:
+        with open(path, encoding="utf8") as fh:
+            data = json.load(fh)
+    except (OSError, ValueError) as e:
+        print("  WARNING: %s is unreadable (%s); publishing no changesets"
+              % (path, e))
+        return {}, {}
+    builds = data.get("builds") or {}
+    by_pack = {}
+    for entry in data.get("changesets") or []:
+        # KEYED BY THE CONTAINER'S PUBLISHED FILE, NOT BY ITS ID.
+        #
+        # The container manifest calls the South West container
+        # `gb-south-west`; `lane_areas` below calls the pack built from it
+        # `gb-south-west-ways`, because it appends the dataset name. Matched on
+        # the id, every lane pack's changeset was built, validated, published
+        # and never mentioned here - the two halves unconnected again, inside
+        # the fix for exactly that. The `file` string is the one both sides
+        # copy verbatim, so it is the join that cannot drift.
+        key = entry.get("container")
+        if not key or not entry.get("from") or not entry.get("to"):
+            continue
+        if not entry.get("file") or not entry.get("sha256"):
+            continue
+        out = {
+            "from": entry["from"],
+            "to": entry["to"],
+            "file": entry["file"],
+            "sha256": entry["sha256"],
+            "bytes": entry.get("bytes", 0),
+        }
+        if entry.get("signature"):
+            out["signature"] = entry["signature"]
+        by_pack.setdefault(key, []).append(out)
+    for entries in by_pack.values():
+        entries.sort(key=lambda c: (c["to"], c["from"]))
+    return builds, by_pack
+
+
+def attach_changesets(catalogue, builds, by_pack):
+    """Put `build` and `changesets` on every pack we have them for.
+
+    Done over the finished catalogue rather than inside `lane_areas`, because
+    the same pack id appears in an area's list AND in the top-level overviews,
+    and a rider who downloaded the overview is as entitled to a small update
+    as one who downloaded the region.
+
+    A pack with a `build` and no changesets is not a mistake: it is a
+    container the app can recognise as the one it already holds, so it fetches
+    nothing at all rather than the whole thing to find out.
+
+    ONLY THE LINKS THAT REACH THIS BUILD ARE ANNOUNCED. A changeset whose
+    chain does not end at `build` is one the app could apply and still not be
+    current; it would fail `Pack.changesetChainFrom` anyway, and every byte of
+    the catalogue is fetched by every rider on every check.
+    """
+    attached = 0
+
+    def put(pack):
+        nonlocal attached
+        # The container's published path, which is what the changes index is
+        # keyed by - see `changesets_index`. A pack with no file is a lane
+        # entry whose container the build did not produce; it is already
+        # broken and `verify_catalogue.py` refuses it.
+        key = pack.get("file")
+        if not key:
+            return
+        build_at = builds.get(key)
+        if build_at:
+            pack["build"] = build_at
+        entries = by_pack.get(key)
+        if not entries or not build_at:
+            return
+        # Walked BACKWARDS from the published build, so the set is exactly the
+        # builds a rider can get here from.
+        reachable = {build_at}
+        usable = []
+        for c in reversed(entries):
+            if c["to"] in reachable and c["from"] not in reachable:
+                reachable.add(c["from"])
+                usable.append(dict(c))
+        if usable:
+            usable.sort(key=lambda c: (c["to"], c["from"]))
+            pack["changesets"] = usable
+            attached += 1
+
+    for _code, _area, pack in packs_in(catalogue):
+        put(pack)
+    for pack in catalogue.get("overviews", []):
+        put(pack)
+    return attached
+
+
 def build(lanes_manifest, base_url, stamp, satellite_index=None,
           routing_mirror_index=None, routing_mirror_base="",
           trips_index=None, names_dir=None, height_index=None,
-          tro_path=None, containers=None, conditions_dir=None):
+          tro_path=None, containers=None, conditions_dir=None,
+          changes_index=None):
     tile_sizes = routing_index()
     gb_areas = lane_areas(lanes_manifest, containers)
     imagery = satellite_packs(satellite_index)
@@ -912,6 +1028,11 @@ def build(lanes_manifest, base_url, stamp, satellite_index=None,
             if cid in by_continent
         ],
     }
+    builds, changes = changesets_index(changes_index)
+    attached = attach_changesets(catalogue, builds, changes)
+    if builds or changes:
+        print("  %d pack(s) carry a changeset; %d carry a build stamp"
+              % (attached, len(builds)))
     return catalogue
 
 
@@ -1139,6 +1260,17 @@ def main():
     ap.add_argument("--containers", default="dist/containers/manifest.json",
                     help="what build_containers.py wrote; the .tbmap files "
                          "are what the app downloads")
+    # A DEFAULT, NOT A FLAG A WORKFLOW HAS TO REMEMBER, for exactly the reason
+    # `--conditions` gives above: the set of flags is written down in three
+    # places and only ever corrected in one, and that is how imagery, trips and
+    # the routing mirror each got deleted by a job that forgot them. Defaulting
+    # to where publish_changesets.py writes means every caller picks the
+    # changesets up without knowing they exist - including the imagery and
+    # routing jobs, which rebuild this catalogue from scratch on their own
+    # clocks and would otherwise delete every changeset within a day.
+    ap.add_argument("--changes", default="changes/index.json",
+                    help="what publish_changesets.py wrote; missing is fine "
+                         "and simply means every update is a whole download")
     ap.add_argument("--out", default="dist/catalogue.json")
     args = ap.parse_args()
 
@@ -1158,7 +1290,8 @@ def main():
                       routing_mirror_index=args.routing_mirror,
                       routing_mirror_base=args.routing_mirror_base,
                       tro_path=args.tro,
-                      conditions_dir=args.conditions)
+                      conditions_dir=args.conditions,
+                      changes_index=args.changes)
     os.makedirs(os.path.dirname(os.path.abspath(args.out)), exist_ok=True)
     with open(args.out, "w", encoding="utf8") as fh:
         json.dump(catalogue, fh, indent=1)
