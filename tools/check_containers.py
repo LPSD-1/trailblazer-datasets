@@ -49,7 +49,19 @@ import sys
 #: data.
 MAX_TILE_BYTES = 512 * 1024
 
-TABLE_KEYS = {"lanes": "lane_uid", "orders": "tro_uid"}
+#: The record table of each container shape, and the column its uid is in.
+#:
+#: `ways` WAS MISSING, so every post-cutover area container was refused with
+#: "no record table" - found by the cutover dry run on 24 Sep, the first time
+#: this ran over a container the new builder wrote. Nothing had run it on one
+#: before: golden never called it, and no suite built a ways container and
+#: handed it here. test_check_containers.py now does.
+TABLE_KEYS = {"lanes": "lane_uid", "ways": "way_uid", "orders": "tro_uid"}
+
+#: The property a TILE feature carries its uid in. Not the same as the column:
+#: a ways container stores `way_uid` and draws it as `lane_uid`, so the app's
+#: tap handler reads one property name whichever shape it mounted.
+TILE_KEYS = {"lanes": "lane_uid", "ways": "lane_uid", "orders": "tro_uid"}
 
 
 class Problem(Exception):
@@ -78,7 +90,7 @@ def _uids_in_tiles(db, table):
     sys.path.insert(0, here)
     from test_mvt import decode_tile  # noqa: E402  (the decoder, reused)
 
-    key = "lane_uid" if table == "lanes" else "tro_uid"
+    key = TILE_KEYS[table]
     uids = set()
     for (blob,) in db.execute("SELECT tile_data FROM tiles"):
         for layer in decode_tile(blob):
