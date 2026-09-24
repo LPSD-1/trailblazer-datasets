@@ -1,6 +1,6 @@
 {
  "schema": 2,
- "generated": "2026-09-24T22:43:03Z",
+ "generated": "2026-09-24T22:47:23Z",
  "attribution": "Map and routing data (c) OpenStreetMap contributors, ODbL. United Kingdom rights of way contain public sector information licensed under the Open Government Licence v3.0, via rowmaps.com.",
  "baseUrl": "https://lpsd-1.github.io/trailblazer-datasets/",
  "overviews": [
@@ -24,7 +24,116 @@
   "schema": 1,
   "updates": "sixHourly",
   "licence": "Environment Agency flood-monitoring data, OGL v3",
-  "feeds": []
+  "feeds": [
+   {
+    "id": "gb-east-anglia-wet",
+    "kind": "wet",
+    "region": "east-anglia",
+    "file": "https://lpsd-1.github.io/trailblazer-datasets/published/wet/east-anglia.json",
+    "sha256": "eee5d05bd78cae6a1ac043115ea76bb0a65da5de3d67b3a853d1668c0c4a649a",
+    "bytes": 24354,
+    "asOf": "2026-09-24T22:43:45Z"
+   },
+   {
+    "id": "gb-midlands-wet",
+    "kind": "wet",
+    "region": "midlands",
+    "file": "https://lpsd-1.github.io/trailblazer-datasets/published/wet/midlands.json",
+    "sha256": "002bff57a4bfb08dddf189ab1dc1fd0c145c1a711897b8b4166f0614b26d5a5a",
+    "bytes": 38939,
+    "asOf": "2026-09-24T22:43:45Z"
+   },
+   {
+    "id": "gb-north-wet",
+    "kind": "wet",
+    "region": "north",
+    "file": "https://lpsd-1.github.io/trailblazer-datasets/published/wet/north.json",
+    "sha256": "ef6471ccdc65444270dcc4ed51405216ad512c23d50d693f52aace91bf5d8825",
+    "bytes": 36942,
+    "asOf": "2026-09-24T22:43:45Z"
+   },
+   {
+    "id": "gb-south-east-wet",
+    "kind": "wet",
+    "region": "south-east",
+    "file": "https://lpsd-1.github.io/trailblazer-datasets/published/wet/south-east.json",
+    "sha256": "77163fe56e65eccd3dc0347abbfac665ec54b80fe2773f76c24719c3bca3e910",
+    "bytes": 32874,
+    "asOf": "2026-09-24T22:43:45Z"
+   },
+   {
+    "id": "gb-south-west-wet",
+    "kind": "wet",
+    "region": "south-west",
+    "file": "https://lpsd-1.github.io/trailblazer-datasets/published/wet/south-west.json",
+    "sha256": "69d5b965db951b50c795d9bdcea75e38cc6a75c915521fc19ff7b0b800fd7a48",
+    "bytes": 22779,
+    "asOf": "2026-09-24T22:43:45Z"
+   },
+   {
+    "id": "gb-wales-wet",
+    "kind": "wet",
+    "region": "wales",
+    "file": "https://lpsd-1.github.io/trailblazer-datasets/published/wet/wales.json",
+    "sha256": "8e98b216a3bc4e34754c8664086c53dc28e0d4efaf31a445061f3aa9ee7430a6",
+    "bytes": 12413,
+    "asOf": "2026-09-24T22:43:45Z"
+   },
+   {
+    "id": "gb-east-anglia-rivers",
+    "kind": "rivers",
+    "region": "east-anglia",
+    "file": "https://lpsd-1.github.io/trailblazer-datasets/published/rivers/east-anglia.json",
+    "sha256": "c1b31fcc53a4e435c89c40e4deb650cf13f4e14817f8e3289e3cd48e3723b0af",
+    "bytes": 3471,
+    "asOf": "2026-09-24T22:47:18Z"
+   },
+   {
+    "id": "gb-midlands-rivers",
+    "kind": "rivers",
+    "region": "midlands",
+    "file": "https://lpsd-1.github.io/trailblazer-datasets/published/rivers/midlands.json",
+    "sha256": "ebd098a93ba365e8211f03bd7dbd8292be4972bf6e9924c2a5db008b64a6a4c4",
+    "bytes": 5675,
+    "asOf": "2026-09-24T22:47:18Z"
+   },
+   {
+    "id": "gb-north-rivers",
+    "kind": "rivers",
+    "region": "north",
+    "file": "https://lpsd-1.github.io/trailblazer-datasets/published/rivers/north.json",
+    "sha256": "5204c940ecb18e5c5f18c0fcf547be72499912a8012a78e50e8351705942ecd2",
+    "bytes": 9127,
+    "asOf": "2026-09-24T22:47:18Z"
+   },
+   {
+    "id": "gb-south-east-rivers",
+    "kind": "rivers",
+    "region": "south-east",
+    "file": "https://lpsd-1.github.io/trailblazer-datasets/published/rivers/south-east.json",
+    "sha256": "c65a16a13a639059de36b390fcc1fc77bb09f465279e8224bfdd7212e33c1e07",
+    "bytes": 5366,
+    "asOf": "2026-09-24T22:47:18Z"
+   },
+   {
+    "id": "gb-south-west-rivers",
+    "kind": "rivers",
+    "region": "south-west",
+    "file": "https://lpsd-1.github.io/trailblazer-datasets/published/rivers/south-west.json",
+    "sha256": "e833e3b3a4f39c01bbfbff2f6eb1c0eb5b49648f91b6f6a96a146236bf8f03cd",
+    "bytes": 3275,
+    "asOf": "2026-09-24T22:47:18Z"
+   },
+   {
+    "id": "gb-wales-rivers",
+    "kind": "rivers",
+    "region": "wales",
+    "file": "https://lpsd-1.github.io/trailblazer-datasets/published/rivers/wales.json",
+    "sha256": "28dd77684af75f3d37664ddf9a7e28b310fa91fcb6074e82dbafcc00b67db13a",
+    "bytes": 2399,
+    "asOf": "2026-09-24T22:47:18Z"
+   }
+  ]
  },
  "updates": {
   "lanes": "monthly",
