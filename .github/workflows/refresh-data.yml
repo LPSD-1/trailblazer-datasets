@@ -258,6 +258,19 @@ jobs:
             echo "::endgroup::"
           done
 
+      # KEEP WHAT OVERPASS GAVE US, the same way and for the same reason as the
+      # council data above. That save runs before this step, so it never held
+      # a POI: every run found every region stale and re-fetched all six from
+      # somebody else's server - 90 minutes on 24 Sep, and the "slow clock"
+      # this section is built around never once ticked. A newer key under the
+      # same `rowmaps-` prefix is what the restore picks up next time.
+      - name: Keep the POIs for the next run
+        if: always() && hashFiles('cache/authorities.json') != ''
+        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25  # v5
+        with:
+          path: cache
+          key: rowmaps-${{ github.run_id }}-pois
+
       - name: Build the map containers
         env:
           # Signing closes the hole the sealing never did: the pack key ships
@@ -428,6 +441,16 @@ jobs:
             fi
             echo "::endgroup::"
           done < /tmp/region-containers.txt
+
+      # The fords and the EA gauge network, kept for the same reason as the POIs
+      # above: both are fetched after the council cache is saved, so neither
+      # ever reached the next run.
+      - name: Keep the fords and gauges for the next run
+        if: always() && hashFiles('cache/authorities.json') != ''
+        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25  # v5
+        with:
+          path: cache
+          key: rowmaps-${{ github.run_id }}-fords
 
       - name: Write the fords and their gauges into each container
         run: |
