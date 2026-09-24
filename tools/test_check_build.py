@@ -28,6 +28,8 @@ The check below is still right, and still needed; what was wrong was the story
 attached to it. It is kept because of the arithmetic in the first paragraph,
 which does not depend on any particular run.
 """
+import contextlib
+import io
 import json
 import os
 import subprocess
@@ -612,6 +614,97 @@ class ClosureCount(unittest.TestCase):
 
 
 PIVOT = manifest(motor=11851)
+
+
+class EveryTypeDropped(unittest.TestCase):
+    """THE CUTOVER ITSELF, which no test covered and which the guard waved
+    through.
+
+    Every existing rebaseline case drops foot, horse and bicycle and leaves
+    motor in, so `old_total` after the exclusion is never zero and the
+    ratios below it always have something to divide by. The real cutover
+    drops ALL FOUR - the vehicle partition is retired entirely - and that
+    is the one shape nothing exercised.
+
+    With all four gone the old total is zero by construction, and
+    `check_totals` used to `return` there, silently. That skipped
+    MAX_NATIONAL_DROP, the per-type loop, MAX_AREA_DROP and the
+    vanished-region check at once, on the only build they exist for: a
+    synthetic cutover holding 105 ways across six regions, two of them at
+    zero, printed "OK to publish." and exited 0.
+    """
+
+    def setUp(self):
+        self.dir = tempfile.mkdtemp()
+        self.path = os.path.join(self.dir, "build_baseline.json")
+
+    def tearDown(self):
+        for name in os.listdir(self.dir):
+            os.remove(os.path.join(self.dir, name))
+        os.rmdir(self.dir)
+
+    #: The published shape: four partitions, no `ways` at all.
+    OLD = manifest(foot=635242, bicycle=114367, horse=114367, motor=11851)
+
+    def _baseline(self, new):
+        """A record dropping all four, as the real cutover does."""
+        write_baseline(self.path, self.OLD, new, "the pivot: one dataset")
+        becomes = []
+        problems = []
+        dropped = load_baseline(self.path, self.OLD, problems, becomes)
+        return dropped, becomes[0] if becomes else None, problems
+
+    def test_the_premise_all_four_really_are_dropped(self):
+        # Without this every assertion below could be measuring the
+        # three-type case the other tests already cover.
+        dropped, becomes, _ = self._baseline(manifest(ways=31369))
+        self.assertEqual(dropped,
+                         frozenset(["bicycle", "foot", "horse", "motor"]))
+        self.assertEqual(becomes, 31369)
+
+    def test_the_intended_cutover_publishes(self):
+        new = manifest(ways=31369)
+        dropped, becomes, problems = self._baseline(new)
+        check_totals(self.OLD, new, problems, dropped, becomes)
+        self.assertEqual(problems, [],
+                         "the cutover that was signed off must publish")
+
+    def test_a_collapsed_fetch_is_refused(self):
+        # THE CASE THAT WAS MEASURED PASSING. 105 ways where the baseline
+        # predicted 31,369.
+        new = manifest(ways=105)
+        dropped, becomes, problems = self._baseline(manifest(ways=31369))
+        check_totals(self.OLD, new, problems, dropped, becomes)
+        self.assertTrue(problems, "a 99.7% shortfall printed OK to publish")
+        self.assertTrue(any("collapsed fetch" in p for p in problems),
+                        problems)
+
+    def test_a_region_at_zero_is_refused(self):
+        # Needs no ratio to see, and the volume gates cannot see it at all
+        # once the baseline has taken the old side to zero.
+        new = {"packages": [
+            {"package": "ways", "region": "midlands", "area": "a",
+             "laneCount": 31369},
+            {"package": "ways", "region": "wales", "area": "b",
+             "laneCount": 0},
+        ]}
+        dropped, becomes, problems = self._baseline(manifest(ways=31369))
+        check_totals(self.OLD, new, problems, dropped, becomes)
+        self.assertTrue(any("no ways at all" in p for p in problems),
+                        problems)
+
+    def test_the_blindness_is_stated_rather_than_passed(self):
+        # BLIND IS NOT PASS. The gates that need a before-and-after cannot
+        # run here and the operator has to be told so, rather than reading
+        # a clean run as a clean build.
+        new = manifest(ways=31369)
+        dropped, becomes, problems = self._baseline(new)
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            check_totals(self.OLD, new, problems, dropped, becomes)
+        printed = out.getvalue()
+        self.assertIn("NO COMPARABLE BASELINE", printed)
+        self.assertIn("not run", printed)
 
 
 class Rebaselining(unittest.TestCase):

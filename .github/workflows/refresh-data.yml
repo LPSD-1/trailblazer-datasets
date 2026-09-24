@@ -78,6 +78,10 @@ on:
         description: 'Re-fetch EA stations and OSM fords, whatever the cache says'
         type: boolean
         default: false
+      dry_run:
+        description: 'Build and run every gate, then publish NOTHING'
+        type: boolean
+        default: false
 
 permissions:
   contents: write   # to commit the rebuilt packages
@@ -894,7 +898,18 @@ jobs:
           PY
 
       # Nothing below here runs unless every check above passed.
+      #
+      # AND NOTHING BELOW HERE RUNS AT ALL UNDER `dry_run`, which is the
+      # whole point of that input. The cutover rehearsal asked for a build
+      # taken through the full gate chain with nothing published, and there
+      # was no way to do it: this workflow builds and publishes in one
+      # breath, and `force` only makes it publish HARDER.
+      #
+      # So a rehearsal meant either trusting the gates untested against a
+      # real build, or publishing to find out. On the one step in this
+      # repository that cannot be undone.
       - name: Publish
+        if: ${{ !inputs.dry_run }}
         run: |
           # Scaffolding for check_build, never published beside the packs.
           rm -f dist/packages/*.sha256
@@ -1174,6 +1189,7 @@ jobs:
       # feed must describe the containers riders HAVE, not ones dist/ might
       # have built and not published.
       - name: Publish the live rain and river feeds
+        if: ${{ !inputs.dry_run }}
         run: |
           set -euo pipefail
           python - <<'PY' | tee /tmp/region-containers.txt
@@ -1291,6 +1307,7 @@ jobs:
       # a flag some other job forgets, which is how imagery, the trips pack and
       # the routing mirror were each deleted by a build that succeeded.
       - name: Publish
+        if: ${{ !inputs.dry_run }}
         env:
           REPO_URL: ${{ github.server_url }}/${{ github.repository }}
         run: |

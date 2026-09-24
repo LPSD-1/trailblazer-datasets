@@ -57,6 +57,17 @@ MAX_NATIONAL_DROP = 0.02
 # own splitter regrouping authorities - but not by half.
 MAX_AREA_DROP = 0.25
 
+# How far below its own rebaseline a cutover may land before it is refused.
+#
+# A FIFTH, and deliberately looser than MAX_NATIONAL_DROP. That constant
+# governs build-to-build drift, where two percent is a lot. This compares a
+# build against a prediction written down when the rebaseline was signed
+# off, and councils publish between the two - so the question is not "did it
+# drift" but "did it collapse". Wide enough never to fire on real change,
+# and narrow enough that the 105-way build this guard was measured waving
+# through misses it by a factor of three hundred.
+MAX_REBASELINE_SHORTFALL = 0.20
+
 # Below this many authorities the fetch clearly did not complete, whatever the
 # exit codes said.
 MIN_AUTHORITIES = 140
@@ -357,8 +368,14 @@ def rebaseline_note():
     """
 
 
-def load_baseline(path, previous, problems):
+def load_baseline(path, previous, problems, becomes=None):
     """-> the set of package names this baseline deliberately dropped.
+
+    [becomes] is an out-parameter: a one-element list the caller passes to
+    receive the total the baseline says this build should come to, because
+    `becomes.total` was recorded and read by nothing and it is the only
+    figure in the file that can tell the intended cutover from a collapsed
+    fetch.
 
     Empty when there is no baseline, when it does not apply to the build in
     hand, or when it is not a record anybody could review.
@@ -373,6 +390,11 @@ def load_baseline(path, previous, problems):
         return frozenset()
     if not dropped:
         return frozenset()
+
+    if becomes is not None:
+        total = (baseline.get("becomes") or {}).get("total")
+        if isinstance(total, int) and total > 0:
+            becomes.append(total)
 
     reason = (baseline.get("reason") or "").strip()
     if not reason:
@@ -471,7 +493,8 @@ def check_authorities(cache_dir, problems):
             % (fetched, len(known), MIN_AUTHORITIES))
 
 
-def check_totals(previous, new, problems, dropped=frozenset()):
+def check_totals(previous, new, problems, dropped=frozenset(),
+                 becomes=None):
     new_total, new_areas, new_packages = lane_totals(new)
     print("  ways in this build: %d" % new_total)
 
@@ -535,6 +558,34 @@ def check_totals(previous, new, problems, dropped=frozenset()):
                   "before-and-after is BLIND on this build, not passed.")
             print("    not run: national drop, per-type drop, area drop, "
                   "vanished regions")
+
+            # AND THE BASELINE ALREADY SAID WHAT THIS BUILD SHOULD BECOME.
+            #
+            # `becomes.total` is written into build_baseline.json by whoever
+            # signed the rebaseline off - it is the whole point of recording
+            # one - and nothing read it. It is the only figure in the file
+            # that can tell the intended cutover from a collapsed fetch, which
+            # is the single thing this guard exists to do.
+            #
+            # A LOOSER BAND THAN MAX_NATIONAL_DROP, deliberately, and with its
+            # own name. That constant governs build-to-build drift, where two
+            # percent is a lot. This compares a build against a prediction made
+            # when the baseline was recorded, and councils publish between the
+            # two - so the question here is not "did it drift" but "did it
+            # collapse". A fifth is wide enough to never fire on real change
+            # and narrow enough that the 105-way build measured above misses
+            # it by a factor of three hundred.
+            if isinstance(becomes, int) and becomes > 0:
+                print("  the baseline predicted %d ways; this build holds %d"
+                      % (becomes, new_total))
+                if new_total < becomes * (1 - MAX_REBASELINE_SHORTFALL):
+                    problems.append(
+                        "this build holds %d ways where the rebaseline it is "
+                        "being measured against predicted %d - %.0f%% short. "
+                        "That is a collapsed fetch, not the cutover that was "
+                        "signed off."
+                        % (new_total, becomes,
+                           (1 - new_total / becomes) * 100))
 
             # A region holding nothing is data loss whatever the baseline
             # says, and needs no ratio to see.
@@ -760,8 +811,10 @@ def main():
     problems = []
     print("checking the build...")
     check_authorities(args.cache, problems)
-    dropped = load_baseline(args.baseline, previous, problems)
-    check_totals(previous, new, problems, dropped)
+    becomes = []
+    dropped = load_baseline(args.baseline, previous, problems, becomes)
+    check_totals(previous, new, problems, dropped,
+                 becomes[0] if becomes else None)
     check_declared_bounds(new, problems)
     check_closures(load(args.closures_previous), load(args.closures_new),
                    problems)
