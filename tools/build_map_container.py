@@ -544,18 +544,62 @@ CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT);
 # motorcycle (1) and 4x4 (2) come from the derived access columns - so a BOAT
 # reads 31 and a bridleway or restricted byway reads 28, which is what the
 # vehicle-partitioned build wrote.
+#: `ways.authority` is NOT NULL, and some sources name no surveying authority.
+#:
+#: Named rather than written inline because the contract fixture has to state
+#: the same expectation, and the one time it stated a different one - null -
+#: the disagreement read as a reader fault rather than as two files holding
+#: the same literal apart.
+UNKNOWN_AUTHORITY = "Unknown"
+
 COMPAT_VIEWS = """
 CREATE VIEW lanes AS
   SELECT rowid            AS rowid,
          way_uid          AS lane_uid,
-         way_class        AS lane_class,
+         -- MAPPED, NOT PASSED THROUGH. A view called `lanes` exists so an
+         -- app built before the pivot can still read a container built after
+         -- it. `way_class` values are new words - boat, restricted_byway,
+         -- bridleway - and an older reader resolves an unknown class to
+         -- `unknown`, which draws GREY. Passing them through unmapped meant a
+         -- rider on an older build saw not one rideable byway in the country.
+         -- Safe, in that nothing illegal was drawn green, and useless.
+         CASE way_class
+           WHEN 'boat'             THEN 'full-access'
+           WHEN 'restricted_byway' THEN 'restricted'
+           WHEN 'bridleway'        THEN 'restricted'
+           WHEN 'ucr'              THEN 'unknown'
+           WHEN 'osm_track'        THEN 'partial-access'
+           ELSE 'unknown'
+         END              AS lane_class,
          county           AS county,
          name             AS name,
          designation      AS designation,
          access_reason    AS description,
          authority        AS authority,
-         28 + (CASE WHEN motorbike_ok THEN 1 ELSE 0 END)
-            + (CASE WHEN fourxfour_ok THEN 2 ELSE 0 END) AS vehicle_access,
+         -- THE CLASS OVERRULES THE FLAGS, IN ONE DIRECTION ONLY, and the
+         -- non-motor bits come from the class alone. This read `28 + ...`:
+         -- a flat 28 granting bicycle, horse and foot to EVERY way whatever
+         -- its class, and a motor bit no class could veto.
+         --
+         -- Both were wrong in the direction that states something no source
+         -- said. A `ucr` has rights that are NOT recorded and an `osm_track`
+         -- is outside England and Wales, so a horse right on either is the
+         -- database inventing one; and a bridleway carrying motorbike_ok=1
+         -- from some future build would have drawn as motor-legal here while
+         -- the app refused it, which is the two halves disagreeing about the
+         -- one thing this file exists to get right.
+         --
+         -- Mirrors TbMapStore._accessOf, way for way. The contract test (0.8)
+         -- compares the two on every fixture way, which is how the
+         -- disagreement surfaced: an OSM track came back as five vehicles
+         -- here and two there.
+         -- bits: 1 motorcycle, 2 4x4, 4 bicycle, 8 horse, 16 foot
+           (CASE WHEN way_class IN ('boat','ucr','osm_track')
+                  AND motorbike_ok THEN 1 ELSE 0 END)
+         + (CASE WHEN way_class IN ('boat','ucr','osm_track')
+                  AND fourxfour_ok THEN 2 ELSE 0 END)
+         + (CASE WHEN way_class IN ('boat','restricted_byway','bridleway')
+                 THEN 28 ELSE 0 END)     AS vehicle_access,
          length_m         AS length_m,
          geometry         AS geometry
   FROM ways;
@@ -665,23 +709,44 @@ def write_container(path, features, kind, zooms, source_date,
             # The SAME id the tile carries, so a rendered feature and its record
             # are the same thing to everything downstream.
             rowid = ids[props["lane_uid"]]
-            # PHYSICAL and TERRAIN are written NULL on purpose, not forgotten.
-            # OSM attributes (step 1.3) and the DEM-derived climb and sustained
-            # gradient (step 1.4) are produced by other builds and joined in
-            # later. NULL is the schema's "unknown", and WAYS-SCHEMA.md is
-            # explicit that unknown is not 'no'.
+            # PHYSICAL and TERRAIN are PASSED THROUGH, and NULL where the
+            # feature does not carry them - which today is every published
+            # feature, because OSM attributes (step 1.3) and the DEM-derived
+            # climb and sustained gradient (step 1.4) are produced by other
+            # builds and joined in later. NULL is the schema's "unknown", and
+            # WAYS-SCHEMA.md is explicit that unknown is not 'no'.
+            #
+            # WRITTEN AS A PASS-THROUGH NOW RATHER THAN WHEN 1.3 LANDS, because
+            # a hard-coded NULL cannot be told apart from a reader that answers
+            # null to everything: the builder/reader contract test (0.8) had
+            # eight columns it could only ever compare null against null, and a
+            # check that cannot come back red is not a check.
+            barriers = props.get("barriers")
             db.execute(
                 "INSERT INTO ways (rowid, way_uid, way_class, designation, "
                 "name, authority, county, legal_tier, source, source_date, "
+                "surface, smoothness, tracktype, width_m, min_width_m, "
+                "barriers, climb_m, sustained_pct, "
                 "motorbike_ok, fourxfour_ok, access_reason, access_evidence, "
                 "length_m, geometry) "
-                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (rowid, props["lane_uid"], props.get("class"),
                  props.get("designation"), props.get("name"),
-                 props.get("authority") or "Unknown", props.get("county"),
+                 props.get("authority") or UNKNOWN_AUTHORITY,
+                 props.get("county"),
                  props.get("legal_tier") or "statutory",
                  props.get("source") or "unknown",
                  props.get("source_date") or source_date,
+                 props.get("surface"), props.get("smoothness"),
+                 props.get("tracktype"), props.get("width_m"),
+                 props.get("min_width_m"),
+                 # The column is TEXT holding JSON. A list arrives from the
+                 # attribute build; a string arrives from a rebuild of a
+                 # container we already wrote, and re-encoding that would give
+                 # a JSON string of a JSON string.
+                 json.dumps(barriers, separators=(",", ":"))
+                 if isinstance(barriers, (list, tuple)) else barriers,
+                 props.get("climb_m"), props.get("sustained_pct"),
                  1 if props.get("motorbike_ok") else 0,
                  1 if props.get("fourxfour_ok") else 0,
                  props.get("access_reason") or "",

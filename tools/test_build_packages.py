@@ -383,7 +383,19 @@ check("there is one dataset and it is named for what it holds",
 # against `way_class = 'boat'`.
 check("the schema's classes are what the builder emits",
       sorted(r["way_class"] for r in build_packages.ROW_RULES.values()),
-      ["boat", "bridleway", "footpath", "restricted_byway"])
+      ["boat", "bridleway", "footpath", "osm_track", "restricted_byway"])
+
+# THE TIER IS PER RULE, and exactly one rule is not statutory. Where there is
+# no definitive map there is no statutory tier to claim, and a build that
+# quietly marked an OSM track 'statutory' would put an unrecorded track into
+# the one class this app treats as proven.
+check("only the OSM track is carried on anything but a definitive map",
+      sorted(t for t, r in build_packages.ROW_RULES.items()
+             if r["legal_tier"] != "statutory"), ["osm_track"])
+check("and its tier says which", build_packages.ROW_RULES["osm_track"]
+      ["legal_tier"], "osm")
+check("and its evidence says so too - not 'statutory'",
+      build_packages.ROW_RULES["osm_track"]["access_evidence"], "osm")
 
 # FOOTPATHS ARE NOT CARRIED. 435,299 of them, 627 MB, and not one has any
 # bearing on where a motor vehicle may legally go.
@@ -406,12 +418,39 @@ check("a byway open to all traffic is never context",
 
 # > A way is drawn rideable only when way_class = 'boat' and
 # > legal_tier = 'statutory'.
-check("only a BOAT is open to a motorbike",
-      sorted(r["way_class"] for r in build_packages.ROW_RULES.values()
-             if r["motorbike_ok"]), ["boat"])
-check("only a BOAT is open to a 4x4",
-      sorted(r["way_class"] for r in build_packages.ROW_RULES.values()
-             if r["fourxfour_ok"]), ["boat"])
+# THE RULE IS A CONJUNCTION AND THIS CHECKED ONE HALF OF IT. It read "only a
+# BOAT is open to a motorbike" over every rule, which passed for free while
+# every rule was statutory - so the `legal_tier` half was never tested at all,
+# and the first non-statutory rule turned it red for the right reason.
+#
+# Split in two: among the STATUTORY rules a BOAT is the only one open to a
+# motor vehicle, and separately, no non-statutory rule is drawn rideable. The
+# second is what keeps an OSM track amber.
+_statutory = [r for r in build_packages.ROW_RULES.values()
+              if r["legal_tier"] == "statutory"]
+check("among statutory ways, only a BOAT is open to a motorbike",
+      sorted(r["way_class"] for r in _statutory if r["motorbike_ok"]),
+      ["boat"])
+check("among statutory ways, only a BOAT is open to a 4x4",
+      sorted(r["way_class"] for r in _statutory if r["fourxfour_ok"]),
+      ["boat"])
+
+# > A way is drawn rideable only when way_class = 'boat' AND
+# > legal_tier = 'statutory'.
+#
+# Which is not the same as "may a vehicle physically use it". An OSM track
+# carries motorbike_ok=1 because nothing says it cannot, and it is still not
+# drawn rideable, because no source recorded a right. Those two are different
+# questions and the schema answers them in different columns.
+check("the drawn-rideable set is exactly the statutory BOAT",
+      sorted(t for t, r in build_packages.ROW_RULES.items()
+             if r["way_class"] == "boat" and r["legal_tier"] == "statutory"),
+      ["byway_open_to_all_traffic"])
+check_true("an OSM track is not drawn rideable",
+           build_packages.ROW_RULES["osm_track"]["way_class"] != "boat")
+check_true("and it tells the rider to check locally",
+           "check locally"
+           in build_packages.ROW_RULES["osm_track"]["access_reason"])
 
 # > access_evidence must never be 'none' on a way where fourxfour_ok = 0 -
 # > hiding a lane requires evidence, and F1 measured that we have it for under

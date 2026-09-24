@@ -100,6 +100,36 @@ ROW_RULES = {
         "carried": True,
         "context": True,
     },
+    #: THE FIFTH CLASS, and the only one not derived from a definitive map.
+    #:
+    #: Outside England and Wales there is no definitive map to read, so a way
+    #: is carried on OSM's word and is drawn amber - "verify locally" - rather
+    #: than green. WAYS-SCHEMA.md names the class, the reader maps it and the
+    #: compat view maps it; the rules table was the one place it was missing,
+    #: which meant nothing in the pipeline could produce a way whose
+    #: `legal_tier` was not 'statutory'. The contract test then had a
+    #: `legal_tier` check that a reader hard-coding 'statutory' passed.
+    #:
+    #: `access_evidence` is 'osm', NOT 'statutory'. The distinction is the
+    #: whole point of the column: this is a way somebody mapped, not a right
+    #: somebody recorded, and the record card must not claim otherwise.
+    #:
+    #: NOT REACHED BY ANY SOURCE YET - the world tier is phase 7. It is
+    #: declared here so the shape exists and can be tested before the data
+    #: arrives, not because anything builds it today.
+    "osm_track": {
+        "way_class": "osm_track",
+        "designation": "Track (OpenStreetMap)",
+        "legal_tier": "osm",
+        "motorbike_ok": 1,
+        "fourxfour_ok": 1,
+        "access_reason": "Mapped as a track on OpenStreetMap. There is no "
+                         "definitive map here: check locally before you ride "
+                         "it.",
+        "access_evidence": "osm",
+        "carried": True,
+        "context": False,
+    },
     "footpath": {
         "way_class": "footpath",
         "designation": "Public footpath",
