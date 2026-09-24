@@ -30,3 +30,24 @@ cache/
 secrets/
 *.key
 *.pem
+
+# Scratch, backups and cross-repo droppings.
+#
+# Agents doing mutation testing copy a file aside, break it, run the suite and
+# put it back, which leaves `.bak` files about. A shared scratchpad once got
+# bulk-copied into this repository's root, landing fourteen Dart files and two
+# routing profiles from the APP repo here - none of which belong in a builder
+# repo at all. Nothing caught it but a human reading `git status`.
+#
+# So: this repo builds datasets. Dart does not live here.
+*.dart
+*.bak
+*.orig
+*.rej
+/*.brf
+
+# Local build staging. height.yml and satellite.yml both stage into a
+# top-level staging/ directory, and build_height.py documents it in its own
+# usage - so a human running a local build would otherwise have it turn up
+# untracked, full of large files, waiting to be committed by accident.
+staging/
