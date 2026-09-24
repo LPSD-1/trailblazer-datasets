@@ -389,7 +389,27 @@ def tile_properties(props, with_uid):
            "county": props.get("county"),
            "tier": props.get("legal_tier"),
            "moto": bool(props.get("motorbike_ok")),
-           "fourxfour": bool(props.get("fourxfour_ok"))}
+           "fourxfour": bool(props.get("fourxfour_ok")),
+           # THE THREE THE 4x4 MODEL CANNOT BE DRAWN WITHOUT.
+           #
+           # `VehicleModelStyle` in the app states the whole rule as a map
+           # filter and then says, in as many words, that it is "opted into by
+           # name" because none of these three reaches a tile - so the pivot's
+           # headline behaviour, that a 4x4 is not shown a way its record
+           # closes to it, was a correct rule wired to nothing.
+           #
+           # `access_evidence` is the one that makes the hiding LAWFUL: F1
+           # measured evidence on under 10% of ways, so a filter that hid on
+           # the flag alone would be hiding on nothing for the other 90%. The
+           # two terrain figures are what F4 promoted to the PRIMARY
+           # motorbike/4x4 difference at ~100% coverage against width's ~10%.
+           #
+           # NAMED VERBATIM as the SQL columns, matching the app's constants.
+           # A shortening layer here would be one more place the builder and
+           # the reader drift apart without either noticing.
+           "access_evidence": props.get("access_evidence"),
+           "sustained_pct": props.get("sustained_pct"),
+           "climb_m": props.get("climb_m")}
     if with_uid:
         out["lane_uid"] = props.get("lane_uid")
     return {k: v for k, v in out.items() if v is not None}
@@ -402,8 +422,15 @@ def coalesce_key(props):
     feature at low zoom. What this must NOT include is anything per-lane - a
     uid, a name, a length - or the grouping achieves nothing.
     """
+    # THE THREE NEW KEYS BELONG HERE TOO, and leaving them out would be a
+    # silent correctness bug rather than a missed optimisation: two ways with
+    # different evidence or different gradients would be coalesced into one
+    # feature at low zoom, and whichever was written first would decide
+    # whether BOTH are hidden from a 4x4.
     return (props.get("class"), props.get("county"), props.get("tier"),
-            props.get("moto", False), props.get("fourxfour", False))
+            props.get("moto", False), props.get("fourxfour", False),
+            props.get("access_evidence"), props.get("sustained_pct"),
+            props.get("climb_m"))
 
 
 def build_tiles(features, zoom, coalesced, on_tile, ids=None):

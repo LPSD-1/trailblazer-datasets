@@ -441,13 +441,13 @@ def digests(root):
 EXPECTED_SQLITE = "3.50.4"
 EXPECTED = {
     "catalogue.json": {"bytes": 3697,
-        "sha256": "5443d7283b15961b8f0c3b96658a7b51d4478e2107afd7a070a046e47a49813d"},
+        "sha256": "150b94caa6a0fd451c31c26e3561516205fc643db1759eed4ff6b0671833790c"},
     "containers/manifest.json": {"bytes": 1003,
-        "sha256": "8e976af0efddaf6646a6b633f79bffd7fe781157f0a353fa020d201eff7ff4f9"},
+        "sha256": "31c9983cf26cb706f8858357cb232e7af7cf596fbe2f89b8924ac258192cb1a4"},
     "containers/ways-overview.tbmap": {"bytes": 57344,
-        "sha256": "d23343592dadec69f070bfc22a6d7dbeb49008939e0cd9e8b0edccd0eb16b38f"},
+        "sha256": "361619bce5febb761512afb7eacea7e44f2c18d0b81dbe9624be97832e0dcf89"},
     "containers/ways-south-west.tbmap": {"bytes": 65536,
-        "sha256": "2dfefdcbbe90c0c18a0196aaf86a2fb3e5132d114ccb6ea64d49ea407abe3d20"},
+        "sha256": "3c5a608e0820e46e1e1cef877ed124ada15390a3b02d92a786e4e367be016af0"},
     "manifest.json": {"bytes": 1763,
         "sha256": "a3ed35b8e5901205aff544954fadc557a9b4daa42595140eab69506f39510b71"},
     "packages/ways-south-west.tbpack": {"bytes": 1110,
