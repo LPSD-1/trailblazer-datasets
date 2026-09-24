@@ -414,6 +414,47 @@ def test_a_region_with_no_cache_gets_no_poi_tables_and_a_null_count():
         shutil.rmtree(tmp, ignore_errors=True)
 
 
+def test_a_half_fetched_region_builds_with_no_pois_rather_than_failing():
+    """Overpass timing out on one category must not cost every rider the map.
+
+    Found by the cutover dry run: `food` 504'd across the south-west, the fetch
+    step logged "keeping what we have" as designed, and the container build
+    then died on `no cache for south-west/food`. The lanes are the product;
+    POIs are a courtesy.
+    """
+    import build_pois as PO
+
+    def cache(tmp):
+        c = _poi_cache(tmp, "midlands", [
+            _node(1, "fuel", 52.505, -1.695, {"amenity": "fuel"})])
+        # THE PREMISE: the category removed is one the build insists on.
+        dropped = PO.CATEGORIES[-1][0]
+        os.remove(PO.cache_path(c, "midlands", dropped))
+        return c
+    try:
+        out, tmp = _pipeline(poi_cache=cache)
+    except SystemExit as e:
+        check("a half-fetched region does not stop the build", False, str(e))
+        return
+    try:
+        entries = {e["id"]: e for e in out["containers"]}
+        check("the region still gets its container", "gb-midlands" in entries,
+              sorted(entries))
+        got = entries.get("gb-midlands", {}).get("poiCount", "MISSING")
+        check("and says nobody fetched its POIs, not that there are none",
+              got is None, "got %r" % (got,))
+        db = sqlite3.connect(os.path.join(tmp, "containers",
+                                          "ways-midlands.tbmap"))
+        names = {r[0] for r in db.execute(
+            "SELECT name FROM sqlite_master WHERE name IN "
+            "('pois','pois_bbox')")}
+        db.close()
+        check("with no POI tables, rather than three categories of them",
+              names == set(), "got %r" % sorted(names))
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
 def test_the_overview_carries_no_pois():
     """The overview carries no records on purpose; POIs are records."""
     def cache(tmp):

@@ -78,6 +78,21 @@ def _add_pois(target, features, region, cache, log=print):
     import build_pois as PO
     if not cache or not os.path.isdir(os.path.join(cache, region)):
         return None
+    # A HALF-FETCHED REGION IS AN UNFETCHED ONE, not a failed build. Overpass
+    # 504s on the dense categories (measured: `food` across the south-west, in
+    # the first dry run of the cutover) and the fetch step deliberately shrugs
+    # that off - "a region that will not come back does NOT fail the lane
+    # build". `load_cached` then refused the incomplete region with
+    # SystemExit, so the shrug was undone one step later and the courtesy call
+    # to somebody else's server took down every rider's lanes. No tables and a
+    # null count is the honest state: "nobody has fetched this", which
+    # poi_staleness.py also reads it as, so the next run tries again.
+    missing = [name for name, _ in PO.CATEGORIES
+               if not os.path.exists(PO.cache_path(cache, region, name))]
+    if missing:
+        log("    %-40s POIs skipped: no cache for %s"
+            % ("", ", ".join(missing)))
+        return None
     bounds = B._bounds_of(features)
     if not bounds:
         return None

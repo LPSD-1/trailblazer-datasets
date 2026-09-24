@@ -1206,8 +1206,14 @@ jobs:
       # never writes to it. The published `containers/` tree is deliberate: the
       # feed must describe the containers riders HAVE, not ones dist/ might
       # have built and not published.
-      - name: Publish the live rain and river feeds
-        if: ${{ !inputs.dry_run }}
+      #
+      # NOT GATED ON `dry_run`, despite the name it used to have. This step
+      # writes files into the working tree and nothing else; the commit and
+      # push are the `Publish` step below, which IS gated. Gating this one too
+      # meant a dry run built no feeds, and the proof step below then refused
+      # twelve feeds that had never been asked for - the first cutover
+      # rehearsal failed on exactly that, and taught nothing about the feeds.
+      - name: Build the live rain and river feeds
         run: |
           set -euo pipefail
           python - <<'PY' | tee /tmp/region-containers.txt
