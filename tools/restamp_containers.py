@@ -75,6 +75,14 @@ except Exception:                                    # pragma: no cover
 #: left alone by default instead of being silently recomputed as something.
 BYTE_DERIVED = ("sha256", "bytes", "downloadBytes", "signature")
 
+#: What "moved" means: the FILE changed. Not the signature. A signature is
+#: rewritten whenever a key is present, so counting it made an unsigned row
+#: that gained one read as "moved" while its bytes had not - and
+#: --require-moved, whose whole job is to fail a restamp that ran before
+#: anything was written, could not fail anywhere a key is set. Which is CI,
+#: the only place it runs: its own test went red there and green here.
+FILE_DERIVED = ("sha256", "bytes", "downloadBytes")
+
 
 def container_path(manifest_path, entry):
     """Where the file behind a manifest row actually is.
@@ -111,7 +119,8 @@ def restamp(manifest_path, signing_key=None, allow_unsigned=False, log=print):
         if not os.path.exists(path):
             missing.append(entry.get("file"))
             continue
-        before = {k: entry.get(k) for k in BYTE_DERIVED}
+        before = {k: entry.get(k) for k in FILE_DERIVED}
+        signed_before = entry.get("signature")
 
         entry["sha256"] = BC._digest(path)
         entry["bytes"] = os.path.getsize(path)
@@ -120,7 +129,7 @@ def restamp(manifest_path, signing_key=None, allow_unsigned=False, log=print):
         if signing_key is not None:
             signature, _ = sign_release.sign_file(path, signing_key)
             entry["signature"] = base64.b64encode(signature).decode("ascii")
-        elif before.get("signature"):
+        elif signed_before:
             # It WAS signed and we cannot sign it again. Publishing it now
             # would ship a signature over bytes that no longer exist, which
             # the app refuses at mount after paying for the whole download.
@@ -133,7 +142,7 @@ def restamp(manifest_path, signing_key=None, allow_unsigned=False, log=print):
                     % entry["file"])
             entry["signature"] = None
 
-        after = {k: entry.get(k) for k in BYTE_DERIVED}
+        after = {k: entry.get(k) for k in FILE_DERIVED}
         (moved if after != before else same).append(entry["file"])
 
     if missing:

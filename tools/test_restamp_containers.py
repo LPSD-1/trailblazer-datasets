@@ -190,6 +190,54 @@ def test_require_moved_exits_nonzero_when_nothing_moved():
         shutil.rmtree(tmp, ignore_errors=True)
 
 
+def test_require_moved_still_fails_when_a_signing_key_is_set():
+    """The same guard, WITH A KEY, which is how CI runs it.
+
+    The test above passed on a developer machine and failed in the cutover
+    dry run: CI sets TB_SIGNING_KEY_PEM, the unsigned fixture row gained a
+    signature, and a signature counted as the file moving. So the guard could
+    not fire in the one place it runs.
+    """
+    if sign_release is None:
+        check("sign_release imports, so the keyed case is tested at all",
+              False, "cryptography missing")
+        return
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import (
+        Ed25519PrivateKey)
+    pem = Ed25519PrivateKey.generate().private_bytes(
+        serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8,
+        serialization.NoEncryption()).decode("ascii")
+    saved = {k: os.environ.get(k) for k in ("TB_SIGNING_KEY_PEM",
+                                            "TB_SIGNING_KEY")}
+    os.environ["TB_SIGNING_KEY_PEM"] = pem
+    os.environ.pop("TB_SIGNING_KEY", None)
+    tmp = tempfile.mkdtemp()
+    try:
+        path = container(os.path.join(tmp, "ways-north.tbmap"))
+        where = manifest(tmp, path)
+        code = R.main(["--manifest", where, "--require-moved"])
+        check("with a key, a restamp that moved nothing still fails",
+              code == 1, code)
+        # THE PREMISE: the key really was used, so the row did gain a
+        # signature - otherwise this is the keyless test again.
+        with open(where, encoding="utf-8") as fh:
+            row = json.load(fh)["containers"][0]
+        check("and the key was really used", bool(row.get("signature")),
+              repr(row.get("signature")))
+        container(path, tables=("way_wetness",))
+        code = R.main(["--manifest", where, "--require-moved"])
+        check("and with a key, one that moved something passes", code == 0,
+              code)
+    finally:
+        for k, v in saved.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
 # --------------------------------------------------------------- signatures
 
 def test_a_signed_container_is_not_silently_downgraded():
