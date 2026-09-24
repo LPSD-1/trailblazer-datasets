@@ -129,6 +129,310 @@ HEADER = """#
 """
 
 
+# ---------------------------------------------------------------------------
+# THE VEHICLE MODEL - spec 9.2 "Distinct motorbike and 4x4 profiles"
+# ---------------------------------------------------------------------------
+# Kept here rather than hand-edited into the three .brf files, because the
+# header those files carry says so: "edit the generator and re-run, or the next
+# upstream refresh will quietly drop your change". This block IS that change,
+# and it is the whole of what makes a trail bike and a Defender come back with
+# different routes rather than the same route with different times against it.
+#
+# The app rewrites only the `assign` lines in VEHICLE_GLOBALS - see
+# `lib/data/routing/vehicle_profile.dart`. Everything else below is fixed, so
+# the rules live next to the tags they act on and can be read as one piece.
+#
+# BEFORE ADDING A TAG HERE, CHECK lookups.dat. A profile may only name tags the
+# lookup table declares; `BExpression.parse` throws "unknown lookup name" on
+# anything else, ProfileCache then fails, and the rider gets NO ROUTING AT ALL.
+# maxwidth, maxheight, maxweight, maxlength and width are NOT in the table, so
+# there is no clause for a posted limit - the tiles were encoded against this
+# same table and never carried one.
+VEHICLE_GLOBALS = """# ---------------------------------------------------------------------------
+# VEHICLE MODEL - spec 9.2 "Distinct motorbike and 4x4 profiles"
+# ---------------------------------------------------------------------------
+# Until this block existed, a trail bike and a Defender were handed identical
+# costs and came back with the IDENTICAL LINE. Only the clock differed, via
+# TravelProfile, which rewrites the kinematic parameters and says in its own
+# doc comment that "route CHOICE is untouched". Spec 7.2.1 recorded the
+# shortfall by grep: ford 0 hits, maxweight 0, maxwidth 0, height 0,
+# smoothness 0 across all three profiles.
+#
+# WHAT THE ENGINE CAN AND CANNOT SEE, and why width and weight look the way
+# they do below. A profile may only name tags that assets/routing/lookups.dat
+# declares: BExpression.parse throws "unknown lookup name" on anything else,
+# ProfileCache then fails to parse the profile, and NOTHING routes at all.
+# Checked against the shipped lookups.dat (lookupversion 11, minorversion 2):
+#
+#   present, way context  : ford, smoothness, tracktype, surface, highway,
+#                           motorcycle, motorcar, motor_vehicle, vehicle,
+#                           access, incline, mtb:scale, sac_scale, obstacle
+#   present, node context : barrier, ford, highway
+#   ABSENT ENTIRELY       : maxwidth, maxheight, maxweight, maxlength, width
+#
+# The absent five are why width and height below act on BARRIER CLASSES and
+# their typical apertures rather than on a way's own posted limit, and why
+# there is no weight clause at all. It is not an oversight in the profile:
+# the lookup table is the dictionary the .rd5 tiles were ENCODED with, so a
+# limit that is not in it was never carried into the routing graph and no
+# profile can reach it. Naming the tags here without rebuilding the tiles
+# would be worse than leaving them out - the clause would parse, evaluate
+# against an always-absent tag, and silently never fire.
+assign vehicle_is_4x4      = false  # %vehicle_is_4x4% | Route for a 4x4 rather than a motorbike | boolean
+assign vehicle_width       = 0.9    # %vehicle_width% | Vehicle width in metres | number
+assign vehicle_height      = 1.4    # %vehicle_height% | Vehicle height in metres | number
+
+assign avoid_fords         = false  # %avoid_fords% | Avoid water crossings | boolean
+assign avoid_gates         = false  # %avoid_gates% | Avoid gates | boolean
+assign avoid_steps         = true   # %avoid_steps% | Avoid steps | boolean
+assign avoid_narrow        = false  # %avoid_narrow% | Avoid narrow ways | boolean
+"""
+
+VEHICLE_WAY = """# --- VEHICLE MODEL, way half ----------------------------------------------
+#
+# The only place in this file where the two vehicles are told apart on the
+# LINE rather than on the clock. See the header block in ---context:global for
+# which tags the engine can actually see.
+
+# EXPLICIT DENIAL, for the one vehicle the stock chain cannot see.
+#
+# The stock access chain consults motorcar, motor_vehicle, vehicle and access,
+# and NEVER motorcycle - so a way tagged `motorcycle=no` routed a motorbike
+# straight down it. That is not a rare tag: lookups.dat's own sample counts
+# 92,079 ways carrying `motorcycle=no` against 27,978 carrying `motorcycle=yes`.
+#
+# THERE IS NO 4x4 HALF TO THIS CLAUSE, and that is not an omission. The stock
+# chain already reads `motorcar` in exactly the way written below, so a second
+# copy of it here would be a rule that can never change an answer - and a rule
+# that cannot change an answer is worse than no rule, because it reads like
+# cover.
+#
+# The test is the stock chain's own, inverted: a value that is PRESENT and is
+# not one of its four permissive ones is a denial. An ABSENT tag is not. It
+# means the source said nothing, which is neither permission nor prohibition,
+# and the stock verdict stands untouched.
+#
+# Nothing here ever ALLOWS a way the stock chain refused. Granting a motorbike
+# passage on `motorcycle=yes` where `motorcar=no` was considered and rejected:
+# this app draws legal conclusions, and its own dataset - not an OSM access
+# tag - is the authority on whether a motorbike may use a way.
+assign tb_denied_here =
+  if vehicle_is_4x4 then false
+  else and not motorcycle= not motorcycle=yes|permissive|designated|destination
+
+# STEPS, and why the option is not a no-op.
+#
+# The highway chain in `caraccess` never lists `steps`, so on its own a
+# stepped way is already unreachable. But that chain is only consulted when
+# there is no `access` tag - `switch access= <highway chain> access=yes|...` -
+# so a stepped way carrying `access=yes` short-circuits it and is handed to the
+# router as an ordinary road. This is the backstop for that case.
+assign tb_steps_blocked = and avoid_steps highway=steps
+
+# NARROW WAYS - A PROXY, AND SAID SO.
+#
+# There is no `width` and no `maxwidth` in lookups.dat, so a way's running
+# width cannot be read at all. What can be read is its CLASS, and a path, a
+# bridleway, a footway or a cycleway is under two metres far more often than
+# not. A driver who knows their vehicle is 2.1 m wide is better served by that
+# proxy than by nothing - but it IS a proxy, and it will avoid a wide
+# hard-packed bridleway along with the narrow ones. Off by default for that
+# reason; the rider turns it on.
+assign tb_is_narrow_class = highway=path|bridleway|footway|cycleway
+
+assign tb_narrow_blocked = and avoid_narrow tb_is_narrow_class
+
+# STEPPING STONES are a footpath crossing. No motor vehicle of any width gets
+# over one, so this is a block rather than a cost, and it is not behind
+# `avoid_fords`: a rider who is happy to wade is still not riding stepping
+# stones.
+assign tb_vehicle_blocked =
+  or tb_denied_here
+  or tb_steps_blocked
+  or tb_narrow_blocked
+  or ford=stepping_stones
+  and avoid_fords ford=yes
+
+# FORDS, when they are not avoided outright.
+#
+# The clearest single difference between the two vehicles, and the asymmetry
+# is the point. A 4x4's wading depth is set by its air intake, and a Defender's
+# is around half a metre. A trail bike's airbox sits lower and its exhaust
+# lower still, and a bike that takes water in is not a wet rider, it is a
+# recovery and the end of the day. So the same ford is a shrug in a 4x4 and a
+# real decision on a bike.
+#
+# Not a block for either. Fords are a product-maker (spec 9.6 G) and plenty of
+# them are ankle-deep; `avoid_fords` above is how a rider says otherwise.
+assign tb_ford_penalty =
+  if ford=yes then ( if vehicle_is_4x4 then 3 else 9 )
+  else 0
+
+# SMOOTHNESS: A JUDGEMENT, NOT A MEASUREMENT.
+#
+# Flagged as such because everything else in this file that carries a number
+# cites something, and this does not. Nobody has measured our riders against
+# OSM's smoothness bands.
+#
+# What is argued: a trail bike picks a line through ruts a 4x4 has to
+# straddle, and where it cannot, the rider dabs and rides on; a 4x4 that
+# bellies out in the same rut is stuck and waiting for a strap. So the bike
+# tolerates roughly one band more than the 4x4, and this table is that one
+# band of offset and no more. If it is ever measured, this is the thing to
+# replace.
+assign tb_smoothness_penalty =
+  if      smoothness=impassable    then ( if vehicle_is_4x4 then 60 else 30 )
+  else if smoothness=very_horrible then ( if vehicle_is_4x4 then 30 else 12 )
+  else if smoothness=horrible      then ( if vehicle_is_4x4 then 12 else 5 )
+  else if smoothness=very_bad      then ( if vehicle_is_4x4 then 5 else 2 )
+  else if smoothness=bad           then ( if vehicle_is_4x4 then 2 else 0.5 )
+  else 0
+
+# WIDTH, where it can act on a way rather than on a barrier.
+#
+# 1.6 m is the line between a machine you sit on and one you sit in: a Jimny
+# is 1.645 m across the body, a Defender 90 is 1.79 m, a Land Cruiser 1.98 m,
+# and a trail bike is about 0.9 m across the bars. Above that line a
+# bridleway-width track is a bad afternoon even when it is legal and even when
+# `avoid_narrow` is off, so it costs something rather than nothing.
+assign tb_width_penalty =
+  if tb_is_narrow_class then ( if greater vehicle_width 1.6 then 8 else 0 )
+  else 0
+
+assign tb_vehicle_penalty =
+  add tb_ford_penalty
+  add tb_smoothness_penalty
+  tb_width_penalty
+
+"""
+
+VEHICLE_NODE = """# --- VEHICLE MODEL, node half ---------------------------------------------
+#
+# WIDTH AND HEIGHT ACT HERE, on barrier classes and their typical apertures,
+# because lookups.dat carries no maxwidth and no maxheight and the tiles
+# therefore carry no posted limit anywhere. A typical aperture is a weaker
+# instrument than a surveyed one, so it is used in ONE DIRECTION ONLY: it can
+# stop a vehicle that certainly does not fit, and it never lets one through
+# that the stock rules refused.
+
+# Barriers a rider opens and rides through.
+#
+# A gate on a byway is a thing you get off and open, not a wall - and the
+# stock rule charges 1,000,000 for every one of them, because `caraccess`
+# below is false at any barrier node carrying no access tag. On a green-lane
+# network, where gates are the normal furniture, that is a hard refusal of
+# most of the network for the sake of a thing that costs a minute.
+assign tb_is_gate = barrier=gate|lift_gate|swing_gate|bump_gate|hampshire_gate|sliding_gate|footgate|chain|rope|bar
+
+# Nothing on this node says who may pass; the gate is the only obstacle.
+# Where an access tag DOES speak - `access=private`, `motor_vehicle=no` - the
+# stock verdict stands and none of this fires.
+assign tb_access_silent = and motorcar= and motor_vehicle= and vehicle= access=
+
+# What a gate costs, in the engine's cost units, which are metres of
+# equivalent distance.
+#
+# Stop, open, ride or drive through, close: about 45 s on a bike, and call it
+# 90 s in a 4x4, where it is usually the driver getting out twice and the
+# vehicle is harder to leave standing in a gateway. At the 30 km/h a green
+# lane is actually covered at - 8.3 m/s - that is 375 m and 750 m. Rounded.
+assign tb_gate_cost = if vehicle_is_4x4 then 800 else 400
+
+# BARRIERS NOTHING GETS PAST.
+#
+# Every one of these is currently FREE to the router. The stock node rule
+# names only gate, bollard, lift_gate and cycle_barrier, so a stile, a fallen
+# tree, a concrete block or a set of spikes across a lane cost nothing at all
+# and the route went straight through them.
+#
+# A motorcycle_barrier is in the list for both vehicles on purpose: it is
+# built to stop the narrower of the two, so it stops the wider one as well.
+assign tb_barrier_impassable =
+  barrier=stile|kissing_gate|turnstile|horse_stile|full-height_turnstile|motorcycle_barrier|block|log|tree|fallen_tree|windfall|debris|spikes|wall|fence|hedge|ditch
+
+# WIDTH AS A HARD CONSTRAINT, against typical apertures in metres:
+#
+#   chicane   ~1.0 m   a bike threads it; nothing car-bodied does
+#   bus_trap  ~1.6 m   built to stop a car body; a bike rides the kerbs
+#
+# A vehicle wider than the aperture is stopped. A narrower one is NOT waved
+# through anything: cycle_barrier and bollard stay in the stock blocked list
+# either way, because relaxing those would route a motorbike past a line of
+# bollards that may well be a closure, and this app does not guess in that
+# direction.
+assign tb_too_wide_here =
+  or ( and barrier=chicane   greater vehicle_width 1.0 )
+     ( and barrier=bus_trap  greater vehicle_width 1.6 )
+
+# HEIGHT. One barrier class in the whole table carries it. A height restrictor
+# is a bar, and the common British one over a lane end or a car park is set at
+# 6 ft 6 in, which is 1.98 m.
+assign tb_too_tall_here = and barrier=height_restrictor greater vehicle_height 1.98
+
+"""
+
+OLD_NODE_INITIALCOST = """assign initialcost =
+       switch and avoid_toll barrier=toll_booth 1000000
+       switch caraccess
+              0
+              1000000
+"""
+
+NEW_NODE_INITIALCOST = """# Order matters, and it is not the order the clauses were written in.
+#
+# The three hard refusals come FIRST, before `caraccess`, because a node can
+# carry both `access=yes` and a stile: the stock rule would read the access tag,
+# say yes and hand the router a route through a piece of footpath furniture.
+# `avoid_gates` is above `caraccess` for the same reason - a rider who asked
+# not to be sent through gates means it whether or not the gate is signed open.
+#
+# The gate cost comes LAST, and only where nothing else spoke: it is the one
+# clause here that makes the router MORE willing than the stock profile, so it
+# is reachable only after every refusal has had its say.
+assign initialcost =
+       switch and avoid_toll barrier=toll_booth 1000000
+       switch tb_barrier_impassable                 1000000
+       switch tb_too_wide_here                      1000000
+       switch tb_too_tall_here                      1000000
+       switch and avoid_narrow barrier=chicane      1000000
+       switch and avoid_gates tb_is_gate            1000000
+       switch caraccess                             0
+       switch and tb_access_silent tb_is_gate       tb_gate_cost
+       1000000
+"""
+
+
+def insert_vehicle_model(text):
+    """Add the vehicle block, and hook it into the two cost functions.
+
+    Every anchor is checked. A silently-skipped substitution here ships three
+    profiles that parse perfectly and route a Defender as a motorbike, which is
+    invisible from the outside: the line still draws, and only the rider on the
+    wrong side of a chicane ever finds out.
+    """
+    def once(haystack, needle, replacement, what):
+        if haystack.count(needle) != 1:
+            sys.exit("FATAL: %d matches for the %s anchor; fix the generator."
+                     % (haystack.count(needle), what))
+        return haystack.replace(needle, replacement, 1)
+
+    kinematic = "# Kinematic model parameters"
+    text = once(text, kinematic, VEHICLE_GLOBALS + "\n" + kinematic,
+                "kinematic-block")
+    text = once(text, "assign tb_class_penalty =",
+                VEHICLE_WAY + "assign tb_class_penalty =", "class-penalty")
+    text = once(text, "  add tb_class_penalty\n",
+                "  add tb_class_penalty\n  add tb_vehicle_penalty\n",
+                "cost-chain")
+    text = once(text, "  else if is_avoided_toll_road then 10000\n",
+                "  else if is_avoided_toll_road then 10000\n"
+                "  else if tb_vehicle_blocked then 10000\n",
+                "costfactor-head")
+    text = once(text, OLD_NODE_INITIALCOST,
+                VEHICLE_NODE + NEW_NODE_INITIALCOST, "node-initialcost")
+    return text
+
+
 def penalty_expression(penalties):
     """Build the profile-language expression for our road-class penalty."""
     if not penalties:

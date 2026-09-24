@@ -96,9 +96,122 @@ Categories: `fuel`, `food`, `toilets`, `water`, `parking`, `camping`,
 `repair`, `viewpoint`, `atm`. Nothing else — a general POI database would
 dwarf the ways beside it.
 
+## Conditions
+
+Spec 9.6 C (wet-weather restraint) and 9.6 G (fords and river levels). Five
+tables, same container, written by the **static** half of the conditions
+pipeline in `refresh-data.yml` — `build_wet.py assign` and
+`build_fords.py build`.
+
+**ALL FIVE ARE ADDITIVE. No existing container is invalidated.** Every one is
+`CREATE TABLE IF NOT EXISTS`, nothing already in the schema changes shape, and
+a reader that has never heard of them reads exactly what it read before. A
+container built before this pipeline ran is a container with no conditions, not
+a broken one — and the app must tell those apart the way it already does for
+POIs: the tables' **presence** is the claim. Present and empty means "we looked
+here and there is nothing"; absent means "nobody has run this yet".
+
+```sql
+-- Which lane is soft, and which rain gauge speaks for it.
+CREATE TABLE way_wetness (
+  id             INTEGER PRIMARY KEY,  -- = the record's rowid, as *_bbox.id is
+  susceptibility TEXT NOT NULL,        -- hard | firm | soft | unknown
+  basis          TEXT NOT NULL,        -- surface | tracktype | none
+  basis_value    TEXT,                 -- the OSM value read, verbatim
+  gauge          INTEGER,              -- wet_gauges.id; NULL when none near
+  gauge_m        REAL                  -- metres to it; NULL when none near
+);
+CREATE TABLE wet_gauges (
+  id         INTEGER PRIMARY KEY,      -- local to this container
+  station_id TEXT NOT NULL,            -- EA notation: the key into the feed
+  label      TEXT, lat REAL, lon REAL
+);
+
+-- Where you cross water, and which river gauge speaks for it.
+CREATE TABLE fords (
+  ford_uid    TEXT PRIMARY KEY,        -- osm:n123 / osm:w123, stable
+  way_id      INTEGER,                 -- the record's rowid
+  ford_tag    TEXT NOT NULL,           -- the OSM value, verbatim
+  name        TEXT, lat REAL NOT NULL, lon REAL NOT NULL,
+  way_m       REAL,                    -- metres from the ford to that way
+  gauge       INTEGER,                 -- ford_gauges.id; NULL when none near
+  gauge_m     REAL,                    -- metres to it; NULL when none near
+  source_date TEXT NOT NULL
+);
+CREATE TABLE ford_gauges (
+  id          INTEGER PRIMARY KEY,
+  station_id  TEXT NOT NULL,           -- EA notation: the key into the feed
+  label TEXT, river TEXT, lat REAL, lon REAL,
+  typical_low_m REAL, typical_high_m REAL   -- NULL where the EA never said
+);
+CREATE VIRTUAL TABLE fords_bbox USING rtree(id, min_lon, max_lon, min_lat, max_lat);
+```
+
+**`gauge_m` is part of the answer, not metadata.** Spec 9.6 G: "a gauge ten
+miles downstream says less than one above the ford". EA gauges are sparse and
+essentially never at the ford, so no row is written without the distance, and a
+reader that shows the reading without it is making a claim the data does not
+support.
+
+**NULL is not a reassurance.** `gauge` is NULL when there is nothing within
+`ea_flood.StationIndex.MAX_M`, and that must read to the app as *we do not
+know* — never as *the ford is fine*. The same rule the rest of this file states
+as "unknown is not 'no'", pointed the other way: here the cautious direction is
+silence.
+
+**Nothing here is a closure.** A ford is a hazard and rain is advice. Neither
+may be drawn like a traffic order, and a lane that is legally open and very wet
+is legally open.
+
+### The two published feeds
+
+The **live** half touches no container. What moves every six hours is published
+beside the packs instead, listed in `catalogue.json` under the top-level
+`conditions` block with a size and a `sha256` for each:
+
+| File | Built by | Joins on | Carries |
+|---|---|---|---|
+| `published/wet/<region>.json` | `build_wet.py feed` | `wet_gauges.station_id` | `mm_24h`, `mm_48h`, `at`, the bands, `calibrated` |
+| `published/rivers/<region>.json` | `build_fords.py feed` | `ford_gauges.station_id` | `m`, `at`, `state`, `vs_typical_high_m` |
+
+**A station missing from a feed means unknown, never dry and never low.** Both
+feeds OMIT a gauge with no usable reading rather than writing a zero: a gauge
+that stopped reporting looks exactly like a dry one if a missing total defaults
+to `0.0`, and the direction of that error is a rider told a flooded ford is
+passable.
+
+**Why the split.** A container is ~190 MB and a rider re-downloads one whenever
+its bytes move. Writing this morning's rainfall into one would republish a
+fifth of a gigabyte to say that it had drizzled — the same fault the POI cache
+and the `containers/manifest.json` run stamp each exist to prevent. The feeds
+are kilobytes: measured, 24 kB of rain and 3.4 kB of river for the South West.
+
+**Anything that writes into a container after `build_containers.py` has
+finished must be followed by `restamp_containers.py`.** The builder takes each
+container's `sha256`, `bytes`, `downloadBytes` and Ed25519 signature at the
+moment it finishes that file. Measured on the published
+`containers/motor-south-west.tbmap`, the static half moved it from
+`12f0fff663dbd006…` / 2,347,008 bytes to `95a7fe247a6d26e1…` / 2,437,120 bytes
+while the manifest still described the old one — a download that fails its own
+checksum forever, and a signature over bytes that no longer exist.
+
 ## Meta
 
 `meta` gains `schema_version` (start at `1`), `built_at`, `legal_tier_counts`,
 and `authorities` (JSON array). **`built_at` must not leak into any pack's
 content hash** — a run stamp doing exactly that broke reproducibility once
 already.
+
+`meta` also gains **`evidence_age`** (JSON), written by `evidence_age.py
+--write`: the age distribution of every dated table in this container — median,
+p90, oldest, and the bucket counts — plus the `as_of` date they were measured
+against. It is how the app says "surveys as of 1 September" instead of quoting
+a build stamp, which describes when *we* ran a script and not when the
+authority surveyed.
+
+**It is measured against a PINNED date, and that is load-bearing.** Ages are in
+days relative to `as_of`, so running it with today's date rewrites the key every
+morning, moves every container's bytes, and makes every rider re-download the
+country to learn the median got one day older — the `built_at` fault above,
+wearing a different hat. `refresh-data.yml` pins `--as-of` to the first of the
+month, so the key moves twelve times a year.

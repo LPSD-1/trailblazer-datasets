@@ -504,6 +504,128 @@ def tro_pack(path):
     return pack
 
 
+#: The two live feeds, as (directory under the conditions root, kind). The
+#: directory names are `build_wet.py feed --out published/wet` and
+#: `build_fords.py feed --out published/rivers`, which is where the LIVE half
+#: of refresh-data.yml writes them.
+CONDITION_FEEDS = (("wet", "wet"), ("rivers", "rivers"))
+
+#: How often the app should re-read a feed. The same clock the LIVE half runs
+#: on, said here so it can be changed without shipping an app - exactly as
+#: `updates` does for every pack kind.
+CONDITIONS_UPDATES = "sixHourly"
+
+
+def _served_prefix(conditions_dir):
+    """The path a feed directory is served at, under baseUrl.
+
+    Derived from where the files ACTUALLY are rather than from a constant, so
+    pointing this at another directory cannot produce a catalogue whose feeds
+    404: `published/wet/north.json` on disk is `<baseUrl>published/wet/
+    north.json` served, because `published/` is committed at the Pages root
+    exactly as `names/` and `trips/` are.
+
+    AN ABSOLUTE PATH FALLS BACK TO THE BASENAME, and that is not a shortcut.
+    golden.py builds into a temporary directory, so deriving the URL from the
+    full path would put `C:/Users/.../golden-ab12cd/published` into the
+    catalogue - machine-dependent, which breaks the one claim golden exists to
+    make, and a 404 for every rider besides. The same is true of any caller
+    that passes an absolute path. The last component is the served one.
+    """
+    rel = conditions_dir
+    try:
+        rel = os.path.relpath(conditions_dir, os.getcwd())
+    except ValueError:
+        # Windows: a different drive from the working directory has no
+        # relative path at all, and raises rather than returning something.
+        rel = conditions_dir
+    rel = rel.replace(os.sep, "/").strip("/")
+    if os.path.isabs(conditions_dir) or rel.startswith("..") or rel in (".", ""):
+        rel = os.path.basename(os.path.normpath(conditions_dir))
+    return rel
+
+
+def conditions_block(conditions_dir, base_url):
+    """Where the live wet and river feeds are, so the app can find them.
+
+    A TOP-LEVEL BLOCK, NOT PACKS. This is the one design decision in here and
+    it is not stylistic. `Pack.fromJson` used to refuse the WHOLE index when it
+    met a `kind` it did not know - one unknown pack cost every download on
+    every install, and it took `real_catalogue_test.dart` parsing the live file
+    with the app's own reader to catch it. An unknown kind is skipped now
+    rather than refused, but these are not packs in any case: a pack is
+    something a rider downloads once and keeps, and these are a few kilobytes
+    that go stale in six hours. Putting them beside the containers would also
+    have put them in the default-download budget, which is a number about how
+    much of the country fits on a phone.
+
+    ALWAYS EMITTED, EVEN EMPTY. `conditions` with no feeds says "this build
+    published none"; a MISSING key says "this catalogue was built by something
+    that had never heard of them". The app can act on the first and only guess
+    at the second, and a whole pipeline sitting unrun with nothing anywhere
+    able to tell those two apart is exactly how this got here.
+
+    Sizes and hashes, for the same reason every pack carries them: the app
+    checks a download before it trusts it. They are only true while the feed
+    files and this catalogue are written in ONE commit, which is what the LIVE
+    half of refresh-data.yml does - see the comment on its publish step.
+    """
+    block = {
+        "schema": 1,
+        "updates": CONDITIONS_UPDATES,
+        "licence": "Environment Agency flood-monitoring data, OGL v3",
+        "feeds": [],
+    }
+    if not conditions_dir or not os.path.isdir(conditions_dir):
+        # Loudly, for the reason trips_pack gives. A workflow that quietly
+        # published a catalogue with no conditions in it is the whole failure
+        # this pipeline is being wired in to end.
+        print("warning: %s is missing; NO wet or river feeds in this build"
+              % conditions_dir, file=sys.stderr)
+        return block
+
+    prefix = _served_prefix(conditions_dir)
+
+    for sub, kind in CONDITION_FEEDS:
+        here = os.path.join(conditions_dir, sub)
+        if not os.path.isdir(here):
+            print("warning: no %s feeds in %s" % (kind, conditions_dir),
+                  file=sys.stderr)
+            continue
+        for name in sorted(os.listdir(here)):
+            if not name.endswith(".json"):
+                continue
+            region = name[: -len(".json")]
+            path = os.path.join(here, name)
+            rel = "/".join(p for p in (prefix, sub, name) if p)
+            entry = {
+                "id": "gb-%s-%s" % (region, kind),
+                "kind": kind,
+                "region": region,
+                "file": urllib.parse.urljoin(base_url, rel),
+                "sha256": _sha256_of(path),
+                "bytes": os.path.getsize(path),
+            }
+            # `as_of` is the feed's own reading of when the Environment Agency
+            # last said anything, not when we ran. It is what lets the app show
+            # "measured at 04:15" and go quiet when a feed has stopped moving,
+            # which is the difference between advice and a stale reassurance.
+            try:
+                with open(path, encoding="utf-8") as fh:
+                    entry["asOf"] = json.load(fh).get("as_of")
+            except (ValueError, OSError) as e:
+                print("warning: could not read %s (%s); listing it without a "
+                      "timestamp" % (path, e), file=sys.stderr)
+                entry["asOf"] = None
+            block["feeds"].append(entry)
+
+    if block["feeds"]:
+        total = sum(f["bytes"] for f in block["feeds"])
+        print("  %d live condition feeds (%.1f kB)"
+              % (len(block["feeds"]), total / 1e3))
+    return block
+
+
 def names_packs(names_dir, base_url):
     """The gazetteer packs, one per region, keyed by the region they cover.
 
@@ -548,7 +670,7 @@ def names_packs(names_dir, base_url):
 def build(lanes_manifest, base_url, stamp, satellite_index=None,
           routing_mirror_index=None, routing_mirror_base="",
           trips_index=None, names_dir=None, height_index=None,
-          tro_path=None, containers=None):
+          tro_path=None, containers=None, conditions_dir=None):
     tile_sizes = routing_index()
     gb_areas = lane_areas(lanes_manifest, containers)
     imagery = satellite_packs(satellite_index)
@@ -561,6 +683,7 @@ def build(lanes_manifest, base_url, stamp, satellite_index=None,
     trips = trips_pack(trips_index, base_url)
     names = names_packs(names_dir, base_url)
     tro = tro_pack(tro_path)
+    conditions = conditions_block(conditions_dir, base_url)
     mirror = mirrored_routing(routing_mirror_index)
     if mirror:
         print("  %d routing tiles served from our own mirror" % len(mirror))
@@ -755,6 +878,12 @@ def build(lanes_manifest, base_url, stamp, satellite_index=None,
         "attribution": ATTRIBUTION,
         "baseUrl": base_url,
         "overviews": overviews,
+        # THE LIVE HALF OF THE CONDITIONS PIPELINE, and the only part of this
+        # catalogue that is not about downloading ground. See
+        # `conditions_block`: always present, empty when nothing is published,
+        # so "we published none" and "this build had never heard of them" are
+        # different things on the wire.
+        "conditions": conditions,
         # How often the app should CHECK each kind, published here so it can
         # be changed without shipping an app. They move on different clocks:
         # councils amend a definitive map every few weeks and the road network
@@ -993,6 +1122,20 @@ def main():
                     help="directory of .tbnames gazetteer packs")
     ap.add_argument("--tro", default="tro/index.json",
                     help="the committed record of the traffic-orders pack")
+    # A DEFAULT, NOT A FLAG A WORKFLOW HAS TO REMEMBER.
+    #
+    # `tools/rebuild_catalogue.sh` is the only way any job may rebuild this
+    # file, and it exists because the set of flags was written down in three
+    # places and only ever corrected in one - which is how imagery, trips and
+    # the routing mirror each got deleted by a job that forgot them. Adding a
+    # fourth line there would have been a fourth thing to forget in every job
+    # that does NOT go through the script. Defaulting to where the LIVE half
+    # writes means every caller picks the feeds up without knowing they exist,
+    # exactly as `--satellite` and `--tro` already do.
+    ap.add_argument("--conditions", default="published",
+                    help="directory holding wet/ and rivers/ live feeds; "
+                         "missing is fine and simply means no conditions in "
+                         "this build")
     ap.add_argument("--containers", default="dist/containers/manifest.json",
                     help="what build_containers.py wrote; the .tbmap files "
                          "are what the app downloads")
@@ -1014,7 +1157,8 @@ def main():
                       height_index=args.height,
                       routing_mirror_index=args.routing_mirror,
                       routing_mirror_base=args.routing_mirror_base,
-                      tro_path=args.tro)
+                      tro_path=args.tro,
+                      conditions_dir=args.conditions)
     os.makedirs(os.path.dirname(os.path.abspath(args.out)), exist_ok=True)
     with open(args.out, "w", encoding="utf8") as fh:
         json.dump(catalogue, fh, indent=1)

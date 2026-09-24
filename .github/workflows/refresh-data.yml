@@ -74,6 +74,10 @@ on:
         description: 'Re-fetch POIs for every region, whatever the cache says'
         type: boolean
         default: false
+      refresh_conditions:
+        description: 'Re-fetch EA stations and OSM fords, whatever the cache says'
+        type: boolean
+        default: false
 
 permissions:
   contents: write   # to commit the rebuilt packages
@@ -266,6 +270,295 @@ jobs:
             --key /tmp/dataset.key \
             --poi-cache cache/pois \
             --out dist/containers
+
+      # ===================================================================
+      # THE CONDITIONS PIPELINE, STATIC HALF.
+      #
+      # tools/ea_flood.py, tools/build_wet.py, tools/build_fords.py and
+      # tools/evidence_age.py were written, tested and proved end to end
+      # against live Environment Agency data, and then no job ran any of them,
+      # so not one byte reached a rider. That is build_pois.py, the 4x4 filter,
+      # the HelpScreen and seven others: a finished feature nothing calls.
+      #
+      # THE SPLIT IS THE DESIGN, AND IT IS ABOUT BANDWIDTH.
+      #
+      # What goes in the container is what does not move: which lane is soft,
+      # where the fords are, which gauge speaks for each, and how far away it
+      # is. A container is ~190 MB and a rider re-downloads one whenever its
+      # bytes change. Writing this morning's rainfall into one would republish
+      # a fifth of a gigabyte to say that it had drizzled in Shropshire - the
+      # same fault the POI cache and the containers/manifest.json run stamp
+      # both exist to prevent, arriving through a third door. The rain itself
+      # is the LIVE half, in the `conditions` job below, and it is kilobytes.
+      #
+      # SO THIS HALF MUST NOT MOVE EITHER, and two of its inputs would have.
+      #
+      #   * THE GAUGE NETWORK is re-fetched only when the cache is missing or
+      #     over 30 days old - `poi_staleness.MAX_AGE_DAYS`, and the same
+      #     bargain that step makes for POIs. Re-fetched four times a day, a
+      #     single EA station opening or closing would rewrite the country.
+      #   * `evidence_age` measures ages IN DAYS AGAINST A DATE, so run with
+      #     today's date it writes a different `meta.evidence_age` every
+      #     morning, every container's bytes move, and every rider
+      #     re-downloads England to learn that the median survey got one day
+      #     older. `--as-of` is pinned to the FIRST OF THE MONTH, so the key
+      #     moves twelve times a year and the sentence the app says - "surveys
+      #     as of 1 September" - is one it can stand behind.
+      #
+      # The fords cache is already self-skipping (`fetch` returns early when
+      # the region's file is there), so it is on the same slow clock for free.
+      - name: Cache the Environment Agency gauge network
+        run: |
+          set -euo pipefail
+          mkdir -p cache/ea
+          need=no
+          for parameter in rainfall level; do
+            f="cache/ea/stations-$parameter.json"
+            if [ ! -s "$f" ] || [ -n "$(find "$f" -mtime +30)" ]; then
+              need=yes
+            fi
+          done
+          if [ "$need" = "no" ] && [ "${{ inputs.refresh_conditions }}" != "true" ]; then
+            echo "gauge network cached and under 30 days old; not re-fetching."
+            echo "Container bytes stay put, which is the whole point of this half."
+          else
+            python tools/ea_flood.py stations --parameter rainfall --out cache/ea
+            python tools/ea_flood.py stations --parameter level    --out cache/ea
+          fi
+          # SEEN TO HAVE PRODUCED OUTPUT. A cached file that is there and empty
+          # would take every later step down the "no gauge within 50 km" path
+          # and publish a country with no conditions at all, greenly.
+          python - <<'PY'
+          import json, sys
+          for parameter in ("rainfall", "level"):
+              path = "cache/ea/stations-%s.json" % parameter
+              stations = json.load(open(path, encoding="utf-8"))["stations"]
+              placed = [s for s in stations if s.get("lat") is not None]
+              print("%-8s %5d stations, %d placed" % (parameter, len(stations),
+                                                      len(placed)))
+              if len(placed) < 100:
+                  sys.exit("%s carries %d placed stations. The EA publishes "
+                           "~1,000 rainfall and ~3,500 level sites; this is a "
+                           "half-fetch, and a half-fetch silently un-gauges "
+                           "whole regions." % (path, len(placed)))
+          PY
+
+      # Which file each region's conditions go into, read from the manifest the
+      # container build has just written rather than assumed from a name.
+      # Step 1.2 renamed every container once already (motor-* -> ways-*) and a
+      # hard-coded path would have gone on pointing at a file that is not there
+      # - which is exactly how `container_path` in golden.py rotted.
+      - name: Which container covers each region?
+        run: |
+          set -euo pipefail
+          python - <<'PY' | tee /tmp/region-containers.txt
+          import json, os, sys
+          sys.path.insert(0, "tools")
+          import build_pois as PO
+
+          manifest = json.load(open("dist/containers/manifest.json",
+                                    encoding="utf-8"))
+          areas = [c for c in manifest["containers"] if c.get("kind") == "area"]
+          missing = []
+          for region in sorted(PO.REGIONS):
+              hits = [os.path.join("dist", c["file"]) for c in areas
+                      if c.get("area") == region]
+              if not hits:
+                  missing.append(region)
+              for path in hits:
+                  print("%s %s" % (region, path))
+          if missing:
+              # A REGION SKIPPED IS THE FAILURE, NOT A WARNING. The feeds below
+              # are published per region whatever happens, so a region with no
+              # container would get a live river feed and no fords to join it
+              # to - a rider in Wales told nothing, with every job green.
+              sys.exit("no area container for: %s. The regions are "
+                       "build_pois.REGIONS, which is also what the live feeds "
+                       "are published for, so the two cannot disagree."
+                       % ", ".join(missing))
+          PY
+          test -s /tmp/region-containers.txt
+
+      # Surface crossed with the gauge that speaks for it. Nothing here is a
+      # verdict: an unknown surface is advised on as if soft and `basis` says
+      # why, because "surface not recorded" and "this lane is mud" are
+      # different sentences and the app owes a rider the difference.
+      - name: Which lanes are soft, and which gauge speaks for each
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/conditions
+          while read -r region container; do
+            echo "::group::wetness for $region ($container)"
+            python tools/build_wet.py assign \
+              --container "$container" \
+              --stations cache/ea/stations-rainfall.json \
+              --in-place \
+              --report "/tmp/conditions/wet-$(basename "$container" .tbmap).json"
+            echo "::endgroup::"
+          done < /tmp/region-containers.txt
+
+      # Fords. OVERPASS IS SOMEBODY ELSE'S SERVER, and `fetch` skips a region
+      # it already has, so this is a courtesy call on the slow clock.
+      #
+      # It is NOT wrapped in `|| true` the way the POI fetch is. A missing POI
+      # leaves a rider without a fuel station they could have found another
+      # way; a missing ford leaves the container claiming there is no water
+      # crossing on a lane that has one, which is the direction of error this
+      # whole feature exists to avoid.
+      - name: Fetch the fords
+        run: |
+          set -euo pipefail
+          mkdir -p cache/fords
+          while read -r region container; do
+            echo "::group::fords for $region"
+            if [ "${{ inputs.refresh_conditions }}" = "true" ]; then
+              python tools/build_fords.py fetch --region "$region" \
+                --cache cache/fords --refresh
+            else
+              python tools/build_fords.py fetch --region "$region" \
+                --cache cache/fords
+            fi
+            echo "::endgroup::"
+          done < /tmp/region-containers.txt
+
+      - name: Write the fords and their gauges into each container
+        run: |
+          set -euo pipefail
+          while read -r region container; do
+            echo "::group::fords into $container"
+            python tools/build_fords.py build \
+              --region "$region" \
+              --cache cache/fords \
+              --container "$container" \
+              --stations cache/ea/stations-level.json \
+              --in-place \
+              --report "/tmp/conditions/fords-$(basename "$container" .tbmap).json"
+            echo "::endgroup::"
+          done < /tmp/region-containers.txt
+
+      # How old the answer is, as a distribution rather than a build stamp. See
+      # the comment at the top of this block for why `--as-of` is pinned.
+      - name: Record how old each container's evidence is
+        run: |
+          set -euo pipefail
+          AS_OF="$(date -u +%Y-%m-01)"
+          echo "ages measured against $AS_OF, not today - see the block above"
+          cut -d' ' -f2 /tmp/region-containers.txt | sort -u > /tmp/containers.txt
+          xargs -a /tmp/containers.txt \
+            python tools/evidence_age.py --write --as-of "$AS_OF" \
+              --report /tmp/conditions/evidence-age.json
+
+      # ===================================================================
+      # AND PUT THE MANIFEST BACK IN STEP WITH THE FILES.
+      #
+      # MEASURED, on the published containers/motor-south-west.tbmap:
+      #
+      #     before   sha256 12f0fff663dbd006...   2,347,008 bytes
+      #     after    sha256 95a7fe247a6d26e1...   2,437,120 bytes
+      #
+      # and dist/containers/manifest.json still said 12f0fff6 and 2347008,
+      # because build_containers.py takes the digest, the sizes and the Ed25519
+      # signature at the moment it finishes a container - and the four steps
+      # above then write five new tables into that file.
+      #
+      # Left like that, every one of those containers is a download that fails
+      # its own checksum: the app bins it and tells the rider it was corrupted,
+      # permanently, because the file it re-fetches is always the same one. The
+      # signature is worse - `unsignedIsAccepted` is false, so it downloads in
+      # full, is refused at mount, and the ground reads as "not downloaded"
+      # with nothing anywhere saying why.
+      #
+      # This is the step that makes the static half safe to ship, and
+      # --require-moved is the guard against it running before the writes
+      # instead of after them: if not one container's bytes moved, either the
+      # pipeline above did nothing or this is in the wrong place, and both of
+      # those are a green job that published nothing.
+      - name: Re-hash and re-sign the containers we just wrote into
+        env:
+          TB_SIGNING_KEY_PEM: ${{ secrets.TB_SIGNING_KEY_PEM }}
+        run: |
+          set -euo pipefail
+          python tools/test_restamp_containers.py
+          python tools/restamp_containers.py \
+            --manifest dist/containers/manifest.json \
+            --require-moved
+
+      # THE GUARD AGAINST A GREEN JOB THAT DID NOTHING.
+      #
+      # Every step above can succeed over an empty subject: `assign` on a
+      # container with no ways writes an empty table and reports zero, `build`
+      # on a region whose fords cache came back empty writes nothing and says
+      # "0 written", and the whole block goes green having published a
+      # conditions feature that answers "unknown" everywhere. That is the shape
+      # of every one of the ten features this repository has shipped to nobody,
+      # so it is asked of the CONTAINERS, after the fact, not of the exit codes.
+      - name: Prove the containers actually carry conditions
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json, os, sqlite3, sys
+
+          # Read through an env var with the workflow's own default, so
+          # tools/test_the_conditions_pipeline_is_wired_in.py can EXECUTE this
+          # guard against a fixture and prove it refuses an empty one. A guard
+          # that has never been watched fail is not a guard.
+          listing = os.environ.get("REGION_CONTAINERS",
+                                   "/tmp/region-containers.txt")
+          paths = sorted({line.split(" ", 1)[1].strip()
+                          for line in open(listing)
+                          if line.strip()})
+          if not paths:
+              sys.exit("no containers to check - ZERO SUBJECTS IS BLIND, "
+                       "not a pass")
+
+          problems, fords_total = [], 0
+          for path in paths:
+              db = sqlite3.connect(path)
+              try:
+                  names = {r[0] for r in db.execute(
+                      "SELECT name FROM sqlite_master WHERE type='table'")}
+                  want = {"way_wetness", "wet_gauges", "fords", "ford_gauges"}
+                  absent = want - names
+                  if absent:
+                      problems.append("%s has no %s"
+                                      % (path, ", ".join(sorted(absent))))
+                      continue
+                  counts = {t: db.execute("SELECT count(*) FROM %s" % t)
+                              .fetchone()[0] for t in sorted(want)}
+                  meta = db.execute("SELECT count(*) FROM meta WHERE key=?",
+                                    ("evidence_age",)).fetchone()[0]
+              finally:
+                  db.close()
+              print("%-44s %s  evidence_age=%d" % (path, counts, meta))
+              fords_total += counts["fords"]
+              # A wetness row PER WAY, and a gauge to join it to. Both can only
+              # be zero if the container has no ways at all or no gauge within
+              # 50 km of anywhere in it, and neither is true of any region of
+              # England or Wales.
+              if not counts["way_wetness"]:
+                  problems.append("%s: way_wetness is empty" % path)
+              if not counts["wet_gauges"]:
+                  problems.append("%s: no rainfall gauge was carried" % path)
+              if not meta:
+                  problems.append("%s: no meta.evidence_age" % path)
+
+          # Fords are asked NATIONALLY, not per region, and that is deliberate
+          # rather than lenient: a region can honestly have no ford on one of
+          # our ways, and East Anglia is the obvious candidate. A country with
+          # none is a broken Overpass fetch. Measured on south-west against the
+          # published container: 3,031 fords in the box, 39 of them on a way we
+          # carry.
+          if not fords_total:
+              problems.append("not one ford in the whole country - the "
+                              "Overpass fetch or the on-network match is "
+                              "broken, and zero fords is BLIND, not clean")
+          for problem in problems:
+              print("REFUSED: %s" % problem, file=sys.stderr)
+          if problems:
+              sys.exit(1)
+          print("conditions are in %d containers, %d fords nationally"
+                % (len(paths), fords_total))
+          PY
 
       # The guard for the new format. check_build.py still guards the packs.
       #
@@ -679,3 +972,308 @@ jobs:
                        --json number --jq '.[].number' 2>/dev/null || true); do
             gh issue close "$n" --comment "Fixed: $RUN_URL succeeded." || true
           done
+
+  # =====================================================================
+  # THE CONDITIONS PIPELINE, LIVE HALF. A SEPARATE JOB, ON PURPOSE.
+  #
+  # What the container holds is which lane is soft and where the fords are;
+  # what this publishes is how much rain has fallen and how high the rivers
+  # are. The first is ~190 MB and must not move; the second is kilobytes and
+  # must move every six hours. Two clocks, and the split between them is the
+  # whole design - see the STATIC half in the job above.
+  #
+  # `needs: refresh` with `if: always()` is doing two different things:
+  #
+  #   * SERIALISING THE PUSH. Both jobs commit to main. Run in parallel they
+  #     would race, and the refresh job's own comments record what a lost race
+  #     costs now that a run is 25 minutes of container building. Waiting is
+  #     free here: this job is three minutes.
+  #   * AND STILL RUNNING WHEN THE LANE BUILD FAILED. The feeds have nothing to
+  #     do with whether rowmaps.com was up. A council's server being down must
+  #     not also stop a rider being told the ford is in flood - that is the
+  #     same bargain the ready-made trips step makes, in the other direction.
+  #
+  # NO SECRET, AND THAT IS CHECKED RATHER THAN HOPED. The EA's
+  # flood-monitoring API is Open Government Licence v3 and needs no key or
+  # registration, Overpass is not called here, and the feeds are plain JSON
+  # rather than sealed packs - so nothing in this job can fail on a secret that
+  # only exists on the scheduled run, which is how a 15-minute fetch was once
+  # thrown away by a missing DATASET_KEY_B64.
+  #
+  # MEASURED COST, so the figure is on the record rather than assumed: the
+  # south-west wet feed is 24 kB (221 gauges reporting) and its river feed is
+  # 3.4 kB (18 gauges, restricted to those a ford actually references). Six
+  # regions is ~165 kB a run and ~20 MB a month of git history. That is an
+  # order of magnitude under the 3 MB-per-run traffic-orders pack that was
+  # moved out to a release asset for exactly this reason, so it stays in git
+  # for now - but it is the number to revisit first if the history gets heavy,
+  # and restricting the wet feed to gauges a way references (as the river feed
+  # already does) is the obvious lever.
+  conditions:
+    needs: refresh
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09  # v5
+        with:
+          # THE TIP, NOT THE TRIGGERING COMMIT. `actions/checkout` defaults to
+          # `github.sha`, which on a schedule is main as it stood when the cron
+          # fired - i.e. BEFORE the refresh job above pushed. Checking that out
+          # would rebuild the catalogue from last run's containers and push it
+          # over the one just published, deleting a build nobody would see go.
+          ref: main
+
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1  # v6
+        with:
+          python-version: '3.12'
+
+      # Read-only: this job never writes the cache. The refresh job owns it,
+      # and two jobs saving one key is a race over whose copy survives.
+      - name: Restore the council data cache
+        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25  # v5
+        with:
+          path: cache
+          key: rowmaps-${{ github.run_id }}
+          restore-keys: rowmaps-
+
+      # The gauge network belongs to the STATIC half and is normally restored
+      # above. Fetched here only when it is not - the first run, or a cache
+      # eviction - because a live feed cannot be built without knowing where
+      # the gauges are, and failing instead would make this job depend on the
+      # other one having succeeded, which `if: always()` exists to avoid.
+      - name: Make sure we know where the gauges are
+        run: |
+          set -euo pipefail
+          mkdir -p cache/ea
+          for parameter in rainfall level; do
+            if [ -s "cache/ea/stations-$parameter.json" ]; then
+              echo "$parameter station list restored from the cache"
+            else
+              echo "no cached $parameter stations; fetching (first run, or the"
+              echo "cache was evicted). Two requests."
+              python tools/ea_flood.py stations --parameter "$parameter" \
+                --out cache/ea
+            fi
+          done
+
+      # Rainfall is ACCUMULATED and needs the window; a river level is a state
+      # and needs only the latest reading - ea_flood.py knows the difference
+      # and `--days` only bites on rainfall. Two days, because what cuts a
+      # byway up is saturated ground rather than a shower, and build_wet's
+      # window is 48 hours.
+      - name: Read the gauges
+        run: |
+          set -euo pipefail
+          python tools/ea_flood.py readings --parameter rainfall \
+            --stations cache/ea/stations-rainfall.json \
+            --days 2 --out cache/ea
+          python tools/ea_flood.py readings --parameter level \
+            --stations cache/ea/stations-level.json \
+            --days 2 --out cache/ea
+
+      # NOTHING BELOW TOUCHES A CONTAINER. `build_fords.py feed --container`
+      # READS one - to restrict the feed to the gauges a ford actually
+      # references, which is what takes the river feed from 40 kB to 3 kB - and
+      # never writes to it. The published `containers/` tree is deliberate: the
+      # feed must describe the containers riders HAVE, not ones dist/ might
+      # have built and not published.
+      - name: Publish the live rain and river feeds
+        run: |
+          set -euo pipefail
+          python - <<'PY' | tee /tmp/region-containers.txt
+          import json, os, sys
+          sys.path.insert(0, "tools")
+          import build_pois as PO
+
+          areas = []
+          if os.path.exists("containers/manifest.json"):
+              areas = [c for c in json.load(
+                  open("containers/manifest.json", encoding="utf-8")
+              )["containers"] if c.get("kind") == "area"]
+          for region in sorted(PO.REGIONS):
+              hits = [c["file"] for c in areas if c.get("area") == region]
+              # A region with no published container still gets a feed. It has
+              # to: the feed is what a rider reads, and one published before
+              # the container simply carries every gauge in the box until the
+              # container arrives to narrow it. Silence here would be the
+              # feature not shipping again.
+              print("%s %s" % (region, hits[0] if hits else "-"))
+          PY
+          while read -r region container; do
+            echo "::group::conditions for $region"
+            python tools/build_wet.py feed \
+              --region "$region" \
+              --stations cache/ea/stations-rainfall.json \
+              --readings cache/ea/readings-rainfall.json \
+              --out published/wet
+            if [ "$container" = "-" ]; then
+              echo "  no published container for $region yet; every gauge in"
+              echo "  the box goes in the river feed until there is one"
+              python tools/build_fords.py feed \
+                --region "$region" \
+                --stations cache/ea/stations-level.json \
+                --readings cache/ea/readings-level.json \
+                --out published/rivers
+            else
+              python tools/build_fords.py feed \
+                --region "$region" \
+                --stations cache/ea/stations-level.json \
+                --readings cache/ea/readings-level.json \
+                --container "$container" \
+                --out published/rivers
+            fi
+            echo "::endgroup::"
+          done < /tmp/region-containers.txt
+
+      # THE GUARD AGAINST A GREEN JOB THAT DID NOTHING, asked of the FILES.
+      #
+      # Every step above exits 0 over an empty subject. `readings` on a station
+      # list that came back empty writes a readings file with no stations;
+      # `feed` over that writes a feed with `"stations": {}` - valid JSON, the
+      # right shape, and it tells every rider "we do not know" about every
+      # gauge in the country, four times a day, greenly. A feed with no
+      # stations is BLIND, not clean, and it must fail the job.
+      - name: Prove the feeds are not empty
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json, os, sys
+          sys.path.insert(0, "tools")
+          import build_pois as PO
+
+          problems, totals = [], {}
+          for kind, where in (("wet", "published/wet"),
+                              ("rivers", "published/rivers")):
+              seen = 0
+              for region in sorted(PO.REGIONS):
+                  path = os.path.join(where, "%s.json" % region)
+                  if not os.path.exists(path):
+                      problems.append("%s was not published for %s"
+                                      % (kind, region))
+                      continue
+                  body = json.load(open(path, encoding="utf-8"))
+                  n = len(body.get("stations") or {})
+                  print("%-7s %-12s %4d gauges, as of %s, %d bytes"
+                        % (kind, region, n, body.get("as_of"),
+                           os.path.getsize(path)))
+                  if body.get("region") != region:
+                      problems.append("%s says it is for %r, not %s"
+                                      % (path, body.get("region"), region))
+                  if not body.get("as_of"):
+                      problems.append("%s carries no as_of, so the app cannot "
+                                      "tell fresh from stale" % path)
+                  seen += n
+              totals[kind] = seen
+              # PER COUNTRY, NOT PER REGION. A region can honestly have no
+              # river gauge reporting for an hour; a country with none is the
+              # EA being down or our fetch being broken, and the two must not
+              # produce the same green job.
+              if not seen:
+                  problems.append("not one %s gauge reported anywhere in the "
+                                  "country - ZERO SUBJECTS IS BLIND, NOT A "
+                                  "PASS" % kind)
+          for problem in problems:
+              print("REFUSED: %s" % problem, file=sys.stderr)
+          if problems:
+              sys.exit(1)
+          print("feeds OK: %s" % totals)
+          PY
+
+      # ONE COMMIT, FEEDS AND CATALOGUE TOGETHER, and that is not tidiness.
+      #
+      # The `conditions` block carries each feed's size and sha256 so the app
+      # can check a download before trusting it - the same bargain every pack
+      # makes. A feed republished four times a day against a catalogue rebuilt
+      # on some other clock would be a hash that is wrong within hours, and a
+      # rider would be told their download was corrupted every time. The two
+      # are written, verified and pushed as one change or not at all.
+      #
+      # rebuild_catalogue.sh is THE only way any workflow may rebuild this
+      # file, and it needs no new line for the feeds: build_catalogue.py's
+      # `--conditions` defaults to `published`, exactly as `--satellite` and
+      # `--tro` default to their indexes. A flag the script had to remember is
+      # a flag some other job forgets, which is how imagery, the trips pack and
+      # the routing mirror were each deleted by a build that succeeded.
+      - name: Publish
+        env:
+          REPO_URL: ${{ github.server_url }}/${{ github.repository }}
+        run: |
+          set -euo pipefail
+          bash tools/rebuild_catalogue.sh manifest.json dist/catalogue.json
+          python tools/verify_catalogue.py dist/catalogue.json
+          python tools/validate_catalogue.py dist/catalogue.json
+
+          # And prove the feeds reached it, rather than trusting the rebuild.
+          # A catalogue whose conditions block is empty is exactly what this
+          # whole job exists to stop, and it is a build that "succeeded".
+          python - <<'PY'
+          import hashlib, json, os, sys
+          import urllib.parse
+
+          catalogue = json.load(open("dist/catalogue.json", encoding="utf-8"))
+          block = catalogue.get("conditions")
+          if block is None:
+              sys.exit("the rebuilt catalogue has no `conditions` key at all - "
+                       "build_catalogue.py is older than this workflow")
+          feeds = block.get("feeds") or []
+          if not feeds:
+              sys.exit("the rebuilt catalogue lists NO condition feeds, and "
+                       "published/ is full of them. The app would never find "
+                       "one, which is this pipeline not shipping all over "
+                       "again.")
+          base = catalogue.get("baseUrl") or ""
+          for feed in feeds:
+              rel = feed["file"][len(base):] if feed["file"].startswith(base) \
+                  else urllib.parse.urlparse(feed["file"]).path.lstrip("/")
+              if not os.path.exists(rel):
+                  sys.exit("%s is listed at %s and there is no such file here"
+                           % (feed["id"], feed["file"]))
+              raw = open(rel, "rb").read()
+              if hashlib.sha256(raw).hexdigest() != feed["sha256"]:
+                  sys.exit("%s: the catalogue's hash is not the file's. The "
+                           "app refuses a download whose hash does not match, "
+                           "so this would be published and undownloadable."
+                           % feed["id"])
+              if len(raw) != feed["bytes"]:
+                  sys.exit("%s: the catalogue's size is not the file's"
+                           % feed["id"])
+          print("%d condition feeds listed, and every hash matches the file"
+                % len(feeds))
+          PY
+
+          mv dist/catalogue.json catalogue.json
+          git config user.name  'Trail Blazer data bot'
+          git config user.email 'noreply@github.com'
+          git add -A published catalogue.json
+          if git diff --cached --quiet; then
+            echo "the gauges have not moved since the last run; nothing to say"
+            exit 0
+          fi
+          git commit -m "Conditions: rain and river levels" \
+                     -m "Environment Agency flood-monitoring data, OGL v3."
+
+          # The same re-anchor the refresh job uses, for the same reason: a
+          # generated file does not merge, it has a recipe. catalogue.json is
+          # rebuilt whole by both sides, so a rebase conflicts by construction.
+          GENERATED="published catalogue.json"
+          for attempt in 1 2 3; do
+            if git push; then
+              echo "published on attempt ${attempt}"
+              exit 0
+            fi
+            echo "push rejected; re-anchoring on the new tip (attempt ${attempt})"
+            git fetch origin main || exit 1
+            git reset origin/main || exit 1
+            git add -A ${GENERATED} || exit 1
+            if git diff --cached --quiet; then
+              echo "the remote already has these feeds; nothing to publish"
+              exit 0
+            fi
+            git commit -m "Conditions: rain and river levels" \
+                       -m "Environment Agency flood-monitoring data, OGL v3." \
+              || exit 1
+          done
+          echo "could not publish after 3 attempts; the next run carries it"
+          exit 1

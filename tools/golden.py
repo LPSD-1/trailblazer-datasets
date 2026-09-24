@@ -88,6 +88,52 @@ BASE_URL = "https://golden.invalid/trailblazer/"
 #: nor available when the volunteer-run server upstream is down.
 ROUTING_TILES = {"W5_N50": 12092058, "W5_N55": 9553221, "E0_N50": 14338110}
 
+#: The LIVE half of the conditions pipeline, as a fixed input.
+#:
+#: The feeds themselves are built from the Environment Agency's API four times
+#: a day and are nothing to do with a reproducible container build - so what
+#: the golden fixes is not the readings but the JOIN: that a published feed on
+#: disk becomes a `conditions` entry in the catalogue with the right served
+#: URL, size, hash and `as_of`. Written here by hand, in the shape
+#: `build_wet.feed_body` and `build_fords.feed_body` produce, so a change to
+#: either shape that the catalogue would carry differently moves these bytes.
+#:
+#: TWO REGIONS AND TWO KINDS, NOT ONE OF EACH. A block built by taking the
+#: first file it finds passes a one-file fixture, and `south-west` is the only
+#: region this golden builds ground for - so the wet feed carries a second
+#: region the lane build knows nothing about, which is the real case: the feeds
+#: are published per region by their own job and do not ask what was built.
+CONDITION_FEEDS = {
+    "wet/south-west.json": {
+        "schema": 1, "region": "south-west",
+        "as_of": "2026-03-01T00:15:00Z",
+        "window_h": 48, "stale_after_h": 12,
+        "bands_mm": {"firm": [12.0, 30.0], "hard": None},
+        "calibrated": False,
+        "licence": "Environment Agency flood-monitoring data, OGL v3",
+        "stations": {"E7050": {"mm_24h": 1.2, "mm_48h": 4.4,
+                               "at": "2026-03-01T00:00:00Z", "n": 96}},
+    },
+    "wet/wales.json": {
+        "schema": 1, "region": "wales",
+        "as_of": "2026-03-01T00:15:00Z",
+        "window_h": 48, "stale_after_h": 12,
+        "bands_mm": {"firm": [12.0, 30.0], "hard": None},
+        "calibrated": False,
+        "licence": "Environment Agency flood-monitoring data, OGL v3",
+        "stations": {},
+    },
+    "rivers/south-west.json": {
+        "schema": 1, "region": "south-west",
+        "as_of": "2026-03-01T00:15:00Z", "stale_after_h": 6,
+        "licence": "Environment Agency flood-monitoring data, OGL v3",
+        "stations": {"45120": {"m": 0.42, "at": "2026-03-01T00:00:00Z",
+                               "state": "normal", "vs_typical_high_m": -0.31,
+                               "typical_low_m": 0.15,
+                               "typical_high_m": 0.73}},
+    },
+}
+
 AUTHORITY_CODE = "devon"
 AUTHORITY_NAME = "Devon"
 REGION_ID = "south-west"
@@ -276,12 +322,15 @@ def build_into(out_dir, run_stamp=RUN_STAMP, pack_stamp=PACK_STAMP,
         C.build_all(manifest_path, os.path.join(out_dir, "containers"),
                     GOLDEN_KEY, None, root=out_dir)
 
+        conditions_dir = write_condition_feeds(out_dir)
+
         catalogue = K.build(
             manifest_path, BASE_URL, CATALOGUE_STAMP,
             containers=K.load_containers(
                 os.path.join(out_dir, "containers", "manifest.json")),
             satellite_index=None, trips_index=None, names_dir=None,
-            height_index=None, routing_mirror_index=None, tro_path=None)
+            height_index=None, routing_mirror_index=None, tro_path=None,
+            conditions_dir=conditions_dir)
         with open(os.path.join(out_dir, "catalogue.json"), "w",
                   encoding="utf8") as fh:
             json.dump(catalogue, fh, indent=1)
@@ -290,6 +339,24 @@ def build_into(out_dir, run_stamp=RUN_STAMP, pack_stamp=PACK_STAMP,
         P.dist_dir, K.routing_index = dist_dir, routing_index
 
     return artefacts(out_dir)
+
+
+def write_condition_feeds(out_dir):
+    """Lay CONDITION_FEEDS down where the LIVE half of refresh-data.yml puts
+    them, and hand back the directory build_catalogue is pointed at.
+
+    `published/` and not somewhere neutral, because the directory NAME is part
+    of the answer: it is what `_served_prefix` turns into the URL a rider
+    fetches, so a golden that used a different name would not compare the thing
+    that ships.
+    """
+    root = os.path.join(out_dir, "published")
+    for rel, body in sorted(CONDITION_FEEDS.items()):
+        path = os.path.join(root, *rel.split("/"))
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf8") as fh:
+            json.dump(body, fh, indent=1, sort_keys=True)
+    return root
 
 
 def artefacts(root):
@@ -440,8 +507,8 @@ def digests(root):
 # EXPECTED-BEGIN (rewritten by --bless; do not edit by hand)
 EXPECTED_SQLITE = "3.50.4"
 EXPECTED = {
-    "catalogue.json": {"bytes": 3697,
-        "sha256": "150b94caa6a0fd451c31c26e3561516205fc643db1759eed4ff6b0671833790c"},
+    "catalogue.json": {"bytes": 4746,
+        "sha256": "19edd01635f99f8dab2d984e389c7bf8eba34191fb9ad64f556c82831fb9afac"},
     "containers/manifest.json": {"bytes": 1003,
         "sha256": "31c9983cf26cb706f8858357cb232e7af7cf596fbe2f89b8924ac258192cb1a4"},
     "containers/ways-overview.tbmap": {"bytes": 57344,
@@ -454,6 +521,12 @@ EXPECTED = {
         "sha256": "bf64666f28b1ed5af9634fda6560252472f63eb4178a98eb771b92c0e31c7e04"},
     "packages/ways-south-west.tbpack.sha256": {"bytes": 89,
         "sha256": "d77ef6c295afaf208f0be0045d5f44817c7c151d7c997ee99061a5fce5ab7cc4"},
+    "published/rivers/south-west.json": {"bytes": 348,
+        "sha256": "1de8695dab724afd7106d65d362db0fcf718d107e399fca75b9f43e336857036"},
+    "published/wet/south-west.json": {"bytes": 384,
+        "sha256": "7bf4eb38f374b0430b56625f804ba66bc9dc7606af2176aca5d18efa75a1ca7a"},
+    "published/wet/wales.json": {"bytes": 280,
+        "sha256": "fc38c95f181b4049cf292f9dc627fbf755b3a6d6acfe582389e7e0f5bee01fc4"},
 }
 # EXPECTED-END
 
