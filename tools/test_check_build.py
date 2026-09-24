@@ -28,6 +28,7 @@ The check below is still right, and still needed; what was wrong was the story
 attached to it. It is kept because of the arithmetic in the first paragraph,
 which does not depend on any particular run.
 """
+import base64
 import contextlib
 import io
 import json
@@ -52,6 +53,7 @@ from check_build import (  # noqa: E402
     closure_count,
     coordinates,
     lane_totals,
+    check_packages_readable,
     packages_to_open,
     write_baseline,
     load_baseline,
@@ -934,6 +936,45 @@ class WhichPackagesGetOpened(unittest.TestCase):
         chosen = packages_to_open(built)
         foot = [p for p in chosen if p["package"] == "foot"]
         self.assertEqual([p["laneCount"] for p in foot], [900])
+
+
+class TheWaysDatasetIsOpened(unittest.TestCase):
+    """After the pivot the rideable packages are called `ways`, not `motor`.
+
+    The first byways-only build was refused with "no motor packages were
+    built" and nothing was opened: the gate named the retired partition.
+    """
+
+    WAYS = {"packages": [
+        {"package": "ways", "region": r, "laneCount": 2000,
+         "file": "packages/ways-%s.tbpack" % r}
+        for r in ("midlands", "north", "wales")]}
+
+    def test_every_ways_package_is_opened(self):
+        chosen = packages_to_open(self.WAYS)
+        self.assertEqual(len(chosen), 3, "every ways area, not a sample")
+
+    def test_a_ways_build_is_not_refused_for_having_no_motor(self):
+        problems = []
+        where = tempfile.mkdtemp()
+        key = os.path.join(where, "throwaway.key")
+        with open(key, "w", encoding="utf8") as fh:
+            fh.write(base64.b64encode(bytes(32)).decode("ascii"))
+        check_packages_readable(self.WAYS, where, key, problems)
+        self.assertFalse([p for p in problems if "no rideable" in p
+                          or "no motor" in p], problems)
+        # THE PREMISE: it went on to look for the ways packs themselves, so
+        # this is not passing by returning early. (The files do not exist.)
+        self.assertTrue([p for p in problems if "ways-midlands" in p],
+                        problems)
+
+    def test_a_build_with_nothing_rideable_is_still_refused(self):
+        problems = []
+        check_packages_readable(
+            {"packages": [{"package": "foot", "region": "a",
+                           "laneCount": 9, "file": "packages/foot-a.tbpack"}]},
+            tempfile.mkdtemp(), "unused", problems)
+        self.assertTrue([p for p in problems if "no rideable" in p], problems)
 
 
 class TheAuthorityFloorStillFires(unittest.TestCase):

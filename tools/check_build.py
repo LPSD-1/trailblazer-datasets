@@ -674,6 +674,14 @@ def check_totals(previous, new, problems, dropped=frozenset(),
                         % ", ".join(sorted(missing)))
 
 
+#: The packages that hold the lanes a rider rides: `motor` before the pivot,
+#: `ways` after it. The readability gate asked for `motor` by name, so the
+#: first byways-only build - 12,702 ways, exactly the number predicted - was
+#: refused with "no motor packages were built" in the cutover dry run of
+#: 24 Sep 2026. It never opened a single ways pack.
+RIDEABLE_PACKAGES = ("ways", "motor")
+
+
 def packages_to_open(new):
     """Which sealed packages get opened, in order.
 
@@ -691,7 +699,7 @@ def packages_to_open(new):
     biggest = {}
     for pkg in new.get("packages", []):
         name = pkg.get("package")
-        if name == "motor":
+        if name in RIDEABLE_PACKAGES:
             chosen.append(pkg)
             continue
         best = biggest.get(name)
@@ -711,8 +719,10 @@ def check_packages_readable(new, dist_dir, key_path, problems):
         print("  (cryptography missing - skipping the decrypt check)")
         return
 
-    if not [p for p in new.get("packages", []) if p["package"] == "motor"]:
-        problems.append("no motor packages were built")
+    if not [p for p in new.get("packages", [])
+            if p["package"] in RIDEABLE_PACKAGES]:
+        problems.append("no rideable packages were built (%s)"
+                        % " or ".join(RIDEABLE_PACKAGES))
         return
 
     with open(key_path, encoding="utf8") as fh:
