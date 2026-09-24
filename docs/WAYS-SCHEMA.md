@@ -9,7 +9,9 @@ builder↔reader contract test (0.8) checks both ends agree.
 Today the same way is duplicated into every vehicle that may use it — bicycle
 and horse packs are byte-identical because they are the same bridleway data
 built twice. That partition produced 109 containers and froze a phone. One
-table, classed per way, replaces it: **109 containers become 15.**
+table, classed per way, replaces it: **109 containers become 7** — six regions and one overview.
+
+> Said **15** until 2026-09-24, which was the figure before step 1.2c decided the context near-set and before the region list settled at six. The spec and the plan both say 7 and this file, the contract they cite, said something else.
 
 ## Table
 

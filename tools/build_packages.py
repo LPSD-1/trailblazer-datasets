@@ -154,9 +154,18 @@ DATASET_LABEL = "Green lanes and byways"
 #: way.
 #:
 #: MEASURED over the full published population (10,342 BOATs, 89,300 bridleways
-#: and restricted byways): 73.6% of context ways are nowhere near a BOAT. They
-#: are carried for exactly one job - answering "the byway ends here" at the
-#: point where it ends - and that question cannot arise a mile from any byway.
+#: and restricted byways): **82.8% of context ways are nowhere near a BOAT**,
+#: leaving 15,366 (17.2%) carried. They are carried for exactly one job -
+#: answering "the byway ends here" at the point where it ends - and that
+#: question cannot arise a mile from any byway.
+#:
+#: SAID 73.6% UNTIL 2026-09-24, AND THAT FIGURE IS SUPERSEDED. It came from a
+#: grid-cell approximation, and the build itself reproduces it at a 1.5 km
+#: radius - which is what adjacent ~1 km cells actually measure, not the 1 km
+#: this ships. The plan's step 1.2c row carries the correction; this comment,
+#: which is the one a reader of the pipeline finds first, did not, and the
+#: stale number was copied out of here into three other files before anybody
+#: noticed. A measurement lives in one place or it lives in none.
 #:
 #: WHAT THIS COSTS, AND WHY THE METADATA MUST SAY SO. A rider who looks at a
 #: hillside and sees no bridleway must not read that as "there is no bridleway
