@@ -351,6 +351,40 @@ other way round, and the next scheduled job republishes a catalogue built from
 a mismatched pair — hashes from one build against files from another, which the
 app rejects as *"That download was corrupted."*
 
+### 6a. REHEARSED, 24 Sep 2026 — and step 1 as written was wrong
+
+Run on a scratch clone with its remote removed, by `tools/rehearse_rollback.sh`,
+which anyone can re-run. Nothing was published and the clone was deleted.
+
+**The revert conflict is real.** A simulated cutover, then a simulated
+`traffic-orders.yml` catalogue rebuild on top of it — which happens within six
+hours, always — and `git revert <cutover>` fails with `UU catalogue.json`,
+exactly as predicted above.
+
+**But the documented rollback was wrong, and the rehearsal is the only thing
+that could have found it.** Step 1 as written —
+`git checkout <cutover>^ -- containers packages manifest.json` — RESTORES the
+109 old containers and does not REMOVE the 7 new ones. The first run ended
+with **116 containers and 13 `ways-*` files left behind**, and `git status`
+reported clean.
+
+That is worse than it sounds, because of a fix made the same day: the app's
+active-set chooser now PREFERS the `ways` shape over the legacy one. So a
+rollback performed exactly as documented would have left every rider
+preferring the containers the rollback existed to withdraw. The rollback
+would have failed silently, in the direction of the thing being rolled back.
+
+Corrected step 1:
+
+```
+rm -rf containers packages
+git checkout <cutover-commit>^ -- containers packages manifest.json
+```
+
+**Measured, after the correction:** 109 containers, 105 packs, zero `ways-*`
+left, manifest back to schema 1, working tree clean. Clone 5 s, rollback 5 s.
+Call it two minutes with a human reading each step.
+
 **The rollback that would actually work**, written down here because it is not
 written down anywhere else. UNTESTED — this has never been run, and it should
 be rehearsed on a scratch fork before the cutover, not after:
@@ -437,17 +471,19 @@ just has one untested shape.
 
 **NO-GO**, on three conditions, none of them large:
 
-1. **Blocking.** Close the `old_total == 0` hole in `check_totals`, gate the
+1. ~~**Blocking.**~~ **DONE.** Close the `old_total == 0` hole in `check_totals`, gate the
    cutover against `build_baseline.json`'s own `becomes.total`, and add the
    all-types-dropped case to `tools/test_check_build.py` — confirming it fails
    before the fix. Without this the guard cannot tell the intended cutover from
    a collapsed fetch, and that is the single thing it exists to do.
-2. **Blocking.** Build the candidate into `dist/` and run the full gate chain
+2. **IN PROGRESS** — `dry_run` now exists so this is possible at all. Build the candidate into `dist/` and run the full gate chain
    against it — `check_build.py` with `--key`, `check_containers.py`, the
    catalogue check. Publish nothing. Record the real figures beside the
    expected ones.
-3. **Blocking.** Rehearse the rollback in section 6 on a scratch fork and
-   record how long it took. An untested rollback is not a rollback.
+3. ~~**Blocking.** Rehearse the rollback in section 6 on a scratch fork and
+   record how long it took.~~ **DONE, 24 Sep** — see 6a. It found step 1 was
+   wrong: the rollback left the new containers in place beside the restored
+   old ones. Corrected and re-measured at 5 seconds.
 
 Then **should-fix before or with the cutover**: the active-set tier in section
 4a, and the 404 wording in section 5. Neither loses a rider's data; both leave

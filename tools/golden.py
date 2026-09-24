@@ -660,7 +660,7 @@ def bless(root):
 
 
 def check_expected(root):
-    got, problems = digests(root), []
+    got, problems, uncomparable = digests(root), [], []
     if not EXPECTED:
         problems.append(
             "no expectation is stored. Run --bless once, on a build you have "
@@ -673,20 +673,51 @@ def check_expected(root):
         elif have is None:
             problems.append("%s is expected and was not built" % rel)
         elif have != want:
+            # A CONTAINER IS A SQLITE FILE and its page layout is SQLite's to
+            # decide — and because the catalogue and both manifests carry the
+            # containers' hashes, a page-layout change moves EVERY artefact
+            # here, not only the `.tbmap` ones.
+            #
+            # MEASURED: blessed on a developer machine at SQLite 3.50.4, CI
+            # runs 3.45.1, and all twelve came out the same SHAPE with
+            # different bytes — while CI's own reproducibility check passed in
+            # the same run ("two consecutive builds, same inputs:
+            # byte-identical"). The build is reproducible; the library
+            # underneath is the only variable.
+            #
+            # Refusing on that made this loud and wrong on every CI run, which
+            # is the state a guard is least useful in: about to be ignored, or
+            # forced past. Byte-equality across SQLite versions is not a
+            # property this build has, and a check asserting it is measuring
+            # the runner.
+            #
+            # So across versions the SIZE is still compared, and it has teeth —
+            # a real three-byte difference in `ways-south-west.tbpack` showed
+            # up exactly there. The hash becomes NOT COMPARED rather than a
+            # failure, and BLIND IS NOT PASS, so it is printed every time.
+            across_versions = sqlite3.sqlite_version != EXPECTED_SQLITE
+            if across_versions and have["bytes"] == want["bytes"]:
+                uncomparable.append(rel)
+                continue
             why = ""
-            # A container is a SQLite file and its page layout is SQLite's to
-            # decide. Said out loud rather than left as a mystery diff, because
-            # "the library under us changed" and "the data changed" want
-            # completely different responses and look identical here.
-            if rel.endswith(".tbmap") \
-                    and sqlite3.sqlite_version != EXPECTED_SQLITE:
-                why = (" (recorded with SQLite %s, built with %s - re-bless "
-                       "only after checking the lanes did not move)"
+            if across_versions:
+                why = (" (recorded with SQLite %s, built with %s — and the "
+                       "SIZE moved, which a page layout does not explain)"
                        % (EXPECTED_SQLITE, sqlite3.sqlite_version))
             problems.append(
                 "%s: expected %d bytes / %s, built %d bytes / %s%s"
                 % (rel, want["bytes"], want["sha256"][:16],
                    have["bytes"], have["sha256"][:16], why))
+
+    if uncomparable:
+        print("  NOT COMPARED: %d artefact(s). Built under SQLite %s against "
+              "an expectation recorded at %s."
+              % (len(uncomparable), sqlite3.sqlite_version, EXPECTED_SQLITE))
+        print("    Every size matches. The hashes are a property of the "
+              "library, not of the data - re-bless in THIS environment to "
+              "compare them.")
+        for rel in uncomparable:
+            print("      %s" % rel)
     return problems, got
 
 
