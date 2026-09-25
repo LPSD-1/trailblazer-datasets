@@ -22,8 +22,16 @@ perfectly and leave the wrong map:
     nothing. `build_changeset.py` refuses to WRITE one; this refuses to publish
     one, which is the case where it was written by an older builder, edited, or
     rebuilt by hand.
-  * NOTHING TO APPLY. No tiles, no records, no removals. The app runs its
-    transaction, succeeds, and records the new build over unchanged data.
+  * NOTHING TO APPLY. No tiles, no rows, no removals, and no meta that moves.
+    The app runs its transaction, succeeds, and records the new build over
+    unchanged data. META IS CONTENT: the evidence_age -> evidence_dates switch
+    changes no row of any container, and refusing it as empty cost every
+    rider a whole download of all six regions (~94 MB) for two meta keys.
+    Given the build the changeset is cut from (`against`, which the publisher
+    always has), a restated key counts only when its value differs and a
+    removed one only when that build holds it. Without it - the window gate
+    in refresh-data.yml holds the files and none of their from-builds - it
+    refuses what it can prove: a file that restates no key and removes none.
   * A UID BOTH WRITTEN AND REMOVED. `removed_records` is what makes deletion
     possible at all - a right of way a council has REMOVED must come off the
     rider's map, and that is the one direction this app must not be wrong in.
@@ -86,7 +94,12 @@ def _tables(db):
         "SELECT name FROM sqlite_master WHERE type='table'")}
 
 
-def problems_with(path):
+def problems_with(path, against=None):
+    """What would leave a rider's map wrong, or [] for a good changeset.
+
+    `against` is the container the changeset was cut FROM, when the caller
+    holds it: it decides whether restated meta actually moves anything.
+    """
     if not os.path.isfile(path):
         return ["missing"]
     with open(path, "rb") as fh:
@@ -120,7 +133,13 @@ def problems_with(path):
         if "meta" not in tables:
             return out
 
-        out.extend(_meta_problems(_meta(db)))
+        meta = _meta(db)
+        out.extend(_meta_problems(meta))
+        from_meta = None
+        if against is not None:
+            from_meta, why = _from_build_meta(against, meta)
+            if why:
+                out.append(why)
 
         found = [t for t in RECORD_TABLES if t in tables]
         if len(found) != 1:
@@ -131,11 +150,60 @@ def problems_with(path):
                 % (", ".join(sorted(RECORD_TABLES)), sorted(found) or "none"))
             return out
 
-        out.extend(_content_problems(db, tables, found[0]))
-        out.extend(_carried_problems(db, tables, _meta(db)))
+        out.extend(_content_problems(db, tables, found[0],
+                                     _meta_moves(meta, from_meta)))
+        out.extend(_carried_problems(db, tables, meta))
         return out
     finally:
         db.close()
+
+
+def _from_build_meta(path, meta):
+    """The meta of the build a changeset is checked against, and why it cannot
+    be used, if it cannot.
+
+    A BUILD THAT IS NOT `from_build` is refused rather than compared: judged
+    against the wrong build's meta, a changeset that moves nothing for the
+    rider it is meant for could pass because it moves something for another.
+    """
+    try:
+        db = sqlite3.connect(
+            "%s?mode=ro" % pathlib.Path(path).absolute().as_uri(), uri=True)
+        try:
+            held = _meta(db)
+        finally:
+            db.close()
+    except sqlite3.Error as e:
+        return None, "the build it is checked against will not open: %s" % e
+    if meta.get("from_build") and held.get("built_at") != meta["from_build"]:
+        return None, ("checked against build %r, but from_build is %r"
+                      % (held.get("built_at"), meta["from_build"]))
+    return held, None
+
+
+def _meta_moves(meta, from_meta):
+    """How many meta keys applying this would change in the rider's container.
+
+    WITH THE FROM-BUILD, exact: a restated key whose value differs, and a
+    removed key that build holds. build_changeset restates EVERY key, so
+    counting restated keys without it would call every changeset non-empty.
+
+    WITHOUT IT, what the file alone can show: every restated key and every
+    removal might move something, so only a file with neither is provably
+    empty.
+    """
+    try:
+        gone = json.loads(meta.get("removed_meta") or "[]")
+    except ValueError:
+        gone = []           # reported by _carried_problems
+    if not isinstance(gone, list):
+        gone = []           # likewise
+    restated = {k: v for k, v in meta.items()
+                if k not in REQUIRED_META and k != "built_at"}
+    if from_meta is None:
+        return len(gone) + len(restated)
+    return (sum(1 for k in gone if k in from_meta)
+            + sum(1 for k, v in restated.items() if from_meta.get(k) != v))
 
 
 def _meta_problems(meta):
@@ -176,7 +244,7 @@ def _meta_problems(meta):
     return out
 
 
-def _content_problems(db, tables, table):
+def _content_problems(db, tables, table, meta_moves):
     out = []
     key = RECORD_TABLES[table]
 
@@ -199,13 +267,16 @@ def _content_problems(db, tables, table):
                  if name not in _OWN and name != table)
     gone_rows = count("removed_rows")
 
-    # NOTHING TO APPLY.
+    # NOTHING TO APPLY - and meta is something to apply. Counting only rows
+    # refused the evidence_age -> evidence_dates switch, which moves no row,
+    # and sent every rider the whole of all six regions instead.
     if not (tiles or records or gone_recs or gone_tiles or others
-            or gone_rows):
+            or gone_rows or meta_moves):
         out.append(
-            "carries no tiles, no records and no removals. Applying it "
-            "succeeds, changes nothing, and records a build the rider's data "
-            "is not at.")
+            "carries no tiles, no records, no removals and no meta the "
+            "rider's build does not already hold. Applying it succeeds, "
+            "changes nothing, and records a build the rider's data is not "
+            "at.")
 
     # CONTRADICTIONS. Whichever way the app happens to order its statements,
     # one of the two outcomes is wrong, and they differ by a lane being on the
@@ -308,7 +379,11 @@ def _carried_problems(db, tables, meta):
     if not isinstance(carries, dict) or not carries:
         return ["meta.carries names no tables"]
     try:
-        json.loads(meta.get("removed_meta") or "[]")
+        if not isinstance(json.loads(meta.get("removed_meta") or "[]"),
+                          list):
+            # Now that a removal alone makes a changeset worth applying,
+            # one the app cannot read as a list of keys is not a detail.
+            out.append("meta.removed_meta is not a list of keys")
     except ValueError:
         out.append("meta.removed_meta is not JSON")
 
@@ -388,7 +463,72 @@ def report(paths):
 # proving it can refuse
 # --------------------------------------------------------------------------
 
-def _corruptions():
+def _meta_only(before, removed=(), **values):
+    """Reduce a copy of a good changeset to meta alone: every row of every
+    table gone, every restated key set to what `before` (the from-build)
+    already holds, then `removed` named in removed_meta (and not restated)
+    and `values` restated over the top.
+
+    The shape of the evidence_age -> evidence_dates switch, which moves no
+    row, and of the changeset that moves nothing at all - the two this
+    validator must tell apart.
+    """
+    held = _read_meta(before)
+    restated = {k: v for k, v in held.items()
+                if k not in REQUIRED_META and k != "built_at"
+                and k not in removed}
+    restated.update(values)
+
+    def apply(path):
+        db = sqlite3.connect(path)
+        for name in sorted(_tables(db)):
+            if name != "meta" and not name.startswith("sqlite_"):
+                db.execute('DELETE FROM "%s"' % name)
+        db.execute("DELETE FROM meta WHERE key NOT IN (%s)"
+                   % ",".join("?" * len(REQUIRED_META)), REQUIRED_META)
+        db.executemany("INSERT INTO meta VALUES (?,?)",
+                       sorted(restated.items()))
+        db.execute("UPDATE meta SET value=? WHERE key='removed_meta'",
+                   (json.dumps(sorted(removed)),))
+        db.commit()
+        db.close()
+    return apply
+
+
+def _meta_only_changesets(before):
+    """Changesets that carry no row and must still be ACCEPTED, because
+    applying them moves the rider's meta. Refusing the first of these sent
+    every rider all six regions (~94 MB) to receive two meta keys."""
+    held = _read_meta(before)
+    kept = sorted(k for k in held
+                  if k not in REQUIRED_META and k != "built_at")
+    return [
+        ("a key removed and a new one restated, no row moving (the "
+         "evidence_age -> evidence_dates switch)",
+         _meta_only(before, removed=(kept[0],),
+                    evidence_dates='{"ways": {"newest": "2026-01-14"}}')),
+        ("one restated value moved, no row moving",
+         _meta_only(before, context_note=(held.get("context_note") or "")
+                    + " Amended.")),
+    ]
+
+
+def _read_meta(path):
+    db = sqlite3.connect(
+        "%s?mode=ro" % pathlib.Path(path).absolute().as_uri(), uri=True)
+    try:
+        return _meta(db)
+    finally:
+        db.close()
+
+
+#: A corruption only the check against the from-build can see. Every other
+#: one must be refused by the file alone as well, because the window gate in
+#: refresh-data.yml re-checks published changesets without their from-builds.
+FROM_BUILD_ONLY = "from-build"
+
+
+def _corruptions(before):
     def sql(*statements):
         """Apply SQL to a copy of a good changeset.
 
@@ -429,11 +569,23 @@ def _corruptions():
          sql("UPDATE meta SET value='area' WHERE key='kind'")),
         ("a format version the app does not apply",
          sql("UPDATE meta SET value='2' WHERE key='format_version'")),
-        ("nothing to apply",
+        # NOTHING TO APPLY, three ways. Meta is content now, so "every table
+        # emptied" alone is a meta-only changeset and may be a real one; what
+        # is refused is the one that moves nothing the rider holds.
+        ("nothing to apply: no row, no removal, no meta key at all",
          sql("DELETE FROM tiles", "DELETE FROM {records}",
              "DELETE FROM {records}_bbox", "DELETE FROM removed_rows",
              "DELETE FROM bbox_rows", "DELETE FROM removed_records",
-             "DELETE FROM removed_tiles")),
+             "DELETE FROM removed_tiles",
+             "DELETE FROM meta WHERE key NOT IN (%s)"
+             % ",".join("'%s'" % k for k in REQUIRED_META))),
+        ("nothing to apply: only meta the rider already holds",
+         _meta_only(before), FROM_BUILD_ONLY),
+        ("nothing to apply: removing only a key the rider does not hold",
+         _meta_only(before, removed=("no_such_key",)), FROM_BUILD_ONLY),
+        ("removed_meta that is not a list of keys",
+         sql("UPDATE meta SET value='{{\"a\": 1}}' "
+             "WHERE key='removed_meta'")),
         ("no carries at all",
          sql("DELETE FROM meta WHERE key='carries'")),
         ("carries naming a table that is not there",
@@ -496,7 +648,7 @@ def _golden_changeset(work):
     out = os.path.join(work, "golden.tbchange")
     stats = build_changeset.build_changeset(
         golden.container_path(before), golden.container_path(after), out)
-    return out, stats
+    return out, stats, golden.container_path(before)
 
 
 def selftest():
@@ -506,30 +658,53 @@ def selftest():
     work = tempfile.mkdtemp(prefix="tb-validate-changeset-")
     failures = []
     try:
-        good, stats = _golden_changeset(work)
+        good, stats, before = _golden_changeset(work)
         print("golden changeset: %d bytes, %d tiles changed, %d records "
               "added, %d removed"
               % (os.path.getsize(good), stats["tiles_changed"],
                  stats["records_added"], stats["records_removed"]))
 
-        found = problems_with(good)
-        if found:
-            failures.append("the GOOD changeset was refused: %s"
-                            % "; ".join(found))
-            print("  FAIL   a correct changeset was refused")
-        else:
-            print("  ok     a correct changeset passes")
+        # EACH GOOD ONE BOTH WAYS: as publish_changesets checks it, against
+        # the from-build, and as the window gate does, alone.
+        goods = [("a correct changeset", None)] + _meta_only_changesets(before)
+        for name, reduce in goods:
+            path = os.path.join(work, "ok.tbchange")
+            shutil.copyfile(good, path)
+            if reduce:
+                reduce(path)
+            found = problems_with(path, against=before) + problems_with(path)
+            if found:
+                failures.append("REFUSED A GOOD ONE: %s: %s"
+                                % (name, "; ".join(found)))
+                print("  FAIL   refused %s" % name)
+            else:
+                print("  ok     accepted %s" % name)
 
-        for name, corrupt in _corruptions():
+        # And the from-build must BE the from-build.
+        found = problems_with(good, against=_golden_after(work))
+        if not any("from_build" in p for p in found):
+            failures.append("NOT CAUGHT: checked against the wrong build")
+            print("  MISSED checked against a build that is not from_build")
+        else:
+            print("  caught %-46s %s" % ("checked against the wrong build",
+                                         found[0][:82]))
+
+        corruptions = _corruptions(before)
+        for name, corrupt, *mode in corruptions:
             path = os.path.join(work, "bad.tbchange")
             shutil.copyfile(good, path)
             corrupt(path)
-            found = problems_with(path)
+            found = problems_with(path, against=before)
+            alone = problems_with(path)
             if not found:
                 failures.append("NOT CAUGHT: %s" % name)
                 print("  MISSED %s" % name)
+            elif not alone and FROM_BUILD_ONLY not in mode:
+                failures.append("NOT CAUGHT without the from-build, as the "
+                                "window gate checks it: %s" % name)
+                print("  MISSED alone %s" % name)
             else:
-                print("  caught %-46s %s" % (name, found[0][:82]))
+                print("  caught %-46s %s" % (name[:46], found[0][:82]))
     finally:
         shutil.rmtree(work, ignore_errors=True)
 
@@ -538,9 +713,16 @@ def selftest():
         for f in failures:
             print("  " + f)
         return 1
-    print("\nselftest ok: 1 good changeset accepted, %d corruptions refused"
-          % len(_corruptions()))
+    print("\nselftest ok: %d good changesets accepted, %d corruptions refused"
+          % (len(goods), len(corruptions) + 1))
     return 0
+
+
+def _golden_after(work):
+    """The golden build the good changeset was cut TO - a real build, and
+    the wrong one to check it against."""
+    import golden
+    return golden.container_path(os.path.join(work, "after"))
 
 
 def main():

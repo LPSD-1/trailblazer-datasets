@@ -28,16 +28,28 @@ under a new hash, fetched the whole region. For all six regions that is
 THE RULE, in order:
 
   1. `content_digest` of the new build equals the published one's (every
-     table, every row, every meta key but `built_at`): the published file is
-     copied over the new one. Not merely re-stamped - COPIED, so a page
-     layout that differs for no reason cannot reach a rider as new bytes.
+     table, every row, every meta key but `built_at` and `ways_cut`): the
+     published file is copied over the new one. Not merely re-stamped -
+     COPIED, so a page layout that differs for no reason cannot reach a rider
+     as new bytes.
   2. Otherwise the new build's own `built_at` stands if it sorts after the
      published one: the ways changed, and the pack stamp says when.
   3. Otherwise - the ways did not change, something else did - `built_at`
      becomes this run's time (--now), or one second past the published stamp
      if the clock is not ahead of it. Always ISO-8601 UTC, so it still sorts
      as text (publish_changesets._prune relies on that) and still parses as
-     a date (the app shows it as when the data was cut).
+     a date.
+
+RULE 3 IS WHY `built_at` IS NOT THE DATE RIDERS SEE. The app printed it as
+"cut <date>", so a POI refresh under unchanged ways told every rider their
+lanes had been cut that morning - the one thing the refresh workflow says the
+date must never do. So before rule 3 overwrites the pack stamp, it is kept as
+`ways_cut`; a changeset restates it like every other meta key, and the app
+shows `ways_cut`, or `built_at` where there is none - which is exactly where
+`built_at` is still the pack stamp (the builder writes it so, and rules 1 and
+2 leave it so). Every container's manifest entry carries the same date as
+`waysCut`. Written only when the two dates part, so a container that never
+meets rule 3 is byte-for-byte what the builder made and golden.py holds.
 
 Each container's manifest `generated` is set to the `built_at` it ends up
 with, and the manifest's own `generated` to the newest of them, so the index
@@ -63,6 +75,16 @@ STAMP_FORMAT = "%Y-%m-%dT%H:%M:%SZ"
 #: two builds of the same boxes are the same content.
 RTREE_SHADOWS = ("_node", "_parent", "_rowid")
 
+#: The date the LANES were cut: the pack stamp, which `built_at` starts as
+#: and stops being the moment rule 3 restamps it. See the module note.
+WAYS_CUT = "ways_cut"
+
+#: Meta keys that are dates ABOUT the content rather than content. `ways_cut`
+#: is here because the ways rows it dates are hashed already, and because a
+#: fresh build never carries it: hashed, every region rule 3 had once touched
+#: would read as changed on every run after, and be restamped for nothing.
+UNHASHED_META = ("built_at", WAYS_CUT)
+
 
 def _connect(path):
     return sqlite3.connect("file:%s?mode=ro" % path.replace("\\", "/"),
@@ -74,7 +96,7 @@ def content_digest(path):
     out on disk or when it was stamped.
 
     Schema (every table, index, view and trigger, with its SQL), then every row
-    of every table in key order, then every meta key but `built_at`. Two files
+    of every table in key order, then every meta key but UNHASHED_META. Two files
     with the same digest answer every query the app can make identically, so
     one can stand in for the other.
     """
@@ -103,8 +125,9 @@ def content_digest(path):
             h.update(("\x00table %s\n" % name).encode("utf-8"))
             if name == "meta":
                 rows = db.execute(
-                    "SELECT key, value FROM meta WHERE key <> 'built_at' "
-                    "ORDER BY key")
+                    "SELECT key, value FROM meta WHERE key NOT IN (%s) "
+                    "ORDER BY key" % ", ".join("?" * len(UNHASHED_META)),
+                    UNHASHED_META)
             else:
                 rows = _rows_in_key_order(db, name)
             for row in rows:
@@ -128,14 +151,27 @@ def _rows_in_key_order(db, name):
                                              for i in range(count))))
 
 
-def built_at(path):
+def _meta_value(path, key):
     db = _connect(path)
     try:
         row = db.execute(
-            "SELECT value FROM meta WHERE key = 'built_at'").fetchone()
+            "SELECT value FROM meta WHERE key = ?", (key,)).fetchone()
         return row[0] if row else None
     finally:
         db.close()
+
+
+def built_at(path):
+    return _meta_value(path, "built_at")
+
+
+def ways_cut(path):
+    """The date riders are shown for this container's lanes.
+
+    `built_at` when there is no `ways_cut`: a container rule 3 never restamped,
+    whose `built_at` is still its pack stamp.
+    """
+    return _meta_value(path, WAYS_CUT) or built_at(path)
 
 
 def _parse(stamp):
@@ -164,13 +200,17 @@ def next_stamp(published, candidate, now):
     return stamp
 
 
-def _set_built_at(path, stamp):
+def _set_built_at(path, stamp, cut=None):
+    """Write `stamp` as `built_at`, and `cut` as `ways_cut` when given, in one
+    transaction so no file is left with the new stamp and no cut date."""
     db = sqlite3.connect(path)
     try:
         db.execute("UPDATE meta SET value = ? WHERE key = 'built_at'",
                    (stamp,))
         if db.total_changes != 1:
             raise SystemExit("%s has no built_at to set" % path)
+        if cut is not None:
+            db.execute("INSERT INTO meta VALUES (?, ?)", (WAYS_CUT, cut))
         db.commit()
     finally:
         db.close()
@@ -186,9 +226,15 @@ def stamp(published, built, now=None):
         shutil.copyfile(published, built)
         return "unchanged", built_at(built)
     was = built_at(published)
-    new = next_stamp(was, built_at(built), now)
-    if new != built_at(built):
-        _set_built_at(built, new)
+    own = built_at(built)
+    new = next_stamp(was, own, now)
+    if new != own:
+        # Rule 3 is about to overwrite the pack stamp with the clock. Keep
+        # that stamp as `ways_cut`, or the run's time becomes the only date
+        # the file carries and riders are told their lanes were cut today.
+        _set_built_at(built, new,
+                      cut=own if _meta_value(built, WAYS_CUT) is None
+                      else None)
     # THE GUARD, on the file itself rather than on the arithmetic above.
     if built_at(built) == was:
         raise SystemExit(
@@ -210,8 +256,12 @@ def stamp_tree(published_dir, manifest_path, now=None, log=print):
             else None
         verdict, stamp_ = stamp(published, built, now)
         entry["generated"] = stamp_
+        # `generated` is the build id the app matches the file against, so it
+        # moves with rule 3; the date an index shows riders is this one.
+        entry["waysCut"] = ways_cut(built)
         verdicts.append((name, verdict, stamp_))
-        log("  %-32s %-9s built_at %s" % (name, verdict, stamp_))
+        log("  %-32s %-9s built_at %s  ways_cut %s"
+            % (name, verdict, stamp_, entry["waysCut"]))
     stamps = [e.get("generated") or "" for e in manifest.get("containers", [])]
     if stamps:
         manifest["generated"] = max(stamps)

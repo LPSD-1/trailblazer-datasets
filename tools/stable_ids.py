@@ -29,6 +29,9 @@ does that for ways, and on POIs it grew the container by ~40% gzipped - a
 63-bit rowid is 8 bytes in every r-tree node and every index entry where a
 small integer is one or two, and random ids scatter the b-tree. Numbering
 from the published file keeps the ids small and dense and still stable.
+
+A number that stays put is not enough on its own: a date that moves on every
+read rewrites the row just the same. keep_dates() is the other half.
 """
 import os
 import sqlite3
@@ -59,6 +62,69 @@ def previous_numbers(path, table, key_column, id_column="rowid"):
                                % (key_column, id_column, table)))
     finally:
         db.close()
+
+
+def previous_rows(path, table, key_column):
+    """{key: {column: value}} for every row of `table` in the published
+    container at `path` - the same "what riders hold" as previous_numbers,
+    and empty in the same cases, for the same reason.
+    """
+    if not path or not os.path.isfile(path):
+        return {}
+    db = sqlite3.connect("file:%s?mode=ro" % path.replace("\\", "/"),
+                         uri=True)
+    try:
+        names = set(r[0] for r in db.execute(
+            "SELECT name FROM sqlite_master WHERE type='table'"))
+        if table not in names:
+            return {}
+        cursor = db.execute('SELECT * FROM "%s"' % table)
+        columns = [d[0] for d in cursor.description]
+        if key_column not in columns:
+            return {}
+        out = {}
+        for values in cursor:
+            row = dict(zip(columns, values))
+            out[row[key_column]] = row
+        return out
+    finally:
+        db.close()
+
+
+def keep_dates(rows, previous, key_column, date_column="source_date"):
+    """`rows` with each date put back to the published one wherever nothing
+    else about the row moved.
+
+    THE COST THIS EXISTS FOR, the one stable numbering left behind. A row's
+    `source_date` was the day its source was READ, so every refresh re-dated
+    every row: `build_pois.py fetch --refresh` against unchanged OpenStreetMap
+    rewrote every POI in the region. Stable rowids did not help - a changeset
+    matches rows on the rowid and then compares VALUES, and the date is a
+    value. Measured over the six regions, 38.0 MB raw / 17.4 MB gzipped of
+    changesets against 94 MB of containers, each month, for no change at all.
+
+    So the date says when the row last CHANGED as we saw it: a row whose every
+    other column equals the published row under the same key takes the
+    published date; a new row, or one whose content moved, keeps the date it
+    was read. When the source was last looked at is a fact about the whole
+    region, not about each row, and is recorded once by the builder (for POIs,
+    `meta.pois_checked`).
+
+    `previous` is previous_rows(). A column the published row lacks counts as
+    a change: a row we cannot compare is not one we may call unchanged.
+    Returns new dicts; `rows` is left as it was.
+    """
+    missing = object()
+    out = []
+    for row in rows:
+        row = dict(row)
+        was = previous.get(row.get(key_column)) if previous else None
+        if was is not None and was.get(date_column) and all(
+                was.get(column, missing) == value
+                for column, value in row.items() if column != date_column):
+            row[date_column] = was[date_column]
+        out.append(row)
+    return out
 
 
 def number(keys, previous=None, first=1):

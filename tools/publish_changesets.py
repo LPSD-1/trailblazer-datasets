@@ -34,7 +34,9 @@ already holds:
   * NOT SMALLER, NOT PUBLISHED. See `build_changeset.is_worth_publishing`.
   * NOT VALID, NOT PUBLISHED. Every file is put through
     `validate_changeset.problems_with` before it is announced, so the gate that
-    exists runs on the artefacts that ship rather than on a self-test.
+    exists runs on the artefacts that ship rather than on a self-test - and
+    against the build it was cut from, so a changeset that moves only meta is
+    published and one that moves nothing is not.
   * UNSIGNED IS SAID OUT LOUD. The app refuses to apply an unsigned changeset
     to a container it has verified, so an unsigned one is a file nobody can
     use. It is still written, and the index still lists it, exactly as the
@@ -240,7 +242,15 @@ def publish(old_dir, new_dir, out_dir, base_url="", keep=DEFAULT_KEEP,
 
         # THE GATE RUNS ON THE ARTEFACT THAT SHIPS. validate_changeset.py had
         # a --selftest and nothing else ever ran it against a published file.
-        problems = validate_changeset.problems_with(path)
+        #
+        # AGAINST THE BUILD IT IS CUT FROM, which this is the one place to
+        # hold. A changeset restates every meta key, so only the from-build
+        # can say whether a changeset with no rows moves anything: the
+        # evidence_age -> evidence_dates switch does, and was refused as
+        # empty - every rider then fetched all six regions (~94 MB) for two
+        # meta keys. Checked this way, it is published, and one that restates
+        # only what riders already hold is still refused.
+        problems = validate_changeset.problems_with(path, against=was[1])
         if problems:
             report["skipped"].append(
                 (pack_id, "; ".join(problems)[:200]))

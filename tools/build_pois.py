@@ -27,6 +27,9 @@ keyed by its OSM id and the insert is sorted by that key.
 
 HONESTY (spec 6.4). Every row carries `source_date`. A POI is advisory; the
 container says when it was last read and the app is expected to say so too.
+With a published container to compare against (`--previous`), `source_date`
+is the day the row was first seen AS IT IS - unchanged since - and the day
+the region was last read is `meta.pois_checked`. See write_pois.
 """
 import argparse
 import collections
@@ -308,7 +311,7 @@ def counts_by_category(pois):
     return counts
 
 
-def write_pois(db_path, pois, previous=None):
+def write_pois(db_path, pois, previous=None, checked=None):
     """Add the two POI tables to an existing container.
 
     The rowid is written explicitly and is the rtree id, so a bbox hit and a
@@ -323,13 +326,42 @@ def write_pois(db_path, pois, previous=None):
     sorted early renumbered every POI after it, and the changeset for that one
     POI was 5.87 MB of a 9.47 MB container. With no published container it is
     1..N over the sorted uids, exactly as before.
+
+    AND SO DO THE DATES. A POI whose category, name, position and hours all
+    equal the published row's keeps the published `source_date`, so the
+    column says "unchanged since" and not "read on". Re-dated to the fetch
+    instead, a monthly refresh of unchanged OSM rewrote every row in every
+    region: 38.0 MB of changesets for 94 MB of containers. See
+    stable_ids.keep_dates.
+
+    WHEN WE LAST LOOKED is then the region's, written once as
+    `meta.pois_checked` - `checked`, or when not given the OLDEST read date
+    among the rows handed in (poi_staleness.py's rule: a region is as old as
+    its stalest category). It moves one meta key a month. Measured on copies
+    of the six published regions, a refresh of unchanged OSM is now a
+    changeset of 15.9-16.4 kB raw / ~2.5 kB gzipped per region - the empty
+    changeset's own pages - where it was 3.1-9.6 MB. No POIs and no `checked`
+    writes no key:
+    there is no read date to state. A file with no `meta` table is not a
+    container and is not given one.
     """
+    if checked is None:
+        dates = [poi["source_date"] for poi in pois if poi.get("source_date")]
+        checked = min(dates) if dates else None
+    published = stable_ids.previous_rows(previous, "pois", "poi_uid")
+    pois = stable_ids.keep_dates(pois, published, "poi_uid")
     numbers = stable_ids.number(
         [poi["poi_uid"] for poi in pois],
         stable_ids.previous_numbers(previous, "pois", "poi_uid"))
     db = sqlite3.connect(db_path)
     try:
         db.executescript(SCHEMA)
+        has_meta = db.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='meta'"
+        ).fetchone() is not None
+        if checked and has_meta:
+            db.execute("INSERT OR REPLACE INTO meta (key, value) VALUES"
+                       " ('pois_checked', ?)", (checked,))
         # In rowid order, so the b-tree is filled the way a 1..N build fills
         # it and the file does not grow for being numbered differently.
         for rowid, poi in sorted(((numbers[p["poi_uid"]], p) for p in pois),
@@ -427,7 +459,8 @@ def do_build(args, log=print):
     try:
         before = os.path.getsize(work)
         before_gz = gzip_size(work)
-        write_pois(work, pois, previous=getattr(args, "previous", None))
+        write_pois(work, pois, previous=getattr(args, "previous", None),
+                   checked=source_dates[0] if source_dates else None)
         after = os.path.getsize(work)
         after_gz = gzip_size(work)
     finally:
