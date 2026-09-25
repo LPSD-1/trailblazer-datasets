@@ -1,20 +1,20 @@
 {
- "as_of": "2026-09-25T00:02:59Z",
+ "as_of": "2026-09-25T09:05:00Z",
  "licence": "Environment Agency flood-monitoring data, OGL v3",
  "region": "south-west",
  "schema": 1,
  "stale_after_h": 6,
  "stations": {
   "0155TH": {
-   "at": "2026-09-24T23:30:00Z",
-   "m": -0.252,
+   "at": "2026-09-25T08:30:00Z",
+   "m": -0.253,
    "state": "below",
    "typical_high_m": 1.311,
    "typical_low_m": 0.0,
-   "vs_typical_high_m": -1.563
+   "vs_typical_high_m": -1.564
   },
   "2204TH": {
-   "at": "2026-09-24T23:30:00Z",
+   "at": "2026-09-25T08:45:00Z",
    "m": -0.123,
    "state": "below",
    "typical_high_m": 1.105,
@@ -22,15 +22,15 @@
    "vs_typical_high_m": -1.228
   },
   "431100": {
-   "at": "2026-09-24T23:30:00Z",
-   "m": 0.685,
+   "at": "2026-09-25T08:45:00Z",
+   "m": 0.679,
    "state": "normal",
    "typical_high_m": 11.243,
    "typical_low_m": 0.0,
-   "vs_typical_high_m": -10.558
+   "vs_typical_high_m": -10.564
   },
   "44148": {
-   "at": "2026-09-24T23:30:00Z",
+   "at": "2026-09-25T08:45:00Z",
    "m": 0.251,
    "state": "unknown",
    "typical_high_m": null,
@@ -38,15 +38,15 @@
    "vs_typical_high_m": null
   },
   "46111": {
-   "at": "2026-09-24T16:00:00Z",
-   "m": 0.076,
+   "at": "2026-09-25T06:00:00Z",
+   "m": 0.078,
    "state": "normal",
    "typical_high_m": 1.0,
    "typical_low_m": 0.069,
-   "vs_typical_high_m": -0.924
+   "vs_typical_high_m": -0.922
   },
   "48110": {
-   "at": "2026-09-24T23:30:00Z",
+   "at": "2026-09-25T08:30:00Z",
    "m": 0.213,
    "state": "normal",
    "typical_high_m": 1.09,
@@ -54,79 +54,79 @@
    "vs_typical_high_m": -0.877
   },
   "48112": {
-   "at": "2026-09-24T23:30:00Z",
-   "m": -0.038,
+   "at": "2026-09-25T08:45:00Z",
+   "m": -0.026,
    "state": "unknown",
    "typical_high_m": null,
    "typical_low_m": null,
    "vs_typical_high_m": null
   },
   "48113": {
-   "at": "2026-09-24T23:30:00Z",
-   "m": 1.252,
+   "at": "2026-09-25T08:45:00Z",
+   "m": 1.243,
    "state": "unknown",
    "typical_high_m": null,
    "typical_low_m": null,
    "vs_typical_high_m": null
   },
   "48121": {
-   "at": "2026-09-24T23:30:00Z",
-   "m": 0.124,
+   "at": "2026-09-25T08:30:00Z",
+   "m": 0.123,
    "state": "normal",
    "typical_high_m": 1.0,
    "typical_low_m": 0.01,
-   "vs_typical_high_m": -0.876
+   "vs_typical_high_m": -0.877
   },
   "48137": {
-   "at": "2026-09-24T23:30:00Z",
-   "m": 0.26,
+   "at": "2026-09-25T08:30:00Z",
+   "m": 0.255,
    "state": "normal",
    "typical_high_m": 0.864,
    "typical_low_m": 0.236,
-   "vs_typical_high_m": -0.604
+   "vs_typical_high_m": -0.609
   },
   "48196": {
-   "at": "2026-09-24T23:30:00Z",
-   "m": 3.247,
+   "at": "2026-09-25T08:30:00Z",
+   "m": 3.246,
    "state": "unknown",
    "typical_high_m": null,
    "typical_low_m": null,
    "vs_typical_high_m": null
   },
   "49120": {
-   "at": "2026-09-24T16:00:00Z",
-   "m": 0.203,
+   "at": "2026-09-25T04:00:00Z",
+   "m": 0.201,
    "state": "below",
    "typical_high_m": 1.5,
    "typical_low_m": 0.266,
-   "vs_typical_high_m": -1.297
+   "vs_typical_high_m": -1.299
   },
   "50141": {
-   "at": "2026-09-24T23:30:00Z",
-   "m": 0.207,
+   "at": "2026-09-25T08:45:00Z",
+   "m": 0.206,
    "state": "normal",
    "typical_high_m": 1.2,
    "typical_low_m": 0.131,
-   "vs_typical_high_m": -0.993
+   "vs_typical_high_m": -0.994
   },
   "53121": {
-   "at": "2026-09-24T23:30:00Z",
-   "m": 0.289,
+   "at": "2026-09-25T08:30:00Z",
+   "m": 0.273,
    "state": "below",
    "typical_high_m": 1.113,
    "typical_low_m": 0.34,
-   "vs_typical_high_m": -0.824
+   "vs_typical_high_m": -0.84
   },
   "53125": {
-   "at": "2026-09-24T23:30:00Z",
-   "m": 0.463,
+   "at": "2026-09-25T08:45:00Z",
+   "m": 0.465,
    "state": "below",
    "typical_high_m": 2.5,
    "typical_low_m": 0.473,
-   "vs_typical_high_m": -2.037
+   "vs_typical_high_m": -2.035
   },
   "53136": {
-   "at": "2026-09-24T23:30:00Z",
+   "at": "2026-09-25T08:45:00Z",
    "m": 0.126,
    "state": "below",
    "typical_high_m": 0.5,
@@ -134,20 +134,20 @@
    "vs_typical_high_m": -0.374
   },
   "53151": {
-   "at": "2026-09-24T23:30:00Z",
-   "m": 15.412,
+   "at": "2026-09-25T08:45:00Z",
+   "m": 15.415,
    "state": "unknown",
    "typical_high_m": null,
    "typical_low_m": null,
    "vs_typical_high_m": null
   },
   "E83164": {
-   "at": "2026-09-24T23:30:00Z",
-   "m": -0.104,
+   "at": "2026-09-25T08:45:00Z",
+   "m": -0.099,
    "state": "below",
    "typical_high_m": 0.35,
    "typical_low_m": 0.01,
-   "vs_typical_high_m": -0.454
+   "vs_typical_high_m": -0.449
   }
  }
 }
