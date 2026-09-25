@@ -35,6 +35,15 @@ perfectly and leave the wrong map:
   * AN R-TREE ROW WITH NO RECORD. `bbox_rows` is copied into the target's
     r-tree; a row pointing at a rowid the changeset does not carry puts a
     phantom in the spatial index, where a tap finds a record that is not there.
+  * A TABLE THE CHANGESET DOES NOT ACCOUNT FOR. `carries` names every table
+    it brings up to date, and the app checks the container it is about to
+    change holds nothing else. A table in the file that `carries` does not
+    name, or a name in `carries` with no table behind it, is a changeset whose
+    author and whose applier disagree about what it does.
+  * A ROW BOTH WRITTEN AND REMOVED, in any carried table, by its key - the
+    same contradiction as a uid, one level down.
+  * A RESTATED VALUE THAT BLANKS ONE. An empty `bounds` or zoom, written over
+    the container's, is a map that no longer knows where it is.
 
 WHAT THIS IS NOT. It does not check that the changeset actually turns the old
 build into the new one - that needs both builds, and it is what the app's own
@@ -43,6 +52,7 @@ artefact check: is it a changeset at all, does it contradict itself, and would
 applying it do anything.
 """
 import argparse
+import json
 import os
 import pathlib
 import sqlite3
@@ -51,7 +61,7 @@ import sys
 SQLITE_MAGIC = b"SQLite format 3\x00"
 FORMAT_VERSION = "1"
 REQUIRED_TABLES = ("tiles", "bbox_rows", "removed_records", "removed_tiles",
-                   "meta")
+                   "removed_rows", "meta")
 #: `ways` first, for the reason build_changeset.py gives at length: a
 #: changeset carries the record table of the container it describes, and since
 #: step 1.2 that is `ways`. With it missing, this validator refused every
@@ -59,7 +69,12 @@ REQUIRED_TABLES = ("tiles", "bbox_rows", "removed_records", "removed_tiles",
 #: because its selftest was crashing further up on a container path the pivot
 #: had renamed.
 RECORD_TABLES = {"ways": "way_uid", "lanes": "lane_uid", "orders": "tro_uid"}
-REQUIRED_META = ("format_version", "kind", "from_build", "to_build")
+REQUIRED_META = ("format_version", "kind", "from_build", "to_build",
+                 "carries", "removed_meta")
+
+#: Restated keys that must never arrive empty: written over the container's,
+#: an empty one blanks what the rider has.
+NEVER_EMPTY = ("bounds", "min_zoom", "max_zoom")
 
 
 def _meta(db):
@@ -117,6 +132,7 @@ def problems_with(path):
             return out
 
         out.extend(_content_problems(db, tables, found[0]))
+        out.extend(_carried_problems(db, tables, _meta(db)))
         return out
     finally:
         db.close()
@@ -135,6 +151,17 @@ def _meta_problems(meta):
     if meta.get("format_version") not in (None, "", FORMAT_VERSION):
         out.append("format_version is %r and the app applies %r"
                    % (meta["format_version"], FORMAT_VERSION))
+
+    for key in NEVER_EMPTY:
+        if key in meta and not (meta[key] or "").strip():
+            out.append("meta restates %s as empty. Applied, it is written "
+                       "over the rider's %s." % (key, key))
+    if meta.get("evidence_age"):
+        try:
+            json.loads(meta["evidence_age"])
+        except ValueError:
+            out.append("meta.evidence_age is not JSON, so the app cannot say "
+                       "how old the answer is")
 
     # THE ONE build_changeset REFUSES TO WRITE, restated where a hand-made or
     # older artefact can still reach the publish.
@@ -166,9 +193,15 @@ def _content_problems(db, tables, table):
     records = count(table)
     gone_recs = count("removed_records")
     gone_tiles = count("removed_tiles")
+    # Every other carried table and its removals count too: a build that
+    # moved only its POIs is still a build to apply.
+    others = sum(count(name) for name in tables
+                 if name not in _OWN and name != table)
+    gone_rows = count("removed_rows")
 
     # NOTHING TO APPLY.
-    if not (tiles or records or gone_recs or gone_tiles):
+    if not (tiles or records or gone_recs or gone_tiles or others
+            or gone_rows):
         out.append(
             "carries no tiles, no records and no removals. Applying it "
             "succeeds, changes nothing, and records a build the rider's data "
@@ -257,6 +290,82 @@ def _content_problems(db, tables, table):
     return out
 
 
+_OWN = ("tiles", "bbox_rows", "removed_records", "removed_tiles",
+        "removed_rows", "meta")
+
+
+def _carried_problems(db, tables, meta):
+    """`carries` against the tables actually in the file, and removed_rows
+    against both."""
+    out = []
+    raw = meta.get("carries")
+    if not raw:
+        return out          # already reported as missing meta
+    try:
+        carries = json.loads(raw)
+    except ValueError:
+        return ["meta.carries is not JSON"]
+    if not isinstance(carries, dict) or not carries:
+        return ["meta.carries names no tables"]
+    try:
+        json.loads(meta.get("removed_meta") or "[]")
+    except ValueError:
+        out.append("meta.removed_meta is not JSON")
+
+    absent = sorted(t for t in carries if t not in tables)
+    if absent:
+        out.append("carries names %s, which the file does not hold. An "
+                   "applier that trusts `carries` fails on it; one that "
+                   "trusts the tables applies less than it was told."
+                   % absent)
+    extra = sorted(t for t in tables if t not in _OWN and t not in carries
+                   and not t.startswith("sqlite_"))
+    if extra:
+        out.append("the file holds %s, which carries does not name. The app "
+                   "applies what carries names, so these rows would never "
+                   "arrive." % extra)
+
+    if "removed_rows" not in tables:
+        return out
+    stray = [r[0] for r in db.execute(
+        "SELECT DISTINCT tbl FROM removed_rows")
+        if r[0] not in carries]
+    if stray:
+        out.append("removed_rows names %s, which carries does not: removals "
+                   "nothing will apply" % sorted(stray))
+    blank = db.execute("SELECT COUNT(*) FROM removed_rows WHERE id IS NULL"
+                       ).fetchone()[0]
+    if blank:
+        out.append("%d removal(s) in removed_rows name no row" % blank)
+    for name, key in sorted(carries.items()):
+        if name not in tables:
+            continue
+        k = key if key == "rowid" else '"%s"' % key
+        try:
+            both = db.execute(
+                'SELECT COUNT(*) FROM "%s" WHERE %s IN (SELECT id FROM '
+                'removed_rows WHERE tbl = ?)' % (name, k), (name,)
+            ).fetchone()[0]
+        except sqlite3.Error as e:
+            out.append("`%s` has no column %s, the key carries names (%s)"
+                       % (name, key, e))
+            continue
+        if both:
+            out.append("%d row(s) of %s are both written and removed; which "
+                       "one the rider keeps depends on statement order"
+                       % (both, name))
+        columns = [r[1] for r in db.execute('PRAGMA table_info("%s")'
+                                            % name)]
+        if {"min_lon", "max_lon", "min_lat", "max_lat"} <= set(columns):
+            bad = db.execute(
+                'SELECT COUNT(*) FROM "%s" WHERE min_lon > max_lon '
+                "OR min_lat > max_lat" % name).fetchone()[0]
+            if bad:
+                out.append("%d %s row(s) are inside out, so what they "
+                           "describe is findable nowhere" % (bad, name))
+    return out
+
+
 def report(paths):
     bad = 0
     for path in paths:
@@ -322,8 +431,29 @@ def _corruptions():
          sql("UPDATE meta SET value='2' WHERE key='format_version'")),
         ("nothing to apply",
          sql("DELETE FROM tiles", "DELETE FROM {records}",
+             "DELETE FROM {records}_bbox", "DELETE FROM removed_rows",
              "DELETE FROM bbox_rows", "DELETE FROM removed_records",
              "DELETE FROM removed_tiles")),
+        ("no carries at all",
+         sql("DELETE FROM meta WHERE key='carries'")),
+        ("carries naming a table that is not there",
+         sql("DROP TABLE {records}_bbox")),
+        ("a table carries does not name",
+         sql("CREATE TABLE pois (rowid INTEGER PRIMARY KEY, poi_uid BLOB)",
+             "INSERT INTO pois VALUES (1, 'osm:n1')")),
+        ("a row both written and removed, by its key",
+         sql("INSERT INTO removed_rows SELECT '{records}', rowid "
+             "FROM {records} LIMIT 1")),
+        ("a removal for a table nothing carries",
+         sql("INSERT INTO removed_rows VALUES ('pois', 1)")),
+        ("an empty bounds restated",
+         sql("UPDATE meta SET value='' WHERE key='bounds'")),
+        ("evidence_age that is not JSON",
+         sql("INSERT OR REPLACE INTO meta VALUES ('evidence_age', '{{oops')")),
+        ("a carried box inside out",
+         sql("UPDATE {records}_bbox SET min_lon = 9.0 "
+             "WHERE id = (SELECT MIN(id) FROM {records}_bbox)")),
+        ("the generic removals dropped", sql("DROP TABLE removed_rows")),
         ("a lane both written and removed",
          sql("INSERT INTO removed_records SELECT {uid} FROM {records} "
              "LIMIT 1")),

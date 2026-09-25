@@ -253,6 +253,78 @@ def test_the_restamp_runs_after_the_writes_and_before_the_catalogue():
           catalogue > restamp, "%d vs %d" % (catalogue, restamp))
 
 
+#: Every step that writes a container in dist/containers, in the order the
+#: workflow must run them - the container build, the POIs inside it, the
+#: conditions tables, evidence_age, and the restamp that re-signs the result.
+#: As invocations, and the LAST of each is what counts: a comment naming a
+#: tool early in the file must not stand in for a call moved below the step.
+CONTAINER_WRITES = ["python tools/build_containers.py",
+                    "python tools/build_wet.py assign",
+                    "python tools/build_fords.py build",
+                    "python tools/evidence_age.py --write",
+                    "python tools/restamp_containers.py"]
+
+
+def changeset_order_problems(text):
+    """Why the changesets would NOT describe the bytes riders download.
+
+    A changeset is the difference between the published container and the
+    one this run publishes. Built before any of CONTAINER_WRITES, it describes
+    a container nobody has: applied, the rider's file is stamped as the new
+    build while missing the tables and meta written after it was cut - and the
+    signature it is then vouched for by is the restamped file's, not theirs.
+    Built after the Publish step's move, `containers/` and `dist/containers`
+    are the same tree and there is nothing to diff.
+    """
+    step = [b for b in re.split(r"\n      - name:", text)
+            if "publish_changesets.py" in b and "--new dist/containers" in b]
+    if not step:
+        return ["no step runs publish_changesets.py --new dist/containers"]
+    built = text.find(step[0])
+    out = []
+    for write in CONTAINER_WRITES:
+        at = text.rfind(write)
+        if at < 0:
+            out.append("%s is not in the workflow" % write)
+        elif at > built:
+            out.append("%s writes the containers AFTER the changesets are "
+                       "built from them" % write)
+    later = text[built + len(step[0]):]
+    for needle in ("--in-place", "restamp_containers.py", "write_meta"):
+        if needle in later:
+            out.append("%s runs after the changesets" % needle)
+    move = text.find("mv dist/containers containers")
+    if move < 0 or move < built:
+        out.append("the changesets are not built before the Publish move")
+    catalogue = text.find("rebuild_catalogue.sh dist/manifest.json")
+    if catalogue < 0 or catalogue < built:
+        out.append("the catalogue is built before the changesets it announces")
+    return out
+
+
+def test_the_changesets_are_cut_from_the_bytes_that_ship():
+    problems = changeset_order_problems(workflow_text())
+    check("the changesets are built after every container write and "
+          "before the publish", not problems, problems)
+
+    # AND IT CAN SAY NO. The changeset step moved above the restamp - the
+    # order that would have cut every changeset from an unsigned, half-written
+    # container - and an empty workflow.
+    text = workflow_text()
+    blocks = re.split(r"(?=\n      - name:)", text)
+    cs = [i for i, b in enumerate(blocks) if "publish_changesets.py" in b]
+    rs = [i for i, b in enumerate(blocks) if "restamp_containers.py \\" in b
+          or "restamp_containers.py\n" in b]
+    check("the reorder fixture finds both steps", cs and rs, (cs, rs))
+    if cs and rs:
+        moved = list(blocks)
+        step = moved.pop(cs[0])
+        moved.insert(rs[0], step)
+        check("a changeset step above the restamp is refused",
+              changeset_order_problems("".join(moved)))
+    check("an empty workflow is refused", changeset_order_problems(""))
+
+
 # ----------------------------------- 3. the workflow's own guards can fail
 
 def heredoc_after(marker, text=None):

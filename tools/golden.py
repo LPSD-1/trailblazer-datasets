@@ -590,11 +590,11 @@ def digests(root):
 EXPECTED_SQLITE = "3.50.4"
 EXPECTED = {
     "catalogue.json": {"bytes": 7788,
-        "sha256": "82ebf9099a47da46b68968dfc7fb510f5ce5649d76b0e3ad4e203690aad35eb9"},
-    "changes/gb-south-west/20260101T000000Z-20260102T030405Z.tbchange": {"bytes": 36864,
-        "sha256": "728759392bcde498a441ff86da39d64c180df0898b1eec19a63c8c920de4ff22"},
+        "sha256": "fc88bd5adcd2db0091cfa6a627d329a07354e0194535666f195d39fcbfe5c23f"},
+    "changes/gb-south-west/20260101T000000Z-20260102T030405Z.tbchange": {"bytes": 45056,
+        "sha256": "3526fe19000ff6098f97a2a7b356472452e25ff6489ffbc68465aac2be25a615"},
     "changes/index.json": {"bytes": 509,
-        "sha256": "40bc88d472d2e1e01106268cd572f70f407e7ce9818fe0e3478d6a0bdd441367"},
+        "sha256": "f09549e0c34db77e246352abd69d62bfa51273c4fe1a772461827ec3275a17ff"},
     "containers/manifest.json": {"bytes": 1203,
         "sha256": "b51e984af327fc8b43ba91d0770fb0e7e39701d2a2902bf9d1eb992c8113d59e"},
     "containers/ways-overview.tbmap": {"bytes": 57344,
