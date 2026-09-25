@@ -589,12 +589,12 @@ def digests(root):
 # EXPECTED-BEGIN (rewritten by --bless; do not edit by hand)
 EXPECTED_SQLITE = "3.50.4"
 EXPECTED = {
-    "catalogue.json": {"bytes": 7788,
-        "sha256": "fc88bd5adcd2db0091cfa6a627d329a07354e0194535666f195d39fcbfe5c23f"},
-    "changes/gb-south-west/20260101T000000Z-20260102T030405Z.tbchange": {"bytes": 45056,
-        "sha256": "3526fe19000ff6098f97a2a7b356472452e25ff6489ffbc68465aac2be25a615"},
-    "changes/index.json": {"bytes": 509,
-        "sha256": "f09549e0c34db77e246352abd69d62bfa51273c4fe1a772461827ec3275a17ff"},
+    "catalogue.json": {"bytes": 7787,
+        "sha256": "e8e71518eb9b9919a7be6dc2a52514803b118cb12da0d7c66d74913b94d0a762"},
+    "changes/gb-south-west/20260101T000000Z-20260102T030405Z.tbchange": {"bytes": 8704,
+        "sha256": "5a5d18c24752774f6a2f8f6e11816faea0c72b538637e939c0ad0a5ad809cd73"},
+    "changes/index.json": {"bytes": 508,
+        "sha256": "960a75855d6a0f2cf4a3cb83d2fbdb42cd3fd02cf30f04f2207968799e356428"},
     "containers/manifest.json": {"bytes": 1203,
         "sha256": "b51e984af327fc8b43ba91d0770fb0e7e39701d2a2902bf9d1eb992c8113d59e"},
     "containers/ways-overview.tbmap": {"bytes": 57344,

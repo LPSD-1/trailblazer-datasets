@@ -42,6 +42,9 @@ import urllib.parse
 import urllib.request
 from datetime import datetime, timezone
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import stable_ids  # noqa: E402
+
 OVERPASS_URL = "https://overpass-api.de/api/interpreter"
 USER_AGENT = "trailblazer-datasets/1.0 (+https://trailblazer.app; POI build)"
 
@@ -305,18 +308,32 @@ def counts_by_category(pois):
     return counts
 
 
-def write_pois(db_path, pois):
+def write_pois(db_path, pois, previous=None):
     """Add the two POI tables to an existing container.
 
     The rowid is written explicitly and is the rtree id, so a bbox hit and a
     record are the same thing - the arrangement `lanes`/`lanes_bbox` already
-    uses. It is a deterministic 1..N over the sorted uids, so two builds from
-    one cache give one file.
+    uses. Two builds from one cache give one file.
+
+    THE NUMBERS COME FROM WHAT RIDERS HOLD. `previous` is the path of the
+    region's PUBLISHED container. Every uid it carries keeps the rowid it was
+    published under, a new uid gets the next number above the highest the
+    published file used, and a uid that went away leaves a gap - see
+    stable_ids.py. Numbered 1..N in uid order instead, one new POI whose uid
+    sorted early renumbered every POI after it, and the changeset for that one
+    POI was 5.87 MB of a 9.47 MB container. With no published container it is
+    1..N over the sorted uids, exactly as before.
     """
+    numbers = stable_ids.number(
+        [poi["poi_uid"] for poi in pois],
+        stable_ids.previous_numbers(previous, "pois", "poi_uid"))
     db = sqlite3.connect(db_path)
     try:
         db.executescript(SCHEMA)
-        for rowid, poi in enumerate(pois, start=1):
+        # In rowid order, so the b-tree is filled the way a 1..N build fills
+        # it and the file does not grow for being numbered differently.
+        for rowid, poi in sorted(((numbers[p["poi_uid"]], p) for p in pois),
+                                 key=lambda pair: pair[0]):
             db.execute(
                 "INSERT INTO pois (rowid, poi_uid, category, name, lat, lon,"
                 " opening_hours, source_date) VALUES (?,?,?,?,?,?,?,?)",
@@ -410,7 +427,7 @@ def do_build(args, log=print):
     try:
         before = os.path.getsize(work)
         before_gz = gzip_size(work)
-        write_pois(work, pois)
+        write_pois(work, pois, previous=getattr(args, "previous", None))
         after = os.path.getsize(work)
         after_gz = gzip_size(work)
     finally:
@@ -486,6 +503,9 @@ def parse_args(argv):
     b.add_argument("--only", help="measure only these categories, comma "
                                   "separated - for the density budget")
     b.add_argument("--report", help="write the measurement as JSON")
+    b.add_argument("--previous",
+                   help="the region's PUBLISHED container: every POI it "
+                        "carries keeps its rowid (see stable_ids.py)")
     return parser.parse_args(argv)
 
 

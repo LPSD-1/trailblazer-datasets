@@ -370,8 +370,57 @@ def test_the_index_does_not_move_when_nothing_changed():
         shutil.rmtree(tmp, ignore_errors=True)
 
 
+def test_same_build_different_bytes_is_refused_not_skipped():
+    """THE STATE NO CHANGESET CAN COVER, refused at the gate.
+
+    Before stamp_build.py, a POI or ford refresh - or simply the 1st of the
+    month, through meta.evidence_age - rewrote a region's bytes under the
+    built_at it already had. This step called that "unchanged" and moved on,
+    the index announced the old build under a new hash, and every rider
+    fetched the region whole. Now it fails the job.
+    """
+    print("same built_at, different bytes, is refused")
+    found = published_containers()
+    if not found:
+        check("refused", False, "no containers")
+        return
+    pack_id, src = found[0]
+    tmp = tempfile.mkdtemp(prefix="tb-changes-samebuild-")
+    try:
+        old_dir = _tree(os.path.join(tmp, "old"), [(pack_id, src)])
+        new_dir = _tree(os.path.join(tmp, "new"), [(pack_id, src)])
+        new_path = os.path.join(new_dir, "%s.tbmap" % pack_id)
+        was = publish_changesets._built_at(new_path)
+        check("PREMISE: an amended copy", _amend(new_path, 1) == 1)
+        check("PREMISE: under the same built_at",
+              publish_changesets._built_at(new_path) == was)
+        out = os.path.join(tmp, "changes")
+        report = publish_changesets.publish(old_dir, new_dir, out)
+        check("it is refused", len(report["refused"]) == 1, report["refused"])
+        check("not waved through as unchanged",
+              not any(why == "unchanged" for _, why in report["skipped"]),
+              report["skipped"])
+        argv = sys.argv
+        sys.argv = ["publish_changesets.py", "--old", old_dir, "--new",
+                    new_dir, "--out", out]
+        try:
+            code = publish_changesets.main()
+        finally:
+            sys.argv = argv
+        check("and the step exits non-zero", code == 1, code)
+
+        # And the honest "unchanged" - same stamp, same bytes - still is.
+        same_dir = _tree(os.path.join(tmp, "same"), [(pack_id, src)])
+        report = publish_changesets.publish(old_dir, same_dir, out)
+        check("identical bytes are not refused", not report["refused"],
+              report["refused"])
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
 def main():
     found = test_the_published_containers_are_here()
+    test_same_build_different_bytes_is_refused_not_skipped()
     test_a_real_pair_of_builds(found)
     test_a_changeset_bigger_than_the_build_is_not_published()
     test_the_window_holds_a_rider_two_updates_behind()

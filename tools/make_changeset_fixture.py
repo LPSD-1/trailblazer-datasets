@@ -9,7 +9,7 @@ WHY THIS EXISTS. The app's changeset tests were built on fixtures that called
 themselves "the live ways shape" and carried `ways`, `ways_bbox`, `tiles` and
 `meta` - while every published region container also carries `pois`,
 `pois_bbox`, `fords`, `fords_bbox`, `ford_gauges`, `way_wetness`,
-`wet_gauges` and the meta keys `evidence_age`, `context_note`,
+`wet_gauges` and the meta keys `evidence_dates`, `context_note`,
 `context_scope` and `schema_version`. The applier refuses a changeset that
 does not carry what the held container has, so against the real set every
 region update was a whole download, and nothing in either repository's tests
@@ -23,20 +23,25 @@ schema somebody remembered:
           those reference, the POIs inside it, and the tiles over the kept
           ways at every zoom. Same file, same sqlite_master, VACUUMed small.
           Every row keeps the rowid it was published under. One thing is
-          rewritten: the meta counts, bounds and evidence_age, recomputed for
-          the rows that are left with the formulas the builders use, so the
-          container describes itself and not East Anglia.
+          rewritten: the meta counts, bounds and evidence_dates, recomputed
+          for the rows that are left with the formulas the builders use, so
+          the container describes itself and not East Anglia. (A source
+          published before evidence_dates carries evidence_age instead; the
+          fixture is the shape the NEXT build publishes, so it carries
+          evidence_dates either way.)
   after   `before` as the next build would write it, with realistic edits:
             * one way CLOSED by an order (motorbike_ok = fourxfour_ok = 0,
               access_evidence 'order') - its tiles re-cut;
             * one way REMOVED, and its box, wetness and ford with it - its
               tiles re-cut, and dropped where nothing is left in them;
             * one way re-surveyed as mud, so its way_wetness row changes;
-            * one POI added and one removed, and the rest renumbered as
-              build_pois numbers a region (1..N in uid order) - so most of
-              them move rowid without a value changing;
+            * one POI added and one removed, numbered as build_pois numbers
+              a region against the published file (stable_ids.py): every
+              kept POI keeps its rowid, the removed one leaves a gap, and
+              the new one is numbered above the highest the region published;
             * the remaining ford re-tagged;
-            * evidence_age advanced a month, and built_at six hours.
+            * the edited rows dated the next month, so evidence_dates moves,
+              and built_at six hours on.
           Re-cut tiles come from build_map_container.build_tiles over the
           kept ways, so a re-cut tile draws the fixture's ways only.
   the .tbchange between them, built by tools/build_changeset.py - the real
@@ -63,6 +68,7 @@ import build_changeset as C       # noqa: E402
 import build_fords as F           # noqa: E402
 import build_map_container as B   # noqa: E402
 import evidence_age as EA         # noqa: E402
+import stable_ids                 # noqa: E402
 import validate_changeset as V    # noqa: E402
 
 #: Two fords, 26 ways and ~50 POIs around Haverhill, in the smallest region.
@@ -133,8 +139,8 @@ def _zooms(db):
     return int(meta["min_zoom"]), int(meta["max_zoom"])
 
 
-def restate_meta(db, path, as_of, container_name):
-    """The counts, bounds and evidence_age for the rows the file now holds.
+def restate_meta(db, path):
+    """The counts, bounds and evidence_dates for the rows the file now holds.
 
     The same formulas build_map_container.write_container and evidence_age
     use, so the fixture's meta is what a build of these rows would say.
@@ -156,11 +162,24 @@ def restate_meta(db, path, as_of, container_name):
     db.executemany("UPDATE meta SET value = ? WHERE key = ?",
                    [(v, k) for k, v in rows])
     db.commit()
-    summary = EA.read_container(path, as_of)
-    # The published container's name, as the pipeline would record it; the
-    # fixture's own file name is not something a real build ever writes.
-    summary["container"] = container_name
-    EA.write_meta(path, summary)
+    # Dates, not ages, and the legacy evidence_age dropped: see evidence_age.py.
+    EA.write_meta(path)
+
+
+def base_day(db):
+    """The newest source_date the container carries: the "month" the edits
+    in `make_after` are dated after. Read from the rows, not from any meta
+    key, so it is the same whichever evidence key the source was published
+    with."""
+    newest = []
+    for table in ("ways", "pois", "fords"):
+        got = db.execute("SELECT MAX(source_date) FROM %s" % table).fetchone()
+        day = EA.parse_date(got[0] if got else None)
+        if day is not None:
+            newest.append(day)
+    if not newest:
+        raise SystemExit("the source carries no source_date at all")
+    return max(newest)
 
 
 def _vacuum(path):
@@ -175,7 +194,6 @@ def make_before(source, path, box):
     shutil.copyfile(source, path)
     db = sqlite3.connect(path)
     try:
-        meta = dict(db.execute("SELECT key, value FROM meta"))
         w, s, e, n = box
         keep = _ids(db, "SELECT id FROM ways_bbox WHERE max_lon >= ? AND "
                         "min_lon <= ? AND max_lat >= ? AND min_lat <= ?",
@@ -212,11 +230,10 @@ def make_before(source, path, box):
         db.commit()
     finally:
         db.close()
-    as_of = datetime.date.fromisoformat(
-        json.loads(meta["evidence_age"])["as_of"])
     db = sqlite3.connect(path)
     try:
-        restate_meta(db, path, as_of, os.path.basename(source))
+        as_of = base_day(db)
+        restate_meta(db, path)
     finally:
         db.close()
     _vacuum(path)
@@ -229,7 +246,6 @@ def _next_month(day):
 
 def make_after(before, path, as_of, source):
     """`before` as the next build writes it. Returns what was edited."""
-    source_name = os.path.basename(source)
     shutil.copyfile(before, path)
     db = sqlite3.connect(path)
     edits = {}
@@ -283,29 +299,26 @@ def make_after(before, path, as_of, source):
                    (_next_month(as_of).isoformat(), ford[0]))
         edits["retagged_ford"] = ford[1]
 
-        # A POI gone and a POI new, as a refetch finds them - AND
-        # RENUMBERED AS build_pois.write_pois NUMBERS A REGION: 1..N over the
-        # region's uids in order. One POI fewer below a uid moves it down one,
-        # one more moves it up one, so most of the box's POIs change rowid
-        # while not one of their values does. That is the case an applier
-        # must get right (delete-then-insert, see build_changeset.py) and the
-        # one a uid-matched diff gets wrong.
+        # A POI gone and a POI new, as a refetch finds them - NUMBERED AS
+        # build_pois.write_pois NUMBERS A REGION against its published
+        # container (stable_ids.py): the kept POIs keep their rowids, the
+        # removed one leaves a gap, and the new one goes above the highest
+        # number the WHOLE region published, not just this box. Until
+        # stable_ids, every POI after the new uid moved up one and the
+        # changeset carried the region's every POI; the applier still copes
+        # with a re-keyed row (delete-then-insert, build_changeset.py), and
+        # test_build_changeset.py's live pair still proves it.
         gone_uid = db.execute("SELECT MIN(poi_uid) FROM pois").fetchone()[0]
         poi = dict(NEW_POI, source_date=_next_month(as_of).isoformat())
-        src = sqlite3.connect("file:%s?mode=ro" % source.replace("\\", "/"),
-                              uri=True)
-        try:
-            below = src.execute("SELECT COUNT(*) FROM pois WHERE poi_uid < ?",
-                                (poi["poi_uid"],)).fetchone()[0]
-        finally:
-            src.close()
         kept = [r for r in db.execute(
             "SELECT rowid, poi_uid, category, name, lat, lon, opening_hours, "
             "source_date FROM pois WHERE poi_uid <> ?", (gone_uid,))]
-        rows = [((r[0] - (gone_uid < r[1]) + (poi["poi_uid"] < r[1]),)
-                 + tuple(r[1:])) for r in kept]
+        numbers = stable_ids.number(
+            sorted([r[1] for r in kept] + [poi["poi_uid"]]),
+            stable_ids.previous_numbers(source, "pois", "poi_uid"))
+        rows = [(numbers[r[1]],) + tuple(r[1:]) for r in kept]
         renumbered = sum(1 for r, k in zip(rows, kept) if r[0] != k[0])
-        rows.append((below + 1 - (gone_uid < poi["poi_uid"]),
+        rows.append((numbers[poi["poi_uid"]],
                      poi["poi_uid"], poi["category"], poi["name"], poi["lat"],
                      poi["lon"], poi["opening_hours"], poi["source_date"]))
         db.execute("DELETE FROM pois")
@@ -337,7 +350,7 @@ def make_after(before, path, as_of, source):
         db.execute("UPDATE meta SET value = ? WHERE key = 'built_at'",
                    (built.strftime("%Y-%m-%dT%H:%M:%SZ"),))
         db.commit()
-        restate_meta(db, path, _next_month(as_of), source_name)
+        restate_meta(db, path)
     finally:
         db.close()
     _vacuum(path)
@@ -401,8 +414,8 @@ def make(source, out_dir, box=DEFAULT_BOX):
     metas = [C.snapshot(p)["meta"] for p in (before, after)]
     report = {"box": list(box), "source": source, "edits": edits,
               "meta_keys": sorted(metas[1]),
-              "as_of": [json.loads(m["evidence_age"])["as_of"]
-                        for m in metas],
+              "newest": [json.loads(m[EA.META_KEY])["ways"].get("newest")
+                         for m in metas],
               "stats": stats, "sizes": sizes,
               "before": counts_of(before), "after": counts_of(after)}
     write_readme(out_dir, report)
@@ -436,18 +449,20 @@ def write_readme(out_dir, report):
         "VACUUMed. Its sqlite_master is the published container's, table for "
         "table, index for index and view for view, and every row keeps the "
         "rowid it was published under. Only the meta counts, `bounds` and "
-        "`evidence_age` are rewritten, recomputed for the rows that are left "
-        "with the builders' own formulas."
+        "`evidence_dates` are rewritten, recomputed for the rows that are "
+        "left with the builders' own formulas."
         % (os.path.basename(report["source"]), report["box"]),
         "- `after.tbmap`: `before` as the next build would write it. One way "
         "closed by an order (`%s`: motorbike_ok and fourxfour_ok 0, "
         "access_evidence 'order'); one way removed (`%s`) with its box, its "
         "wetness row and its ford (%s); one way re-surveyed as mud (`%s`), "
         "so its `way_wetness` row is soft/surface/mud; POI `%s` removed and "
-        "POI `%s` added, and the box's POIs renumbered as `build_pois` "
-        "numbers a region, 1..N in uid order - %d of them change rowid "
-        "without a value changing; ford `%s` re-tagged stepping_stones; "
-        "`evidence_age` advanced a month and `built_at` six hours. The %d "
+        "POI `%s` added, numbered as `build_pois` numbers a region against "
+        "its published container (`stable_ids.py`): kept POIs keep their "
+        "rowids (%d moved), the removed one leaves a gap and the new one is "
+        "numbered above the highest the region published; ford `%s` "
+        "re-tagged stepping_stones; the edited rows dated a month on, so "
+        "`evidence_dates` moves, and `built_at` six hours on. The %d "
         "tiles the closed and removed ways were in are re-cut by "
         "`build_map_container.build_tiles` from the fixture's ways, and "
         "dropped where none is left."
@@ -484,10 +499,10 @@ def write_readme(out_dir, report):
         "Both containers carry the published container's meta keys: %s. "
         "The changeset restates every one of them but `built_at` (which is "
         "its `to_build`) and `kind`. `built_at`: %s -> %s. "
-        "`evidence_age.as_of`: %s -> %s."
+        "Newest `ways` date in `evidence_dates`: %s -> %s."
         % (", ".join("`%s`" % k for k in sorted(report["meta_keys"])),
-           stats["from_build"], stats["to_build"], report["as_of"][0],
-           report["as_of"][1]),
+           stats["from_build"], stats["to_build"], report["newest"][0],
+           report["newest"][1]),
         "",
         "| file | bytes |",
         "|---|---|",

@@ -108,6 +108,20 @@ Categories: `fuel`, `food`, `toilets`, `water`, `parking`, `camping`,
 `repair`, `viewpoint`, `atm`. Nothing else — a general POI database would
 dwarf the ways beside it.
 
+### Row numbers are stable across builds
+
+`pois.rowid`, `fords.rowid`, `ford_gauges.id` and `wet_gauges.id` are local
+numbers, and a changeset matches rows on them. They are taken from the
+region's **published** container (`containers/`, what riders hold) by
+`tools/stable_ids.py`: a uid (or EA `station_id`) it carries keeps its
+number, a new one gets the next number above the highest the published file
+used, and a removed one leaves a gap. With no published container they are
+numbered as a first build: 1..N in uid order for POIs and fords, first-seen
+for gauges. Measured on `ways-east-anglia.tbmap`: numbered 1..N on every build,
+one new POI whose uid sorted early made a 5,869,568-byte changeset (62% of the
+container); numbered stably, 15,872 bytes. Hashing the uid into the rowid, as
+`ways` does, was tried for POIs and grew the container ~40% gzipped.
+
 ## Conditions
 
 Spec 9.6 C (wet-weather restraint) and 9.6 G (fords and river levels). Five
@@ -199,7 +213,8 @@ and the `containers/manifest.json` run stamp each exist to prevent. The feeds
 are kilobytes: measured, 24 kB of rain and 3.4 kB of river for the South West.
 
 **Anything that writes into a container after `build_containers.py` has
-finished must be followed by `restamp_containers.py`.** The builder takes each
+finished must be followed by `stamp_build.py` and then
+`restamp_containers.py`** (the first is under Meta, below). The builder takes each
 container's `sha256`, `bytes`, `downloadBytes` and Ed25519 signature at the
 moment it finishes that file. Measured on the published
 `containers/motor-south-west.tbmap`, the static half moved it from
@@ -214,16 +229,57 @@ and `authorities` (JSON array). **`built_at` must not leak into any pack's
 content hash** — a run stamp doing exactly that broke reproducibility once
 already.
 
-`meta` also gains **`evidence_age`** (JSON), written by `evidence_age.py
---write`: the age distribution of every dated table in this container — median,
-p90, oldest, and the bucket counts — plus the `as_of` date they were measured
-against. It is how the app says "surveys as of 1 September" instead of quoting
-a build stamp, which describes when *we* ran a script and not when the
-authority surveyed.
+### `built_at` follows the content, all of it
 
-**It is measured against a PINNED date, and that is load-bearing.** Ages are in
-days relative to `as_of`, so running it with today's date rewrites the key every
-morning, moves every container's bytes, and makes every rider re-download the
-country to learn the median got one day older — the `built_at` fault above,
-wearing a different hat. `refresh-data.yml` pins `--as-of` to the first of the
-month, so the key moves twelve times a year.
+`built_at` starts as the pack's `generated` stamp, which moves only when the
+ways do. Everything written after `build_containers.py` — POIs, wetness,
+fords, the evidence dates — can change a container without moving it, and
+every changeset is keyed on `built_at` (`build_changeset.py`,
+`validate_changeset.py`, the app's `ContainerUpdate`). So
+`tools/stamp_build.py` runs after the last write, against the published
+container of the same name:
+
+- **same content** (`content_digest`: every table and row, every meta key but
+  `built_at`) — the published file is copied in, byte for byte, with its
+  `built_at`;
+- **different content** — the build's own `built_at` if it sorts after the
+  published one (the ways changed), otherwise this run's time, or one second
+  past the published stamp if the clock is not ahead of it.
+
+Always ISO-8601 UTC (`%Y-%m-%dT%H:%M:%SZ`). The container manifest's
+`generated` is set to match. Two builds with different content never share a
+`built_at`, and `publish_changesets.py` refuses the job if one ever does
+(same `built_at` as the published file, different bytes).
+
+### `evidence_dates`
+
+`meta` also gains **`evidence_dates`** (JSON), written by `evidence_age.py
+--write`. Per table (`ways`, `lanes`, `pois`, `orders`, `fords`):
+
+```json
+{"format": 1, "warn_days": 365,
+ "ways": {"state": "measured", "rows": 1448, "dated": 1448, "unknown": 0,
+          "newest": "2026-09-24", "median": "2026-09-24",
+          "p90": "2026-09-24", "oldest": "2026-09-24",
+          "days": {"2026-09-24": 1448}},
+ "lanes": {"state": "absent"},
+ "pois": {"state": "blind", "why": "no source_date column"}}
+```
+
+`state` is `measured`, `blind` (the table has no `source_date`) or `absent`.
+`unknown` counts rows whose `source_date` is missing or unreadable; they are in
+`rows` and not in `dated`, `days` or any percentile. `median` and `p90` are
+nearest-rank over the dated rows newest-first, so the median AGE on a given
+day is that day minus `median`. `days` is the count of rows on each distinct
+`source_date`, so any threshold count — rows older than `warn_days`, rows
+dated after today (a data fault, to be treated as undated) — is a sum the app
+does against its own clock. It is how the app says how old the survey is
+instead of quoting a build stamp, which describes when *we* ran a script and
+not when the authority surveyed.
+
+**Dates, never ages, and that is load-bearing.** It replaced `evidence_age`,
+which stored ages in days against an `as_of` pinned to the 1st of the month —
+so every region container's bytes moved on the first run of every month with
+nothing in it changed, under an unchanged `built_at`, and the app fetched all
+six regions whole (~94 MB) where no changeset could reach. A date does not
+age. `--write` removes a legacy `evidence_age` key when it writes.

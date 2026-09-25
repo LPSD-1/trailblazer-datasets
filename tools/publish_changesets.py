@@ -170,7 +170,7 @@ def publish(old_dir, new_dir, out_dir, base_url="", keep=DEFAULT_KEEP,
     new = _containers(new_dir)
 
     report = {"built": [], "skipped": [], "pruned": [], "unsigned": 0,
-              "measured": []}
+              "measured": [], "refused": []}
 
     for served in sorted(new):
         pack_id, new_path = new[served]
@@ -189,6 +189,21 @@ def publish(old_dir, new_dir, out_dir, base_url="", keep=DEFAULT_KEEP,
             report["skipped"].append((pack_id, "nothing published before"))
             continue
         from_build = _built_at(was[1])
+        if from_build and from_build == to_build \
+                and _file_digest(was[1]) != _file_digest(new_path):
+            # SAME BUILD, DIFFERENT BYTES: the one state no changeset can
+            # cover. Every step keys on built_at, so the app would find the
+            # build it holds announced under a new hash and fetch the whole
+            # region - ~94 MB for the six, on the paid tier, which is exactly
+            # what a monthly evidence_age and every POI or ford refresh did.
+            # stamp_build.py exists so this cannot happen; this is the proof
+            # that it ran, and a build that reaches it is refused, not
+            # published.
+            report["refused"].append(
+                (pack_id, "same built_at %s as the published file, different "
+                          "bytes - run tools/stamp_build.py before this"
+                 % to_build))
+            continue
         if not from_build or from_build == to_build:
             report["skipped"].append((pack_id, "unchanged"))
             continue
@@ -263,6 +278,14 @@ def publish(old_dir, new_dir, out_dir, base_url="", keep=DEFAULT_KEEP,
     report["index_written"] = _write_index(out_dir, index)
     report["index"] = index
     return report
+
+
+def _file_digest(path):
+    h = hashlib.sha256()
+    with open(path, "rb") as fh:
+        for block in iter(lambda: fh.read(1 << 20), b""):
+            h.update(block)
+    return h.hexdigest()
 
 
 def _stamp(build):
@@ -357,10 +380,14 @@ def main():
               % (pack_id, delta, whole, 100.0 * ratio))
     for pack_id, why in sorted(report["skipped"])[:20]:
         print("  skipped %-24s %s" % (pack_id, why))
+    for pack_id, why in sorted(report["refused"]):
+        print("REFUSED: %s: %s" % (pack_id, why), file=sys.stderr)
     if report["built"]:
         total = sum(b[3] for b in report["built"])
         print("  %d changeset(s), %.2f MB in all" % (len(report["built"]),
                                                      total / 1048576.0))
+    if report["refused"]:
+        return 1
     if report["unsigned"] and args.require_signing:
         print("REFUSED: %d changeset(s) went unsigned." % report["unsigned"],
               file=sys.stderr)

@@ -170,7 +170,7 @@ def _poi_cache(tmp, region, pois):
     return cache
 
 
-def _pipeline(poi_cache=None):
+def _pipeline(poi_cache=None, previous_dir=None):
     """packs -> containers, the way the real build runs it."""
     tmp = tempfile.mkdtemp(prefix="tbways-pipeline-")
     real_dist = P.dist_dir
@@ -193,7 +193,8 @@ def _pipeline(poi_cache=None):
         with io.open(mpath, "w", encoding="utf-8") as fh:
             fh.write(json.dumps(manifest))
         out = C.build_all(mpath, os.path.join(tmp, "containers"), KEY, None,
-                          tmp, poi_cache=poi_cache(tmp) if poi_cache else None)
+                          tmp, poi_cache=poi_cache(tmp) if poi_cache else None,
+                          previous_dir=previous_dir)
         return out, tmp
     finally:
         P.dist_dir = real_dist
@@ -385,6 +386,47 @@ def test_an_area_container_carries_the_pois_of_its_region():
               "got %r" % (got,))
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_the_pois_keep_the_rowids_of_the_published_container():
+    """COST B, AT THE BUILDER. `--previous containers` must reach write_pois:
+    a POI whose uid sorts FIRST arrives, and the two already published stay
+    where every rider's copy has them. Numbered 1..N instead, both move up
+    one and a changeset carries every POI in the region."""
+    def first(tmp):
+        return _poi_cache(tmp, "midlands", [
+            _node(5, "fuel", 52.505, -1.695, {"amenity": "fuel"}),
+            _node(7, "toilets", 52.503, -1.698, {"amenity": "toilets"})])
+
+    def second(tmp):
+        return _poi_cache(tmp, "midlands", [
+            _node(1, "fuel", 52.504, -1.696, {"amenity": "fuel"}),
+            _node(5, "fuel", 52.505, -1.695, {"amenity": "fuel"}),
+            _node(7, "toilets", 52.503, -1.698, {"amenity": "toilets"})])
+
+    _, published = _pipeline(poi_cache=first)
+    try:
+        _, tmp = _pipeline(poi_cache=second, previous_dir=os.path.join(
+            published, "containers"))
+        try:
+            def numbers(root):
+                db = sqlite3.connect(os.path.join(root, "containers",
+                                                  "ways-midlands.tbmap"))
+                try:
+                    return dict(db.execute("SELECT poi_uid, rowid FROM pois"))
+                finally:
+                    db.close()
+            was, now = numbers(published), numbers(tmp)
+            check("PREMISE: the new POI sorts first",
+                  sorted(now)[0] == "osm:n1", repr(sorted(now)))
+            check("the published POIs keep their rowids",
+                  all(now[u] == was[u] for u in was), repr((was, now)))
+            check("and the new one is numbered after them",
+                  now["osm:n1"] == max(was.values()) + 1, repr(now))
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+    finally:
+        shutil.rmtree(published, ignore_errors=True)
 
 
 def test_a_region_with_no_cache_gets_no_poi_tables_and_a_null_count():

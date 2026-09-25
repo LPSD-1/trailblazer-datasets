@@ -83,14 +83,19 @@ STATIC_CALLS = [
      ["ea_flood.py stations", "--parameter level", "--out cache/ea"]),
     ("wetness written into the container",
      ["build_wet.py assign", "--container", "--stations",
-      "cache/ea/stations-rainfall.json", "--in-place"]),
+      "cache/ea/stations-rainfall.json", "--in-place",
+      '--previous "containers/$(basename "$container")"']),
     ("the ford fetch",
      ["build_fords.py fetch", "--region", "--cache cache/fords"]),
     ("fords written into the container",
      ["build_fords.py build", "--region", "--cache cache/fords",
-      "--container", "cache/ea/stations-level.json", "--in-place"]),
-    ("the evidence-age summary",
-     ["evidence_age.py --write", "--as-of"]),
+      "--container", "cache/ea/stations-level.json", "--in-place",
+      '--previous "containers/$(basename "$container")"']),
+    ("the evidence dates",
+     ["evidence_age.py --write"]),
+    ("the build stamp that follows the content",
+     ["stamp_build.py", "--published containers",
+      "--manifest dist/containers/manifest.json", "--now"]),
     ("the manifest put back in step with the edited containers",
      ["restamp_containers.py", "--manifest dist/containers/manifest.json",
       "--require-moved"]),
@@ -206,7 +211,8 @@ def test_the_halves_are_in_different_jobs():
           "--in-place" not in live,
           "the live half must not carry --in-place")
     for writer in ("build_wet.py assign", "build_fords.py build",
-                   "evidence_age.py --write", "restamp_containers.py"):
+                   "evidence_age.py --write", "stamp_build.py",
+                   "restamp_containers.py"):
         check("the live half does not run %s" % writer, writer not in live)
     for reader in ("build_wet.py feed", "build_fords.py feed"):
         check("the static half does not publish a feed (%s)" % reader,
@@ -218,19 +224,30 @@ def test_the_halves_are_in_different_jobs():
           "secrets." not in live, "the live half must need no secret")
 
 
-def test_evidence_age_is_pinned_and_not_run_against_today():
-    """Ages are in days against a date. Run with today's, the key changes every
-    morning, every container's bytes move, and every rider re-downloads the
-    country to learn the median got a day older."""
+def test_the_evidence_is_written_once_and_the_stamp_follows_it():
+    """The evidence goes in as DATES (evidence_age.read_dates), so nothing it
+    writes depends on the day; `--as-of` only ever pinned the AGES the old
+    key stored, and even pinned they moved every region's bytes monthly
+    (test_evidence_age.py holds that regression). What this asks of the
+    workflow is the order: the dates are written, THEN the build is stamped
+    by its content, THEN the result is re-signed - a stamp taken before the
+    last write would describe content the rider never gets."""
     text = workflow_text()
     call = [b for b in re.split(r"\n      - name:", text)
             if "evidence_age.py --write" in b]
     check("evidence_age is invoked exactly once", len(call) == 1, len(call))
-    if len(call) != 1:
-        return
-    check("and against a pinned date, not today", "--as-of" in call[0])
-    check("pinned to the first of the month", "%Y-%m-01" in call[0],
-          call[0].strip()[:200])
+    stamp = text.rfind("python tools/stamp_build.py")
+    writes = [text.rfind(w) for w in ("python tools/build_containers.py",
+                                      "python tools/build_wet.py assign",
+                                      "python tools/build_fords.py build",
+                                      "python tools/evidence_age.py --write")]
+    restamp = text.rfind("python tools/restamp_containers.py")
+    check("the stamp is taken after every container write",
+          stamp > max(writes) > 0, (stamp, writes))
+    check("and before the re-sign", 0 < stamp < restamp, (stamp, restamp))
+    check("the container build numbers POIs from the published tree",
+          "--previous containers" in text[writes[0]:writes[0] + 400],
+          text[writes[0]:writes[0] + 400])
 
 
 def test_the_restamp_runs_after_the_writes_and_before_the_catalogue():
@@ -262,6 +279,7 @@ CONTAINER_WRITES = ["python tools/build_containers.py",
                     "python tools/build_wet.py assign",
                     "python tools/build_fords.py build",
                     "python tools/evidence_age.py --write",
+                    "python tools/stamp_build.py",
                     "python tools/restamp_containers.py"]
 
 
@@ -362,7 +380,7 @@ def _container(path, wetness=1, gauges=1, fords=1, meta=True):
     db = sqlite3.connect(path)
     db.execute("CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT)")
     if meta:
-        db.execute("INSERT INTO meta VALUES ('evidence_age','{}')")
+        db.execute("INSERT INTO meta VALUES ('evidence_dates','{}')")
     db.execute("CREATE TABLE way_wetness (id INTEGER PRIMARY KEY,"
                " susceptibility TEXT, basis TEXT, basis_value TEXT,"
                " gauge INTEGER, gauge_m REAL)")
@@ -454,7 +472,8 @@ def test_the_container_guard_refuses_an_empty_subject():
         with open(listing, "w", encoding="utf-8") as fh:
             fh.write("north %s\n" % nometa)
         code, out = _run_guard(source, tmp, {"REGION_CONTAINERS": listing})
-        check("a missing meta.evidence_age is refused", code != 0, out[-300:])
+        check("a missing meta.evidence_dates is refused", code != 0,
+              out[-300:])
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
@@ -689,8 +708,8 @@ def doc_gaps(text):
     for table in DOC_TABLES:
         if table not in declared:
             gaps.append("table %s" % table)
-    if "evidence_age" not in text:
-        gaps.append("meta.evidence_age")
+    if "evidence_dates" not in text:
+        gaps.append("meta.evidence_dates")
     for feed in ("published/wet/", "published/rivers/"):
         if feed not in text:
             gaps.append("the %s feed" % feed)

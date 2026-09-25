@@ -70,6 +70,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 
 import ea_flood as EA               # noqa: E402
+import stable_ids                   # noqa: E402
 
 #: The soak window. 48 hours and not 24 because what makes a byway cut up is
 #: saturated ground rather than a shower: the top of a soft track sheds a
@@ -262,12 +263,21 @@ def read_ways(db):
     return list(db.execute(sql))
 
 
-def assign(rows, stations, log=None):
+def assign(rows, stations, log=None, previous=None):
     """(way_wetness rows, wet_gauges rows, counts).
 
     Only the gauges actually chosen are interned. A region sees a few hundred
     of the ~3,200 national stations, and carrying the rest would put gauges in
     Kent into the Welsh container.
+
+    A GAUGE KEEPS ITS NUMBER. `previous` is the region's PUBLISHED container;
+    a station it carries keeps its `wet_gauges.id` there, and a new one
+    continues above the highest id published (stable_ids.py). Numbered in
+    first-seen order instead, a new way whose hash rowid sorted early and saw
+    a new gauge first renumbered every gauge after it, and `gauge` moved in
+    every `way_wetness` row that pointed at one: a changeset carrying the
+    whole table to say nothing had changed. With no published container the
+    numbering is first-seen, exactly as before.
     """
     index = EA.StationIndex(stations)
     out = []
@@ -295,6 +305,18 @@ def assign(rows, stations, log=None):
                     else None})
         if log and len(out) % 20000 == 0:
             log("    %d placed" % len(out))
+    held = stable_ids.previous_numbers(previous, "wet_gauges", "station_id",
+                                       "id")
+    if held:
+        order = [sid for sid, _ in sorted(gauges.items(),
+                                          key=lambda kv: kv[1][0])]
+        stable = stable_ids.number(order, held)
+        remap = dict((gid, stable[sid]) for sid, (gid, _) in gauges.items())
+        gauges = dict((sid, (stable[sid], station))
+                      for sid, (_, station) in gauges.items())
+        for row in out:
+            if row["gauge"] is not None:
+                row["gauge"] = remap[row["gauge"]]
     gauge_rows = [{"id": gid, "station_id": sid, "label": station.get("label"),
                    "lat": station.get("lat"), "lon": station.get("lon")}
                   for sid, (gid, station) in sorted(gauges.items(),
@@ -561,7 +583,8 @@ def do_assign(args, log=print):
         rows = read_ways(db)
     finally:
         db.close()
-    assigned, gauges, counts = assign(rows, stations, log=log)
+    assigned, gauges, counts = assign(rows, stations, log=log,
+                                      previous=getattr(args, "previous", None))
 
     work = args.container
     if not args.in_place:
@@ -681,6 +704,9 @@ def parse_args(argv):
     a.add_argument("--in-place", action="store_true")
     a.add_argument("--keep", help="keep the modified copy here")
     a.add_argument("--report", help="write the counts as JSON")
+    a.add_argument("--previous",
+                   help="the PUBLISHED container: gauges keep the ids riders "
+                        "already hold (see stable_ids.py)")
 
     f = sub.add_parser("feed", help="publish the live rainfall feed")
     f.add_argument("--region", required=True)

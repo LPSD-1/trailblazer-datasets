@@ -11,6 +11,21 @@ those dates into a sentence the app could say.
     python tools/evidence_age.py --report age.json containers/*.tbmap
     python tools/evidence_age.py --selftest
 
+WHAT GOES IN THE CONTAINER IS DATES, NOT AGES.
+`--write` stores `meta.evidence_dates`: per table, the NEWEST, MEDIAN, P90
+and OLDEST `source_date` as ISO days, and the count of rows on every distinct
+day. The app turns those into ages against its own clock. This replaced
+`meta.evidence_age`, which stored ages IN DAYS against an `as_of` the workflow
+pinned to the 1st of the month - so every region container's bytes changed on
+the first run of every month with nothing in it having changed, `built_at`
+stayed put (it follows the data, and the data had not moved), and the app,
+seeing the same build under a new hash, fetched the whole file: ~94 MB for
+the six regions, at least monthly, on the paid freshness tier, and no
+changeset could cover it. A date does not age; a day count does. Nothing in
+`evidence_dates` depends on when the tool ran, so a rebuild of unchanged rows
+is byte-identical in any month. The `as_of` below survives only for the
+printed report, which is read by a person on the day.
+
 WHY A DISTRIBUTION AND NOT A DATE.
 "Data from 2026-01-14" is what a single `built_at` supports, and it is close to
 a lie: a region's ways come from thirty-odd authorities, each of which last
@@ -38,6 +53,7 @@ age from `built_at`, because `built_at` is when WE ran, not when the AUTHORITY
 surveyed, and conflating the two is exactly the claim the spec forbids.
 """
 import argparse
+import collections
 import datetime
 import json
 import os
@@ -69,7 +85,15 @@ TABLES = ("ways", "lanes", "pois", "orders", "fords")
 #: would leave a rider with nothing.
 WARN_DAYS = 365
 
-META_KEY = "evidence_age"
+#: What `--write` stores. See the module docstring.
+META_KEY = "evidence_dates"
+
+#: The key it replaced, removed by `--write` so a container never carries
+#: both - two answers to "how old is this" that can disagree.
+LEGACY_KEY = "evidence_age"
+
+#: Bumped if the shape of `evidence_dates` ever changes incompatibly.
+DATES_FORMAT = 1
 
 
 def parse_date(text):
@@ -141,6 +165,91 @@ def distribution(dates, as_of):
     }
 
 
+def date_summary(dates):
+    """The absolute-date summary of one table's `source_date` column.
+
+    Nothing here depends on the day it is computed, which is the point: see
+    the module docstring. Every figure `distribution` gives can be recovered
+    from it against any `as_of` - the ages are `as_of` minus these dates, and
+    `days` carries the whole shape, so a count past any threshold, or of
+    rows dated after today, is a sum the app does on the device.
+
+    Percentiles are the same nearest-rank ones `distribution` uses, taken
+    newest-first, so `median` is exactly the date `median_days` counts back
+    to.
+    """
+    days = collections.Counter()
+    unknown = 0
+    for raw in dates:
+        when = parse_date(raw)
+        if when is None:
+            unknown += 1
+            continue
+        days[when] += 1
+    newest_first = []
+    for when in sorted(days, reverse=True):
+        newest_first.extend([when] * days[when])
+
+    def iso(when):
+        return None if when is None else when.isoformat()
+
+    return {
+        "rows": len(dates),
+        "dated": len(newest_first),
+        "unknown": unknown,
+        "newest": iso(newest_first[0] if newest_first else None),
+        "median": iso(percentile(newest_first, 50)),
+        "p90": iso(percentile(newest_first, 90)),
+        "oldest": iso(newest_first[-1] if newest_first else None),
+        "days": collections.OrderedDict(
+            (when.isoformat(), days[when]) for when in sorted(days)),
+    }
+
+
+def _tables(db):
+    """{table: 'absent' | 'blind' | list of source_date} for TABLES."""
+    names = set(row[0] for row in db.execute(
+        "SELECT name FROM sqlite_master WHERE type='table'"))
+    out = {}
+    for table in TABLES:
+        if table not in names:
+            out[table] = "absent"
+            continue
+        columns = set(row[1] for row in
+                      db.execute("PRAGMA table_info(%s)" % table))
+        if "source_date" not in columns:
+            out[table] = "blind"
+            continue
+        out[table] = [row[0] for row in
+                      db.execute("SELECT source_date FROM %s" % table)]
+    return out
+
+
+def read_dates(path):
+    """What `--write` stores in `meta.evidence_dates`, for one container.
+
+    The same three states per table as `read_container` - measured, blind,
+    absent - and the threshold the app is expected to warn past. No `as_of`,
+    no container name, nothing about the run: two builds of the same rows
+    write the same bytes, in any month.
+    """
+    db = sqlite3.connect(path)
+    try:
+        tables = _tables(db)
+    finally:
+        db.close()
+    out = {"format": DATES_FORMAT, "warn_days": WARN_DAYS}
+    for table in TABLES:
+        got = tables[table]
+        if got == "absent":
+            out[table] = {"state": "absent"}
+        elif got == "blind":
+            out[table] = {"state": "blind", "why": "no source_date column"}
+        else:
+            out[table] = dict(date_summary(got), state="measured")
+    return out
+
+
 def read_container(path, as_of):
     """{table: distribution}, plus why any table is absent or blind.
 
@@ -176,21 +285,31 @@ def read_container(path, as_of):
         db.close()
 
 
-def write_meta(path, summary):
-    """Put the summary in `meta` so the app can read it without a scan.
+def write_meta(path, summary=None):
+    """Put the dates in `meta` so the app can read them without a scan.
 
-    `meta` is a key/value table and this adds one key. It deliberately does NOT
-    touch `built_at` - WAYS-SCHEMA.md records that a run stamp leaking into a
-    content hash broke reproducibility once already, and this key is written
-    from the container's own rows, so two builds of one container write the
-    same bytes here.
+    `summary` is `read_dates(path)`, computed here when not given. It is
+    stored as `meta.evidence_dates`, and the legacy `meta.evidence_age` is
+    removed in the same transaction. This deliberately does NOT touch
+    `built_at` - WAYS-SCHEMA.md records that a run stamp leaking into a
+    content hash broke reproducibility once already - and it is written from
+    the container's own rows and nothing else, so two builds of one
+    container write the same bytes here whenever they are run.
     """
+    if summary is None:
+        summary = read_dates(path)
+    if "as_of" in summary:
+        # The age report, handed in where the dates belong. Stored, it would
+        # put a run date back in the container and move its bytes monthly.
+        raise ValueError("write_meta takes read_dates(), not read_container()")
     db = sqlite3.connect(path)
     try:
         db.execute("CREATE TABLE IF NOT EXISTS meta"
                    " (key TEXT PRIMARY KEY, value TEXT)")
+        db.execute("DELETE FROM meta WHERE key = ?", (LEGACY_KEY,))
         db.execute("INSERT OR REPLACE INTO meta (key, value) VALUES (?,?)",
-                   (META_KEY, json.dumps(summary, sort_keys=True)))
+                   (META_KEY, json.dumps(summary, sort_keys=True,
+                                         separators=(",", ":"))))
         db.commit()
     finally:
         db.close()
@@ -251,6 +370,13 @@ def selftest(log=print):
     check("the bucket boundary is inclusive", bucket_of(30) == "under_30d")
     check("and one day past is the next bucket", bucket_of(31) == "under_90d")
     check("the last bucket is open", bucket_of(100000) == "over_5y")
+    dated = date_summary(["2026-09-24", "2026-08-25", "2020-01-01", None])
+    check("the dates carry no age", "median_days" not in dated, repr(dated))
+    check("the median is a date", dated["median"] == "2026-08-25",
+          repr(dated))
+    check("and it is the date median_days counts back to",
+          (today - parse_date(dated["median"])).days
+          == got["median_days"], repr(dated))
 
     for failure in failures:
         log("  FAIL " + failure)
@@ -264,7 +390,8 @@ def parse_args(argv):
     parser.add_argument("containers", nargs="*")
     parser.add_argument("--as-of", help="ISO date; defaults to today")
     parser.add_argument("--write", action="store_true",
-                        help="store the summary in each container's meta")
+                        help="store the evidence DATES in each container's "
+                             "meta (never the ages, which move monthly)")
     parser.add_argument("--report", help="write every summary as one JSON")
     parser.add_argument("--selftest", action="store_true")
     return parser.parse_args(argv)
@@ -284,7 +411,7 @@ def main(argv=None):
         every.append(summary)
         report(summary)
         if args.write:
-            write_meta(path, summary)
+            write_meta(path, read_dates(path))
             print("    -> meta.%s" % META_KEY)
     if args.report:
         with open(args.report, "w", encoding="utf-8") as handle:

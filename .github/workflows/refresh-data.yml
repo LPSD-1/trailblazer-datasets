@@ -285,11 +285,18 @@ jobs:
           python tools/test_build_containers.py
           python tools/test_build_map_container.py
           python tools/test_sign_release.py
+          python tools/test_stable_ids.py
+          # --previous containers: the PUBLISHED tree, which is what riders
+          # hold. Every POI keeps the rowid it has there and a new one goes
+          # on the end (tools/stable_ids.py). Numbered 1..N in uid order,
+          # one new POI renumbered the region and its changeset was 5.87 MB
+          # of a 9.47 MB container; kept, it is 15.9 kB.
           python tools/build_containers.py \
             --manifest dist/manifest.json \
             --root dist \
             --key /tmp/dataset.key \
             --poi-cache cache/pois \
+            --previous containers \
             --out dist/containers
 
       # ===================================================================
@@ -318,13 +325,14 @@ jobs:
       #     over 30 days old - `poi_staleness.MAX_AGE_DAYS`, and the same
       #     bargain that step makes for POIs. Re-fetched four times a day, a
       #     single EA station opening or closing would rewrite the country.
-      #   * `evidence_age` measures ages IN DAYS AGAINST A DATE, so run with
-      #     today's date it writes a different `meta.evidence_age` every
-      #     morning, every container's bytes move, and every rider
-      #     re-downloads England to learn that the median survey got one day
-      #     older. `--as-of` is pinned to the FIRST OF THE MONTH, so the key
-      #     moves twelve times a year and the sentence the app says - "surveys
-      #     as of 1 September" - is one it can stand behind.
+      #   * HOW OLD THE EVIDENCE IS goes in as DATES (`meta.evidence_dates`),
+      #     never as ages. It used to be `meta.evidence_age`, days counted
+      #     back from an `--as-of` pinned to the 1st of the month - and even
+      #     pinned, that moved every region container's bytes on the first
+      #     run of every month with nothing in it changed, under an unchanged
+      #     `built_at`, so the app fetched all six regions whole (~94 MB) and
+      #     no changeset could cover it. A date does not age; the app counts
+      #     the days on the phone.
       #
       # The fords cache is already self-skipping (`fetch` returns early when
       # the region's file is there), so it is on the same slow clock for free.
@@ -410,9 +418,11 @@ jobs:
           mkdir -p /tmp/conditions
           while read -r region container; do
             echo "::group::wetness for $region ($container)"
+            # Gauges keep the ids riders hold (tools/stable_ids.py).
             python tools/build_wet.py assign \
               --container "$container" \
               --stations cache/ea/stations-rainfall.json \
+              --previous "containers/$(basename "$container")" \
               --in-place \
               --report "/tmp/conditions/wet-$(basename "$container" .tbmap).json"
             echo "::endgroup::"
@@ -457,27 +467,53 @@ jobs:
           set -euo pipefail
           while read -r region container; do
             echo "::group::fords into $container"
+            # Fords and gauges keep the numbers riders hold (stable_ids.py).
             python tools/build_fords.py build \
               --region "$region" \
               --cache cache/fords \
               --container "$container" \
               --stations cache/ea/stations-level.json \
+              --previous "containers/$(basename "$container")" \
               --in-place \
               --report "/tmp/conditions/fords-$(basename "$container" .tbmap).json"
             echo "::endgroup::"
           done < /tmp/region-containers.txt
 
-      # How old the answer is, as a distribution rather than a build stamp. See
-      # the comment at the top of this block for why `--as-of` is pinned.
+      # How old the answer is, as a distribution rather than a build stamp,
+      # stored as DATES: see the comment at the top of this block. Nothing
+      # written here depends on today, so no `--as-of`; the printed report
+      # and --report JSON count ages against today for whoever reads the log.
       - name: Record how old each container's evidence is
         run: |
           set -euo pipefail
-          AS_OF="$(date -u +%Y-%m-01)"
-          echo "ages measured against $AS_OF, not today - see the block above"
           cut -d' ' -f2 /tmp/region-containers.txt | sort -u > /tmp/containers.txt
           xargs -a /tmp/containers.txt \
-            python tools/evidence_age.py --write --as-of "$AS_OF" \
+            python tools/evidence_age.py --write \
               --report /tmp/conditions/evidence-age.json
+
+      # ===================================================================
+      # THE BUILD STAMP FOLLOWS THE CONTENT - ALL OF IT.
+      #
+      # `built_at` is the pack's stamp: it moves when a council's ways do and
+      # at no other time. Everything written after build_containers - POIs on
+      # their 30-day clock, wetness and fords on the gauge network's - used to
+      # change a region's bytes under the SAME `built_at`. Every changeset is
+      # keyed on `built_at` (builder, validator, app), so none could cover it:
+      # the app saw the build it held under a new hash and fetched the region
+      # whole. stamp_build.py makes that state impossible: a container whose
+      # content equals the published one IS the published file, byte for
+      # byte; one that differs gets a stamp the published one does not have.
+      # The changeset step below refuses the job if the two ever disagree.
+      #
+      # After every write above, before the re-sign below.
+      - name: Stamp each build by its content
+        run: |
+          set -euo pipefail
+          python tools/test_stamp_build.py
+          python tools/stamp_build.py \
+            --published containers \
+            --manifest dist/containers/manifest.json \
+            --now "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
       # ===================================================================
       # AND PUT THE MANIFEST BACK IN STEP WITH THE FILES.
@@ -557,10 +593,10 @@ jobs:
                   counts = {t: db.execute("SELECT count(*) FROM %s" % t)
                               .fetchone()[0] for t in sorted(want)}
                   meta = db.execute("SELECT count(*) FROM meta WHERE key=?",
-                                    ("evidence_age",)).fetchone()[0]
+                                    ("evidence_dates",)).fetchone()[0]
               finally:
                   db.close()
-              print("%-44s %s  evidence_age=%d" % (path, counts, meta))
+              print("%-44s %s  evidence_dates=%d" % (path, counts, meta))
               fords_total += counts["fords"]
               # A wetness row PER WAY, and a gauge to join it to. Both can only
               # be zero if the container has no ways at all or no gauge within
@@ -571,7 +607,7 @@ jobs:
               if not counts["wet_gauges"]:
                   problems.append("%s: no rainfall gauge was carried" % path)
               if not meta:
-                  problems.append("%s: no meta.evidence_age" % path)
+                  problems.append("%s: no meta.evidence_dates" % path)
 
           # Fords are asked NATIONALLY, not per region, and that is deliberate
           # rather than lenient: a region can honestly have no ford on one of

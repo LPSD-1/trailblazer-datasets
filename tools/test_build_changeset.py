@@ -244,7 +244,7 @@ def test_same_size_different_bytes_is_caught():
 # still holds - but it is not what the pipeline publishes. A region container
 # since step 1.10 is `ways` + `ways_bbox` + `pois` + `pois_bbox` + `fords` +
 # `fords_bbox` + `ford_gauges` + `way_wetness` + `wet_gauges` + `tiles` +
-# `meta`, with `evidence_age`, `context_note`, `context_scope` and
+# `meta`, with `evidence_dates`, `context_note`, `context_scope` and
 # `schema_version` in the meta. A changeset that carried only the first two
 # was refused by the app every time, so every region update was a whole
 # download; applied, it would have left last build's pois, fords and wetness
@@ -253,9 +253,9 @@ def test_same_size_different_bytes_is_caught():
 # So these containers are written by THE PIPELINE'S OWN WRITERS, in the order
 # refresh-data.yml runs them: build_map_container.write_container, then
 # build_pois.write_pois (inside build_containers), then build_wet, then
-# build_fords, then evidence_age. A fixture built by hand here would be the
-# shape this file believed in, which is exactly how the lanes-only tests above
-# stayed green while the live set went unapplied.
+# build_fords, then evidence_age.py's dates. A fixture built by hand here
+# would be the shape this file believed in, which is exactly how the
+# lanes-only tests above stayed green while the live set went unapplied.
 
 import datetime  # noqa: E402
 import json  # noqa: E402
@@ -312,25 +312,33 @@ def _station(sid, lat, lon):
 
 
 def write_live_shape(path, ways, pois, fords, rain, level, built_at, as_of,
-                     note="Only byways are on this map."):
-    """A region container, written the way refresh-data.yml writes one."""
+                     note="Only byways are on this map.", previous=None):
+    """A region container, written the way refresh-data.yml writes one.
+
+    `as_of` is the day of the run. It no longer reaches the file - the
+    evidence is stored as dates (evidence_age.read_dates) - and is kept so
+    each build below still says which month it stands for. `previous` is the
+    published container the pipeline numbers rows from (stable_ids.py);
+    None numbers them as a first build, which is what `_live_pair` wants: a
+    pair that re-keys rows, so the applier is proved to cope with it.
+    """
     B.write_container(path, ways, "area", (11, 12), built_at,
                       context_scope="none", context_note=note)
-    PO.write_pois(path, pois)
+    PO.write_pois(path, pois, previous=previous)
     db = sqlite3.connect(path)
     try:
         rows = W.read_ways(db)
     finally:
         db.close()
-    wet, wet_gauges, _ = W.assign(rows, rain)
+    wet, wet_gauges, _ = W.assign(rows, rain, previous=previous)
     W.write_wetness(path, wet, wet_gauges)
     db = sqlite3.connect(path)
     try:
         ford_rows, ford_gauges, _ = F.build_rows(db, fords, level)
     finally:
         db.close()
-    F.write_fords(path, ford_rows, ford_gauges)
-    EA.write_meta(path, EA.read_container(path, as_of))
+    F.write_fords(path, ford_rows, ford_gauges, previous=previous)
+    EA.write_meta(path)
 
 
 # Five ways a few hundred metres apart. W5 is out on its own with its own
@@ -538,15 +546,15 @@ def test_the_new_builds_meta_is_restated():
             metas.append(dict(db.execute("SELECT key, value FROM meta")))
             db.close()
         carried, new, old = metas
-        for key in ("evidence_age", "context_note", "context_scope",
+        for key in ("evidence_dates", "context_note", "context_scope",
                     "schema_version", "way_count", "class_counts",
                     "legal_tier_counts", "authorities", "bounds",
                     "min_zoom", "max_zoom", "lane_count"):
             check("%s is restated as the new build has it" % key,
                   key in new and carried.get(key) == new[key],
                   "%r vs %r" % (carried.get(key), new.get(key)))
-        check("evidence_age really did move between the builds",
-              old["evidence_age"] != new["evidence_age"])
+        check("evidence_dates really did move between the builds",
+              old["evidence_dates"] != new["evidence_dates"])
         check("and so did context_note",
               old["context_note"] != new["context_note"])
         check("to_build is the new built_at",
@@ -700,6 +708,44 @@ def test_a_table_in_one_build_only_is_refused():
                   why is not None and "ford_gauges" in why, why)
 
 
+def test_a_one_poi_changeset_is_kilobytes_not_a_page_floor():
+    """MEASURED on the published ways-east-anglia.tbmap: with rows numbered
+    stably, a changeset carrying ONE new POI held 2 KB of content and weighed
+    73,728 bytes, because every one of the ~18 tables and indexes it declares
+    takes a whole 4 KB page even when empty. build_changeset writes a small
+    changeset in 512-byte pages; the same file came to 15,872 bytes."""
+    print("a one-POI changeset is a few kilobytes")
+    with tempfile.TemporaryDirectory() as tmp:
+        before = os.path.join(tmp, "before.tbmap")
+        after = os.path.join(tmp, "after.tbmap")
+        write_live_shape(before, _WAYS, _POIS, _FORDS, _RAIN, _LEVEL,
+                         "2026-09-01T00:00:00Z", datetime.date(2026, 9, 1))
+        pois = sorted(_POIS + [_poi("osm:n100", 52.509, -1.659)],
+                      key=lambda p: p["poi_uid"])
+        write_live_shape(after, _WAYS, pois, _FORDS, _RAIN, _LEVEL,
+                         "2026-09-02T00:00:00Z", datetime.date(2026, 10, 1),
+                         previous=before)
+        cs = os.path.join(tmp, "d.tbchange")
+        stats = build_changeset.build_changeset(before, after, cs)
+        check("PREMISE: it carries the one POI and nothing else of pois",
+              stats["tables"]["pois"] == {"changed": 0, "added": 1,
+                                          "removed": 0}, stats["tables"])
+        check("and is under 20 KB", stats["bytes"] < 20 * 1024,
+              stats["bytes"])
+        check("it is still a changeset that applies",
+              not validate_changeset_problems(cs), cs)
+        applied = os.path.join(tmp, "applied.tbmap")
+        shutil.copyfile(before, applied)
+        apply_v2(applied, cs)
+        check("onto the new build, every table",
+              every_table(applied) == every_table(after))
+
+
+def validate_changeset_problems(path):
+    import validate_changeset
+    return validate_changeset.problems_with(path)
+
+
 def main():
     for fn in (test_applying_gets_the_new_build,
                test_a_removed_right_of_way_really_goes,
@@ -713,7 +759,8 @@ def main():
                test_an_unchanged_side_table_costs_nothing,
                test_a_row_that_changes_key_lands_on_its_new_key,
                test_a_column_set_mismatch_is_refused_either_way,
-               test_a_table_in_one_build_only_is_refused):
+               test_a_table_in_one_build_only_is_refused,
+               test_a_one_poi_changeset_is_kilobytes_not_a_page_floor):
         fn()
     print()
     if FAILURES:

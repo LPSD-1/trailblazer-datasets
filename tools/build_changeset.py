@@ -369,10 +369,49 @@ def _build(old, new, out_path):
         stats = _write(old, new, out, table, key, carries, old_meta, new_meta)
         out.commit()
         out.execute("VACUUM")
+        _shrink_pages(out)
     finally:
         out.close()
     stats["bytes"] = os.path.getsize(out_path)
     return stats
+
+
+#: The page size a SMALL changeset is written in.
+#:
+#: A changeset declares every table the container holds, and SQLite gives
+#: every table and every index at least one page of its own, empty or not. At
+#: the default 4,096 bytes that is a floor of ~72 KB: measured on the
+#: published ways-east-anglia.tbmap, a changeset carrying ONE new POI was
+#: 73,728 bytes, 2 KB of it the POI and the meta. At 512 the same changeset is
+#: 15,872 bytes. The page size is recorded in the file's own header, so every
+#: reader (the app's ATTACH, validate_changeset, this module) opens it as it
+#: opens any other.
+SMALL_PAGE = 512
+
+#: Only below this is the small page tried. A big changeset is row- and
+#: tile-heavy, where a small page costs more in b-tree overhead than it saves
+#: (+2.3% measured at 1 KB pages on a 5.9 MB one), and VACUUMing it twice is
+#: not free.
+SMALL_PAGE_BELOW = 4 * 1024 * 1024
+
+
+def _size(db):
+    return (db.execute("PRAGMA page_count").fetchone()[0]
+            * db.execute("PRAGMA page_size").fetchone()[0])
+
+
+def _shrink_pages(db):
+    """Rewrite a small changeset in SMALL_PAGE pages, and keep whichever of
+    the two is smaller - so this can never make a changeset bigger."""
+    before = _size(db)
+    page = db.execute("PRAGMA page_size").fetchone()[0]
+    if before >= SMALL_PAGE_BELOW or page <= SMALL_PAGE:
+        return
+    db.execute("PRAGMA page_size = %d" % SMALL_PAGE)
+    db.execute("VACUUM")
+    if _size(db) > before:
+        db.execute("PRAGMA page_size = %d" % page)
+        db.execute("VACUUM")
 
 
 def _write(old, new, out, table, key, carries, old_meta, new_meta):

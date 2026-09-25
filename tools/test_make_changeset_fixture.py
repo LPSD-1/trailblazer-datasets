@@ -25,6 +25,7 @@ ROOT = os.path.dirname(HERE)
 sys.path.insert(0, HERE)
 
 import build_changeset as C          # noqa: E402
+import evidence_age as EA            # noqa: E402
 import make_changeset_fixture as M   # noqa: E402
 import test_build_changeset as T     # noqa: E402
 
@@ -35,7 +36,7 @@ APP_FIXTURE = os.path.join(os.path.dirname(ROOT), "greenroadmap-app", "test",
 #: The meta keys the app reads, which a changeset must restate. Named here
 #: so a container that stopped carrying one is a red test, not a quiet one.
 APP_META = ("built_at", "kind", "bounds", "context_note", "context_scope",
-            "evidence_age", "schema_version", "min_zoom", "max_zoom")
+            "evidence_dates", "schema_version", "min_zoom", "max_zoom")
 
 _passed = 0
 _failed = []
@@ -52,10 +53,20 @@ def check(name, ok, detail=""):
 
 
 def _meta_keys(path):
+    """The meta keys, with the legacy `evidence_age` read as the
+    `evidence_dates` that replaces it.
+
+    ONE TRANSITION. A container published before evidence_dates carries
+    evidence_age, and the fixture is the shape the NEXT build publishes; the
+    two name the same thing ("how old is this answer") and the first build
+    after the switch removes the old key (its changeset's `removed_meta`).
+    Once the published set carries evidence_dates this mapping is a no-op.
+    """
     db = sqlite3.connect("file:%s?mode=ro" % path.replace("\\", "/"),
                          uri=True)
     try:
-        return {k for (k,) in db.execute("SELECT key FROM meta")}
+        return {EA.META_KEY if k == EA.LEGACY_KEY else k
+                for (k,) in db.execute("SELECT key FROM meta")}
     finally:
         db.close()
 
@@ -118,8 +129,11 @@ def check_fixture(where, label):
         check("%s: the changeset restates %s" % (label, key), key in meta)
     new_meta = C.snapshot(after)["meta"]
     old_meta = C.snapshot(before)["meta"]
-    check("%s: evidence_age moved between the builds" % label,
-          old_meta["evidence_age"] != new_meta["evidence_age"])
+    check("%s: evidence_dates moved between the builds" % label,
+          old_meta.get(EA.META_KEY) != new_meta.get(EA.META_KEY)
+          and EA.META_KEY in new_meta)
+    check("%s: no fixture carries the legacy evidence_age" % label,
+          EA.LEGACY_KEY not in old_meta and EA.LEGACY_KEY not in new_meta)
     for table in ("ways", "pois", "fords", "way_wetness"):
         check("%s: a %s row written" % (label, table), written.get(table, 0))
         check("%s: a %s row removed" % (label, table), removed.get(table, 0))

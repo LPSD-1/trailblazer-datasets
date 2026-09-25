@@ -59,6 +59,7 @@ import build_map_container as BMC   # noqa: E402  (read-only: GEOMETRY_SCALE)
 import build_pois as PO             # noqa: E402  (Overpass fetch, REGIONS)
 import ea_flood as EA               # noqa: E402
 import osm_attributes as OA         # noqa: E402  (point_segment, to_metres)
+import stable_ids                   # noqa: E402
 
 #: OSM tags that mean "you cross water here". `ford=yes` is the common one;
 #: the rest are kept VERBATIM rather than flattened to a boolean, because
@@ -313,7 +314,8 @@ def build_rows(db, fords, stations, tol_m=FORD_TOL_M, log=None):
     return out, gauge_rows, counts
 
 
-def write_fords(db_path, fords, gauges, keep_off_network=False):
+def write_fords(db_path, fords, gauges, keep_off_network=False,
+                previous=None):
     """Write the two tables and the r-tree.
 
     `keep_off_network` decides whether a ford we could not tie to one of our
@@ -328,9 +330,37 @@ def write_fords(db_path, fords, gauges, keep_off_network=False):
     the box, 230 of them on one of our ways, and 501 gauges interned - more
     than twice what the written rows point at. Every unreferenced gauge is a
     row a rider downloads and an id the live feed is then asked to carry.
+
+    THE NUMBERS COME FROM WHAT RIDERS HOLD. `previous` is the region's
+    PUBLISHED container. A ford keeps the rowid it was published under and a
+    gauge keeps its id, by `ford_uid` and `station_id`; new ones continue
+    above the highest number published, and removed ones leave gaps - see
+    stable_ids.py. Numbered 1..N instead, one new ford whose uid sorted early
+    moved every later ford's rowid and r-tree row, and one gauge first seen
+    earlier renumbered `gauge` in every ford after it: all "changed" to a
+    changeset, not one of them different on the ground. With no published
+    container the numbering is exactly what it always was.
     """
     rows = [f for f in fords if keep_off_network or f["way_id"] is not None]
     used = set(f["gauge"] for f in rows if f["gauge"] is not None)
+    held_gauges = stable_ids.previous_numbers(previous, "ford_gauges",
+                                              "station_id", "id")
+    if held_gauges:
+        # First-seen order among the gauges actually written, which is the
+        # order `build_rows` interned them in - so a new gauge's number does
+        # not depend on how many off-network fords were seen before it.
+        station = dict((g["id"], g["station_id"]) for g in gauges)
+        renumber = stable_ids.number(
+            [station[gid] for gid in sorted(used)], held_gauges)
+        remap = dict((gid, renumber[station[gid]]) for gid in used)
+        gauges = [dict(g, id=remap[g["id"]]) for g in gauges
+                  if g["id"] in used]
+        used = set(remap.values())
+        rows = [dict(f, gauge=remap[f["gauge"]]) if f["gauge"] is not None
+                else f for f in rows]
+    numbers = stable_ids.number(
+        [f["ford_uid"] for f in rows],
+        stable_ids.previous_numbers(previous, "fords", "ford_uid"))
     db = sqlite3.connect(db_path)
     try:
         db.executescript(SCHEMA)
@@ -341,9 +371,12 @@ def write_fords(db_path, fords, gauges, keep_off_network=False):
             " VALUES (?,?,?,?,?,?,?,?)",
             [(g["id"], g["station_id"], g["label"], g["river"], g["lat"],
               g["lon"], g["typical_low_m"], g["typical_high_m"])
-             for g in gauges if g["id"] in used])
+             for g in sorted(gauges, key=lambda g: g["id"])
+             if g["id"] in used])
         db.execute("DELETE FROM fords_bbox")
-        for rowid, ford in enumerate(rows, start=1):
+        # In rowid order, as a 1..N build writes them.
+        for rowid, ford in sorted(((numbers[f["ford_uid"]], f) for f in rows),
+                                  key=lambda pair: pair[0]):
             db.execute(
                 "INSERT OR REPLACE INTO fords (rowid, ford_uid, way_id,"
                 " ford_tag, name, lat, lon, way_m, gauge, gauge_m,"
@@ -538,7 +571,8 @@ def do_build(args, log=print):
         db.close()
     try:
         written = write_fords(work, rows, gauges,
-                              keep_off_network=args.keep_off_network)
+                              keep_off_network=args.keep_off_network,
+                              previous=getattr(args, "previous", None))
         counts["gauges_written"] = gauge_count(work)
         after = os.path.getsize(work)
         # Checked on the file that was just written, so a ford nothing can
@@ -718,6 +752,10 @@ def parse_args(argv):
     b.add_argument("--keep-off-network", action="store_true",
                    help="carry fords not on one of our ways")
     b.add_argument("--report")
+    b.add_argument("--previous",
+                   help="the region's PUBLISHED container: fords and gauges "
+                        "keep the numbers riders already hold "
+                        "(see stable_ids.py)")
 
     d = sub.add_parser("feed", help="publish the live river-level feed")
     d.add_argument("--region", required=True)

@@ -62,7 +62,7 @@ def _download_bytes(path):
         return len(gzip.compress(fh.read(), mtime=0))
 
 
-def _add_pois(target, features, region, cache, log=print):
+def _add_pois(target, features, region, cache, log=print, previous=None):
     """Put the POI tables into an area container, and say how many.
 
     AN EMPTY TABLE IS NOT A MISSING TABLE, and the app reads the difference.
@@ -101,13 +101,13 @@ def _add_pois(target, features, region, cache, log=print):
     # in this file, and it belongs to whichever area does cover it.
     bbox = tuple(float(v) for v in bounds.split(","))
     pois, _dates = PO.load_cached(cache, region, bbox, log=lambda *a: None)
-    PO.write_pois(target, pois)
+    PO.write_pois(target, pois, previous=previous)
     log("    %-40s %6d POIs" % ("", len(pois)))
     return len(pois)
 
 
 def build_all(manifest_path, out_dir, key, signing_key=None, root=".",
-              poi_cache=None):
+              poi_cache=None, previous_dir=None):
     with open(manifest_path, "r", encoding="utf-8") as fh:
         manifest = json.load(fh)
 
@@ -166,7 +166,15 @@ def build_all(manifest_path, out_dir, key, signing_key=None, root=".",
         # POIs AFTER THE WAYS, into the same file. Same container, own tables -
         # WAYS-SCHEMA.md - so a rider who downloads an area gets the fuel and
         # the toilets with it and there is no second download to forget.
-        poi_count = _add_pois(target, features, pack["area"], poi_cache)
+        #
+        # NUMBERED FROM WHAT RIDERS HOLD. `previous_dir` is the published
+        # tree (`containers/` in the checkout); the same file name there is
+        # the copy on every rider's phone, and each POI keeps the rowid it
+        # has in it - see stable_ids.py for the 5.87 MB changeset that cost.
+        previous = (os.path.join(previous_dir, name) if previous_dir
+                    else None)
+        poi_count = _add_pois(target, features, pack["area"], poi_cache,
+                              previous=previous)
         entry = _entry(target, pack, kind="area", dataset=dataset,
                        lane_count=len(features), generated=pack_stamp)
         # NULL, NOT ZERO, when nothing was fetched. The app shows "no POI data
@@ -282,6 +290,9 @@ def main():
     ap.add_argument("--poi-cache", default=os.environ.get("POI_CACHE"),
                     help="the build_pois.py cache directory; regions with a "
                          "cache get POI tables in their area container")
+    ap.add_argument("--previous", default=None,
+                    help="the PUBLISHED container tree (containers/): POIs "
+                         "keep the rowids riders already hold")
     args = ap.parse_args()
 
     if not args.key:
@@ -301,7 +312,7 @@ def main():
 
     print("Building containers")
     out = build_all(args.manifest, args.out, key, signing_key, args.root,
-                    poi_cache=args.poi_cache)
+                    poi_cache=args.poi_cache, previous_dir=args.previous)
     total = sum(e["downloadBytes"] for e in out["containers"])
     print("\n  %d containers, %.1f MB if a rider downloaded every one"
           % (len(out["containers"]), total / 1048576.0))

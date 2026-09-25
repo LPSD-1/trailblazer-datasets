@@ -5,7 +5,9 @@ Every case here passes `as_of` explicitly. A test whose verdict changes at
 midnight is one that fails in CI and passes when you look at it - the lesson
 `test_poi_staleness.py` already records.
 """
+import contextlib
 import datetime
+import io
 import json
 import os
 import shutil
@@ -252,16 +254,18 @@ def test_the_summary_can_be_written_into_meta_and_read_back():
     try:
         path = ways_container(os.path.join(tmp, "w.tbmap"),
                               [days_ago(10), days_ago(400)])
-        summary = A.read_container(path, TODAY)
+        summary = A.read_dates(path)
         A.write_meta(path, summary)
         db = sqlite3.connect(path)
         raw = db.execute("SELECT value FROM meta WHERE key = ?",
                          (A.META_KEY,)).fetchone()
         db.close()
         check("the key is there", raw is not None)
+        check("and it is evidence_dates, the key the app reads",
+              A.META_KEY == "evidence_dates", A.META_KEY)
         back = json.loads(raw[0])
-        check("and it round-trips", back["ways"]["median_days"] ==
-              summary["ways"]["median_days"], repr(back["ways"]))
+        check("and it round-trips", back["ways"]["median"] ==
+              summary["ways"]["median"], repr(back["ways"]))
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
@@ -273,13 +277,12 @@ def test_writing_twice_leaves_one_key_and_the_same_bytes():
     tmp = tempfile.mkdtemp()
     try:
         path = ways_container(os.path.join(tmp, "w.tbmap"), [days_ago(10)])
-        summary = A.read_container(path, TODAY)
-        A.write_meta(path, summary)
+        A.write_meta(path)
         db = sqlite3.connect(path)
         first = db.execute("SELECT value FROM meta WHERE key=?",
                            (A.META_KEY,)).fetchone()[0]
         db.close()
-        A.write_meta(path, A.read_container(path, TODAY))
+        A.write_meta(path)
         db = sqlite3.connect(path)
         rows = db.execute("SELECT value FROM meta WHERE key=?",
                           (A.META_KEY,)).fetchall()
@@ -301,7 +304,7 @@ def test_writing_does_not_disturb_the_rest_of_meta():
         db.execute("INSERT INTO meta VALUES ('bounds','-1,53,-0.9,54')")
         db.commit()
         db.close()
-        A.write_meta(path, A.read_container(path, TODAY))
+        A.write_meta(path)
         db = sqlite3.connect(path)
         kept = dict(db.execute("SELECT key, value FROM meta"))
         db.close()
@@ -310,6 +313,104 @@ def test_writing_does_not_disturb_the_rest_of_meta():
         check("bounds is untouched", kept["bounds"] == "-1,53,-0.9,54",
               repr(kept))
         check("and the new key is there", A.META_KEY in kept, repr(kept))
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+# ------------------------------------------------- dates, not ages (cost A)
+#
+# MEASURED: `meta.evidence_age` held ages in days against an `as_of` pinned to
+# the 1st of the month, so every region container's bytes moved on the first
+# run of every month with nothing in it changed - and, `built_at` following
+# the data, the app saw the build it held under a new hash and fetched the
+# region whole: ~94 MB for the six, at least monthly, on the paid tier.
+
+def test_the_stored_dates_do_not_depend_on_the_day_they_were_written():
+    """THE REGRESSION TEST FOR COST A. The same rows written by the CLI on
+    the 1st of September and the 1st of October are the same bytes."""
+    tmp = tempfile.mkdtemp()
+    try:
+        sept = ways_container(os.path.join(tmp, "sept.tbmap"),
+                              [days_ago(10), days_ago(400), "unknown"])
+        octo = os.path.join(tmp, "oct.tbmap")
+        shutil.copyfile(sept, octo)
+        quiet = io.StringIO()
+        with contextlib.redirect_stdout(quiet):
+            A.main(["--write", "--as-of", "2026-09-01", sept])
+            A.main(["--write", "--as-of", "2026-10-01", octo])
+        with open(sept, "rb") as a, open(octo, "rb") as b:
+            check("a month later, the same bytes", a.read() == b.read())
+        with contextlib.closing(sqlite3.connect(octo)) as db:
+            stored = json.loads(dict(db.execute(
+                "SELECT key, value FROM meta"))[A.META_KEY])
+        check("and nothing in them is a day count or a run date",
+              "as_of" not in stored and "median_days" not in stored["ways"],
+              repr(stored)[:200])
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_the_dates_carry_every_figure_the_ages_did():
+    """What the app computes on the device, checked against the old
+    day-count summary for several `as_of`: nothing a rider was told is lost
+    by storing dates, and the age now keeps ageing on its own."""
+    dates = ([days_ago(a) for a in (0, 3, 40, 100, 364, 365, 366, 900, 2000)]
+             + [(TODAY + datetime.timedelta(days=5)).isoformat(), None, "x"])
+    got = A.date_summary(dates)
+    check("rows, dated and unknown", (got["rows"], got["dated"],
+                                      got["unknown"]) == (12, 10, 2), got)
+    for shift in (0, 31, 400):
+        as_of = TODAY + datetime.timedelta(days=shift)
+        ages = A.distribution(dates, as_of)
+        age = lambda iso: max(0, (as_of - A.parse_date(iso)).days)
+        check("median at +%d" % shift,
+              age(got["median"]) == ages["median_days"],
+              (got["median"], ages["median_days"]))
+        check("p90 at +%d" % shift, age(got["p90"]) == ages["p90_days"])
+        check("oldest at +%d" % shift,
+              age(got["oldest"]) == ages["oldest_days"])
+        over = sum(n for day, n in got["days"].items()
+                   if (as_of - A.parse_date(day)).days > A.WARN_DAYS)
+        check("over the warning line at +%d" % shift,
+              over == ages["over_warn"], (over, ages["over_warn"]))
+        future = sum(n for day, n in got["days"].items()
+                     if A.parse_date(day) > as_of)
+        check("future-dated at +%d" % shift,
+              future == ages["future_dated"], (future, ages["future_dated"]))
+    check("the per-day counts hold every dated row",
+          sum(got["days"].values()) == got["dated"], got["days"])
+
+
+def test_writing_the_dates_removes_the_age_key():
+    """One answer to "how old is this", not two that can disagree."""
+    tmp = tempfile.mkdtemp()
+    try:
+        path = ways_container(os.path.join(tmp, "w.tbmap"), [days_ago(10)])
+        db = sqlite3.connect(path)
+        db.execute("CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT)")
+        db.execute("INSERT INTO meta VALUES (?, '{}')", (A.LEGACY_KEY,))
+        db.commit()
+        db.close()
+        A.write_meta(path)
+        with contextlib.closing(sqlite3.connect(path)) as db:
+            kept = dict(db.execute("SELECT key, value FROM meta"))
+        check("evidence_age is gone", A.LEGACY_KEY not in kept, kept.keys())
+        check("evidence_dates is there", A.META_KEY in kept, kept.keys())
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_an_age_report_cannot_be_stored():
+    """read_container's summary carries `as_of`; stored, it would put the
+    monthly clock straight back into the container."""
+    tmp = tempfile.mkdtemp()
+    try:
+        path = ways_container(os.path.join(tmp, "w.tbmap"), [days_ago(10)])
+        try:
+            A.write_meta(path, A.read_container(path, TODAY))
+            check("refused", False, "it was written")
+        except ValueError:
+            check("refused", True)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
