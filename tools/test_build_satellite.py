@@ -117,6 +117,8 @@ def main():
     check("gb-midlands-satellite" in sp.existing_satellite(old),
           "an untiered pack published earlier stopped counting")
 
+    check_root_limit()
+
     if failures:
         for f in failures:
             print("FAIL: %s" % f, file=sys.stderr)
@@ -129,10 +131,6 @@ def main():
     print("  default tier is %r, which is the smaller download" % default_id)
     print("build_satellite: all checks passed")
     return 0
-
-
-if __name__ == "__main__":
-    sys.exit(main())
 
 
 # --- the root directory limit ------------------------------------------------
@@ -155,26 +153,39 @@ def _entries(n):
     return [(i * 7, i * 1000, 500 + (i % 97), 1) for i in range(n)]
 
 
-check_true(
-    "a small archive keeps everything in the root",
-    build_satellite.build_directories(_entries(50))[1] == b"",
-)
+def _check_true(message, condition):
+    check(condition, message)
 
-_root, _leaves, _count = build_satellite.build_directories(_entries(200000))
-check_true(
-    "a big archive spills into leaves",
-    _leaves != b"" and _count > 1,
-)
-check_true(
-    "and the root then fits the spec's 16,384 bytes",
-    build_satellite.HEADER_LENGTH + len(_root) <= build_satellite.ROOT_LIMIT,
-)
 
-# The check that would have caught it: EVERY pack this repo publishes, measured
-# against the limit a reader will actually apply.
-for _n in (1000, 50000, 143637, 400000):
-    _r, _l, _c = build_satellite.build_directories(_entries(_n))
-    check_true(
-        "%d entries produce a conformant root" % _n,
-        build_satellite.HEADER_LENGTH + len(_r) <= build_satellite.ROOT_LIMIT,
+def check_root_limit():
+    """The 16 KB root rule. THIS USED TO BE DEAD CODE: it sat after
+    `sys.exit(main())`, so running this file never reached it, and it
+    called `check_true` and `build_satellite`, neither of which exists
+    here. The guard written for the six unopenable packs never ran."""
+    _check_true(
+        "a small archive keeps everything in the root",
+        bs.build_directories(_entries(50))[1] == b"",
     )
+
+    _root, _leaves, _count = bs.build_directories(_entries(200000))
+    _check_true(
+        "a big archive spills into leaves",
+        _leaves != b"" and _count > 1,
+    )
+    _check_true(
+        "and the root then fits the spec's 16,384 bytes",
+        bs.HEADER_LENGTH + len(_root) <= bs.ROOT_LIMIT,
+    )
+
+    # The check that would have caught it: EVERY pack this repo publishes, measured
+    # against the limit a reader will actually apply.
+    for _n in (1000, 50000, 143637, 400000):
+        _r, _l, _c = bs.build_directories(_entries(_n))
+        _check_true(
+            "%d entries produce a conformant root" % _n,
+            bs.HEADER_LENGTH + len(_r) <= bs.ROOT_LIMIT,
+        )
+
+
+if __name__ == "__main__":
+    sys.exit(main())

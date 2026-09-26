@@ -42,8 +42,9 @@ sorted by folded name, with the names in a blob beside it:
 
 Fixed size plus sorted means the app can BINARY SEARCH the file on disk
 without reading it in - a prefix lookup is about two dozen seeks. The folding
-(lower case, letters and digits only) has to match the app's exactly or the
-search finds nothing; `test_build_names.py` pins the pair together.
+(lower case, accents off, letters and digits only) has to match the app's
+exactly or the search finds nothing; `test_build_names.py` pins the pair
+together.
 
 Coordinates are stored as National Grid eastings/northings divided by ten -
 ten-metre precision, which is far finer than any of these features is located
@@ -112,15 +113,55 @@ C_COUNTRY = 29
 
 _FOLD = re.compile(r"[^a-z0-9]+")
 
+# Every accented lower-case letter the fold knows, by the letters it folds to:
+# Latin-1, Latin Extended-A, and the Welsh w and y with grave, acute and
+# diaeresis. Letter for letter the table `accentedLetters` in the app
+# (lib/domain/place_search.dart); written as escapes so this file stays ASCII.
+ACCENTED = {
+    "a": "\u00e0\u00e1\u00e2\u00e3\u00e4\u00e5\u0101\u0103\u0105",
+    "ae": "\u00e6",
+    "c": "\u00e7\u0107\u0109\u010b\u010d",
+    "d": "\u00f0\u010f\u0111",
+    "e": "\u00e8\u00e9\u00ea\u00eb\u0113\u0115\u0117\u0119\u011b",
+    "g": "\u011d\u011f\u0121\u0123",
+    "h": "\u0125\u0127",
+    "i": "\u00ec\u00ed\u00ee\u00ef\u0129\u012b\u012d\u012f\u0131",
+    "ij": "\u0133",
+    "j": "\u0135",
+    "k": "\u0137\u0138",
+    "l": "\u013a\u013c\u013e\u0140\u0142",
+    "n": "\u00f1\u0144\u0146\u0148\u0149\u014b",
+    "o": "\u00f2\u00f3\u00f4\u00f5\u00f6\u00f8\u014d\u014f\u0151",
+    "oe": "\u0153",
+    "r": "\u0155\u0157\u0159",
+    "s": "\u015b\u015d\u015f\u0161\u017f",
+    "ss": "\u00df",
+    "t": "\u0163\u0165\u0167",
+    "th": "\u00fe",
+    "u": "\u00f9\u00fa\u00fb\u00fc\u0169\u016b\u016d\u016f\u0171\u0173",
+    "w": "\u0175\u1e81\u1e83\u1e85",
+    "y": "\u00fd\u00ff\u0177\u1ef3",
+    "z": "\u017a\u017c\u017e",
+}
+
+_BASE = {ord(letter): base
+         for base, letters in ACCENTED.items() for letter in letters}
+
 
 def fold(text):
-    """Lower case, letters and digits only.
+    """Lower case, accents off their letters, letters and digits only.
 
     MUST match `foldName` in the app. A gazetteer whose index is folded one way
     and queried another silently finds nothing, which looks exactly like "we
     have no data for your area" - the failure this whole pack exists to end.
+
+    ACCENTS ARE FOLDED, NOT DROPPED. Dropping every letter outside a-z filed
+    Dol-y-Bont, written with a to-bach, as "dlybont", so a rider typing it on
+    an ordinary keyboard ("dolybont") found nothing - in Wales, where accents
+    are ordinary. A pack built before this is sorted the old way; the app
+    notices, and searches it the way it was sorted until it is rebuilt.
     """
-    return _FOLD.sub("", text.lower())
+    return _FOLD.sub("", text.lower().translate(_BASE))
 
 
 # OS Open Names' own REGION, mapped onto the six areas this app browses lanes
