@@ -71,6 +71,7 @@ sys.path.insert(0, HERE)
 
 import ea_flood as EA               # noqa: E402
 import stable_ids                   # noqa: E402
+from text_clean import clean_text   # noqa: E402
 
 #: The soak window. 48 hours and not 24 because what makes a byway cut up is
 #: saturated ground rather than a shower: the top of a soft track sheds a
@@ -317,7 +318,10 @@ def assign(rows, stations, log=None, previous=None):
         for row in out:
             if row["gauge"] is not None:
                 row["gauge"] = remap[row["gauge"]]
-    gauge_rows = [{"id": gid, "station_id": sid, "label": station.get("label"),
+    # Cleaned here as well as in ea_flood.parse_station, because the station
+    # list is cached across runs (text_clean.py).
+    gauge_rows = [{"id": gid, "station_id": sid,
+                   "label": clean_text(station.get("label")),
                    "lat": station.get("lat"), "lon": station.get("lon")}
                   for sid, (gid, station) in sorted(gauges.items(),
                                                     key=lambda kv: kv[1][0])]

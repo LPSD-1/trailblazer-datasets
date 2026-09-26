@@ -54,6 +54,9 @@ import time
 import urllib.request
 from datetime import datetime, timedelta, timezone
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from text_clean import clean_text  # noqa: E402
+
 BASE = "https://environment.data.gov.uk/flood-monitoring"
 USER_AGENT = "trailblazer-datasets/1.0 (+https://trailblazer.app; EA flood)"
 
@@ -282,11 +285,12 @@ def parse_station(raw):
     label = _first(raw.get("label"))
     return {
         "id": str(notation),
-        "label": label if isinstance(label, str) else None,
+        # EA text, cleaned where it enters (text_clean.py).
+        "label": clean_text(label) if isinstance(label, str) else None,
         "lat": lat,
         "lon": lon,
-        "river": _first(raw.get("riverName")),
-        "catchment": _first(raw.get("catchmentName")),
+        "river": clean_text(_first(raw.get("riverName"))),
+        "catchment": clean_text(_first(raw.get("catchmentName"))),
         "typical_low_m": _number(scale.get("typicalRangeLow")),
         "typical_high_m": _number(scale.get("typicalRangeHigh")),
         "measures": [m for m in (_measure_id(x)

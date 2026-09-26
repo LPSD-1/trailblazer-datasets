@@ -24,6 +24,15 @@ went wrong while the format was being built:
      have to fetch is the number the owner actually cares about and it is
      currently printed nowhere.
 
+  6. NO TEXT CARRIES AN HTML ENTITY. 2,012 published ways said their
+     authority was `North&nbsp;Lincolnshire`, and the app showed it exactly
+     so. Every text value in every table, meta included, and every string a
+     tile carries, is read; one that still holds a character reference
+     html.unescape would resolve, or a raw no-break space (the decoded
+     `&nbsp;`, which ten published POI names carried), refuses the publish. The cleaning lives
+     where source text enters (text_clean.py); this is the gate for a source
+     that has not been met yet.
+
 Usage:
     python tools/check_containers.py CONTAINER [CONTAINER ...]
     python tools/check_containers.py --reproducible PACK OUT   (builds twice)
@@ -66,6 +75,61 @@ TILE_KEYS = {"lanes": "lane_uid", "ways": "lane_uid", "orders": "tro_uid"}
 
 class Problem(Exception):
     pass
+
+
+def check_text(db, name, problems):
+    """(6) Every text value the container publishes, entity-free.
+
+    Rows AND tiles: the county a tile carries for the style is the same text
+    as the record's, and the overview has no records at all - only tiles -
+    so a check of the tables alone would pass the one container every rider
+    downloads first. Returns how many values were read, so a caller can
+    tell "clean" from "read nothing".
+    """
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    from text_clean import unclean_in  # noqa: E402
+    from test_mvt import decode_tile     # noqa: E402
+
+    read = 0
+    bad = collections.Counter()
+    first = {}
+    tables = [r[0] for r in db.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")]
+    for table in tables:
+        if table == "tiles":
+            continue
+        cursor = db.execute('SELECT * FROM "%s"' % table)
+        columns = [d[0] for d in cursor.description]
+        for row in cursor:
+            for column, value in zip(columns, row):
+                if not isinstance(value, str):
+                    continue
+                read += 1
+                found = unclean_in(value)
+                if found:
+                    where = "%s.%s" % (table, column)
+                    bad[where] += 1
+                    first.setdefault(where, value)
+    if "tiles" in tables:
+        for (blob,) in db.execute("SELECT tile_data FROM tiles"):
+            for layer in decode_tile(blob):
+                for feature in layer["features"]:
+                    for key, value in feature["props"].items():
+                        if not isinstance(value, str):
+                            continue
+                        read += 1
+                        if unclean_in(value):
+                            where = "tiles(%s).%s" % (layer["name"], key)
+                            bad[where] += 1
+                            first.setdefault(where, value)
+    for where in sorted(bad):
+        problems.append(
+            "%s: %d text value(s) in %s still carry an HTML entity or a "
+            "no-break space, e.g. %r. "
+            "The app shows it literally; clean it where the source enters "
+            "(tools/text_clean.py)." % (name, bad[where], where,
+                                        first[where][:80]))
+    return read
 
 
 def _meta(db):
@@ -118,6 +182,10 @@ def check_container(path, problems, max_tile=MAX_TILE_BYTES):
         name = os.path.basename(path)
         meta = _meta(db)
         kind = meta.get("kind", "?")
+
+        # (6) text, before anything returns early: an overview has only
+        # tiles, and is checked too.
+        check_text(db, name, problems)
 
         # (2) tile ceiling
         worst = db.execute(

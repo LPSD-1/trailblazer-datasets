@@ -60,6 +60,7 @@ import build_pois as PO             # noqa: E402  (Overpass fetch, REGIONS)
 import ea_flood as EA               # noqa: E402
 import osm_attributes as OA         # noqa: E402  (point_segment, to_metres)
 import stable_ids                   # noqa: E402
+from text_clean import clean_text   # noqa: E402
 
 #: OSM tags that mean "you cross water here". `ford=yes` is the common one;
 #: the rest are kept VERBATIM rather than flattened to a boolean, because
@@ -199,7 +200,10 @@ def ford_of(element, source_date):
     if uid is None or point is None:
         return None
     lat, lon = point
-    return {"ford_uid": uid, "ford_tag": value, "name": tags.get("name"),
+    # OSM text, cleaned where it enters (text_clean.py). The tag value is
+    # still the OSM value: decoding a character reference does not change it.
+    return {"ford_uid": uid, "ford_tag": clean_text(value),
+            "name": clean_text(tags.get("name")),
             "lat": round(lat, PO.COORD_DP), "lon": round(lon, PO.COORD_DP),
             "source_date": source_date}
 
@@ -303,8 +307,12 @@ def build_rows(db, fords, stations, tol_m=FORD_TOL_M, log=None):
                         else None))
         if log and len(out) % 2000 == 0:
             log("    %d fords placed" % len(out))
-    gauge_rows = [{"id": gid, "station_id": sid, "label": s.get("label"),
-                   "river": s.get("river"), "lat": s.get("lat"),
+    # Cleaned again here as well as in ea_flood.parse_station: the station
+    # list is CACHED across runs, and a cache written before the parser
+    # cleaned would otherwise carry its text straight into the container.
+    gauge_rows = [{"id": gid, "station_id": sid,
+                   "label": clean_text(s.get("label")),
+                   "river": clean_text(s.get("river")), "lat": s.get("lat"),
                    "lon": s.get("lon"),
                    "typical_low_m": s.get("typical_low_m"),
                    "typical_high_m": s.get("typical_high_m")}

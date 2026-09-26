@@ -34,6 +34,10 @@ import sys
 from collections import Counter
 from datetime import datetime, timezone
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import duplicate_ways  # noqa: E402
+from text_clean import clean_text  # noqa: E402
+
 try:
     from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 except ImportError:
@@ -391,7 +395,8 @@ def is_context(feature):
     return ROW_RULES[feature["properties"]["rowType"]]["context"]
 
 
-def select_ways(features, context=DEFAULT_CONTEXT, near_uids=None):
+def select_ways(features, context=DEFAULT_CONTEXT, near_uids=None,
+                removed=None):
     """Step 1.2c, applied -> the [features] the dataset carries, in input order.
 
     ONE FUNCTION, CALLED BY main() AND BY golden.py. The golden used to carry
@@ -408,21 +413,38 @@ def select_ways(features, context=DEFAULT_CONTEXT, near_uids=None):
 
     [near_uids] is the near set main() has already measured, so the build
     does not walk the grid twice; None computes it here.
+
+    AND ONE RECORD PER WAY. Where two authorities both record the same way -
+    a National Park and its county, a county and its abolished predecessor,
+    two councils either side of a boundary lane - the map drew both, as two
+    lines a metre apart (found on a tablet near Pencelli, 26 Sep 2026).
+    duplicate_ways.merge() keeps one, by a rule stated there, and the kept
+    record carries the other in `also_recorded_by`. Applied to the whole
+    national pool, BEFORE the region split, so a boundary lane is resolved
+    the same way in both regions it is published in. [removed], a list, is
+    extended with what went: (removed, [kept in its place], within_m).
     """
     if context not in CONTEXT_OPTIONS:
         raise ValueError("unknown context option %r" % (context,))
     carried = [f for f in features
                if ROW_RULES[f["properties"]["rowType"]]["carried"]]
     if context == "all":
-        return carried
-    if context == "none":
-        return [f for f in carried if not is_context(f)]
-    if near_uids is None:
-        motor = [f for f in carried if not is_context(f)]
-        near_uids = set(f["properties"]["lane_uid"] for f in near_motor_ways(
-            [f for f in carried if is_context(f)], motor))
-    return [f for f in carried
-            if not is_context(f) or f["properties"]["lane_uid"] in near_uids]
+        chosen = carried
+    elif context == "none":
+        chosen = [f for f in carried if not is_context(f)]
+    else:
+        if near_uids is None:
+            motor = [f for f in carried if not is_context(f)]
+            near_uids = set(f["properties"]["lane_uid"]
+                            for f in near_motor_ways(
+                                [f for f in carried if is_context(f)], motor))
+        chosen = [f for f in carried
+                  if not is_context(f)
+                  or f["properties"]["lane_uid"] in near_uids]
+    kept, gone = duplicate_ways.merge(chosen)
+    if removed is not None:
+        removed.extend(gone)
+    return kept
 
 
 #: A fixed-width stand-in, replaced with the pack's real cut date in
@@ -658,11 +680,16 @@ def normalise(feature, authority_code, authority_name, row_type):
 
     props = feature.get("properties") or {}
     rule = ROW_RULES[row_type]
-    extra = parse_description(props.get("Description"))
+    # SOURCE TEXT ENTERS HERE, and is cleaned here. The authority names come
+    # from rowmaps' HTML index, and 50 of its 149 carried `&nbsp;` - so 2,012
+    # published ways told the rider they were in `North&nbsp;Lincolnshire`.
+    # See text_clean.py.
+    authority_name = clean_text(authority_name)
+    extra = parse_description(clean_text(props.get("Description")))
 
     # The council's own path number, e.g. 'ON|100|2/10'. Keep it: it is how a
     # rider or a council officer would refer to this specific way.
-    ref = props.get("Name") or ""
+    ref = clean_text(props.get("Name")) or ""
     path_no = ref.split("|")[-1] if "|" in ref else ref
 
     # The geometry hash is ALWAYS part of the id, never just a fallback.
@@ -1009,8 +1036,25 @@ def main():
                 if name == DEFAULT_CONTEXT else "")
         print("  option %-4s total ways in dataset  %7d%s" % (name, n, mark))
 
-    pool = select_ways(every, args.context, near_uids=near_uids)
+    duplicates = []
+    pool = select_ways(every, args.context, near_uids=near_uids,
+                       removed=duplicates)
     print("  building with --context %s: %d ways" % (args.context, len(pool)))
+
+    # ONE RECORD PER WAY, and what it cost, printed on every run.
+    print("")
+    print("the same way recorded by two authorities (duplicate_ways.py)")
+    print("  records removed, each carried by the one kept  %5d"
+          % len(duplicates))
+    pairs = Counter("%s over %s" % (
+        "+".join(sorted(set(duplicate_ways._code(k) for k in keeps))),
+        duplicate_ways._code(r)) for r, keeps, _ in duplicates)
+    for label, n in pairs.most_common():
+        print("    %5d  kept %s" % (n, label))
+    if duplicates:
+        print("  furthest any removed line lies from the kept one: %.1f m "
+              "(limit %.0f m)" % (max(w for _, _, w in duplicates),
+                                  duplicate_ways.MATCH_M))
 
     if args.measure_only:
         return

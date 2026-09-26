@@ -48,6 +48,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from build_packages import load_key, pack  # noqa: E402
 from osgb import grid_to_wgs84  # noqa: E402
 from tro import features  # noqa: E402
+from text_clean import clean_text  # noqa: E402
 
 csv.field_size_limit(2**31 - 1)
 
@@ -487,8 +488,12 @@ def _wrap(geometry, first, feature, dtro_id):
         properties["dtro"] = dtro_id
     # Only what is actually there. An empty string for every absent field
     # would add a hundred kilobytes to say nothing.
+    #
+    # Cleaned of character references as they are carried (text_clean.py).
+    # The id below is still seeded from the text AS PUBLISHED, so an order
+    # keeps the id it had before this cleaning existed.
     for key in ("name", "where", "start", "end", "ref", "tra"):
-        value = feature.get(key)
+        value = clean_text(feature.get(key))
         if value not in (None, ""):
             properties[key] = value
 

@@ -823,6 +823,25 @@ def write_container(path, features, kind, zooms, source_date,
         rows.append(("context_scope", context_scope))
     if context_note:
         rows.append(("context_note", context_note))
+    # THE OTHER AUTHORITY'S RECORD OF A WAY WE DRAW ONCE.
+    #
+    # Where two authorities record the same way, duplicate_ways.py keeps one
+    # record and the other rides on it as `also_recorded_by`, so nothing the
+    # sources said is lost: the rider, or a council officer, can still find
+    # the way by the other authority's number. Meta rather than a column: a
+    # new column is a schema change, build_changeset refuses to bridge one,
+    # and every rider would re-download every region once for ~110 rows.
+    # Written only where a record here carries one, and never on an overview,
+    # which has no records to hang it on.
+    if kind != "overview":
+        also = dict((f["properties"]["lane_uid"],
+                     f["properties"]["also_recorded_by"])
+                    for f in features
+                    if f["properties"].get("also_recorded_by"))
+        if also:
+            rows.append(("also_recorded_by",
+                         json.dumps(also, sort_keys=True,
+                                    separators=(",", ":"))))
     for key, value in rows:
         db.execute("INSERT INTO meta VALUES (?,?)", (key, value))
 

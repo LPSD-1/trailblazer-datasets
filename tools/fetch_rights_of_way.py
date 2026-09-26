@@ -30,6 +30,9 @@ import time
 import urllib.error
 import urllib.request
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from text_clean import clean_text  # noqa: E402
+
 BASE = "https://www.rowmaps.com"
 INDEX = BASE + "/datasets/"
 UA = "TrailBlazer-data/1.0 (rights-of-way packaging; contact via github)"
@@ -64,15 +67,21 @@ def authorities():
     """Two-letter code -> name, scraped once and cached."""
     path = os.path.join(cache_dir(), "authorities.json")
     if os.path.exists(path):
+        # A cache written before the names were decoded still holds the
+        # entities; it is read clean rather than trusted.
         with open(path, encoding="utf8") as fh:
-            return json.load(fh)
+            return dict((code, clean_text(name))
+                        for code, name in json.load(fh).items())
 
     os.makedirs(cache_dir(), exist_ok=True)
     html = get(INDEX).decode("utf8", "replace")
     pairs = re.findall(r'href="([A-Z0-9]{2})/"[^>]*>(.*?)</a>', html, re.S)
     found = {}
     for code, name in pairs:
-        found[code] = re.sub(r"<[^>]+>", "", name).replace("\xa0", " ").strip()
+        # The page is HTML, so its text is too: 50 of the 149 names came out
+        # as `North&nbsp;Lincolnshire`, and 2,012 published ways said so to
+        # the rider. Decoded here, where the text enters the pipeline.
+        found[code] = clean_text(re.sub(r"<[^>]+>", "", name)).strip()
     if not found:
         sys.exit("could not read the authority list - the page markup changed")
     with open(path, "w", encoding="utf8") as fh:

@@ -17,6 +17,9 @@ Each "keeps its date" check below is red with stable_ids.keep_dates removed
 from build_fords.write_fords, because the refresh is always read on a later
 day than the published build. Each "changed" check is red with every date
 kept regardless of content.
+Each check in test_a_moved_renamed_or_regauged_ford_is_a_changed_one
+changes one column alone, and is red with that column left out of
+keep_dates' comparison.
 
 Run: python tools/test_ford_dates.py
 """
@@ -158,35 +161,127 @@ def test_an_unchanged_ford_keeps_its_published_date():
         shutil.rmtree(tmp, ignore_errors=True)
 
 
-def test_a_moved_renamed_or_regauged_ford_is_a_changed_one():
+def _rows(path):
+    """{ford_uid: every column but the date}, as the file holds them."""
+    db = sqlite3.connect(path)
+    db.row_factory = sqlite3.Row
+    try:
+        return dict((r["ford_uid"], dict((k, r[k]) for k in r.keys()
+                                         if k != "source_date"))
+                    for r in db.execute("SELECT * FROM fords"))
+    finally:
+        db.close()
+
+
+def _refresh(tmp, refreshed, stations=STATIONS, ways=None):
+    """Publish ELEMENTS on WAYS against STATIONS, then build `refreshed` a
+    month later on `ways` (WAYS if None) against `stations`, with the publish
+    as `previous`. ({ford_uid: source_date}, {ford_uid: the columns that
+    differ from the published row}) for the refresh."""
+    published = os.path.join(tmp, "published.tbmap")
+    _container(published)
+    rows, gauges, _ = _placed(published, ELEMENTS, PUBLISHED_DAY)
+    F.write_fords(published, rows, gauges)
+    nxt = os.path.join(tmp, "next.tbmap")
+    if ways is None:
+        _container(nxt)
+    else:
+        B.write_container(nxt, ways, "area", (11, 11), "2026-09-01T00:00:00Z")
+    rows, gauges, _ = _placed(nxt, refreshed, REFRESH_DAY, stations=stations)
+    F.write_fords(nxt, rows, gauges, previous=published)
+    was, now = _rows(published), _rows(nxt)
+    moved = dict((uid, set(k for k in row if row[k] != was[uid].get(k)))
+                 for uid, row in now.items() if uid in was)
+    return _dates(nxt), moved
+
+
+def _shifted(dlat, dlon):
+    """The whole scene - ways, fords and gauges - moved by (dlat, dlon), so a
+    ford's position changes and its distance to the way and to the gauge
+    does not."""
+    return {"refreshed": [_node(e["id"], e["lat"] + dlat, e["lon"] + dlon,
+                                **e["tags"]) for e in ELEMENTS],
+            "ways": [_way("W1", -1.70 + dlon, 52.50 + dlat)],
+            "stations": [_gauge(s["id"], s["lat"] + dlat, s["lon"] + dlon)
+                         for s in STATIONS]}
+
+
+ALL = ("osm:n10", "osm:n20", "osm:n30")
+
+
+def _one_change(label, changed, columns, refreshed=ELEMENTS, **kw):
+    """Refresh; the fords in `changed` differ from the publish in exactly
+    `columns` and take the refresh day, and every other ford differs in
+    nothing and keeps the published day.
+
+    The PREMISE on `columns` is what lets each check stand on its own: with
+    every ford regauged at once, a check on a rename passes on the regauge,
+    and nothing would notice `name` left out of keep_dates' comparison."""
     tmp = tempfile.mkdtemp()
     try:
-        published = os.path.join(tmp, "published.tbmap")
-        _container(published)
-        rows, gauges, _ = _placed(published, ELEMENTS, PUBLISHED_DAY)
-        F.write_fords(published, rows, gauges)
-
-        nxt = os.path.join(tmp, "next.tbmap")
-        _container(nxt)
-        refreshed = [
-            # Moved by one stored digit (PO.COORD_DP is 6).
-            _node(10, ON_LINE[0][0] + 0.000001, ON_LINE[0][1], ford="yes"),
-            _node(20, ON_LINE[1][0], ON_LINE[1][1], ford="yes",
-                  name="The Watersplash"),
-            ELEMENTS[2],
-        ]
-        # E1 withdrawn: every ford now reads the more distant gauge.
-        rows, gauges, _ = _placed(nxt, refreshed, REFRESH_DAY,
-                                  stations=[STATIONS[1]])
-        F.write_fords(nxt, rows, gauges, previous=published)
-        got = _dates(nxt)
-        check("moved by one stored digit: changed",
-              got.get("osm:n10") == REFRESH_DAY, got)
-        check("renamed: changed", got.get("osm:n20") == REFRESH_DAY, got)
-        check("same ford, another gauge: changed",
-              got.get("osm:n30") == REFRESH_DAY, got)
+        got, moved = _refresh(tmp, refreshed, **kw)
+        check("PREMISE %s: all three fords written" % label,
+              set(got) == set(ALL) and set(moved) == set(ALL), (got, moved))
+        check("PREMISE %s: %s differ in %s and nothing else"
+              % (label, list(changed), sorted(columns)),
+              all(moved.get(uid) == set(columns) for uid in changed), moved)
+        still = [uid for uid in ALL if uid not in changed]
+        check("PREMISE %s: the fords beside them did not change and kept "
+              "their date" % label,
+              all(moved.get(uid) == set() and got.get(uid) == PUBLISHED_DAY
+                  for uid in still), (got, moved))
+        check("%s: changed" % label,
+              all(got.get(uid) == REFRESH_DAY for uid in changed), got)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_a_moved_renamed_or_regauged_ford_is_a_changed_one():
+    """Each column of the comparison on its own. Every check here is red with
+    that one column left out of stable_ids.keep_dates' comparison."""
+    # The realistic shapes, which move more than one column.
+    _one_change("moved by one stored digit (PO.COORD_DP is 6)",
+                ["osm:n10"], {"lat", "way_m", "gauge_m"},
+                refreshed=[_node(10, ON_LINE[0][0] + 0.000001, ON_LINE[0][1],
+                                 ford="yes"), ELEMENTS[1], ELEMENTS[2]])
+    _one_change("E1 withdrawn, every ford reads the more distant gauge",
+                ALL, {"gauge", "gauge_m"}, stations=[STATIONS[1]])
+    # One column each.
+    _one_change("named", ["osm:n30"], {"name"},
+                refreshed=[ELEMENTS[0], ELEMENTS[1],
+                           _node(30, ON_LINE[2][0], ON_LINE[2][1],
+                                 ford="intermittent", name="Dove Splash")])
+    _one_change("renamed", ["osm:n20"], {"name"},
+                refreshed=[ELEMENTS[0],
+                           _node(20, ON_LINE[1][0], ON_LINE[1][1],
+                                 ford="yes", name="The Watersplash"),
+                           ELEMENTS[2]])
+    # A value taken away, not just changed: a comparison that skipped the
+    # published columns the refresh leaves empty would call these unchanged.
+    _one_change("unnamed", ["osm:n20"], {"name"},
+                refreshed=[ELEMENTS[0],
+                           _node(20, ON_LINE[1][0], ON_LINE[1][1], ford="yes"),
+                           ELEMENTS[2]])
+    _one_change("every gauge withdrawn", ALL, {"gauge", "gauge_m"},
+                stations=[])
+    _one_change("retagged", ["osm:n30"], {"ford_tag"},
+                refreshed=[ELEMENTS[0], ELEMENTS[1],
+                           _node(30, ON_LINE[2][0], ON_LINE[2][1],
+                                 ford="seasonal")])
+    _one_change("another gauge at the same distance", ALL, {"gauge"},
+                stations=[_gauge("E3", STATIONS[0]["lat"],
+                                 STATIONS[0]["lon"]), STATIONS[1]])
+    _one_change("the same gauge, moved", ALL, {"gauge_m"},
+                stations=[_gauge("E1", STATIONS[0]["lat"] + 0.0001,
+                                 STATIONS[0]["lon"]), STATIONS[1]])
+    _one_change("the same line under another lane uid", ALL, {"way_id"},
+                ways=[_way("W2", -1.70, 52.50)])
+    _one_change("the way redrawn a metre north of the fords", ALL, {"way_m"},
+                ways=[_way("W1", -1.70, 52.50001)])
+    _one_change("everything a stored digit north", ALL, {"lat"},
+                **_shifted(0.000001, 0.0))
+    _one_change("everything a stored digit east", ALL, {"lon"},
+                **_shifted(0.0, 0.000001))
 
 
 def test_a_gauge_renumbered_by_the_build_is_not_a_changed_gauge():

@@ -259,6 +259,7 @@ checksum forever, and a signature over bytes that no longer exist.
 | `context_scope`, `context_note` | `build_map_container.py`, when given | what context is not carried, and the note the app shows (see Classes) |
 | `pois_checked` | `build_pois.py` (`write_pois`) | ISO day the region's POIs were last read; see below |
 | `evidence_dates` | `evidence_age.py --write` | JSON; see below |
+| `also_recorded_by` | `build_map_container.py`, from `duplicate_ways.py` | JSON; the other authorities' records of ways drawn once here; see below |
 
 **`built_at` must not leak into any pack's content hash** — a run stamp doing
 exactly that broke reproducibility once already.
@@ -308,6 +309,36 @@ their own (as `built_at` by the second rule, or as `ways_cut` by the last).
 - **Carried.** A changeset restates it like every other meta key but
   `built_at` and `kind`, so a rider's patched copy keeps it, and each
   container's manifest entry says the same date as `waysCut`.
+
+### `also_recorded_by`: one way, two authorities
+
+Where two authorities both record the same way — a National Park and its
+county, Cumbria and its successor Westmorland and Furness, two councils either
+side of a boundary lane — `tools/duplicate_ways.py` publishes **one** record
+and drops the other from `ways`, because the map drew both as two lines a
+metre apart. What was dropped rides on the record kept:
+
+```json
+{"PW-34(A)/1-14bed95b37": [{"way_uid": "B1-000/3-a9f6911451",
+                            "authority": "Brecon Beacons National Park",
+                            "authority_code": "B1",
+                            "name": "Byway open to all traffic (BOAT) 000/3"}]}
+```
+
+Keyed by the kept `way_uid`; each list is sorted by `way_uid`. Written only on
+an area container holding at least one such way, so **absent** means no way
+here was recorded twice (or the container predates 26 Sep 2026). Meta, not a
+column: a column is a schema change, which `build_changeset.py` refuses to
+bridge.
+
+A record is dropped only in favour of records it lies **wholly within 15 m
+of** and runs along (not across), same class, other authority, lengths within
+15% — one record against one, or one authority's records together against the
+other's where the two split the way differently — so every metre of it is
+still drawn. Which is kept, and why, is stated in `duplicate_ways.py`: the
+highway authority over a National Park, a current authority over an abolished
+one, otherwise the more complete line. A dropped record's `rowid` (a hash of
+its `way_uid`) is simply absent: it is never reused.
 
 ### `pois_checked`: when the POIs were last read
 

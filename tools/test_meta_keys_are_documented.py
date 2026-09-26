@@ -58,7 +58,13 @@ def _way(uid, lon, lat):
                            "authority": "Derbyshire", "source_date": "2026-03-04",
                            "motorbike_ok": 1, "fourxfour_ok": 1,
                            "access_reason": "x", "access_evidence": "statutory",
-                           "lengthKm": 0.4}}
+                           "lengthKm": 0.4,
+                           # A way another authority also records, so the
+                           # builder writes meta.also_recorded_by.
+                           "also_recorded_by": [
+                               {"way_uid": "PW-1-0", "authority": "Powys",
+                                "authority_code": "PW",
+                                "name": "Byway open to all traffic 1"}]}}
 
 
 def _poi(uid):
@@ -125,7 +131,8 @@ def test_every_meta_key_is_named_in_the_meta_section():
     # written for, passes against any doc at all.
     check("PREMISE: the writers left keys to check", len(keys) >= 10,
           sorted(keys))
-    for key in ("pois_checked", "ways_cut", "built_at", "evidence_dates"):
+    for key in ("pois_checked", "ways_cut", "built_at", "evidence_dates",
+                "also_recorded_by"):
         check("PREMISE: the pipeline wrote %s" % key, key in keys,
               sorted(keys))
     meta = _section(_doc(), "Meta")

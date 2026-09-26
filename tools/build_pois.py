@@ -47,6 +47,7 @@ from datetime import datetime, timezone
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import stable_ids  # noqa: E402
+from text_clean import clean_text  # noqa: E402
 
 OVERPASS_URL = "https://overpass-api.de/api/interpreter"
 USER_AGENT = "trailblazer-datasets/1.0 (+https://trailblazer.app; POI build)"
@@ -161,10 +162,12 @@ def poi_of(element, source_date):
     return {
         "poi_uid": uid,
         "category": category,
-        "name": tags.get("name"),
+        # OSM text, cleaned where it enters: ten published names carried a
+        # raw no-break space. See text_clean.py.
+        "name": clean_text(tags.get("name")),
         "lat": round(lat, COORD_DP),
         "lon": round(lon, COORD_DP),
-        "opening_hours": tags.get("opening_hours"),
+        "opening_hours": clean_text(tags.get("opening_hours")),
         "source_date": source_date,
     }
 
