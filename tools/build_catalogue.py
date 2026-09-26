@@ -385,8 +385,27 @@ def lane_areas(lanes_manifest, containers=None):
             "legalBasis": "official",
             "note": pkg.get("note"),
             "generated": pkg.get("generated"),
+            **ways_cut_of(container),
         })
     return areas
+
+
+def ways_cut_of(container):
+    """`{"waysCut": ...}` from a container manifest entry, or nothing.
+
+    `stamp_build.py` rule 3 moves a container's `generated` to the run's clock
+    when a POI, a ford or a gauge changes under unchanged ways, and keeps the
+    date the LANES were cut as `waysCut` - written only when the two part. It
+    stopped at the build manifest: this file never copied it, so the app had
+    nothing to date a region by but the restamp, and a rider browsing for an
+    area read "cut <the POI refresh>" over lanes cut months before - the
+    freshness over-claim the paid tier must never make.
+
+    Left out, not written as null, where the manifest has none, so an index
+    for unchanged data stays byte-identical to the one before it.
+    """
+    cut = (container or {}).get("waysCut")
+    return {"waysCut": cut} if cut else {}
 
 
 def satellite_packs(path):
@@ -916,6 +935,7 @@ def build(lanes_manifest, base_url, stamp, satellite_index=None,
                 "minZoom": entry.get("minZoom"),
                 "featureCount": entry["laneCount"],
                 "generated": entry["generated"],
+                **ways_cut_of(entry),
             }
             for (_dataset, area), entry in (containers or {}).items()
             if area is None
@@ -961,6 +981,7 @@ def build(lanes_manifest, base_url, stamp, satellite_index=None,
             "signature": o.get("signature"),
             "featureCount": o["featureCount"],
             "generated": o["generated"],
+            **ways_cut_of(o),
             "minZoom": o.get("minZoom"),
             # THE SAME LEGAL BASIS AS THE AREAS IT IS BUILT FROM, because it is
             # built from them: an overview is the same council definitive-map

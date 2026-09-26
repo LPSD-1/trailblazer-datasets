@@ -340,6 +340,16 @@ def write_fords(db_path, fords, gauges, keep_off_network=False,
     earlier renumbered `gauge` in every ford after it: all "changed" to a
     changeset, not one of them different on the ground. With no published
     container the numbering is exactly what it always was.
+
+    AND SO DO THE DATES. A ford whose tag, name, position, way, way distance,
+    gauge and gauge distance all equal the published row's keeps the
+    published `source_date`, so the column says "unchanged since" and not
+    "read on". `load_cached` dates every row with the cache's `fetched_at`,
+    so re-dated instead, every `fetch --refresh` of unchanged OSM rewrote
+    every ford in the region and the changeset carried the whole table - the
+    fault build_pois.write_pois fixed for POIs. See stable_ids.keep_dates and
+    test_ford_dates.py. When the region was READ is still `fetched_at`, in
+    the build's --report and its log.
     """
     rows = [f for f in fords if keep_off_network or f["way_id"] is not None]
     used = set(f["gauge"] for f in rows if f["gauge"] is not None)
@@ -358,6 +368,12 @@ def write_fords(db_path, fords, gauges, keep_off_network=False,
         used = set(remap.values())
         rows = [dict(f, gauge=remap[f["gauge"]]) if f["gauge"] is not None
                 else f for f in rows]
+    # After the gauge renumbering, so `gauge` is compared in the numbers the
+    # published file uses: compared before it, a ford whose gauge is the
+    # same station under a new build's first-seen number reads as changed.
+    rows = stable_ids.keep_dates(
+        rows, stable_ids.previous_rows(previous, "fords", "ford_uid"),
+        "ford_uid")
     numbers = stable_ids.number(
         [f["ford_uid"] for f in rows],
         stable_ids.previous_numbers(previous, "fords", "ford_uid"))

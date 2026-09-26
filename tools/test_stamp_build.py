@@ -27,6 +27,7 @@ import stamp_build as SB         # noqa: E402
 import build_map_container as B  # noqa: E402
 import build_pois as PO          # noqa: E402
 import evidence_age as EA        # noqa: E402
+import publish_changesets as PC  # noqa: E402
 
 _passed = 0
 _failed = []
@@ -261,6 +262,84 @@ def test_the_manifest_says_the_stamp_the_file_carries():
               == "2026-10-01T06:00:00Z", by)
         check("and the manifest's own date is the newest",
               got["generated"] == "2026-10-01T06:00:00Z", got["generated"])
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_a_rebuild_that_moved_only_built_at_reaches_no_rider():
+    """RULE 1, END TO END: stamp_tree then publish_changesets, as the workflow
+    runs them.
+
+    The monthly rebuild over unchanged rows: the pack's `generated` moved, so
+    the new build's `built_at` is newer, and nothing else is. A changeset
+    that moves only `built_at` is refused by the validator, so if this build
+    were announced under its own stamp no changeset would reach it and every
+    rider would fetch the region whole. Rule 1 is what stops that build
+    existing: the published file is shipped, under the published stamp.
+
+    "No changeset" alone is NOT the proof - with rule 1 gone the changeset
+    is still refused, and publish reports nothing built either way. The
+    proof is the BUILD THE INDEX ANNOUNCES: the one riders already hold.
+    """
+    tmp = tempfile.mkdtemp()
+    try:
+        pub = os.path.join(tmp, "containers")
+        new = os.path.join(tmp, "dist", "containers")
+        out = os.path.join(tmp, "changes")
+        os.makedirs(pub)
+        os.makedirs(new)
+        name = "ways-a.tbmap"
+        served = "containers/" + name
+        build(os.path.join(pub, name))
+        rebuilt_at = "2026-10-01T00:00:00Z"
+        build(os.path.join(new, name), stamp=rebuilt_at,
+              previous=os.path.join(pub, name))
+        for tree, stamp in ((pub, WAYS_STAMP), (new, rebuilt_at)):
+            with open(os.path.join(tree, "manifest.json"), "w",
+                      encoding="utf-8") as fh:
+                json.dump({"generated": stamp, "containers": [
+                    {"id": "ways-a", "kind": "area", "file": served,
+                     "generated": stamp}]}, fh)
+        pub_file = os.path.join(pub, name)
+        new_file = os.path.join(new, name)
+        check("PREMISE: the rebuild carries a newer built_at",
+              _meta(new_file, "built_at") == rebuilt_at
+              and _meta(pub_file, "built_at") == WAYS_STAMP)
+        check("PREMISE: and different bytes", _raw(new_file) !=
+              _raw(pub_file))
+        check("PREMISE: and the same content",
+              SB.content_digest(new_file) == SB.content_digest(pub_file))
+
+        verdicts = SB.stamp_tree(pub, os.path.join(new, "manifest.json"),
+                                 "2026-10-01T06:00:00Z", log=lambda *a: None)
+        check("stamp_build calls it unchanged",
+              verdicts == [(name, "unchanged", WAYS_STAMP)], verdicts)
+        check("the published built_at is kept",
+              _meta(new_file, "built_at") == WAYS_STAMP,
+              _meta(new_file, "built_at"))
+        check("the published bytes are shipped",
+              _raw(new_file) == _raw(pub_file))
+        with open(os.path.join(new, "manifest.json"), encoding="utf-8") as fh:
+            got = json.load(fh)
+        check("the manifest names the published build",
+              got["containers"][0]["generated"] == WAYS_STAMP
+              and got["generated"] == WAYS_STAMP, got)
+
+        report = PC.publish(pub, new, out)
+        check("PREMISE: publish saw the container",
+              served in report["index"]["builds"], report["index"])
+        check("no changeset is built", report["built"] == [],
+              report["built"])
+        check("none is refused", report["refused"] == [], report["refused"])
+        check("it is skipped as unchanged",
+              report["skipped"] == [("ways-a", "unchanged")],
+              report["skipped"])
+        check("THE ANNOUNCED BUILD IS THE ONE RIDERS HOLD",
+              report["index"]["builds"].get(served) == WAYS_STAMP,
+              report["index"]["builds"])
+        check("and no .tbchange was written",
+              not any(f.endswith(".tbchange")
+                      for _, _, fs in os.walk(out) for f in fs))
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 

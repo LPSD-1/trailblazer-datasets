@@ -108,6 +108,23 @@ Categories: `fuel`, `food`, `toilets`, `water`, `parking`, `camping`,
 `repair`, `viewpoint`, `atm`. Nothing else — a general POI database would
 dwarf the ways beside it.
 
+### `source_date` means "unchanged since", and `meta.pois_checked` is the read
+
+A POI's `source_date` is **not** the day its source was read. `build_pois.py`
+(`write_pois`, through `stable_ids.keep_dates`) gives a row whose category,
+name, position and opening hours all equal the published row's (same
+`poi_uid`) the **published** `source_date`; only a new row, or one whose
+content moved, takes the day it was read. So the column says "unchanged
+since <date>". Re-dated to every read instead, a monthly refresh of unchanged
+OpenStreetMap rewrote every row in every region: 38.0 MB of changesets for
+94 MB of containers.
+
+When the region's POIs were last **read** is a fact about the region, stated
+once as `meta.pois_checked` (see Meta). The app shows both — "checked 3 days
+ago, unchanged since 24 Feb 2026" — and treats a container without
+`pois_checked` (built before this split, when every row was re-dated at every
+read) as one whose `source_date` *is* the read date.
+
 ### Row numbers are stable across builds
 
 `pois.rowid`, `fords.rowid`, `ford_gauges.id` and `wet_gauges.id` are local
@@ -224,10 +241,27 @@ checksum forever, and a signature over bytes that no longer exist.
 
 ## Meta
 
-`meta` gains `schema_version` (start at `1`), `built_at`, `legal_tier_counts`,
-and `authorities` (JSON array). **`built_at` must not leak into any pack's
-content hash** — a run stamp doing exactly that broke reproducibility once
-already.
+`meta` is `(key TEXT PRIMARY KEY, value TEXT)`. A region container carries:
+
+| key | written by | value |
+|---|---|---|
+| `format_version` | `build_map_container.py` | `1`; the container layout |
+| `schema_version` | `build_map_container.py` | `1`; this schema |
+| `kind` | `build_map_container.py` | `area` or `overview` |
+| `built_at` | `build_map_container.py`, then `stamp_build.py` | the build id; see below |
+| `ways_cut` | `stamp_build.py`, only on a rule-3 restamp | the date the lanes were cut; see below |
+| `bounds` | `build_map_container.py` | `west,south,east,north` over every way |
+| `min_zoom`, `max_zoom` | `build_map_container.py` | the tile zoom range, inclusive |
+| `lane_count`, `way_count` | `build_map_container.py` | rows in `ways`; `0` for an overview |
+| `class_counts` | `build_map_container.py` | JSON: rows per `class` |
+| `legal_tier_counts` | `build_map_container.py` | JSON: rows per `legal_tier` |
+| `authorities` | `build_map_container.py` | JSON array of highway authorities |
+| `context_scope`, `context_note` | `build_map_container.py`, when given | what context is not carried, and the note the app shows (see Classes) |
+| `pois_checked` | `build_pois.py` (`write_pois`) | ISO day the region's POIs were last read; see below |
+| `evidence_dates` | `evidence_age.py --write` | JSON; see below |
+
+**`built_at` must not leak into any pack's content hash** — a run stamp doing
+exactly that broke reproducibility once already.
 
 ### `built_at` follows the content, all of it
 
@@ -240,8 +274,8 @@ every changeset is keyed on `built_at` (`build_changeset.py`,
 container of the same name:
 
 - **same content** (`content_digest`: every table and row, every meta key but
-  `built_at`) — the published file is copied in, byte for byte, with its
-  `built_at`;
+  `built_at` and `ways_cut`) — the published file is copied in, byte for
+  byte, with its `built_at` and `ways_cut`;
 - **different content** — the build's own `built_at` if it sorts after the
   published one (the ways changed), otherwise this run's time, or one second
   past the published stamp if the clock is not ahead of it.
@@ -250,6 +284,47 @@ Always ISO-8601 UTC (`%Y-%m-%dT%H:%M:%SZ`). The container manifest's
 `generated` is set to match. Two builds with different content never share a
 `built_at`, and `publish_changesets.py` refuses the job if one ever does
 (same `built_at` as the published file, different bytes).
+
+### `ways_cut`: the date riders are shown for the lanes
+
+The last rule makes `built_at` the run's clock whenever a container changed
+under unchanged ways — a POI, ford or gauge refresh. That is right for a
+build id and wrong as the lanes' date: the app printed `built_at` as
+"cut <date>", so a new fuel station told every rider in the region that
+their lanes were cut that morning. So before that rule overwrites the pack
+stamp, `stamp_build.py` keeps it as **`ways_cut`**. A fresh build never
+carries the key, so every restamp writes that build's own pack stamp: a
+second refresh under the same ways keeps the same date, and new ways bring
+their own (as `built_at` by the second rule, or as `ways_cut` by the last).
+
+- **Absent** means the container was never restamped, and `built_at` is
+  still the lanes' date. The app, and `stamp_build.ways_cut()`, show
+  `ways_cut` where it exists and `built_at` otherwise. It is written only
+  when the two dates part, so a container never restamped is byte for byte
+  what the builder made (and what `golden.py` holds).
+- **Not content.** `content_digest` skips it with `built_at`: a fresh build
+  never carries it, so hashed, every region once restamped would read as
+  changed on every run after.
+- **Carried.** A changeset restates it like every other meta key but
+  `built_at` and `kind`, so a rider's patched copy keeps it, and each
+  container's manifest entry says the same date as `waysCut`.
+
+### `pois_checked`: when the POIs were last read
+
+Written by `build_pois.write_pois`: the day the region's POIs were last read
+from OpenStreetMap, as an ISO date (`YYYY-MM-DD`). A region is as old as its
+stalest category, so it is the **oldest** read date — the caller's
+`checked` (`build_pois.py build` passes the stalest cache date), or, when
+none is given, the oldest `source_date` among the rows handed in. No POIs
+and no read date writes no key, and a file with no `meta` table is not
+given one.
+
+It **is** content: unlike `ways_cut` it is hashed, because it says something
+new each time the region is read. A refresh of unchanged OpenStreetMap
+therefore moves this one key, the build is restamped, and the changeset is
+its own pages (measured 15.9–16.4 kB raw / ~2.5 kB gzipped per region, where
+re-dating every row made it 3.1–9.6 MB). A POI's own `source_date` means
+"unchanged since" — see POIs.
 
 ### `evidence_dates`
 

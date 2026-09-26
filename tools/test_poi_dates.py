@@ -349,6 +349,63 @@ def test_the_build_command_states_its_stalest_category():
         shutil.rmtree(tmp, ignore_errors=True)
 
 
+def test_the_container_build_states_a_stale_category_it_found_nothing_in():
+    """CI builds containers through build_containers.build_all, not through
+    `build_pois.py build`, and it must say the same thing that command does.
+
+    The shape that decides it: the toilets refresh failed, so their cache is
+    a month old, and the one toilet it holds is outside this container's
+    bounds. With no `checked` passed, write_pois falls back to the oldest date
+    among the ROWS - and no row came from the stale category - so the
+    container claimed a refresh of every category on the day only the fuel
+    was read. Driven through build_all from sealed packs, the path
+    refresh-data.yml takes."""
+    import build_containers as C
+    import build_packages as P
+    key = bytes(range(32))
+    tmp = tempfile.mkdtemp(prefix="tbpois-checked-")
+    real_dist = P.dist_dir
+    P.dist_dir = lambda: tmp
+    try:
+        cache = _cache(tmp, REFRESH_DAY, [
+            # Inside the midlands way's bounds (-1.70..-1.696, 52.50..52.503).
+            {"type": "node", "id": 5, "lat": 52.5010, "lon": -1.6990,
+             "tags": {"amenity": "fuel", "name": "Hilltop"}},
+            # Three degrees east: in the region's cache, outside the container.
+            {"type": "node", "id": 7, "lat": 52.5020, "lon": 1.5000,
+             "tags": {"amenity": "toilets"}},
+        ])
+        stale = PO.cache_path(cache, "midlands", "toilets")
+        with open(stale, encoding="utf-8") as fh:
+            blob = json.load(fh)
+        blob["fetched_at"] = PUBLISHED_DAY
+        with open(stale, "w", encoding="utf-8") as fh:
+            json.dump(blob, fh)
+
+        pack = P.write_package(P.DATASET, "midlands", "Midlands", None, WAYS,
+                               key, "2026-09-01T00:00:00Z", note="n")
+        manifest = {"schema": 1, "generated": "2026-09-24T09:00:00Z",
+                    "dataset": P.DATASET, **P.context_fields(),
+                    "packages": [pack]}
+        mpath = os.path.join(tmp, "manifest.json")
+        with open(mpath, "w", encoding="utf-8") as fh:
+            json.dump(manifest, fh)
+        out_dir = os.path.join(tmp, "containers")
+        C.build_all(mpath, out_dir, key, None, tmp, poi_cache=cache)
+        path = os.path.join(out_dir, "%s-midlands.tbmap" % P.DATASET)
+
+        check("PREMISE: the stale category's cache holds an element",
+              len(blob["elements"]) == 1, blob["elements"])
+        check("PREMISE: only the fresh category's POI reached the container",
+              _dates(path) == {"osm:n5": REFRESH_DAY}, _dates(path))
+        check("the container says the stalest category's day",
+              _meta(path, "pois_checked") == PUBLISHED_DAY,
+              _meta(path, "pois_checked"))
+    finally:
+        P.dist_dir = real_dist
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
 def main():
     for name, fn in sorted(globals().items()):
         if name.startswith("test_") and callable(fn):

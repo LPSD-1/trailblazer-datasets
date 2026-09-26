@@ -100,8 +100,16 @@ def _add_pois(target, features, region, cache, log=print, previous=None):
     # the ways we actually shipped is one the rider cannot reach from anything
     # in this file, and it belongs to whichever area does cover it.
     bbox = tuple(float(v) for v in bounds.split(","))
-    pois, _dates = PO.load_cached(cache, region, bbox, log=lambda *a: None)
-    PO.write_pois(target, pois, previous=previous)
+    pois, dates = PO.load_cached(cache, region, bbox, log=lambda *a: None)
+    # WHEN WE LAST LOOKED IS THE CACHE'S, NOT THE ROWS'. Left to write_pois,
+    # `pois_checked` is the oldest date among the rows kept - and a category
+    # whose refresh failed a month ago with nothing inside THIS container's
+    # bounds contributes no row, so the container claimed every category was
+    # read on the day only the others were. `build_pois.py build` passes the
+    # stalest cache date for the same reason; min(), not [0], so the answer
+    # does not rest on load_cached returning its dates sorted.
+    PO.write_pois(target, pois, previous=previous,
+                  checked=min(dates) if dates else None)
     log("    %-40s %6d POIs" % ("", len(pois)))
     return len(pois)
 
