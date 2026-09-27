@@ -14,6 +14,7 @@ into this file.
 It checks the generator's output in a temporary directory, and - when the app
 repository is checked out beside this one - the fixture committed there too.
 """
+import json
 import os
 import shutil
 import sqlite3
@@ -27,6 +28,7 @@ sys.path.insert(0, HERE)
 import build_changeset as C          # noqa: E402
 import evidence_age as EA            # noqa: E402
 import make_changeset_fixture as M   # noqa: E402
+import stamp_build as S              # noqa: E402
 import test_build_changeset as T     # noqa: E402
 
 PUBLISHED = os.path.join(ROOT, M.DEFAULT_SOURCE)
@@ -71,6 +73,39 @@ def _meta_keys(path):
         db.close()
 
 
+#: The meta key a build writes only where a record here carries one
+#: (build_map_container.write_container), so a cut of a region carries it
+#: only when one of its ways does. Checked by `_also_recorded_by_for`.
+ALSO = "also_recorded_by"
+
+#: Keys a container carries or not by what it holds, never by schema:
+#: `ways_cut` (the stamps, checked below) and `also_recorded_by`.
+CONDITIONAL_META = {S.WAYS_CUT, ALSO}
+
+
+def _meta_value(path, key):
+    db = sqlite3.connect("file:%s?mode=ro" % path.replace("\\", "/"),
+                         uri=True)
+    try:
+        got = db.execute("SELECT value FROM meta WHERE key = ?",
+                         (key,)).fetchone()
+        return got[0] if got else None
+    finally:
+        db.close()
+
+
+def _also_recorded_by_for(path):
+    """The published region's also_recorded_by, cut to `path`'s ways."""
+    published = json.loads(_meta_value(PUBLISHED, ALSO) or "{}")
+    db = sqlite3.connect("file:%s?mode=ro" % path.replace("\\", "/"),
+                         uri=True)
+    try:
+        kept = {r[0] for r in db.execute("SELECT way_uid FROM ways")}
+    finally:
+        db.close()
+    return {k: v for k, v in published.items() if k in kept}
+
+
 def _carried(path):
     db = sqlite3.connect("file:%s?mode=ro" % path.replace("\\", "/"),
                          uri=True)
@@ -92,14 +127,27 @@ def check_fixture(where, label):
         return
 
     published = M.schema_of(PUBLISHED)
+    # `ways_cut` ASIDE: it is a stamp, not a key every build has. Rule 3 of
+    # stamp_build.py writes it, and only for a build whose ways did not
+    # change - so `before`, a restamped build, carries it whether or not the
+    # published file does today, and `after`, whose ways change, never does.
     for path in (before, after):
         name = os.path.basename(path)
         check("%s: %s has the published sqlite_master, exactly" % (label, name),
               M.schema_of(path) == published,
               sorted(set(M.schema_of(path)) ^ set(published))[:4])
-        check("%s: %s has the published meta keys" % (label, name),
-              _meta_keys(path) == _meta_keys(PUBLISHED),
-              sorted(_meta_keys(path) ^ _meta_keys(PUBLISHED)))
+        check("%s: %s has the published meta keys (ways_cut aside)"
+              % (label, name),
+              _meta_keys(path) - CONDITIONAL_META
+              == _meta_keys(PUBLISHED) - CONDITIONAL_META,
+              sorted((_meta_keys(path) ^ _meta_keys(PUBLISHED))
+                     - CONDITIONAL_META))
+        want = _also_recorded_by_for(path)
+        got = _meta_value(path, ALSO)
+        check("%s: %s carries also_recorded_by for its own ways only, and "
+              "no key where none of them has one" % (label, name),
+              (json.loads(got) if got is not None else None)
+              == (want or None), (got, want))
         counts = M.counts_of(path)
         empty = [t for t, n in counts.items() if n == 0 and t != "ford_gauges"]
         check("%s: %s has rows in every table" % (label, name), not empty,
@@ -112,7 +160,6 @@ def check_fixture(where, label):
     db = sqlite3.connect("file:%s?mode=ro" % change.replace("\\", "/"),
                          uri=True)
     try:
-        import json
         meta = dict(db.execute("SELECT key, value FROM meta"))
         carries = json.loads(meta.get("carries") or "{}")
         written = {t: db.execute('SELECT COUNT(*) FROM "%s"' % t).fetchone()[0]
@@ -125,10 +172,43 @@ def check_fixture(where, label):
     check("%s: the changeset carries every table the container holds"
           % label, carries == _carried(before) == _carried(PUBLISHED),
           carries)
-    for key in sorted(_meta_keys(PUBLISHED) - {"built_at", "kind"}):
+    for key in sorted((_meta_keys(PUBLISHED) - {"built_at", "kind"}
+                       - CONDITIONAL_META)
+                      | (_meta_keys(after) & {ALSO})):
         check("%s: the changeset restates %s" % (label, key), key in meta)
     new_meta = C.snapshot(after)["meta"]
     old_meta = C.snapshot(before)["meta"]
+
+    # THE STAMPS, as two real builds carry them: `before` restamped by rule
+    # 3 over unchanged ways, `after` a fresh build of changed ways.
+    removed_meta = json.loads(meta.get("removed_meta") or "[]")
+    check("%s: before.tbmap is a restamped build: ways_cut, and a later "
+          "built_at" % label,
+          S.WAYS_CUT in old_meta
+          and old_meta[S.WAYS_CUT] < old_meta.get("built_at", ""),
+          (old_meta.get(S.WAYS_CUT), old_meta.get("built_at")))
+    check("%s: after.tbmap, whose ways changed, carries no ways_cut"
+          % label, S.WAYS_CUT not in new_meta, new_meta.get(S.WAYS_CUT))
+    check("%s: the lanes of after.tbmap are dated by its own built_at"
+          % label, S.ways_cut(after) == new_meta.get("built_at"),
+          S.ways_cut(after))
+    check("%s: the changeset removes ways_cut and restates none" % label,
+          S.WAYS_CUT in removed_meta and S.WAYS_CUT not in meta,
+          removed_meta)
+    pois = sqlite3.connect("file:%s?mode=ro" % after.replace("\\", "/"),
+                           uri=True)
+    try:
+        newest_poi = pois.execute(
+            "SELECT MAX(source_date) FROM pois").fetchone()[0]
+    finally:
+        pois.close()
+    check("%s: pois_checked moved with the refetch, and no POI was first "
+          "seen after it" % label,
+          old_meta.get("pois_checked") != new_meta.get("pois_checked")
+          and meta.get("pois_checked") == new_meta.get("pois_checked")
+          and newest_poi <= new_meta.get("pois_checked", ""),
+          (old_meta.get("pois_checked"), new_meta.get("pois_checked"),
+           newest_poi))
     check("%s: evidence_dates moved between the builds" % label,
           old_meta.get(EA.META_KEY) != new_meta.get(EA.META_KEY)
           and EA.META_KEY in new_meta)
@@ -209,6 +289,62 @@ def test_the_generator_refuses_a_fixture_that_is_not_the_source():
                 check("a dropped table is refused", True, str(e))
     finally:
         M.make_before = real
+
+
+def test_the_generator_refuses_an_after_that_keeps_ways_cut():
+    print("the generator refuses an after.tbmap that kept before's ways_cut")
+    real = M.make_after
+
+    def copied(before, path, as_of, source):
+        edits = real(before, path, as_of, source)
+        db = sqlite3.connect(path)
+        db.execute("INSERT INTO meta VALUES (?, ?)",
+                   (S.WAYS_CUT, S.ways_cut(before)))
+        db.commit()
+        db.close()
+        return edits
+    M.make_after = copied
+    try:
+        with tempfile.TemporaryDirectory() as tmp:
+            try:
+                M.make(PUBLISHED, tmp)
+                check("an after with ways_cut is refused", False,
+                      "it was written")
+            except SystemExit as e:
+                check("an after with ways_cut is refused",
+                      "ways_cut" in str(e), str(e))
+    finally:
+        M.make_after = real
+
+
+def test_keep_before_leaves_before_alone():
+    print("--keep-before rewrites after, the changeset and the README only")
+    with tempfile.TemporaryDirectory() as tmp:
+        M.make(PUBLISHED, tmp)
+        path = os.path.join(tmp, "before.tbmap")
+        # MARKED, so a regenerated `before` cannot pass for the kept one:
+        # make_before is deterministic, and without this a --keep-before
+        # that cut `before` afresh wrote the same bytes and passed.
+        db = sqlite3.connect(path)
+        try:
+            db.execute("PRAGMA user_version = 11")
+        finally:
+            db.close()
+        with open(path, "rb") as fh:
+            was = fh.read()
+        os.remove(os.path.join(tmp, "after.tbmap"))
+        report = M.make(PUBLISHED, tmp, keep_before=True)
+        with open(path, "rb") as fh:
+            check("before.tbmap is byte for byte the one that was there",
+                  fh.read() == was)
+        check("after.tbmap is written again",
+              os.path.isfile(os.path.join(tmp, "after.tbmap")))
+        with open(os.path.join(tmp, "README.md"), encoding="utf-8") as fh:
+            check("the README gives the command that wrote the set",
+                  "--keep-before" in fh.read())
+        check("and it is the live shape, stamps and all",
+              report["removed_meta"] == [S.WAYS_CUT], report["removed_meta"])
+        check_fixture(tmp, "kept")
 
 
 def test_the_app_fixture_is_the_live_shape():

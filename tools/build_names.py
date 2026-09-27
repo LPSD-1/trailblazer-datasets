@@ -234,6 +234,29 @@ def area_of(row, split):
     return REGION_TO_AREA.get(country) or "unassigned"
 
 
+def said_once(context):
+    """A Welsh authority's "Welsh - English" pair, said once when it is one name.
+
+    OS Open Names writes every Welsh unitary authority as a bilingual pair in
+    COUNTY_UNITARY: "Sir Benfro - Pembrokeshire", but also "Powys - Powys",
+    where both languages use the same name. Carried as it is, a rider's place
+    row read "Place - Powys - Powys" (device finding D, on both test phones).
+
+    Only a pair whose halves FOLD equal is collapsed - Powys, Gwynedd, Conwy,
+    Torfaen, Blaenau Gwent, Rhondda Cynon Taf - keeping the first half as
+    written. A real pair keeps both languages: a rider may know the place by
+    either, and choosing one for them is a decision about Welsh, not a bug fix.
+    Hyphens without spaces (Castell-nedd, Pen-y-bont) are part of a name and
+    never split.
+    """
+    halves = context.split(" - ")
+    if len(halves) == 2:
+        first, second = (half.strip() for half in halves)
+        if first and fold(first) == fold(second):
+            return first
+    return context
+
+
 def read_records(source, split):
     """Every usable row, as (area, name, kind, context, easting, northing)."""
     with zipfile.ZipFile(source) as z:
@@ -262,9 +285,9 @@ def read_records(source, split):
                 # place against it is common in OS Open Names, and falling
                 # straight to the county leaves every road in Suffolk saying
                 # "Suffolk", which distinguishes nothing.
-                context = (row[C_POPULATED_PLACE].strip()
-                           or row[C_DISTRICT_BOROUGH].strip()
-                           or row[C_COUNTY].strip() or area)
+                context = said_once(row[C_POPULATED_PLACE].strip()
+                                    or row[C_DISTRICT_BOROUGH].strip()
+                                    or row[C_COUNTY].strip() or area)
                 for name in (row[C_NAME1], row[C_NAME2]):
                     # NAME2 is the Welsh, Gaelic or Scots form. A rider in
                     # Wales says the Welsh name, and a gazetteer that only

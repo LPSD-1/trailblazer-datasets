@@ -28,7 +28,14 @@ schema somebody remembered:
           the container describes itself and not East Anglia. (A source
           published before evidence_dates carries evidence_age instead; the
           fixture is the shape the NEXT build publishes, so it carries
-          evidence_dates either way.)
+          evidence_dates either way.) And `before` is always a build RULE 3
+          of stamp_build.py restamped - a region whose POIs, fords or gauges
+          were refreshed under unchanged ways - so it carries `ways_cut`
+          (the pack stamp) under a later `built_at`. A source that was never
+          restamped is stamped here as rule 3 stamps one, by
+          stamp_build._set_built_at, one day on. That is the transition the
+          app has to get right: `after` changes the ways, and a build whose
+          ways changed carries no `ways_cut`.
   after   `before` as the next build would write it, with realistic edits:
             * one way CLOSED by an order (motorbike_ok = fourxfour_ok = 0,
               access_evidence 'order') - its tiles re-cut;
@@ -40,8 +47,21 @@ schema somebody remembered:
               kept POI keeps its rowid, the removed one leaves a gap, and
               the new one is numbered above the highest the region published;
             * the remaining ford re-tagged;
-            * the edited rows dated the next month, so evidence_dates moves,
-              and built_at six hours on.
+            * the edited rows dated the day `after` was built, so
+              evidence_dates moves, and `pois_checked` with them: the refetch
+              that found the new POI read the region that day
+              (build_pois.write_pois), and the pack was stamped hours later.
+              NEVER LATER THAN THE BUILD: until round 12 the edits were dated
+              the next month (2026-10-01) under a built_at of 2026-09-26, a
+              check five days after the build that carried it, which no
+              container can hold;
+            * built_at six hours on, and NO `ways_cut`. The ways changed, so
+              stamp_build.py's rule 2 lets the builder's own stamp stand and
+              rule 3 - the only writer of `ways_cut` - never runs; the
+              changeset names `ways_cut` in `removed_meta`, and the app dates
+              the lanes by the new `built_at`. Until round 11 the key was
+              copied over from `before`, and the app's tests were told lanes
+              changed on the 26th were cut on the 24th.
           Re-cut tiles come from build_map_container.build_tiles over the
           kept ways, so a re-cut tile draws the fixture's ways only.
   the .tbchange between them, built by tools/build_changeset.py - the real
@@ -51,7 +71,12 @@ schema somebody remembered:
 
 A README.md is written beside them saying all of this with the numbers.
 tools/test_make_changeset_fixture.py checks the fixture's schema is the
-published container's, table for table and meta key for meta key.
+published container's, table for table and meta key for meta key (`ways_cut`
+aside: in `before`, never in `after`).
+
+--keep-before reuses the before.tbmap already in --out and writes only
+`after`, the changeset and the README. ../changesets_meta_only is derived
+from before.tbmap, so this is how `after` is corrected without moving it.
 """
 import argparse
 import collections
@@ -69,6 +94,7 @@ import build_fords as F           # noqa: E402
 import build_map_container as B   # noqa: E402
 import evidence_age as EA         # noqa: E402
 import stable_ids                 # noqa: E402
+import stamp_build as S           # noqa: E402
 import validate_changeset as V    # noqa: E402
 
 #: Two fords, 26 ways and ~50 POIs around Haverhill, in the smallest region.
@@ -161,9 +187,32 @@ def restate_meta(db, path):
             ("bounds", B._bounds_of(features_of(db)))]
     db.executemany("UPDATE meta SET value = ? WHERE key = ?",
                    [(v, k) for k, v in rows])
+    restate_also_recorded_by(db)
     db.commit()
     # Dates, not ages, and the legacy evidence_age dropped: see evidence_age.py.
     EA.write_meta(path)
+
+
+def restate_also_recorded_by(db):
+    """`also_recorded_by` for the ways the file now holds, as
+    build_map_container.write_container writes it: the entries of the kept
+    ways only, and no key at all where none is left.
+
+    Copied through untouched, a cut of a region kept the whole region's map,
+    so the fixture named duplicate records of ways it does not carry - a
+    meta a build of these rows would never write.
+    """
+    got = db.execute("SELECT value FROM meta WHERE key = 'also_recorded_by'"
+                     ).fetchone()
+    if got is None:
+        return
+    kept = {r[0] for r in db.execute("SELECT way_uid FROM ways")}
+    also = {k: v for k, v in json.loads(got[0]).items() if k in kept}
+    if also:
+        db.execute("UPDATE meta SET value = ? WHERE key = 'also_recorded_by'",
+                   (json.dumps(also, sort_keys=True, separators=(",", ":")),))
+    else:
+        db.execute("DELETE FROM meta WHERE key = 'also_recorded_by'")
 
 
 def base_day(db):
@@ -236,12 +285,42 @@ def make_before(source, path, box):
         restate_meta(db, path)
     finally:
         db.close()
+    restamp_as_rule_3(path)
     _vacuum(path)
     return as_of
 
 
-def _next_month(day):
-    return (day.replace(day=28) + datetime.timedelta(days=4)).replace(day=1)
+#: How long after the pack stamp the POI refresh that restamps `before` ran.
+RULE_3_AFTER = datetime.timedelta(days=1)
+
+
+def restamp_as_rule_3(path):
+    """`path` as stamp_build's rule 3 leaves a region whose ways did not
+    change: the pack stamp kept as `ways_cut`, `built_at` moved on. A source
+    already restamped is left as it is - its `ways_cut` is the real one."""
+    if S._meta_value(path, S.WAYS_CUT) is not None:
+        return
+    own = S.built_at(path)
+    moved = datetime.datetime.strptime(own, S.STAMP_FORMAT) + RULE_3_AFTER
+    S._set_built_at(path, moved.strftime(S.STAMP_FORMAT), cut=own)
+
+
+#: How long after `before`'s stamp the next build is stamped.
+NEXT_BUILD_AFTER = datetime.timedelta(hours=6)
+
+
+def refetch_day(built, as_of):
+    """The day the refetch behind `after` read the region: the day `after`
+    was built - build_pois stamps `pois_checked` with the day it fetched and
+    the pack is stamped after it, so no date in a build is later than its
+    `built_at`. It must also be later than every date `before` carries
+    (`as_of`), or the edits would not move evidence_dates."""
+    day = built.date()
+    if day <= as_of:
+        raise SystemExit("after's build (%s) is not after the newest date "
+                         "before carries (%s): the edits would not move "
+                         "evidence_dates" % (built, as_of))
+    return day
 
 
 def make_after(before, path, as_of, source):
@@ -251,6 +330,10 @@ def make_after(before, path, as_of, source):
     edits = {}
     try:
         zooms = _zooms(db)
+        built = datetime.datetime.strptime(
+            dict(db.execute("SELECT key, value FROM meta"))["built_at"],
+            S.STAMP_FORMAT) + NEXT_BUILD_AFTER
+        refetched = refetch_day(built, as_of).isoformat()
         was = {f["properties"]["lane_uid"]: f for f in features_of(db)}
         forded = _ids(db, "SELECT DISTINCT way_id FROM fords ORDER BY way_id")
         if len(forded) < 2:
@@ -296,7 +379,7 @@ def make_after(before, path, as_of, source):
                           "LIMIT 1").fetchone()
         db.execute("UPDATE fords SET ford_tag = 'stepping_stones', "
                    "source_date = ? WHERE rowid = ?",
-                   (_next_month(as_of).isoformat(), ford[0]))
+                   (refetched, ford[0]))
         edits["retagged_ford"] = ford[1]
 
         # A POI gone and a POI new, as a refetch finds them - NUMBERED AS
@@ -309,7 +392,7 @@ def make_after(before, path, as_of, source):
         # with a re-keyed row (delete-then-insert, build_changeset.py), and
         # test_build_changeset.py's live pair still proves it.
         gone_uid = db.execute("SELECT MIN(poi_uid) FROM pois").fetchone()[0]
-        poi = dict(NEW_POI, source_date=_next_month(as_of).isoformat())
+        poi = dict(NEW_POI, source_date=refetched)
         kept = [r for r in db.execute(
             "SELECT rowid, poi_uid, category, name, lat, lon, opening_hours, "
             "source_date FROM pois WHERE poi_uid <> ?", (gone_uid,))]
@@ -344,11 +427,18 @@ def make_after(before, path, as_of, source):
                            "tile_column = ? AND tile_row = ?", tile)
         edits["tiles_recut"] = len(touched)
 
-        built = datetime.datetime.strptime(
-            dict(db.execute("SELECT key, value FROM meta"))["built_at"],
-            "%Y-%m-%dT%H:%M:%SZ") + datetime.timedelta(hours=6)
         db.execute("UPDATE meta SET value = ? WHERE key = 'built_at'",
-                   (built.strftime("%Y-%m-%dT%H:%M:%SZ"),))
+                   (built.strftime(S.STAMP_FORMAT),))
+        # THE WAYS CHANGED, so this is a fresh builder output: rule 2 of
+        # stamp_build.py lets its own stamp stand and rule 3, the only writer
+        # of `ways_cut`, never runs. No `ways_cut` - and the changeset names
+        # it in `removed_meta`, so the app drops the one `before` left it.
+        db.execute("DELETE FROM meta WHERE key = ?", (S.WAYS_CUT,))
+        # The refetch that found the new POI read the region that day - the
+        # day of this build, and never after it.
+        db.execute("UPDATE meta SET value = ? WHERE key = 'pois_checked'",
+                   (poi["source_date"],))
+        edits["pois_checked"] = poi["source_date"]
         db.commit()
         restate_meta(db, path)
     finally:
@@ -357,12 +447,45 @@ def make_after(before, path, as_of, source):
     return edits
 
 
+def dated_after_build(path):
+    """Every date `path` carries that is later than the day it was built:
+    the `*_checked` meta keys and the newest `source_date` of each table.
+    A real build can carry none - it is stamped after it fetched."""
+    db = sqlite3.connect("file:%s?mode=ro" % path.replace("\\", "/"),
+                         uri=True)
+    try:
+        meta = dict(db.execute("SELECT key, value FROM meta"))
+        day = meta["built_at"][:10]
+        dates = {k: v for k, v in meta.items()
+                 if k.endswith("_checked") and v}
+        for table in ("ways", "pois", "fords"):
+            got = db.execute("SELECT MAX(source_date) FROM %s"
+                             % table).fetchone()[0]
+            if got:
+                dates["%s.source_date" % table] = got
+    finally:
+        db.close()
+    return {k: v for k, v in sorted(dates.items()) if v[:10] > day}
+
+
 def schema_of(path):
     """sqlite_master as build_changeset compares it."""
     db = sqlite3.connect("file:%s?mode=ro" % path.replace("\\", "/"),
                          uri=True)
     try:
         return C._schema(db)
+    finally:
+        db.close()
+
+
+def _meta_of(path, key):
+    """One meta value of a container or a changeset, or None."""
+    db = sqlite3.connect("file:%s?mode=ro" % path.replace("\\", "/"),
+                         uri=True)
+    try:
+        row = db.execute("SELECT value FROM meta WHERE key = ?",
+                         (key,)).fetchone()
+        return row[0] if row else None
     finally:
         db.close()
 
@@ -379,21 +502,50 @@ def counts_of(path):
         db.close()
 
 
-def make(source, out_dir, box=DEFAULT_BOX):
+def make(source, out_dir, box=DEFAULT_BOX, keep_before=False):
     os.makedirs(out_dir, exist_ok=True)
     before = os.path.join(out_dir, "before.tbmap")
     after = os.path.join(out_dir, "after.tbmap")
     change = os.path.join(out_dir, CHANGESET_NAME)
-    as_of = make_before(source, before, box)
+    if keep_before:
+        if not os.path.isfile(before):
+            raise SystemExit("--keep-before, and there is no %s" % before)
+        db = sqlite3.connect("file:%s?mode=ro" % before.replace("\\", "/"),
+                             uri=True)
+        try:
+            as_of = base_day(db)
+        finally:
+            db.close()
+    else:
+        as_of = make_before(source, before, box)
     if schema_of(before) != schema_of(source):
         raise SystemExit("before.tbmap's schema is not the source's")
+    if S._meta_value(before, S.WAYS_CUT) is None:
+        raise SystemExit("before.tbmap carries no ways_cut: it is not the "
+                         "restamped build the fixture starts from")
     edits = make_after(before, after, as_of, source)
     if schema_of(after) != schema_of(source):
         raise SystemExit("after.tbmap's schema is not the source's")
+    # A REAL BUILD, not only the right tables: the ways changed, so rule 3
+    # never ran and the lanes are dated by after's own built_at.
+    if S._meta_value(after, S.WAYS_CUT) is not None:
+        raise SystemExit("after.tbmap's ways changed and it carries ways_cut, "
+                         "which only stamp_build's rule 3 writes")
+    # AND NOTHING IN IT DATED AFTER IT WAS BUILT: a check or a row from the
+    # future is a shape no container has.
+    for path in (before, after):
+        late = dated_after_build(path)
+        if late:
+            raise SystemExit("%s carries dates after its own built_at: %s"
+                             % (os.path.basename(path), late))
     stats = C.build_changeset(before, after, change)
     problems = V.problems_with(change)
     if problems:
         raise SystemExit("the changeset does not validate: %s" % problems)
+    removed_meta = json.loads(_meta_of(change, "removed_meta") or "[]")
+    if S.WAYS_CUT not in removed_meta:
+        raise SystemExit("the changeset does not remove ways_cut: %s"
+                         % removed_meta)
 
     # PROVED, NOT ASSUMED: applied onto `before` it must be `after`.
     scratch = os.path.join(out_dir, ".applied.tbmap")
@@ -413,7 +565,12 @@ def make(source, out_dir, box=DEFAULT_BOX):
                              % (name, size, MAX_BYTES))
     metas = [C.snapshot(p)["meta"] for p in (before, after)]
     report = {"box": list(box), "source": source, "edits": edits,
-              "meta_keys": sorted(metas[1]),
+              "keep_before": keep_before,
+              "meta_keys": sorted(set(metas[0]) | set(metas[1])),
+              "built_at": [m.get("built_at") for m in metas],
+              "ways_cut": metas[0].get(S.WAYS_CUT),
+              "pois_checked": [m.get("pois_checked") for m in metas],
+              "removed_meta": removed_meta,
               "newest": [json.loads(m[EA.META_KEY])["ways"].get("newest")
                          for m in metas],
               "stats": stats, "sizes": sizes,
@@ -439,8 +596,24 @@ def write_readme(out_dir, report):
         "```",
         "python tools/make_changeset_fixture.py \\",
         "    --source %s \\" % report["source"].replace("\\", "/"),
+    ] + (["    --keep-before \\"] if report["keep_before"] else []) + [
         "    --out ../greenroadmap-app/test/fixtures/changesets_live_shape",
         "```",
+        "",
+        "%s" % ("That is the command this set was last written with. "
+                "`--keep-before` reuses the `before.tbmap` already here and "
+                "rewrites only `after.tbmap`, the changeset and this README, "
+                "so `before.tbmap` is a cut of the published container as it "
+                "was when it was last cut, and `../changesets_meta_only`, "
+                "derived from it, stays valid. Without the flag `before` is "
+                "cut afresh; then run `python tool/make_meta_only_changesets.py` "
+                "in this repository too."
+                if report["keep_before"] else
+                "`../changesets_meta_only` is derived from `before.tbmap`: "
+                "after this, run `python tool/make_meta_only_changesets.py` in "
+                "this repository too. `--keep-before` would reuse the "
+                "`before.tbmap` already here and rewrite only `after.tbmap`, "
+                "the changeset and this README."),
         "",
         "## What they are",
         "",
@@ -450,8 +623,12 @@ def write_readme(out_dir, report):
         "table, index for index and view for view, and every row keeps the "
         "rowid it was published under. Only the meta counts, `bounds` and "
         "`evidence_dates` are rewritten, recomputed for the rows that are "
-        "left with the builders' own formulas."
-        % (os.path.basename(report["source"]), report["box"]),
+        "left with the builders' own formulas - and the stamp, which is "
+        "rule 3 of `stamp_build.py`'s: a region whose POIs, fords or gauges "
+        "were refreshed under unchanged ways, carrying `ways_cut` %s (the "
+        "lanes' pack stamp) under `built_at` %s."
+        % (os.path.basename(report["source"]), report["box"],
+           report["ways_cut"], report["built_at"][0]),
         "- `after.tbmap`: `before` as the next build would write it. One way "
         "closed by an order (`%s`: motorbike_ok and fourxfour_ok 0, "
         "access_evidence 'order'); one way removed (`%s`) with its box, its "
@@ -461,8 +638,15 @@ def write_readme(out_dir, report):
         "its published container (`stable_ids.py`): kept POIs keep their "
         "rowids (%d moved), the removed one leaves a gap and the new one is "
         "numbered above the highest the region published; ford `%s` "
-        "re-tagged stepping_stones; the edited rows dated a month on, so "
-        "`evidence_dates` moves, and `built_at` six hours on. The %d "
+        "re-tagged stepping_stones; the edited rows dated the day `after` "
+        "was built, so `evidence_dates` moves, and `pois_checked` with them "
+        "(%s -> %s: the refetch that found the new POI read the region that "
+        "day, and the pack was stamped hours later - no date in a build is "
+        "later than its `built_at`); "
+        "`built_at` six hours on (%s) and NO `ways_cut`. The ways changed, "
+        "so `stamp_build.py`'s rule 2 lets the builder's stamp stand and "
+        "rule 3, the only writer of `ways_cut`, never runs: the app dates "
+        "these lanes by `built_at`. The %d "
         "tiles the closed and removed ways were in are re-cut by "
         "`build_map_container.build_tiles` from the fixture's ways, and "
         "dropped where none is left."
@@ -472,6 +656,8 @@ def write_readme(out_dir, report):
            report["edits"]["added_poi"],
            report["edits"]["renumbered_pois"],
            report["edits"]["retagged_ford"],
+           report["pois_checked"][0], report["pois_checked"][1],
+           report["built_at"][1],
            report["edits"]["tiles_recut"]),
         "- `%s`: `python tools/build_changeset.py before.tbmap after.tbmap "
         "%s` - the real tool. It passed `validate_changeset.py`, and applied "
@@ -496,11 +682,14 @@ def write_readme(out_dir, report):
                         report["after"].get(table, 0), written, removed))
     lines += [
         "",
-        "Both containers carry the published container's meta keys: %s. "
-        "The changeset restates every one of them but `built_at` (which is "
-        "its `to_build`) and `kind`. `built_at`: %s -> %s. "
-        "Newest `ways` date in `evidence_dates`: %s -> %s."
+        "The containers carry the meta keys %s - "
+        "`ways_cut` in `before` only. The changeset restates every key "
+        "`after` has but `built_at` (which is its `to_build`) and `kind`, "
+        "and names the ones it dropped in `removed_meta`: %s. "
+        "`built_at`: %s -> %s. Newest `ways` date in `evidence_dates`: "
+        "%s -> %s."
         % (", ".join("`%s`" % k for k in sorted(report["meta_keys"])),
+           ", ".join("`%s`" % k for k in report["removed_meta"]),
            stats["from_build"], stats["to_build"], report["newest"][0],
            report["newest"][1]),
         "",
@@ -539,8 +728,12 @@ def main(argv=None):
                          "and README.md go")
     ap.add_argument("--box", type=float, nargs=4, default=DEFAULT_BOX,
                     metavar=("WEST", "SOUTH", "EAST", "NORTH"))
+    ap.add_argument("--keep-before", action="store_true",
+                    help="reuse the before.tbmap already in --out; write "
+                         "only after.tbmap, the changeset and README.md")
     args = ap.parse_args(argv)
-    report = make(args.source, args.out, tuple(args.box))
+    report = make(args.source, args.out, tuple(args.box),
+                  keep_before=args.keep_before)
     for name, size in sorted(report["sizes"].items()):
         print("  %-28s %8d bytes" % (name, size))
     for table, count in report["before"].items():
