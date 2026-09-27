@@ -503,8 +503,18 @@ def falsify(container, column):
     """
     db = sqlite3.connect(container)
     try:
-        db.execute("ALTER TABLE lanes RENAME COLUMN %s TO %s__renamed"
-                   % (column, column))
+        # THE TABLE, NOT THE VIEW. Since the ways cutover the rows live in
+        # `ways` and `lanes` is a compatibility view over it; SQLite refuses to
+        # rename a view's columns ("cannot rename columns of view"), so this
+        # step crashed instead of demonstrating anything - unseen, because CI
+        # never got past checking out the dataset repository until now.
+        table = next(
+            (name for name in ("ways", "lanes")
+             if db.execute("SELECT 1 FROM sqlite_master WHERE type = 'table' "
+                           "AND name = ?", (name,)).fetchone()),
+            "lanes")
+        db.execute("ALTER TABLE %s RENAME COLUMN %s TO %s__renamed"
+                   % (table, column, column))
         db.commit()
     finally:
         db.close()

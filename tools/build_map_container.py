@@ -595,7 +595,11 @@ CREATE VIEW lanes AS
            WHEN 'restricted_byway' THEN 'restricted'
            WHEN 'bridleway'        THEN 'restricted'
            WHEN 'ucr'              THEN 'unknown'
-           WHEN 'osm_track'        THEN 'partial-access'
+           -- NOT partial-access: that is a byway under seasonal restraint,
+           -- drawn in the go colour. A mapped track has no definitive-map
+           -- right at all; the app's own wayClassToLaneClass reads it as
+           -- unknown, and the contract check found the two disagreeing.
+           WHEN 'osm_track'        THEN 'unknown'
            ELSE 'unknown'
          END              AS lane_class,
          county           AS county,
