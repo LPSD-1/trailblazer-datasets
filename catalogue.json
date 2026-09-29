@@ -1,6 +1,6 @@
 {
  "schema": 2,
- "generated": "2026-09-29T10:02:31Z",
+ "generated": "2026-09-29T10:47:52Z",
  "attribution": "Map and routing data (c) OpenStreetMap contributors, ODbL. United Kingdom rights of way contain public sector information licensed under the Open Government Licence v3.0, via rowmaps.com.",
  "baseUrl": "https://lpsd-1.github.io/trailblazer-datasets/",
  "overviews": [
@@ -283,8 +283,8 @@
           "north": 55
          },
          "file": "https://github.com/LPSD-1/trailblazer-datasets/releases/download/routing/E0_N50.rd5",
-         "sha256": "66df927e5af20742909e14570e2a62e1db64780639634f532aa178d0f79410f5",
-         "bytes": 79463820
+         "sha256": "baed53b0c8c385274c5ea5bbcccf4f03fc91349eeeb3580841db9d9383c9fc68",
+         "bytes": 79614919
         },
         {
          "id": "E5_N50",
@@ -799,8 +799,8 @@
           "north": 55
          },
          "file": "https://github.com/LPSD-1/trailblazer-datasets/releases/download/routing/W10_N50.rd5",
-         "sha256": "068969c5b161f0fd153c23809dd04e4952176b1a2bc5e6373a48b31ed1fe2751",
-         "bytes": 43038092
+         "sha256": "750e04beb164d5667e6ad6fcd14eb51992374f9701e64de534e83e110a034ec0",
+         "bytes": 43058056
         },
         {
          "id": "W5_N50",
@@ -813,8 +813,8 @@
           "north": 55
          },
          "file": "https://github.com/LPSD-1/trailblazer-datasets/releases/download/routing/W5_N50.rd5",
-         "sha256": "20e5a1284614050a14cc67a9e8f69321a98d2ce28387c59b4d01a4551ae71e63",
-         "bytes": 138928526
+         "sha256": "5e90689ec04fda34aaab03406fd29791673b77b7a03059569f6d369ea8c0051a",
+         "bytes": 139099712
         },
         {
          "id": "E0_N50",
@@ -827,8 +827,8 @@
           "north": 55
          },
          "file": "https://github.com/LPSD-1/trailblazer-datasets/releases/download/routing/E0_N50.rd5",
-         "sha256": "66df927e5af20742909e14570e2a62e1db64780639634f532aa178d0f79410f5",
-         "bytes": 79463820
+         "sha256": "baed53b0c8c385274c5ea5bbcccf4f03fc91349eeeb3580841db9d9383c9fc68",
+         "bytes": 79614919
         },
         {
          "id": "E5_N50",
@@ -1301,8 +1301,8 @@
           "north": 55
          },
          "file": "https://github.com/LPSD-1/trailblazer-datasets/releases/download/routing/W10_N50.rd5",
-         "sha256": "068969c5b161f0fd153c23809dd04e4952176b1a2bc5e6373a48b31ed1fe2751",
-         "bytes": 43038092
+         "sha256": "750e04beb164d5667e6ad6fcd14eb51992374f9701e64de534e83e110a034ec0",
+         "bytes": 43058056
         },
         {
          "id": "W10_N55",
@@ -1314,8 +1314,8 @@
           "east": -5,
           "north": 60
          },
-         "file": "https://brouter.de/brouter/segments4/W10_N55.rd5",
-         "sha256": "",
+         "file": "https://github.com/LPSD-1/trailblazer-datasets/releases/download/routing/W10_N55.rd5",
+         "sha256": "0a5824e736be72c07bf91f331b6644690836fd73d653277290ba7b8fda9645fc",
          "bytes": 5508522
         }
        ]
@@ -1503,8 +1503,8 @@
           "north": 55
          },
          "file": "https://github.com/LPSD-1/trailblazer-datasets/releases/download/routing/E0_N50.rd5",
-         "sha256": "66df927e5af20742909e14570e2a62e1db64780639634f532aa178d0f79410f5",
-         "bytes": 79463820
+         "sha256": "baed53b0c8c385274c5ea5bbcccf4f03fc91349eeeb3580841db9d9383c9fc68",
+         "bytes": 79614919
         },
         {
          "id": "E5_N50",
@@ -1554,8 +1554,8 @@
           "east": 5,
           "north": 60
          },
-         "file": "https://brouter.de/brouter/segments4/E0_N55.rd5",
-         "sha256": "",
+         "file": "https://github.com/LPSD-1/trailblazer-datasets/releases/download/routing/E0_N55.rd5",
+         "sha256": "a7bc4cf284a2294e8eb6f95aa8133887c89370220755813ee9c9a48ccd75932b",
          "bytes": 40553
         },
         {
@@ -3329,8 +3329,8 @@
           "north": 55
          },
          "file": "https://github.com/LPSD-1/trailblazer-datasets/releases/download/routing/W10_N50.rd5",
-         "sha256": "068969c5b161f0fd153c23809dd04e4952176b1a2bc5e6373a48b31ed1fe2751",
-         "bytes": 43038092
+         "sha256": "750e04beb164d5667e6ad6fcd14eb51992374f9701e64de534e83e110a034ec0",
+         "bytes": 43058056
         },
         {
          "id": "W5_N50",
@@ -3343,8 +3343,8 @@
           "north": 55
          },
          "file": "https://github.com/LPSD-1/trailblazer-datasets/releases/download/routing/W5_N50.rd5",
-         "sha256": "20e5a1284614050a14cc67a9e8f69321a98d2ce28387c59b4d01a4551ae71e63",
-         "bytes": 138928526
+         "sha256": "5e90689ec04fda34aaab03406fd29791673b77b7a03059569f6d369ea8c0051a",
+         "bytes": 139099712
         },
         {
          "id": "E0_N50",
@@ -3357,8 +3357,8 @@
           "north": 55
          },
          "file": "https://github.com/LPSD-1/trailblazer-datasets/releases/download/routing/E0_N50.rd5",
-         "sha256": "66df927e5af20742909e14570e2a62e1db64780639634f532aa178d0f79410f5",
-         "bytes": 79463820
+         "sha256": "baed53b0c8c385274c5ea5bbcccf4f03fc91349eeeb3580841db9d9383c9fc68",
+         "bytes": 79614919
         },
         {
          "id": "W10_N55",
@@ -3370,8 +3370,8 @@
           "east": -5,
           "north": 60
          },
-         "file": "https://brouter.de/brouter/segments4/W10_N55.rd5",
-         "sha256": "",
+         "file": "https://github.com/LPSD-1/trailblazer-datasets/releases/download/routing/W10_N55.rd5",
+         "sha256": "0a5824e736be72c07bf91f331b6644690836fd73d653277290ba7b8fda9645fc",
          "bytes": 5508522
         },
         {
@@ -3384,8 +3384,8 @@
           "east": 0,
           "north": 60
          },
-         "file": "https://brouter.de/brouter/segments4/W5_N55.rd5",
-         "sha256": "",
+         "file": "https://github.com/LPSD-1/trailblazer-datasets/releases/download/routing/W5_N55.rd5",
+         "sha256": "c473fee5c73af89ef42868cddea9ac4ced8655c957aa7281818f855e49f06a2a",
          "bytes": 26363214
         },
         {
@@ -3398,8 +3398,8 @@
           "east": 5,
           "north": 60
          },
-         "file": "https://brouter.de/brouter/segments4/E0_N55.rd5",
-         "sha256": "",
+         "file": "https://github.com/LPSD-1/trailblazer-datasets/releases/download/routing/E0_N55.rd5",
+         "sha256": "a7bc4cf284a2294e8eb6f95aa8133887c89370220755813ee9c9a48ccd75932b",
          "bytes": 40553
         },
         {
