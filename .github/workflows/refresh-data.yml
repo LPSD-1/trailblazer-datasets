@@ -1320,6 +1320,56 @@ jobs:
             echo "::endgroup::"
           done < /tmp/region-containers.txt
 
+      # THE RIDE FORECAST: MET Norway, for a coarse grid over each region,
+      # published as `published/forecast/<region>.json` beside the rain and
+      # river feeds - the same static-file bargain, on the same clock.
+      #
+      # WHY HERE AND NOT ON THE PHONE. The app runs no server and sends no
+      # position anywhere (DATA-SAFETY.md), and MET's terms ask apps to go
+      # through a caching proxy rather than call the API from every phone.
+      # This job IS that cache: ~400 grid points a run, throttled to 5 a
+      # second, conditional requests against the cache restored below, and an
+      # identifying User-Agent. tools/build_forecast.py has the terms point by
+      # point.
+      #
+      # NOT ALLOWED TO SINK THE RAIN AND RIVERS. A MET outage or a 403 must not
+      # stop the gauges publishing, so a failed forecast build is a warning
+      # here and not a failed job. It is still never a silent one: the builder
+      # refuses to write a region with no cell (the published file stays), and
+      # the app says "too old to use" once that file passes its 12 hours.
+      - name: Restore the forecast cache
+        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25  # v5
+        with:
+          path: cache/forecast
+          key: forecast-${{ github.run_id }}
+          restore-keys: forecast-
+
+      - name: Build the ride forecast feeds
+        # A BOUND, AND A FAILURE THAT STAYS A WARNING. The builder stops after
+        # a run of unanswered requests, but a MET that answers slowly would
+        # still take ~400 slow answers; the job's 30-minute limit covers the
+        # Publish step below, so this step gets 12 of them and no more. A
+        # cut-off run keeps the regions it finished (each file is written
+        # whole) and the rest age out in the app.
+        timeout-minutes: 12
+        continue-on-error: true
+        run: |
+          set -uo pipefail
+          if python tools/build_forecast.py build \
+              --out published/forecast --cache cache/forecast; then
+            echo "forecast feeds built"
+          else
+            echo "::warning::the MET Norway forecast did not build for every region; the last published files stay and age out in the app"
+          fi
+          ls -l published/forecast 2>/dev/null || true
+
+      - name: Keep the forecast cache for the next run
+        if: ${{ always() && hashFiles('cache/forecast/**') != '' }}
+        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25  # v5
+        with:
+          path: cache/forecast
+          key: forecast-${{ github.run_id }}
+
       # THE GUARD AGAINST A GREEN JOB THAT DID NOTHING, asked of the FILES.
       #
       # Every step above exits 0 over an empty subject. `readings` on a station
@@ -1446,7 +1496,8 @@ jobs:
             exit 0
           fi
           git commit -m "Conditions: rain and river levels" \
-                     -m "Environment Agency flood-monitoring data, OGL v3."
+                     -m "Environment Agency flood-monitoring data, OGL v3." \
+                     -m "Forecast data from MET Norway, CC BY 4.0."
 
           # The same re-anchor the refresh job uses, for the same reason: a
           # generated file does not merge, it has a recipe. catalogue.json is
@@ -1467,6 +1518,7 @@ jobs:
             fi
             git commit -m "Conditions: rain and river levels" \
                        -m "Environment Agency flood-monitoring data, OGL v3." \
+                       -m "Forecast data from MET Norway, CC BY 4.0." \
               || exit 1
           done
           echo "could not publish after 3 attempts; the next run carries it"

@@ -527,17 +527,194 @@ def _wrap(geometry, first, feature, dtro_id):
     return {"type": "Feature", "geometry": geometry, "properties": properties}
 
 
-def read_corpus(path, today, keep_expired=False):
-    """Every live restriction in the national CSV extract."""
+# ---------------------------------------------------------------------------
+# WHICH COUNCILS PUBLISH (TRO_SPEC.md 3.7, October 2026)
+# ---------------------------------------------------------------------------
+#
+# The pack carries each order's authority only as a GeoPlace SWA code (`tra`),
+# and its features alone cannot tell "publishes, but everything it published
+# has finished" from "has never published": expired and far-future orders are
+# dropped before the pack is written. So every record READ is counted per
+# `tra` before anything is filtered, and the answer travels in the pack as a
+# top-level `authorities` block, one row per mapped row of
+# tools/tro_authorities.csv:
+#
+#     {"swa": "1050", "name": "Derbyshire County Council",
+#      "lanes": ["Derbyshire"], "records": 412, "newest": "2026-09-12"}
+#
+# `records: 0` is "this council has published nothing we have seen", and the
+# app says so; a council missing from the table gets no line at all, because
+# a gap in our own table must never become a statement about a council.
+#
+# THE TABLE. tools/tro_authorities.csv: `swa_code`, `display_name`,
+# `lane_names` (";"-separated, as the ways containers carry them), `note`.
+# Built from GeoPlace's SWA_ORG_ACTIVE list of 30 September 2026 - every
+# England and Wales local highway authority, plus National Highways, the
+# Welsh Government and TfL - and from the 149 rowmaps authority names in
+# cache/authorities.json. A National Park's lane name is listed under each
+# council whose ground it covers; "Cumbria", which rowmaps still files lanes
+# under, is listed under both of its successors. A row with a BLANK code is
+# explicitly unmapped (the National Park Authorities: no SWA code, and no
+# D-TRO code seen) and is not written into the pack.
+AUTHORITY_TABLE = os.path.join(HERE, "tro_authorities.csv")
+_TABLE_COLUMNS = ("swa_code", "display_name", "lane_names")
+
+# `newest`, AND WHAT IT IS THE NEWEST OF.
+#
+# The `/dtros/all` extract's column layout is not documented (TRO_SPEC.md
+# open question 2); the build reads `Id` and `Data` and nothing else is
+# promised. If the extract carries a publication timestamp column, `newest`
+# is the newest of those per authority - the day it last published. If it
+# does not, `newest` falls back to the newest `madeDate` among its records -
+# the day the newest order it published was made. Which one was used is
+# written beside the block as `authorities_newest_from`, so nobody guesses.
+_PUBLISHED_COLUMNS = ("publicationtime", "publicationdate", "published",
+                      "publishedat", "publishedon", "created", "createdat",
+                      "creationtime", "createdon")
+_ISO_DAY = re.compile(r"^(\d{4})-(\d{2})-(\d{2})")
+
+
+def normalise_tra(raw):
+    """A traffic authority code as the app compares it, or None.
+
+    Trimmed, with leading zeros stripped - D-TRO may say "06850" where the
+    table says 6850 - exactly as the app's `normaliseTraCode` does.
+    """
+    if raw is None or isinstance(raw, bool):
+        return None
+    if isinstance(raw, float):
+        if raw != raw or raw != int(raw):
+            return None
+        raw = int(raw)
+    text = str(raw).strip()
+    if not text:
+        return None
+    return text.lstrip("0") or "0"
+
+
+def iso_day(value):
+    """The YYYY-MM-DD a timestamp starts with, if it is a real date."""
+    if not isinstance(value, str):
+        return None
+    match = _ISO_DAY.match(value.strip())
+    if not match:
+        return None
+    try:
+        return datetime.date(*map(int, match.groups())).isoformat()
+    except ValueError:
+        return None
+
+
+class AuthorityTally(object):
+    """Every record read, counted per `tra`, before anything is filtered."""
+
+    def __init__(self):
+        self.records = {}
+        self.newest = {}
+        self.unattributed = 0
+        self.newest_from = None
+
+    def add(self, record, row, column, cut):
+        source = record.get("source") if isinstance(record, dict) else None
+        if not isinstance(source, dict):
+            self.unattributed += 1
+            return
+        # The same choice tools/tro.py makes for the feature's `tra`, so the
+        # count and the order sheet's "Made by" name the same council.
+        tra = normalise_tra(source.get("currentTraOwner")
+                            or source.get("traCreator"))
+        if tra is None:
+            self.unattributed += 1
+            return
+        self.records[tra] = self.records.get(tra, 0) + 1
+        if column:
+            day = iso_day(row.get(column))
+        else:
+            day = iso_day(source.get("madeDate"))
+        # Nothing was published after the extract was cut. A date past it is
+        # a typo in the record, and would make a council look fresher than
+        # the data we hold.
+        if day and day <= cut and day > self.newest.get(tra, ""):
+            self.newest[tra] = day
+
+
+def published_column(fieldnames):
+    """The extract's publication timestamp column, if it carries one."""
+    for name in fieldnames or ():
+        if re.sub(r"[^a-z]", "", (name or "").lower()) in _PUBLISHED_COLUMNS:
+            return name
+    return None
+
+
+def load_authority_table(path=AUTHORITY_TABLE):
+    """The hand-built table: (mapped rows, explicitly unmapped rows).
+
+    Raises ValueError on anything that would put a wrong name beside a
+    council: a missing column, a code that is not a number, one code on two
+    rows, a row with no name.
+    """
+    with open(path, encoding="utf-8-sig", newline="") as handle:
+        reader = csv.DictReader(handle)
+        missing = [c for c in _TABLE_COLUMNS
+                   if c not in (reader.fieldnames or [])]
+        if missing:
+            raise ValueError("%s has no %s column"
+                             % (path, ", ".join(missing)))
+        mapped, unmapped, seen = [], [], {}
+        for line, row in enumerate(reader, start=2):
+            name = clean_text((row.get("display_name") or "").strip())
+            lanes = [clean_text(n.strip()) for n in
+                     (row.get("lane_names") or "").split(";") if n.strip()]
+            code = (row.get("swa_code") or "").strip()
+            if not name:
+                raise ValueError("%s line %d has no display_name"
+                                 % (path, line))
+            if not code:
+                unmapped.append({"name": name, "lanes": lanes})
+                continue
+            if not code.isdigit():
+                raise ValueError("%s line %d: swa_code %r is not a number"
+                                 % (path, line, code))
+            swa = normalise_tra(code)
+            if swa in seen:
+                raise ValueError("%s line %d: swa_code %s is already line %d"
+                                 % (path, line, swa, seen[swa]))
+            seen[swa] = line
+            mapped.append({"swa": swa, "name": name, "lanes": lanes})
+    return mapped, unmapped
+
+
+def authority_rows(table, tally):
+    """The pack's `authorities` block: one row per mapped table row."""
+    return [{"swa": entry["swa"],
+             "name": entry["name"],
+             "lanes": list(entry["lanes"]),
+             "records": tally.records.get(entry["swa"], 0),
+             "newest": tally.newest.get(entry["swa"])}
+            for entry in table]
+
+
+def read_corpus(path, today, keep_expired=False, tally=None):
+    """Every live restriction in the national CSV extract.
+
+    With `tally`, every readable record is also counted per authority - all
+    of them, expired and far-future included - before `features` drops any.
+    """
     kept, records, skipped = [], 0, 0
     with open(path, encoding="utf-8-sig", newline="") as handle:
-        for row in csv.DictReader(handle):
+        reader = csv.DictReader(handle)
+        column = published_column(reader.fieldnames)
+        if tally is not None:
+            tally.newest_from = column or "madeDate"
+        for row in reader:
             records += 1
             try:
                 record = json.loads(row["Data"])
             except (ValueError, KeyError):
                 skipped += 1
                 continue
+            if tally is not None:
+                tally.add(record, row, column, today)
             dtro_id = row.get("Id")
             for feature in features(record, today=today,
                                     keep_expired=keep_expired):
@@ -803,6 +980,8 @@ def main():
                     "trailblazer-datasets/releases/download/tro/",
                     help="where the sealed pack is hosted")
     ap.add_argument("--today", help="override the expiry date, for testing")
+    ap.add_argument("--authorities", default=AUTHORITY_TABLE,
+                    help="the council table (tools/tro_authorities.csv)")
     ap.add_argument("--allow-shrink", action="store_true",
                     help="publish even if the count has collapsed against the "
                          "last run - for a genuine change, never to get a red "
@@ -852,7 +1031,21 @@ def main():
     print("corpus  %s (cut %s, filtered against %s)"
           % (os.path.basename(path), cut, day))
 
-    built, records, skipped = read_corpus(path, day)
+    # THE COUNCIL TABLE, read before the corpus so a broken one costs nothing.
+    #
+    # A missing or malformed table REFUSES the build rather than shipping a
+    # pack without the block. The table is committed beside this file, so its
+    # absence is a broken checkout, not a quiet day - and every rider keeps
+    # yesterday's pack, which is the outcome every other refusal here has.
+    try:
+        table, unmapped = load_authority_table(args.authorities)
+    except (IOError, OSError, ValueError) as e:
+        sys.exit("REFUSING TO PUBLISH: the council table could not be read "
+                 "(%s). Without it no rider is told which councils publish."
+                 % e)
+
+    tally = AuthorityTally()
+    built, records, skipped = read_corpus(path, day, tally=tally)
     print("records %d, unreadable %d" % (records, skipped))
     print("live restrictions %d" % len(built))
     if not built:
@@ -895,6 +1088,36 @@ def main():
     # the service happened to return them in.
     built.sort(key=lambda f: f["properties"]["tro_uid"])
 
+    authorities = authority_rows(table, tally)
+    publishing = [a for a in authorities if a["records"]]
+    listed = set(a["swa"] for a in authorities)
+    elsewhere = sorted(((n, tra) for tra, n in tally.records.items()
+                        if tra not in listed), reverse=True)
+    print("councils %d in the table, %d publishing, %d explicitly unmapped; "
+          "newest from %s"
+          % (len(authorities), len(publishing), len(unmapped),
+             tally.newest_from))
+    if elsewhere:
+        print("  %d record(s) from %d code(s) the table does not hold - "
+              "shown with no council line: %s"
+              % (sum(n for n, _ in elsewhere), len(elsewhere),
+                 ", ".join("%s (%d)" % (tra, n) for n, tra in elsewhere[:12])))
+    if tally.unattributed:
+        print("  %d record(s) name no authority at all" % tally.unattributed)
+
+    # LIVE ORDERS AND NOBODY PUBLISHING IS A BROKEN COUNT, NOT A FACT.
+    #
+    # Written out, it would tell every rider in England and Wales that their
+    # council "does not publish" - a false statement about each one, on the
+    # same screen as an order that council published. If any live feature
+    # carries a code the table holds, that council must have records.
+    live_tras = set(normalise_tra(f["properties"].get("tra"))
+                    for f in built)
+    if live_tras & listed and not publishing:
+        sys.exit("REFUSING TO PUBLISH: live orders from %d listed council(s), "
+                 "yet the count says none publishes. The per-authority count "
+                 "is broken." % len(live_tras & listed))
+
     collection = {
         "type": "FeatureCollection",
         "generated": cut,
@@ -919,6 +1142,10 @@ def main():
         # It costs about a kilobyte, once, against 36,000 features.
         "order_types": ORDER_TYPES,
         "order_forms": ORDER_FORMS,
+        # WHICH COUNCILS PUBLISH, counted over every record read. See
+        # AUTHORITY_TABLE above; read by the app's TrafficOrders.coverage.
+        "authorities": authorities,
+        "authorities_newest_from": tally.newest_from,
         "features": built,
     }
 
@@ -960,6 +1187,12 @@ def main():
             # What the next run's floor check compares against. Not read by
             # the app; the catalogue builder ignores fields it does not know.
             "features": len(built),
+            # What check_build.py's council-coverage gate reads, for the same
+            # reason: every job has the index and only this one has the pack.
+            # Named apart from the pack's `authorities` list on purpose: these
+            # are counts, and the catalogue copies this entry as it stands.
+            "councils": len(authorities),
+            "councils_publishing": len(publishing),
         }],
     }
     os.makedirs(os.path.dirname(os.path.abspath(args.index)), exist_ok=True)

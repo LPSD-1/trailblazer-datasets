@@ -122,6 +122,15 @@ jobs:
           python tools/test_tro_merge.py
           python tools/test_build_tro.py
           python tools/test_dtro_fetch.py
+          # THE COUNCIL TABLE. build_tro.py reads tools/tro_authorities.csv and
+          # refuses to publish without it, and the lane sheet names the
+          # council from the `authorities` block it writes. These three are
+          # the tests of that table, its reader and its wiring; this job is
+          # the only one that builds the order pack, so it is the only place
+          # they protect anything.
+          python tools/test_tro_authorities.py
+          python tools/test_tro_council_table.py
+          python tools/test_tro_council_wiring.py
 
       # ONE ORDER OF EACH TYPE, THROUGH THE REAL BUILD.
       #
@@ -142,8 +151,53 @@ jobs:
       - name: An order of each type resolves to the right vehicles
         run: python tools/build_tro.py --check-order-types
 
+      # THE PUBLISHED INDEX, TAKEN BEFORE THE BUILD OVERWRITES IT.
+      #
+      # build_tro.py writes tro/index.json in place, so after the build the
+      # working tree holds only the new one. The closure gate below compares
+      # the two, and the old one has to come out of git first.
+      - name: Keep the published index to compare against
+        run: git show HEAD:tro/index.json > /tmp/tro-previous.json
+
+      # READ-ONLY. check_build.py checks the lane cache as well as the orders
+      # (check_authorities refuses a run with no cache/authorities.json, and
+      # check_council_table compares the table against it). cache/ is
+      # gitignored and only refresh-data.yml fetches it, so without this
+      # restore every run here would stop at "no authorities.json - the fetch
+      # never ran" and the order pack would never publish again. Restore only:
+      # this job never fetches council data, so it has nothing to save.
+      - name: Restore the council data cache
+        id: council_cache
+        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25  # v5
+        with:
+          path: cache
+          key: rowmaps-${{ github.run_id }}
+          restore-keys: rowmaps-
+
       - name: Build the pack
         run: python tools/build_tro.py --key /tmp/dataset.key
+
+      # THE GATE THAT READS WHAT WAS BUILT. check_closures refuses a live
+      # closure count that collapsed or tripled since the published index, and
+      # check_council_coverage refuses a pack that cannot say which councils
+      # publish - one with no `councils` count reads "coverage unknown" on
+      # every phone. Neither ran anywhere before: refresh-data.yml builds no
+      # traffic-order index, so both printed "THIS GATE DID NOT RUN".
+      #
+      # --previous and --new are both the committed manifest because this job
+      # builds no lanes; the lane totals compare equal and only the order
+      # gates can refuse. It runs before anything is published.
+      - name: Check the built pack before publishing it
+        run: |
+          if [ ! -f cache/authorities.json ]; then
+            echo "::error::The council data cache (rowmaps-*) did not restore."
+            echo "check_build.py needs cache/authorities.json. It is written by"
+            echo "refresh-data.yml; run that workflow, then re-run this one."
+            exit 1
+          fi
+          python tools/check_build.py --previous manifest.json --new manifest.json \
+            --cache cache --closures-previous /tmp/tro-previous.json \
+            --closures-new tro/index.json
 
       - name: Forget the credentials
         if: always()

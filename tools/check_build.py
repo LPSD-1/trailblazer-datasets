@@ -20,6 +20,9 @@ What it gates, in order:
   * the bounding box          - GB_BOUNDS, over the declared region bounds and
                                 over the geometry inside the opened packages
   * the closure factor        - MAX_CLOSURE_FACTOR, both directions
+  * the council table         - tools/tro_authorities.csv reads cleanly, and
+                                the traffic-order index says the pack carries
+                                which councils publish
   * the packages themselves   - they open with the key and hold what the index
                                 says they hold
 
@@ -39,10 +42,13 @@ Exit code 1 means do not publish. Exit code 2 means a baseline was written and
 nothing was checked or published.
 """
 import argparse
+import csv
 import datetime
+import html
 import json
 import math
 import os
+import re
 import sys
 
 # How much the lane count may fall before this is treated as data loss rather
@@ -335,6 +341,129 @@ def check_closures(previous_index, new_index, problems):
             "live closures %s by a factor of %.1f (%d -> %d), past the limit "
             "of %.1f. That is not a busy week; it is a changed extract."
             % (direction, factor, old, now, MAX_CLOSURE_FACTOR))
+
+
+# --------------------------------------------------------------- councils
+
+# The hand-built table of traffic authorities (TRO_SPEC.md 3.7). build_tro.py
+# writes one `authorities` row per mapped row of it into the order pack, and
+# the app names the council from that row on the lane sheet, the order sheet
+# and What's shut near you.
+COUNCIL_TABLE = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                             "tro_authorities.csv")
+
+
+def _lane_key(name):
+    """A lane authority name as the app compares it: decoded, spaces
+    collapsed (a non-breaking one included), trimmed, case folded."""
+    text = html.unescape(name or "").replace(u"\xa0", " ")
+    return re.sub(r"\s+", " ", text).strip().lower()
+
+
+def check_council_table(path, cache_dir, problems):
+    """The council table must read cleanly; every lane authority should be in it.
+
+    Read here independently of build_tro.py, so a fault in the builder's own
+    reader cannot also hide the fault from the gate. A table that is wrong
+    is worse than none: it puts one council's name beside another's orders.
+
+    A rowmaps authority the table does not list is WARNED, not refused. The
+    app says nothing per council for a name it cannot find - the safe
+    default - and a new authority on rowmaps must not stop a lane publish.
+    """
+    if not os.path.isfile(path):
+        problems.append(
+            "%s does not exist, so no order pack can say which councils "
+            "publish." % os.path.basename(path))
+        return
+    with open(path, encoding="utf-8-sig", newline="") as handle:
+        reader = csv.DictReader(handle)
+        missing = [c for c in ("swa_code", "display_name", "lane_names")
+                   if c not in (reader.fieldnames or [])]
+        if missing:
+            problems.append("%s has no %s column"
+                            % (os.path.basename(path), ", ".join(missing)))
+            return
+        seen, listed, mapped = {}, set(), 0
+        for line, row in enumerate(reader, start=2):
+            code = (row.get("swa_code") or "").strip()
+            name = (row.get("display_name") or "").strip()
+            if not name:
+                problems.append("%s line %d has no display_name"
+                                % (os.path.basename(path), line))
+            for lane in (row.get("lane_names") or "").split(";"):
+                if lane.strip():
+                    listed.add(_lane_key(lane))
+            if not code:
+                continue  # explicitly unmapped: says nothing, by design
+            if not code.isdigit():
+                problems.append("%s line %d: swa_code %r is not a number"
+                                % (os.path.basename(path), line, code))
+                continue
+            swa = code.lstrip("0") or "0"
+            if swa in seen:
+                problems.append(
+                    "%s line %d: swa_code %s is already line %d - one code "
+                    "on two rows names two councils for one order"
+                    % (os.path.basename(path), line, swa, seen[swa]))
+            seen[swa] = line
+            mapped += 1
+    print("  council table: %d councils mapped" % mapped)
+    if not mapped:
+        problems.append("%s maps no council at all"
+                        % os.path.basename(path))
+
+    known = load(os.path.join(cache_dir, "authorities.json"))
+    if not isinstance(known, dict):
+        print("  council table: no authorities.json to compare against")
+        return
+    absent = sorted(_lane_key(n) for n in known.values()
+                    if _lane_key(n) not in listed)
+    if absent:
+        print("  WARNING: %d lane authorit%s not in %s, so no council line "
+              "shows for %s: %s"
+              % (len(absent), "y is" if len(absent) == 1 else "ies are",
+                 os.path.basename(path),
+                 "it" if len(absent) == 1 else "them", ", ".join(absent)))
+
+
+def check_council_coverage(new_index, problems):
+    """The order pack this build wrote must say which councils publish.
+
+    Read off the index for the reason closure_count gives. A pack without
+    the block parses to "coverage unknown" on every phone and names no
+    council anywhere - the October 2026 finding, where every published pack
+    carried none. One that counts nobody publishing while it carries live
+    orders tells every rider their council "does not publish", which is
+    false about each of them.
+    """
+    if new_index is None:
+        print("  councils: this build wrote no traffic-order index - "
+              "THIS GATE DID NOT RUN")
+        return
+    packs = [p for p in (new_index.get("packs") or []) if isinstance(p, dict)]
+    if not packs:
+        return  # check_closures already refuses an index with no count
+    for pack in packs:
+        councils = pack.get("councils")
+        publishing = pack.get("councils_publishing")
+        if not isinstance(councils, int) or isinstance(councils, bool):
+            problems.append(
+                "the traffic-order pack %s was built without the council "
+                "table, so no rider is told which councils publish."
+                % (pack.get("id") or "?"))
+            continue
+        print("  councils: %d listed, %s publishing" % (councils, publishing))
+        if councils <= 0:
+            problems.append("the traffic-order pack lists no councils at all")
+            continue
+        features = pack.get("features")
+        if (isinstance(features, int) and features > 0
+                and not (isinstance(publishing, int) and publishing > 0)):
+            problems.append(
+                "the traffic-order pack carries %d live orders and counts no "
+                "council publishing; every rider would be told their council "
+                "does not publish." % features)
 
 
 # --------------------------------------------------------------- baseline
@@ -783,6 +912,8 @@ def main():
                     help="the published traffic-order index")
     ap.add_argument("--closures-new", default="dist/tro/index.json",
                     help="this build's traffic-order index")
+    ap.add_argument("--councils", default=COUNCIL_TABLE,
+                    help="the traffic authority table (tro_authorities.csv)")
     ap.add_argument("--baseline", default=BASELINE,
                     help="the recorded rebaseline, if there is one")
     ap.add_argument("--rebaseline", action="store_true",
@@ -826,8 +957,10 @@ def main():
     check_totals(previous, new, problems, dropped,
                  becomes[0] if becomes else None)
     check_declared_bounds(new, problems)
-    check_closures(load(args.closures_previous), load(args.closures_new),
-                   problems)
+    closures_new = load(args.closures_new)
+    check_closures(load(args.closures_previous), closures_new, problems)
+    check_council_table(args.councils, args.cache, problems)
+    check_council_coverage(closures_new, problems)
     if args.key:
         check_packages_readable(new, args.dist, args.key, problems)
 
