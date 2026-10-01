@@ -98,6 +98,41 @@ def problems_in(text):
                      "check_council_coverage never runs on a built index")
     elif gate[0] < build_at:
         found.append("check_build.py --closures-new runs before the build")
+    else:
+        g = commands[gate[0]]
+        publish_at = next((i for i, c in enumerate(commands)
+                           if "gh release upload" in c), len(commands))
+        if gate[0] > publish_at:
+            found.append("check_build.py runs only after the pack is published")
+        if re.search(r"--force\b|\|\|\s*true", g):
+            found.append("check_build.py cannot refuse: --force or || true")
+        # The job builds no lanes. Without --orders-only the lane gates run
+        # too, and an evicted rowmaps cache or a lane fault in the committed
+        # manifest stops closures publishing. --previous/--new/--cache/--dist/
+        # --key are the lane gates' inputs; none belongs on this line.
+        if "--orders-only" not in g:
+            found.append("check_build.py runs without --orders-only, so the "
+                         "lane gates (cache/, manifest.json) can stop the "
+                         "order pack")
+        lane = re.findall(r"(?<![\w-])--(?:previous|new|cache|dist|key)\b", g)
+        if lane:
+            found.append("check_build.py is handed lane inputs (%s) in the "
+                         "order job" % ", ".join(lane))
+        m = re.search(r"--closures-previous\s+(\S+)", g)
+        if not m or not any("git show HEAD:tro/index.json" in c
+                            and m.group(1) in c for c in commands[:build_at]):
+            found.append("--closures-previous is not the published index "
+                         "taken before the build")
+    step = re.search(r"- name: Check the built pack[^\n]*\n(.*?)(?=\n      - |\Z)",
+                     text, re.S)
+    if step and re.search(r"continue-on-error:\s*true", step.group(1)):
+        found.append("the gate step has continue-on-error, so it cannot refuse")
+    # A shell guard that refuses on a missing lane cache puts back what
+    # --orders-only took away (the 2026-10-01 workflow had exactly one).
+    if step and re.search(r"cache/authorities\.json[^\n]*\n(?:[^\n]*\n){0,4}?"
+                          r"\s*exit\s+[1-9]", step.group(1)):
+        found.append("the gate step refuses when cache/authorities.json is "
+                     "missing, so the lane cache still stops the order pack")
     return found
 
 

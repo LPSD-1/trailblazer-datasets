@@ -189,9 +189,19 @@ jobs:
       # and nobody owned the file that names them.
       - name: Run every tool suite
         run: |
+          # Exit 2 is BLIND: the suite needs something this job cannot have
+          # (the app repository is private, so its fixtures are never checked
+          # out here). That is a warning, not a pass and not a failure; it
+          # stopped every lane refresh from 27 Sep to 2 Oct 2026 when it was
+          # treated as a failure. Any other non-zero exit still stops the run.
           for t in tools/test_*.py; do
             echo "--- $t"
-            python "$t" || exit 1
+            python "$t"; rc=$?
+            if [ "$rc" -eq 2 ]; then
+              echo "::warning::$t is BLIND here (needs a checkout this job does not have)"
+            elif [ "$rc" -ne 0 ]; then
+              exit 1
+            fi
           done
 
       # The golden build: one region end to end, byte-compared against a

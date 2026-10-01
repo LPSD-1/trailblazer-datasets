@@ -40,6 +40,21 @@ is no longer the one it was recorded against. See rebaseline_note().
 
 Exit code 1 means do not publish. Exit code 2 means a baseline was written and
 nothing was checked or published.
+
+THE ORDER PACK IS GATED WITH --orders-only:
+
+    python tools/check_build.py --orders-only \
+        --closures-previous /tmp/tro-previous.json --closures-new tro/index.json
+
+traffic-orders.yml builds no lanes, so the lane gates have nothing of its own
+to judge there: the authority floor reads cache/, which only refresh-data.yml
+writes, and the totals and bounds read the committed manifest, which that job
+never touches. Run there, they could only stop closures publishing for a fault
+in the LANE data - an evicted or partial rowmaps cache stopped every order
+publish - and a rider then rides into this morning's closure because the lane
+fetch was short. --orders-only runs the closure count, the council table and
+the council coverage and nothing else, and it refuses a run that wrote no
+traffic-order index, because writing one is all that job does.
 """
 import argparse
 import csv
@@ -921,7 +936,17 @@ def main():
                          "nothing; needs --reason")
     ap.add_argument("--reason", default="",
                     help="why the drop in --rebaseline is deliberate")
+    ap.add_argument("--orders-only", action="store_true",
+                    help="gate a traffic-order build alone: the closure "
+                         "count and the council checks, never the lane "
+                         "cache or the lane manifest")
     args = ap.parse_args()
+
+    if args.orders_only:
+        if args.rebaseline or args.key:
+            sys.exit("--orders-only checks the traffic-order index alone; "
+                     "--rebaseline and --key are lane options.")
+        sys.exit(check_orders(args))
 
     new = load(args.new)
     if new is None:
@@ -964,23 +989,49 @@ def main():
     if args.key:
         check_packages_readable(new, args.dist, args.key, problems)
 
+    sys.exit(verdict(problems, args.force))
+
+
+def check_orders(args):
+    """The traffic-order gates alone (--orders-only). Returns the exit code.
+
+    The council table is still compared against cache/authorities.json when
+    one happens to be there; that comparison only ever warns, and its
+    absence says so and refuses nothing.
+    """
+    problems = []
+    print("checking the traffic-order build (orders only)...")
+    closures_new = load(args.closures_new)
+    if closures_new is None:
+        problems.append(
+            "%s is missing or unreadable: this run wrote no traffic-order "
+            "index, and building one is all it was for." % args.closures_new)
+    else:
+        check_closures(load(args.closures_previous), closures_new, problems)
+        check_council_coverage(closures_new, problems)
+    check_council_table(args.councils, args.cache, problems)
+    return verdict(problems, args.force)
+
+
+def verdict(problems, force):
+    """Print the outcome. 0 means publish, 1 means do not."""
     if not problems:
         print("\nOK to publish.")
-        return
+        return 0
 
     print("\n%d problem(s) with this build:" % len(problems))
     for problem in problems:
         print("  - %s" % problem)
 
-    if args.force:
+    if force:
         print("\n--force given: publishing anyway.")
-        return
+        return 0
 
     print("\nNOT publishing. The build stays where it is, and every rider "
           "keeps the data they already have.")
     print("Re-run the workflow once the source is healthy, or run it with "
           "'force' if the change is real.")
-    sys.exit(1)
+    return 1
 
 
 if __name__ == "__main__":
