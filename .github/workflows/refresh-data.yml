@@ -196,7 +196,9 @@ jobs:
           # treated as a failure. Any other non-zero exit still stops the run.
           for t in tools/test_*.py; do
             echo "--- $t"
-            python "$t"; rc=$?
+            # `|| rc=$?`, not `; rc=$?`: Actions runs bash -e, which would
+            # stop at the python line before rc was ever read.
+            rc=0; python "$t" || rc=$?
             if [ "$rc" -eq 2 ]; then
               echo "::warning::$t is BLIND here (needs a checkout this job does not have)"
             elif [ "$rc" -ne 0 ]; then
