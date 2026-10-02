@@ -131,6 +131,19 @@ jobs:
           python tools/test_tro_authorities.py
           python tools/test_tro_council_table.py
           python tools/test_tro_council_wiring.py
+          # THE CODES THEMSELVES, against GeoPlace's own SWA list
+          # (fetched below from GeoPlace's link). A wrong code is
+          # not a crash: it names one council beside another council's
+          # orders. Named here because refresh-data's tools/test_*.py loop
+          # stops before it reaches this file.
+          # Fetched here, never committed (GeoPlace's list; this repository is
+          # public). A failed fetch is a warning: it must never stop the
+          # order pack, which riders need more than this cross-check.
+          if curl -fsSL --max-time 60 -o tools/geoplace_swa_org_active_2026-09-30.csv               https://static.geoplace.co.uk/downloads/SWA_ORG_ACTIVE_2026-09-30.csv; then
+            python tools/test_tro_council_codes_match_geoplace.py
+          else
+            echo "::warning::GeoPlace's SWA list could not be fetched; council codes not cross-checked this run"
+          fi
 
       # ONE ORDER OF EACH TYPE, THROUGH THE REAL BUILD.
       #
@@ -185,6 +198,94 @@ jobs:
             --closures-previous /tmp/tro-previous.json \
             --closures-new tro/index.json
 
+      # THE EXTRACT HAS STOPPED MOVING, AND NOTHING ELSE WOULD SAY SO.
+      #
+      # dtro_fetch.py takes whatever /dtros/all serves and build_tro.py stamps
+      # the pack with that extract's own date. When the service stops
+      # re-cutting it - it served the 6 September 2026 cut until at least 2
+      # October - every run rebuilds the identical pack, "Has anything
+      # changed?" publishes nothing, and the run is green. The failure alarm
+      # below only rings on a FAILED run, so for weeks the owner was told
+      # nothing while riders' phones said how old their orders were.
+      #
+      # This WARNS and never fails the job (continue-on-error, and every gh
+      # call may fail): a stale extract is still the newest there is. One
+      # issue at a time under its OWN label - not `traffic-orders`, which
+      # "Stand the alarm down" closes on every green run - kept current with
+      # the cut's age, and closed by the first run that sees a fresh cut.
+      # Not gated on publishing: a stalled extract is exactly the run that
+      # publishes nothing. tools/test_tro_cut_age_alarm.py runs this step.
+      - name: Say so when the extract has stopped moving
+        id: cutage
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          # A crash here must not read as "fresh" and close the issue, so
+          # anything but an explicit stale=false is treated as stale.
+          REPORT=$(python tools/check_build.py --orders-cut-age tro/index.json || true)
+          echo "$REPORT"
+          CUT=$(printf '%s\n' "$REPORT" | sed -n 's/^cut=//p')
+          AGE=$(printf '%s\n' "$REPORT" | sed -n 's/^age=//p')
+          LIMIT=$(printf '%s\n' "$REPORT" | sed -n 's/^limit=//p')
+          STALE=$(printf '%s\n' "$REPORT" | sed -n 's/^stale=//p')
+          OPEN=$(gh issue list --label traffic-orders-stale --state open \
+                   --json number --jq '.[].number' 2>/dev/null || true)
+          if [ "$STALE" != "false" ]; then
+            echo "::warning::The D-TRO extract is cut ${CUT:-unknown}, ${AGE:-unknown} days old (over ${LIMIT:-7}). Publishing it anyway."
+            TITLE="Traffic orders: the D-TRO extract is ${AGE:-unknown} days old"
+            BODY="The national D-TRO extract this job publishes is cut ${CUT:-unknown}, ${AGE:-unknown} days before this run ($RUN_URL). Over ${LIMIT:-7} days means the service has stopped re-cutting it.
+
+          Every run is still green: the build is reproducible, so an unchanged extract makes an identical pack and nothing is published. Riders are shown the cut's age on their phones, and orders made since then are not on their maps.
+
+          - Check what /dtros/all is serving, and ask d-tro@dft.gov.uk whether the extract is paused.
+          - tools/dtro_events.py fetches the live /events deltas, which would move the pack between extract cuts.
+
+          This issue is updated by every run while the extract stays old, and closed by the first run that sees a fresh one."
+            FIRST=$(printf '%s\n' "$OPEN" | head -n 1)
+            if [ -n "$FIRST" ]; then
+              gh issue edit "$FIRST" --title "$TITLE" --body "$BODY" || true
+            else
+              gh label create traffic-orders-stale --color FBCA04 \
+                --description "The D-TRO extract has stopped moving" 2>/dev/null || true
+              gh issue create --label traffic-orders-stale \
+                --title "$TITLE" --body "$BODY" || true
+            fi
+          else
+            for n in $OPEN; do
+              gh issue close "$n" --comment "The extract moved: cut $CUT, $AGE days old. $RUN_URL" || true
+            done
+          fi
+
+      # AND IF THE ALARM ITSELF BROKE, SAY THAT.
+      #
+      # continue-on-error keeps a broken alarm from stopping a fresh pack
+      # publishing, but on its own it would also hide it: the step goes
+      # orange, the run stays green, and the stale extract it exists to
+      # report is never reported. Same label, so the first run whose alarm
+      # works and sees a fresh cut closes this too.
+      # tools/hunt_data_pipeline_alarms.py holds every continue-on-error
+      # step to this.
+      - name: Say so if the stale-extract alarm could not run
+        if: steps.cutage.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          echo "::warning::The stale-extract alarm failed; nobody can tell how old the published orders are."
+          OPEN=$(gh issue list --label traffic-orders-stale --state open \
+                   --json number --jq '.[0].number' 2>/dev/null || true)
+          if [ -n "$OPEN" ]; then
+            gh issue comment "$OPEN" --body "The stale-extract check itself failed: $RUN_URL" || true
+          else
+            gh label create traffic-orders-stale --color FBCA04 \
+              --description "The D-TRO extract has stopped moving" 2>/dev/null || true
+            gh issue create --label traffic-orders-stale \
+              --title "Traffic orders: the stale-extract check could not run" \
+              --body "$RUN_URL could not measure how old the D-TRO extract is, so a stalled extract would go unreported. See the step 'Say so when the extract has stopped moving' in that run." || true
+          fi
+
       - name: Forget the credentials
         if: always()
         run: rm -f .env /tmp/dataset.key
@@ -203,18 +304,15 @@ jobs:
             echo "publish=true" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Publish the pack
-        if: steps.changed.outputs.publish == 'true'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          # A single moving tag, like the routing mirror. Riders get the file
-          # from a stable URL and the catalogue's hash says which version they
-          # are entitled to expect.
-          gh release view tro >/dev/null 2>&1 || \
-            gh release create tro --notes "Traffic regulation orders, rebuilt through the day."
-          gh release upload tro dist/tro/gb-tro.tbpack --clobber
-
+      # THE CATALOGUE IS BUILT AND VERIFIED BEFORE THE PACK IS UPLOADED.
+      #
+      # It used to come after. The upload replaces the release asset in place
+      # (stable name, --clobber), so a verify_catalogue refusal here then left
+      # NEW bytes served under the OLD committed hash: every rider's order
+      # download failed its checksum until a later run republished, while
+      # the failure issue told the owner riders "keep the last published
+      # pack". Built first, a refusal stops the run with the old asset and
+      # the old index still agreeing. Nothing in this step needs the upload.
       - name: Rebuild the catalogue
         if: steps.changed.outputs.publish == 'true'
         run: |
@@ -240,6 +338,18 @@ jobs:
           # job that builds it.
           bash tools/rebuild_catalogue.sh manifest.json dist/catalogue.json
           python tools/verify_catalogue.py dist/catalogue.json
+
+      - name: Publish the pack
+        if: steps.changed.outputs.publish == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # A single moving tag, like the routing mirror. Riders get the file
+          # from a stable URL and the catalogue's hash says which version they
+          # are entitled to expect.
+          gh release view tro >/dev/null 2>&1 || \
+            gh release create tro --notes "Traffic regulation orders, rebuilt through the day."
+          gh release upload tro dist/tro/gb-tro.tbpack --clobber
 
       # Prove the pack riders will actually download is the one we just built,
       # rather than trusting that the upload went where it was told.
@@ -298,6 +408,17 @@ jobs:
           # main, run the recipe again on top of it, try once more. dist/ is
           # gitignored, so the pack we built survives the reset and nothing is
           # re-fetched.
+          #
+          # BUT tro/index.json IS NOT IN dist/. It is the one tracked file this
+          # job builds, and `git reset --hard` put it back to the OLD hash -
+          # after the release asset had already been replaced with the NEW
+          # bytes. The catalogue was then rebuilt from the old index, nothing
+          # differed from main, `commit_it || exit 0` exited green, and every
+          # rider's order download failed its checksum until a later run
+          # republished. So the built index is kept in dist/ across the reset
+          # and put back before the catalogue is rebuilt from it.
+          # tools/test_tro_push_race_keeps_its_index.py runs this step.
+          cp tro/index.json dist/tro-index.built.json
           for attempt in 1 2 3; do
             if git push; then
               exit 0
@@ -305,6 +426,7 @@ jobs:
             echo "push rejected; rebuilding the record on top of origin/main"
             git fetch origin main
             git reset --hard origin/main
+            cp dist/tro-index.built.json tro/index.json
             bash tools/rebuild_catalogue.sh manifest.json dist/catalogue.json
             python tools/verify_catalogue.py dist/catalogue.json
             commit_it || exit 0

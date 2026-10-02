@@ -1,0 +1,190 @@
+#!/usr/bin/env python3
+"""Ways a scheduled job fails, or half-publishes, and nobody is told.
+
+    python tools/hunt_data_pipeline_alarms.py
+
+Exit 0: none of the defects below is present. Exit 1: at least one is.
+
+Named hunt_*, not test_*, so the lane refresh's tools/test_*.py glob does not
+pick a red proof up and stop lane data publishing. Rename it in the fix.
+
+Read from the workflow files as text, job by job and step by step, because
+the property is about the workflow and nothing else can be asked:
+
+1. EVERY JOB THAT PUBLISHES RINGS AN ALARM WHEN IT FAILS. refresh-data.yml's
+   `conditions` job commits the rain, river and forecast feeds (and the
+   catalogue) four times a day and has no `if: failure()` step at all. It
+   fails on "not one wet gauge reported anywhere", on a push lost three
+   times, on the EA being down - and the feeds then stop moving with nobody
+   told. Worse, the `refresh` job beside it closes every open data-refresh
+   issue when IT succeeds, so the only issue a person might be reading says
+   "Fixed" while the feeds are dead.
+
+2. AN ASSET REPLACED UNDER ITS STABLE NAME IS FOLLOWED BY A COMMIT THAT CAN
+   SURVIVE A RACE. mirror-routing.yml uploads every tile with `--clobber`
+   (names stable: E0_N50.rd5 ...) and then makes ONE bare `git push`. Lost to
+   any other workflow's commit, the tiles riders download are the new bytes
+   and routing/index.json and catalogue.json keep the old sha256 for a week,
+   and the issue it raises tells the owner "nothing was published ... riders
+   are unaffected either way".
+
+3. A DRY RUN DOES NOT STAND A REAL ALARM DOWN. refresh-data.yml's
+   "Stand the alarm down if this worked" is `if: success()`, and under
+   `dry_run` the Publish step is skipped and the job succeeds - so a
+   rehearsal closes "Data refresh failed ... nothing was published" while
+   nothing has still been published.
+
+4. A STEP ALLOWED TO FAIL STILL RINGS. "Build the ride forecast feeds" is
+   `continue-on-error: true` and only prints a ::warning:: - which nobody
+   reads on a green scheduled run. MET Norway refusing us (a 403 for the
+   User-Agent, say) stops every forecast for good: each phone shows "too old
+   to use" after 12 hours, and the owner is never told. The trips step next
+   to it shows the shape that works: an id, and a follow-up step that opens
+   an issue on `steps.trips.outcome == 'failure'`.
+"""
+import os
+import re
+import sys
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+WORKFLOWS = os.environ.get("HUNT_WORKFLOWS") or \
+    os.path.join(ROOT, ".github", "workflows")
+
+
+def jobs_of(path):
+    """{job: [step dict(name, if, run)]} from the workflow text."""
+    lines = open(path, encoding="utf-8").read().split("\n")
+    jobs, job, step, in_jobs = {}, None, None, False
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        bare = line.strip()
+        indent = len(line) - len(line.lstrip())
+        if line.rstrip() == "jobs:":
+            in_jobs = True
+        elif in_jobs and indent == 2 and bare.endswith(":") \
+                and not bare.startswith("#"):
+            job = bare[:-1]
+            jobs[job] = []
+        elif job and bare.startswith("- name:") or \
+                (job and bare.startswith("- uses:")):
+            step = {"name": bare.split(":", 1)[1].strip(), "if": "",
+                    "run": "", "indent": indent, "id": "", "soft": False}
+            jobs[job].append(step)
+        elif step is not None and bare.startswith("if:") \
+                and indent == step["indent"] + 2:
+            step["if"] = bare[3:].strip()
+        elif step is not None and bare.startswith("id:")                 and indent == step["indent"] + 2:
+            step["id"] = bare[3:].strip()
+        elif step is not None and bare == "continue-on-error: true"                 and indent == step["indent"] + 2:
+            step["soft"] = True
+        elif step is not None and bare == "run: |":
+            body = []
+            k = i + 1
+            while k < len(lines):
+                b = lines[k]
+                if b.strip() and len(b) - len(b.lstrip()) <= indent:
+                    break
+                body.append(b)
+                k += 1
+            step["run"] = "\n".join(body)
+            i = k
+            continue
+        elif step is not None and bare.startswith("run:"):
+            step["run"] = bare[4:]
+        i += 1
+    return jobs
+
+
+def main():
+    files = sorted(f for f in os.listdir(WORKFLOWS) if f.endswith(".yml"))
+    all_jobs = {f: jobs_of(os.path.join(WORKFLOWS, f)) for f in files}
+    problems = []
+    publishing = 0
+
+    # 1. A failure alarm in every job that publishes.
+    for f, jobs in all_jobs.items():
+        for job, steps in jobs.items():
+            pushes = any("git push" in s["run"] for s in steps)
+            if not pushes:
+                continue
+            publishing += 1
+            alarm = [s for s in steps if "failure()" in s["if"]
+                     and "gh issue" in s["run"]]
+            print("%-20s %-11s publishes; failure alarm: %s"
+                  % (f, job, "yes" if alarm else "NONE"))
+            if not alarm:
+                problems.append(
+                    "%s job `%s` commits and pushes, and has no `if: "
+                    "failure()` step raising an issue: when it fails, what "
+                    "it publishes stops moving and nobody is told" % (f, job))
+    if publishing < 5:
+        problems.append("PREMISE: found %d publishing jobs; the five "
+                        "workflows have six" % publishing)
+
+    # 2. --clobber, then a push that cannot lose a race and give up.
+    for f, jobs in all_jobs.items():
+        for job, steps in jobs.items():
+            for s in steps:
+                run = s["run"]
+                if not re.search(r"gh release upload[^\n]*--clobber", run):
+                    continue
+                after = run[re.search(r"gh release upload[^\n]*--clobber",
+                                      run).end():]
+                loop = re.search(r"for attempt in", after)
+                bare = [m.start() for m in re.finditer(r"^\s*git push\s*$",
+                                                       after, re.M)]
+                unguarded = [p for p in bare if not loop or p < loop.start()]
+                print("%-20s %-11s %-30s clobbers, then %d bare push(es) "
+                      "outside a retry" % (f, job, s["name"], len(unguarded)))
+                if unguarded:
+                    problems.append(
+                        "%s `%s` replaces release assets under their stable "
+                        "names and then pushes the index once: a push lost "
+                        "to another workflow leaves the served bytes new "
+                        "and the published sha256 old" % (f, s["name"]))
+
+    # 3. A rehearsal does not close a real alarm.
+    refresh = all_jobs.get("refresh-data.yml", {}).get("refresh", [])
+    stand = [s for s in refresh if s["name"].startswith("Stand the alarm")]
+    publish = [s for s in refresh if s["name"] == "Publish"]
+    if not stand or not publish:
+        problems.append("PREMISE: refresh-data.yml refresh job has no "
+                        "stand-down or no Publish step")
+    elif "dry_run" in publish[0]["if"] and "dry_run" not in stand[0]["if"]:
+        problems.append("refresh-data.yml closes the data-refresh alarm on "
+                        "a successful run whose Publish was skipped by "
+                        "dry_run (stand-down `if: %s`)" % stand[0]["if"])
+
+    # 4. A step allowed to fail is still a failure somebody hears about.
+    soft_seen = 0
+    for f, jobs in all_jobs.items():
+        for job, steps in jobs.items():
+            for n, s in enumerate(steps):
+                if not s["soft"]:
+                    continue
+                soft_seen += 1
+                told = s["id"] and any(
+                    "steps.%s.outcome" % s["id"] in later["if"]
+                    and "gh issue" in later["run"] for later in steps[n + 1:])
+                print("%-20s %-11s %-30s continue-on-error; issue on "
+                      "failure: %s" % (f, job, s["name"][:30],
+                                       "yes" if told else "NONE"))
+                if not told:
+                    problems.append(
+                        "%s `%s` may fail without failing the job, and "
+                        "nothing raises an issue when it does: the files it "
+                        "writes age out on every phone and the owner is "
+                        "never told" % (f, s["name"]))
+    if not soft_seen:
+        problems.append("PREMISE: no continue-on-error step found at all")
+
+    for p in problems:
+        print("FAIL  %s" % p)
+    if any(p.startswith("PREMISE") for p in problems):
+        return 3
+    return 1 if problems else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

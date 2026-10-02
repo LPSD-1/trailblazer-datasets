@@ -984,7 +984,13 @@ jobs:
       # real build, or publishing to find out. On the one step in this
       # repository that cannot be undone.
       - name: Publish
+        id: publish
         if: ${{ !inputs.dry_run }}
+        env:
+          # The same REPO_URL "Build the catalogue" exported, because a retry
+          # below rebuilds the catalogue and the routing-mirror URLs are made
+          # from it. rebuild_catalogue.sh's default differs in case.
+          REPO_URL: ${{ github.server_url }}/${{ github.repository }}
         run: |
           # Scaffolding for check_build, never published beside the packs.
           rm -f dist/packages/*.sha256
@@ -1073,13 +1079,44 @@ jobs:
           # loses it. One did.
           #
           # So: re-anchor rather than merge. Take the new remote tip, keep OUR
-          # generated files whole, stage nothing else. That is ours-wins for
-          # exactly the paths the recipe rebuilds - which is sound BECAUSE
-          # they are rebuilt whole - while a commit to any other path survives
-          # untouched. `git reset` (mixed) moves HEAD and the index to the new
-          # tip and leaves the working tree alone, so re-adding only the
-          # generated paths stages our output against it and nothing else.
+          # generated files whole, stage nothing else. `git reset` (mixed)
+          # moves HEAD and the index to the new tip and leaves the working
+          # tree alone, so re-adding only the generated paths stages our
+          # output against it and nothing else.
+          #
+          # BUT catalogue.json IS NOT OURS TO KEEP WHOLE. Ours-wins is sound
+          # for a file this job alone makes from inputs this job alone owns -
+          # the packs, the containers, the changes, the lane manifest, the
+          # trips. The catalogue is made from those AND from every other
+          # workflow's index: tro/index.json, satellite/, height/, routing/,
+          # names/, published/. Keeping the copy built before the race keeps
+          # the other side's index as it was BEFORE it published. Measured
+          # (tools/hunt_data_pipeline_publish_races.py, scenario C): a
+          # traffic-orders run lands a new pack, index and catalogue while
+          # this one builds; the retry commits our catalogue over it; main
+          # then says NEW in tro/index.json and the release asset, OLD in
+          # catalogue.json, and every rider's order download fails its
+          # checksum until something rebuilds the catalogue.
+          #
+          # So the catalogue gets the recipe, not the merge - the rule the
+          # satellite, height and traffic-orders retries already follow:
+          # everything this job does not own is taken from the new tip
+          # exactly (a path deleted there is deleted here), and the catalogue
+          # is rebuilt from that plus our own output, and checked, before it
+          # is staged. Not a list of other jobs' indexes: a list goes stale
+          # the day a new kind is published, and that is how imagery, the
+          # trips and the routing mirror were each deleted once.
           GENERATED="packages containers changes manifest.json catalogue.json trips/gb.tbtrips"
+          OURS=""
+          for path in ${GENERATED}; do OURS="${OURS} :(exclude)${path}"; done
+          rebuild_on_the_new_tip() {
+            git checkout -- . ${OURS} || return 1
+            git clean -fdq -- . ${OURS} || return 1
+            bash tools/rebuild_catalogue.sh manifest.json dist/catalogue.json || return 1
+            python tools/verify_catalogue.py dist/catalogue.json || return 1
+            python tools/validate_catalogue.py dist/catalogue.json || return 1
+            mv dist/catalogue.json catalogue.json
+          }
           for attempt in 1 2 3; do
             if git push; then
               echo "published on attempt ${attempt}"
@@ -1088,6 +1125,7 @@ jobs:
             echo "push rejected; re-anchoring on the new tip (attempt ${attempt})"
             git fetch origin main || exit 1
             git reset origin/main || exit 1
+            rebuild_on_the_new_tip || exit 1
             git add -A ${GENERATED} || exit 1
             # Nothing left to say once someone else published the same bytes.
             if git diff --cached --quiet; then
@@ -1146,8 +1184,14 @@ jobs:
       # several times since its issue was raised - and an alarm that never
       # resets is one people learn to scroll past, which is the failure the
       # alarm exists to prevent.
+      #
+      # NOT ON A DRY RUN. Under `dry_run` Publish is skipped and the job
+      # succeeds, so `success()` alone let a rehearsal close "Data refresh
+      # failed ... nothing was published" while nothing had still been
+      # published - and the rehearsal never touched the push it failed on.
+      # Gated on the Publish step having actually run and succeeded.
       - name: Stand the alarm down if this worked
-        if: success()
+        if: ${{ success() && !inputs.dry_run && steps.publish.outcome == 'success' }}
         env:
           GH_TOKEN: ${{ github.token }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
@@ -1363,17 +1407,49 @@ jobs:
         # Publish step below, so this step gets 12 of them and no more. A
         # cut-off run keeps the regions it finished (each file is written
         # whole) and the rest age out in the app.
+        #
+        # A WARNING TO THE JOB, NOT TO THE OWNER. This step used to swallow its
+        # own failure (an if/else that echoed ::warning:: and exited 0), so its
+        # outcome was always 'success' and nothing could ever act on it - and
+        # a ::warning:: on a green scheduled run is read by nobody. MET
+        # refusing us for good (a 403 on the User-Agent, say) would have aged
+        # every phone's forecast to "too old to use" for ever, unannounced.
+        # Now the builder's exit status is the step's, continue-on-error keeps
+        # it from sinking the gauges, and the step below opens an issue on it.
+        id: forecast
         timeout-minutes: 12
         continue-on-error: true
         run: |
           set -uo pipefail
-          if python tools/build_forecast.py build \
-              --out published/forecast --cache cache/forecast; then
-            echo "forecast feeds built"
-          else
-            echo "::warning::the MET Norway forecast did not build for every region; the last published files stay and age out in the app"
-          fi
+          status=0
+          python tools/build_forecast.py build \
+            --out published/forecast --cache cache/forecast || status=$?
           ls -l published/forecast 2>/dev/null || true
+          if [ "$status" -ne 0 ]; then
+            echo "::warning::the MET Norway forecast did not build for every region; the last published files stay and age out in the app"
+            exit "$status"
+          fi
+          echo "forecast feeds built"
+
+      # The trips step's shape: deduplicated, one open issue at a time, and
+      # stood down by the conditions job's own stand-down once it builds again.
+      - name: Say so if the forecast could not be built
+        if: steps.forecast.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          EXISTING=$(gh issue list --label forecast --state open \
+                       --json number --jq '.[0].number' 2>/dev/null || true)
+          if [ -n "$EXISTING" ]; then
+            gh issue comment "$EXISTING" --body "Failed again: $RUN_URL"
+          else
+            gh label create forecast --color D93F0B \
+              --description "The MET Norway ride forecast is not building" 2>/dev/null || true
+            gh issue create --label forecast \
+              --title "The ride forecast is not building" \
+              --body "tools/build_forecast.py failed (or ran out of its 12 minutes), so published/forecast was left as last published. Rain and river feeds were not held back by it. Every phone shows the forecast as too old to use once those files pass 12 hours. Log: $RUN_URL"
+          fi
 
       - name: Keep the forecast cache for the next run
         if: ${{ always() && hashFiles('cache/forecast/**') != '' }}
@@ -1452,19 +1528,25 @@ jobs:
       # a flag some other job forgets, which is how imagery, the trips pack and
       # the routing mirror were each deleted by a build that succeeded.
       - name: Publish
+        id: publish
         if: ${{ !inputs.dry_run }}
         env:
           REPO_URL: ${{ github.server_url }}/${{ github.repository }}
         run: |
           set -euo pipefail
-          bash tools/rebuild_catalogue.sh manifest.json dist/catalogue.json
-          python tools/verify_catalogue.py dist/catalogue.json
-          python tools/validate_catalogue.py dist/catalogue.json
+          # A FUNCTION because it runs twice: here, and again on the tip a
+          # lost push race leaves us on (the retry at the bottom). Every line
+          # says `|| return 1` because `set -e` is off inside a function that
+          # is called as `f || exit 1`.
+          rebuild_and_prove_the_catalogue() {
+          bash tools/rebuild_catalogue.sh manifest.json dist/catalogue.json || return 1
+          python tools/verify_catalogue.py dist/catalogue.json || return 1
+          python tools/validate_catalogue.py dist/catalogue.json || return 1
 
           # And prove the feeds reached it, rather than trusting the rebuild.
           # A catalogue whose conditions block is empty is exactly what this
           # whole job exists to stop, and it is a build that "succeeded".
-          python - <<'PY'
+          python - <<'PY' || return 1
           import hashlib, json, os, sys
           import urllib.parse
 
@@ -1498,6 +1580,8 @@ jobs:
           print("%d condition feeds listed, and every hash matches the file"
                 % len(feeds))
           PY
+          }
+          rebuild_and_prove_the_catalogue || exit 1
 
           mv dist/catalogue.json catalogue.json
           git config user.name  'Trail Blazer data bot'
@@ -1514,7 +1598,23 @@ jobs:
           # The same re-anchor the refresh job uses, for the same reason: a
           # generated file does not merge, it has a recipe. catalogue.json is
           # rebuilt whole by both sides, so a rebase conflicts by construction.
+          #
+          # And the same correction, for the same reason: the feeds are ours,
+          # the catalogue is not. It is made from them AND from the lane
+          # manifest, the containers, the trips and every other workflow's
+          # index - none of which this job owns. Kept whole across a race, it
+          # reverts whatever landed meanwhile: measured
+          # (tools/hunt_data_pipeline_publish_races.py, scenario B), a
+          # traffic-orders publish is undone in catalogue.json and left in
+          # tro/index.json and the release asset, and riders' order downloads
+          # fail their checksum until the next conditions run, ~6 hours on -
+          # traffic-orders does not repair it, because its own index has not
+          # changed. So on a lost race everything that is not ours comes from
+          # the new tip exactly, and the catalogue is rebuilt and proved again
+          # by the same recipe as above before it is staged.
           GENERATED="published catalogue.json"
+          OURS=""
+          for path in ${GENERATED}; do OURS="${OURS} :(exclude)${path}"; done
           for attempt in 1 2 3; do
             if git push; then
               echo "published on attempt ${attempt}"
@@ -1523,6 +1623,10 @@ jobs:
             echo "push rejected; re-anchoring on the new tip (attempt ${attempt})"
             git fetch origin main || exit 1
             git reset origin/main || exit 1
+            git checkout -- . ${OURS} || exit 1
+            git clean -fdq -- . ${OURS} || exit 1
+            rebuild_and_prove_the_catalogue || exit 1
+            mv dist/catalogue.json catalogue.json
             git add -A ${GENERATED} || exit 1
             if git diff --cached --quiet; then
               echo "the remote already has these feeds; nothing to publish"
@@ -1535,3 +1639,52 @@ jobs:
           done
           echo "could not publish after 3 attempts; the next run carries it"
           exit 1
+
+      # THIS JOB HAD NO ALARM, and the one beside it closed the only one open.
+      #
+      # It commits the rain, river and forecast feeds and the catalogue four
+      # times a day, and it fails on things nobody else notices: not one
+      # gauge reporting anywhere, a catalogue with no feeds in it, a push lost
+      # three times, the EA being down. Without this step the feeds simply
+      # stopped moving; riders were told (the app calls them more than 6 hours
+      # old) and the owner never was - while the lane job's stand-down closed
+      # every open `data-refresh` issue on its own success, so the alarm a
+      # person might have been watching read "Fixed".
+      #
+      # Its own label, so neither job's stand-down can close the other's.
+      - name: Raise an issue if the feeds failed
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          TITLE="Rain and river feeds failed on $(date -u +%Y-%m-%d)"
+          BODY="The conditions job did not publish, so the rain, river and forecast feeds (and the catalogue hashes for them) are as last published. Phones show them as more than 6 hours old once they are. Log: $RUN_URL"
+          EXISTING=$(gh issue list --label conditions --state open \
+                       --json number --jq '.[0].number' 2>/dev/null || true)
+          if [ -n "$EXISTING" ]; then
+            gh issue comment "$EXISTING" --body "Failed again: $RUN_URL"
+          else
+            gh label create conditions --color B60205 \
+              --description "The rain, river and forecast feeds are not publishing" 2>/dev/null || true
+            gh issue create --title "$TITLE" --body "$BODY" --label conditions
+          fi
+
+      # And stand it down - only when the feeds were actually published, not
+      # on a dry run whose Publish was skipped. The forecast issue goes too,
+      # but only on a run where the forecast itself built.
+      - name: Stand the feeds alarm down if this worked
+        if: ${{ success() && !inputs.dry_run && steps.publish.outcome == 'success' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          FORECAST: ${{ steps.forecast.outcome }}
+        run: |
+          LABELS="conditions"
+          if [ "$FORECAST" = "success" ]; then LABELS="conditions forecast"; fi
+          for label in $LABELS; do
+            for n in $(gh issue list --label "$label" --state open \
+                         --json number --jq '.[].number' 2>/dev/null || true); do
+              gh issue close "$n" --comment "Fixed: $RUN_URL succeeded." || true
+            done
+          done

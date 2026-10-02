@@ -157,22 +157,34 @@ jobs:
               print("%s OK (%.0f MB, lookup v%d)" % (name, size / 1e6, version))
           PY
 
+      # THE ORDER IS THE POINT.
+      #
+      # The tiles go up under STABLE names (E0_N50.rd5 ...) with --clobber, so
+      # the moment one is uploaded every rider downloading it gets the new
+      # bytes - and the sha256 they check it against is whatever
+      # routing/index.json and catalogue.json on main say. Between the upload
+      # and the push those two disagree, and if the push is lost they go on
+      # disagreeing for a week: every routing-tile download fails its checksum
+      # on every phone.
+      #
+      # So everything that can refuse is done BEFORE the first upload: the
+      # catalogue is built, reported, verified and committed locally. After the
+      # upload the only thing left to go wrong is the push, and the push is
+      # retried by re-running the recipe on top of whatever landed meanwhile,
+      # as height.yml does. The conditions job pushes after the 03:23 lane
+      # refresh, and this run is up to three hours long from 04:23: losing
+      # that race is ordinary, not rare.
       - name: Publish
         if: steps.mirror.outputs.did == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO_URL: ${{ github.server_url }}/${{ github.repository }}
         run: |
-          gh release view routing >/dev/null 2>&1 || \
-            gh release create routing \
-              --title "Routing tiles" \
-              --notes "BRouter segment tiles, mirrored so riders download from us rather than from brouter.de. Data © OpenStreetMap contributors (ODbL); tiles built by the BRouter project." \
-              --latest=false
-
-          for tile in dist/routing/*.rd5; do
-            gh release upload routing "$tile" --clobber
-          done
-
-          REPO_URL="${{ github.server_url }}/${{ github.repository }}"
+          WORK="${RUNNER_TEMP:-/tmp}"
+          # What THIS run recorded for the tiles it fetched. A reset onto
+          # origin/main throws the working tree's index away; this is what is
+          # put back on top of main's, entry by entry.
+          cp routing/index.json "$WORK/routing-index.ours.json"
           export REPO_URL
           bash tools/rebuild_catalogue.sh manifest.json dist/catalogue.json
 
@@ -225,18 +237,88 @@ jobs:
             echo "Nothing changed."
             exit 0
           fi
-          MIRRORED=$(python -c "import json;print(len(json.load(open('routing/index.json'))['tiles']))")
-          git commit -m "Mirror routing: ${MIRRORED} tiles now served by us" \
-                     -m "Riders no longer pull these from brouter.de."
+          commit_it() {
+            MIRRORED=$(python -c "import json;print(len(json.load(open('routing/index.json'))['tiles']))")
+            git commit -m "Mirror routing: ${MIRRORED} tiles now served by us" \
+                       -m "Riders no longer pull these from brouter.de."
+          }
+          commit_it
+
+          # Only now, with the commit that names them ready to go, are the
+          # served bytes replaced. The marker tells the failure alarm below
+          # that riders ARE affected if this step stops from here on.
+          gh release view routing >/dev/null 2>&1 || \
+            gh release create routing \
+              --title "Routing tiles" \
+              --notes "BRouter segment tiles, mirrored so riders download from us rather than from brouter.de. Data © OpenStreetMap contributors (ODbL); tiles built by the BRouter project." \
+              --latest=false
+          touch "$WORK/routing-uploaded"
+          for tile in dist/routing/*.rd5; do
+            gh release upload routing "$tile" --clobber
+          done
+
+          # Re-recording, after a reset: main's routing/index.json, with the
+          # entry for every tile THIS run uploaded taken from ours - and its
+          # bytes and sha256 measured again from the file in dist/, which is
+          # the file that was uploaded. Merged, not copied whole, so a tile
+          # the satellite job's prune withdrew meanwhile stays withdrawn.
+          cat > "$WORK/rerecord-routing.py" <<'PY'
+          import glob, hashlib, json, os, sys
+          ours = json.load(open(sys.argv[1], encoding="utf-8"))["tiles"]
+          index = {"tiles": {}}
+          if os.path.exists("routing/index.json"):
+              index = json.load(open("routing/index.json", encoding="utf-8"))
+          held = index.setdefault("tiles", {})
+          tiles = sorted(glob.glob("dist/routing/*.rd5"))
+          if not tiles:
+              sys.exit("no tiles in dist/routing to re-record")
+          for path in tiles:
+              name = os.path.basename(path)[:-len(".rd5")]
+              digest = hashlib.sha256()
+              with open(path, "rb") as f:
+                  for chunk in iter(lambda: f.read(1 << 20), b""):
+                      digest.update(chunk)
+              entry = dict(ours[name])
+              entry["bytes"] = os.path.getsize(path)
+              entry["sha256"] = digest.hexdigest()
+              if entry["sha256"] != ours[name]["sha256"]:
+                  sys.exit("%s in dist is not the tile this run recorded" % name)
+              held[name] = entry
+              print("re-recorded %s %s" % (name, entry["sha256"][:16]))
+          with open("routing/index.json", "w", encoding="utf-8", newline="\n") as f:
+              json.dump(index, f, indent=2, sort_keys=True)
+              f.write("\n")
+          PY
+
           # NO REBASE. A generated file does not merge, it has a recipe:
           # catalogue.json is rebuilt whole by both sides, so rebasing it
-          # conflicts every time by construction, stops mid-way, and the retry
-          # then runs `git pull` into an unresolved conflict. That is how the
-          # satellite job turned a recoverable push race into a detached HEAD.
-          #
-          # This job re-runs on its own clock and its work is idempotent, so a
-          # rejected push costs one cycle and nothing else. Say so and stop.
-          git push
+          # conflicts every time by construction. Reset onto main and run the
+          # recipe again on top of it instead, up to three times.
+          for attempt in 1 2 3; do
+            if git push; then
+              rm -f "$WORK/routing-uploaded"
+              exit 0
+            fi
+            echo "push rejected; re-recording on top of origin/main (attempt $attempt)"
+            git fetch origin main
+            git reset --hard origin/main
+            python "$WORK/rerecord-routing.py" "$WORK/routing-index.ours.json"
+            bash tools/rebuild_catalogue.sh manifest.json dist/catalogue.json
+            python tools/build_catalogue.py --report dist/catalogue.json \
+              --check-no-vehicle > /tmp/catalogue-report.txt
+            python tools/verify_catalogue.py dist/catalogue.json
+            mv dist/catalogue.json catalogue.json
+            git add -A routing/index.json catalogue.json
+            if git diff --cached --quiet; then
+              # Main already names exactly these bytes.
+              rm -f "$WORK/routing-uploaded"
+              exit 0
+            fi
+            commit_it
+          done
+          echo "could not publish the routing index after three attempts;" \
+               "the tiles on the release are new and the index is not" >&2
+          exit 1
 
       # Anything we publish and no longer should. Nothing else removes
       # anything: an entry is replaced when it is rebuilt, but a withdrawn
@@ -277,10 +359,33 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
-          BODY=$(cat <<EOF
-          Mirroring routing tiles failed, so **nothing was published**. The
-          catalogue still points at whatever it pointed at before — riders are
-          unaffected either way.
+          # Two different failures, and only one of them is harmless. The
+          # Publish step leaves this marker from its first upload until its
+          # index is on main.
+          if [ -e "${RUNNER_TEMP:-/tmp}/routing-uploaded" ]; then
+            TITLE="Routing mirror half-published on $(date -u +%Y-%m-%d): tile checksums are wrong"
+            BODY=$(cat <<EOF
+          **Riders are affected now.** This run replaced routing tiles on the
+          \`routing\` release (stable names, --clobber) but could not push the
+          routing/index.json and catalogue.json that name their new sha256.
+          Until it does, every rider who downloads one of those tiles gets
+          bytes the catalogue's checksum refuses, and offline routing for that
+          area will not download.
+
+          Log: $RUN_URL
+
+          Fix: run this workflow again by hand (Actions > Mirror routing tiles
+          > Run workflow). main still records the old tiles, so the same tiles
+          are due again; it fetches, uploads and publishes the index. Left
+          alone, the next scheduled run on Tuesday does the same.
+          EOF
+          )
+          else
+            TITLE="Routing mirror failed on $(date -u +%Y-%m-%d)"
+            BODY=$(cat <<EOF
+          Mirroring routing tiles failed before any tile was uploaded, so
+          **nothing was published**. The release and the catalogue still
+          agree with each other, as they did before this run.
 
           Log: $RUN_URL
 
@@ -289,14 +394,19 @@ jobs:
           verify.
           EOF
           )
+          fi
           EXISTING=$(gh issue list --label mirror --state open \
                        --json number --jq '.[0].number' 2>/dev/null || true)
           if [ -n "$EXISTING" ]; then
-            gh issue comment "$EXISTING" --body "Failed again: $RUN_URL"
+            # The whole body, not "failed again": a half-publish under an
+            # issue opened for a harmless failure must not read as harmless.
+            gh issue comment "$EXISTING" --body "$TITLE
+
+          $BODY"
           else
             gh label create mirror --color 0E8A16 \
               --description "Mirroring third-party data" 2>/dev/null || true
-            gh issue create --title "Routing mirror failed on $(date -u +%Y-%m-%d)" \
+            gh issue create --title "$TITLE" \
               --body "$BODY" --label mirror
           fi
 

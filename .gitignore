@@ -51,3 +51,6 @@ secrets/
 # usage - so a human running a local build would otherwise have it turn up
 # untracked, full of large files, waiting to be committed by accident.
 staging/
+
+# GeoPlace SWA list: fetched by traffic-orders.yml at run time, never committed
+tools/geoplace_swa_org_active_*.csv

@@ -55,6 +55,10 @@ publish - and a rider then rides into this morning's closure because the lane
 fetch was short. --orders-only runs the closure count, the council table and
 the council coverage and nothing else, and it refuses a run that wrote no
 traffic-order index, because writing one is all that job does.
+
+It also prints how old the extract is, and --orders-cut-age INDEX prints that
+as key=value lines for traffic-orders.yml's stale-extract alarm. An old
+extract WARNS and never refuses; see MAX_ORDER_CUT_AGE_DAYS.
 """
 import argparse
 import csv
@@ -121,6 +125,18 @@ BOUNDS_SLACK = 0.5
 # sign of a changed extract - duplicated rows, an expiry filter that stopped
 # filtering - as one that collapses, and nothing anywhere was watching for it.
 MAX_CLOSURE_FACTOR = 3.0
+
+# How many days old the D-TRO national extract may be before the owner is told.
+#
+# NOT A REFUSAL. A stale extract is still the newest picture there is, and
+# refusing it would publish nothing better - it would only turn the job red
+# for something the DfT service did, not this repository. But it must not be
+# silent either: from 6 September to 2 October 2026 the service kept serving
+# one cut, every run four times a day was green, and the only person who could
+# see it was a rider reading "orders are 26 days old" on a phone. A week is
+# longer than the service's normal re-cut and far shorter than that.
+# traffic-orders.yml reads this through --orders-cut-age and raises an issue.
+MAX_ORDER_CUT_AGE_DAYS = 7
 
 # WIRING, for whoever owns .github/workflows/traffic-orders.yml. build_tro.py
 # writes its index straight over the committed one (build_tro.py:298), so the
@@ -479,6 +495,42 @@ def check_council_coverage(new_index, problems):
                 "the traffic-order pack carries %d live orders and counts no "
                 "council publishing; every rider would be told their council "
                 "does not publish." % features)
+
+
+def order_cut_age(index, today):
+    """Days between a traffic-order index's extract cut and `today`.
+
+    None when the index names no readable cut date at all. Read from the
+    index's own `generated`, which build_tro.py stamps with the EXTRACT's
+    date rather than the build's - so it is the age of what riders are told,
+    however many times a day the job ran over it.
+    """
+    if not isinstance(index, dict):
+        return None
+    cut = index.get("generated")
+    if not isinstance(cut, str):
+        return None
+    try:
+        day = datetime.date.fromisoformat(cut[:10])
+    except ValueError:
+        return None
+    return (today - day).days
+
+
+def report_order_cut_age(index, today, limit=MAX_ORDER_CUT_AGE_DAYS):
+    """The key=value lines traffic-orders.yml reads, and whether it is stale.
+
+    `stale=true` when the cut is more than `limit` days old OR unreadable: an
+    index with no date cannot show the owner it is fresh.
+    """
+    age = order_cut_age(index, today)
+    cut = (index or {}).get("generated") if isinstance(index, dict) else None
+    stale = age is None or age > limit
+    lines = ["cut=%s" % (cut if isinstance(cut, str) else "unknown"),
+             "age=%s" % ("unknown" if age is None else age),
+             "limit=%d" % limit,
+             "stale=%s" % ("true" if stale else "false")]
+    return lines, stale
 
 
 # --------------------------------------------------------------- baseline
@@ -940,7 +992,17 @@ def main():
                     help="gate a traffic-order build alone: the closure "
                          "count and the council checks, never the lane "
                          "cache or the lane manifest")
+    ap.add_argument("--orders-cut-age", metavar="INDEX", default="",
+                    help="print the traffic-order extract's cut, its age in "
+                         "days and stale=true|false for INDEX, and exit 0; "
+                         "a stale extract warns, it never refuses")
     args = ap.parse_args()
+
+    if args.orders_cut_age:
+        today = datetime.datetime.now(datetime.timezone.utc).date()
+        lines, stale = report_order_cut_age(load(args.orders_cut_age), today)
+        print("\n".join(lines))
+        sys.exit(0)
 
     if args.orders_only:
         if args.rebaseline or args.key:
@@ -1009,6 +1071,19 @@ def check_orders(args):
     else:
         check_closures(load(args.closures_previous), closures_new, problems)
         check_council_coverage(closures_new, problems)
+        age = order_cut_age(
+            closures_new, datetime.datetime.now(datetime.timezone.utc).date())
+        if age is None:
+            print("  cut: the index names no extract date")
+        elif age > MAX_ORDER_CUT_AGE_DAYS:
+            # A warning, never a problem: see MAX_ORDER_CUT_AGE_DAYS.
+            print("  cut: %s, %d days old - STALE (over %d). The D-TRO "
+                  "extract has stopped moving; publishing it anyway, and the "
+                  "workflow raises an issue." % (closures_new.get("generated"),
+                                                 age, MAX_ORDER_CUT_AGE_DAYS))
+        else:
+            print("  cut: %s, %d days old" % (closures_new.get("generated"),
+                                              age))
     check_council_table(args.councils, args.cache, problems)
     return verdict(problems, args.force)
 
