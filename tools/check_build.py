@@ -501,9 +501,11 @@ def order_cut_age(index, today):
     """Days between a traffic-order index's extract cut and `today`.
 
     None when the index names no readable cut date at all. Read from the
-    index's own `generated`, which build_tro.py stamps with the EXTRACT's
-    date rather than the build's - so it is the age of what riders are told,
-    however many times a day the job ran over it.
+    index's own `generated`, which build_tro.py stamps with the day the
+    orders are as of - the extract's cut with the /events feed laid over it,
+    so the newest day the feed was applied through - rather than the build's.
+    It is the age of what riders are told, however many times a day the job
+    ran over it. The extract's own cut is beside it as `cut`.
     """
     if not isinstance(index, dict):
         return None
@@ -1077,10 +1079,11 @@ def check_orders(args):
             print("  cut: the index names no extract date")
         elif age > MAX_ORDER_CUT_AGE_DAYS:
             # A warning, never a problem: see MAX_ORDER_CUT_AGE_DAYS.
-            print("  cut: %s, %d days old - STALE (over %d). The D-TRO "
-                  "extract has stopped moving; publishing it anyway, and the "
-                  "workflow raises an issue." % (closures_new.get("generated"),
-                                                 age, MAX_ORDER_CUT_AGE_DAYS))
+            print("  cut: %s, %d days old - STALE (over %d). Neither the "
+                  "D-TRO extract nor its events feed has moved the orders "
+                  "that far; publishing anyway, and the workflow raises an "
+                  "issue." % (closures_new.get("generated"), age,
+                              MAX_ORDER_CUT_AGE_DAYS))
         else:
             print("  cut: %s, %d days old" % (closures_new.get("generated"),
                                               age))

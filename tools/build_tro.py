@@ -47,7 +47,9 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from build_packages import load_key, pack  # noqa: E402
 from osgb import grid_to_wgs84  # noqa: E402
-from tro import features  # noqa: E402
+from tro import HORIZON_DAYS, features  # noqa: E402
+from tro_merge import is_current, merge  # noqa: E402
+import tro_events  # noqa: E402
 from text_clean import clean_text  # noqa: E402
 
 csv.field_size_limit(2**31 - 1)
@@ -743,13 +745,143 @@ def previous_count(index_path):
     return 0
 
 
+def extract_order_ids(path):
+    """(every order id in the extract, the ones that draw anything, ever).
+
+    The second set includes expired and far-future orders: one outside
+    today's filter can come inside it, so a feed event about any of these is
+    always followed up, even when the event itself describes nothing we carry.
+    The first is what the council count has already counted.
+    """
+    every, carried = set(), set()
+    with open(path, encoding="utf-8-sig", newline="") as handle:
+        for row in csv.DictReader(handle):
+            dtro_id = row.get("Id")
+            if not dtro_id:
+                continue
+            every.add(dtro_id)
+            try:
+                record = json.loads(row["Data"])
+            except (ValueError, KeyError):
+                continue
+            if features(record, keep_expired=True):
+                carried.add(dtro_id)
+    return every, carried
+
+
+def order_contribution(record, dtro_id):
+    """Every feature one fetched order contributes, UNFILTERED.
+
+    The delta keeps them unfiltered for the reason tro_events.py gives: the
+    horizon and expiry are applied on every build, against that build's day.
+    """
+    out = []
+    for feature in features(record, keep_expired=True):
+        built = geojson(feature, dtro_id)
+        if built is not None:
+            out.append(built)
+    return out
+
+
+def overlay(built, orders, day):
+    """The extract's features with the feed's changes laid over them.
+
+    Each changed order REPLACES everything the extract had for it (an empty
+    list removes it), filtered against `day` exactly as the extract was.
+    """
+    if not orders:
+        return built
+    changed = dict(
+        (order, [f for f in feats if is_current(f, day, HORIZON_DAYS)])
+        for order, feats in orders.items())
+    return merge(built, changed)
+
+
+def apply_feed(path, feed, state_path, until, budget_seconds):
+    """Bring the delta for this extract up to `until`.
+
+    Returns (delta, every order id in the extract), or (None, None) when the
+    extract's name carries no moment to read the feed from.
+    """
+    since = tro_events.cut_moment(path)
+    if since is None:
+        print("events  the extract's name carries no cut time; feed not read")
+        return None, None
+    extract = os.path.basename(path)
+    state = tro_events.load_state(state_path, extract)
+    if state is None:
+        print("events  starting from the cut, %s" % since)
+        state = tro_events.fresh_state(extract, since)
+    else:
+        print("events  continuing from %s (%d orders changed since the cut)"
+              % (state["through"], len(state["orders"])))
+    every, carried = extract_order_ids(path)
+
+    def window_done(progress):
+        tro_events.save_state(state_path, progress)
+        print("  through %s, %d orders changed since the cut"
+              % (progress["through"], len(progress["orders"])), flush=True)
+
+    stats = tro_events.catch_up(
+        state, until, feed.fetch, feed.hydrate, order_contribution,
+        carried=carried, budget_seconds=budget_seconds,
+        on_window=window_done)
+    tro_events.save_state(state_path, state)
+    print("events  %d window(s), %d events over %d orders; fetched %d "
+          "(%d gone), already current %d, passed over %d, deleted %d; "
+          "newest event %s"
+          % (stats["windows"], stats["events"], stats["orders"],
+             stats["hydrated"], stats["gone"], stats["already_current"],
+             stats["passed_over"], stats["deleted"],
+             stats["newest"] or "none"))
+    print("events  applied through %s; %d orders changed since the cut"
+          % (state["through"], len(state["orders"])))
+    if stats["failed"]:
+        # A warning, not a refusal: everything applied is still true, and the
+        # date below says how far that is. The stale-orders alarm in the
+        # workflow rings if this keeps happening.
+        print("::warning::The D-TRO events feed stopped this catch-up at "
+              "%s (%s). Publishing the orders as far as they got."
+              % (state["through"], stats["failed"]))
+    if stats["stopped_early"]:
+        # Not a failure: the pack is dated by where this stopped, and the
+        # next run carries on from there.
+        print("events  STOPPED AT THE BUDGET, %s short of %s - the pack is "
+              "dated by how far it got, and the next run continues"
+              % (until - tro_events.parse_stamp(state["through"]),
+                 tro_events.stamp(until)))
+    return state, every
+
+
+def count_feed_orders(tally, delta, extract_ids):
+    """Count, per council, the orders that reached the pack by the feed alone.
+
+    The tally reads the extract, so a council whose first orders were
+    published after the cut would be written into the pack as "does not
+    publish" - beside the very orders it published. Each order the feed
+    brought that the extract never held counts once, by the `tra` its
+    features carry.
+    """
+    added = 0
+    for order, feats in delta["orders"].items():
+        if order in extract_ids or not feats:
+            continue
+        tra = normalise_tra((feats[0].get("properties") or {}).get("tra"))
+        if tra is None:
+            continue
+        tally.records[tra] = tally.records.get(tra, 0) + 1
+        added += 1
+    return added
+
+
 def corpus_date(path):
     """The day the extract was cut, from its own filename.
 
     `/dtros/all` hands back a URL like `dtros_20260906_010013.csv`, and that
-    date - not today's - is what goes in the pack. The pack is then a function
-    of the data alone, so rebuilding an unchanged extract produces identical
-    bytes and riders do not re-download a file that has not changed.
+    date - not today's - is what goes in the pack, moved on only as far as the
+    /events feed has been applied (see main). The pack is then a function of
+    the data alone, so rebuilding unchanged orders produces identical bytes
+    and riders do not re-download a file that has not changed.
     """
     match = re.search(r"(\d{4})(\d{2})(\d{2})", os.path.basename(path))
     if match:
@@ -980,6 +1112,23 @@ def main():
                     "trailblazer-datasets/releases/download/tro/",
                     help="where the sealed pack is hosted")
     ap.add_argument("--today", help="override the expiry date, for testing")
+    ap.add_argument("--no-events", action="store_true",
+                    help="build from the extract alone; the pack keeps the "
+                         "extract's date")
+    ap.add_argument("--events", action="store_true",
+                    help="read the live /events feed even with --csv")
+    ap.add_argument("--events-replay", metavar="JSON",
+                    help="apply a recorded feed instead of the live one "
+                         "(offline and tests); see tro_events.ReplayFeed")
+    ap.add_argument("--events-state", metavar="JSON",
+                    help="where the delta is kept between runs (default "
+                         "OUT/_events/%s)" % tro_events.STATE_NAME)
+    ap.add_argument("--events-minutes", type=float,
+                    default=tro_events.BUDGET_SECONDS / 60.0,
+                    help="how long one run may spend catching up")
+    ap.add_argument("--now", metavar="ISO",
+                    help="the moment to read the feed up to (tests); default "
+                         "a few minutes before now")
     ap.add_argument("--authorities", default=AUTHORITY_TABLE,
                     help="the council table (tools/tro_authorities.csv)")
     ap.add_argument("--allow-shrink", action="store_true",
@@ -1011,6 +1160,36 @@ def main():
         path = download_corpus(os.path.join(args.out, "_corpus"))
 
     cut = corpus_date(path)
+
+    # THE FEED, ON TOP OF THE EXTRACT.
+    #
+    # The extract is only as fresh as DfT's last cut, and DfT can stop
+    # cutting: from 6 September 2026 `/dtros/all` served the same file for
+    # four weeks while /events carried well over a thousand changes a day, and
+    # this build - reading the extract alone - republished the 6 September
+    # picture four times a day. See tools/tro_events.py.
+    #
+    # On by default when the extract was fetched (the publishing job); off for
+    # an offline --csv build unless asked for, so a local build never reaches
+    # for credentials it was not given.
+    use_feed = not args.no_events and bool(
+        args.events_replay or args.events or not args.csv)
+    delta, extract_ids = None, None
+    if use_feed:
+        if args.events_replay:
+            feed = tro_events.ReplayFeed(args.events_replay)
+        else:
+            from dtro_token import load_env  # local import: needs .env
+            feed = tro_events.LiveFeed(load_env())
+        if args.now:
+            until = tro_events.parse_stamp(args.now)
+        else:
+            until = (datetime.datetime.now(datetime.timezone.utc)
+                     - tro_events.SETTLE).replace(microsecond=0)
+        state_path = args.events_state or os.path.join(
+            args.out, "_events", tro_events.STATE_NAME)
+        delta, extract_ids = apply_feed(path, feed, state_path, until,
+                                        args.events_minutes * 60.0)
     # FILTERED AGAINST THE EXTRACT'S OWN DATE, not today's.
     #
     # `corpus_date` promises two lines up that "the pack is then a function of
@@ -1027,7 +1206,16 @@ def main():
     # anything, so a lapsed order is carried and not shown. Deciding that here
     # would mean deciding it once, on a build server, for a file somebody opens
     # a fortnight later.
-    day = args.today or cut
+    #
+    # WITH THE FEED APPLIED, THE DAY IS THE FEED'S: the newest moment whose
+    # events are all in the pack. Still a function of the data and not of the
+    # clock - a run that applies nothing new rebuilds identical bytes within
+    # the day - and it is the date riders are shown, so it has to be the date
+    # of the orders, not of the extract under them.
+    day = cut
+    if delta is not None:
+        day = max(cut, delta["through"][:10])
+    day = args.today or day
     print("corpus  %s (cut %s, filtered against %s)"
           % (os.path.basename(path), cut, day))
 
@@ -1047,6 +1235,13 @@ def main():
     tally = AuthorityTally()
     built, records, skipped = read_corpus(path, day, tally=tally)
     print("records %d, unreadable %d" % (records, skipped))
+    if delta is not None:
+        before = len(built)
+        built = overlay(built, delta["orders"], day)
+        print("feed    %d restrictions from the extract, %d after the feed"
+              % (before, len(built)))
+        print("feed    %d order(s) the extract never held counted to their "
+              "councils" % count_feed_orders(tally, delta, extract_ids))
     print("live restrictions %d" % len(built))
     if not built:
         sys.exit("Nothing to publish. Refusing to write an empty pack: an "
@@ -1120,7 +1315,10 @@ def main():
 
     collection = {
         "type": "FeatureCollection",
-        "generated": cut,
+        # The day these orders are as of: the feed's, when it was applied.
+        "generated": day,
+        # The national extract underneath, which can be weeks older.
+        "cut": cut,
         "package": "tro",
         "label": "Traffic regulation orders - Great Britain",
         "note": "Orders published to the DfT D-TRO service. Not every "
@@ -1175,7 +1373,10 @@ def main():
     # in a small file that IS committed, the way satellite and height already
     # do it, and every job can read it whether or not it built the pack.
     index = {
-        "generated": cut,
+        "generated": day,
+        # The extract's own cut, beside the date riders are shown. Not read by
+        # the app; there so nobody has to guess which of the two moved.
+        "cut": cut,
         "packs": [{
             "id": "gb-tro",
             "kind": "tro",
@@ -1183,7 +1384,7 @@ def main():
             "file": args.base.rstrip("/") + "/" + os.path.basename(out),
             "sha256": digest,
             "bytes": len(sealed),
-            "generated": cut,
+            "generated": day,
             # What the next run's floor check compares against. Not read by
             # the app; the catalogue builder ignores fields it does not know.
             "features": len(built),

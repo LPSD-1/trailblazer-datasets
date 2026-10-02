@@ -115,11 +115,31 @@ jobs:
           key: dtro-corpus-${{ steps.day.outputs.date }}
           restore-keys: dtro-corpus-
 
+      # THE FEED'S DELTA: every order /events has reported since the extract
+      # was cut, as it stands now (tools/tro_events.py). It is what moves the
+      # pack between extract cuts - from 6 September 2026 DfT stopped re-cutting
+      # /dtros/all for four weeks, and a build reading the extract alone
+      # republished the same picture four times a day.
+      #
+      # KEYED PER RUN, unlike the corpus above. actions/cache never re-saves a
+      # key it restored exactly, so a per-day key would keep only the first
+      # run's progress each day; restore-keys picks up the newest delta. It is
+      # small - a few megabytes - so four a day costs nothing the corpus does.
+      # Losing it is not a fault: the build catches up from the extract's cut
+      # again, within its time budget, and dates the pack by how far it got.
+      - name: Restore the order delta
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25  # v5
+        with:
+          path: dist/tro/_events
+          key: dtro-events-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: dtro-events-
+
       - name: Run the tests before trusting the build
         run: |
           python tools/test_osgb.py
           python tools/test_tro.py
           python tools/test_tro_merge.py
+          python tools/test_tro_events_move_the_pack.py
           python tools/test_build_tro.py
           python tools/test_dtro_fetch.py
           # THE COUNCIL TABLE. build_tro.py reads tools/tro_authorities.csv and
@@ -276,14 +296,14 @@ jobs:
           OPEN=$(gh issue list --label traffic-orders-stale --state open \
                    --json number --jq '.[].number' 2>/dev/null || true)
           if [ "$STALE" != "false" ]; then
-            echo "::warning::The D-TRO extract is cut ${CUT:-unknown}, ${AGE:-unknown} days old (over ${LIMIT:-7}). Publishing it anyway."
-            TITLE="Traffic orders: the D-TRO extract is ${AGE:-unknown} days old"
-            BODY="The national D-TRO extract this job publishes is cut ${CUT:-unknown}, ${AGE:-unknown} days before this run ($RUN_URL). Over ${LIMIT:-7} days means the service has stopped re-cutting it.
+            echo "::warning::The traffic orders are as of ${CUT:-unknown}, ${AGE:-unknown} days old (over ${LIMIT:-7}): neither the extract nor the events feed moved them. Publishing anyway."
+            TITLE="Traffic orders: the published orders are ${AGE:-unknown} days old"
+            BODY="The traffic orders this job publishes are dated ${CUT:-unknown}, ${AGE:-unknown} days before this run ($RUN_URL). The build lays the live /events feed over the national extract and dates the pack by how far the feed reached, so over ${LIMIT:-7} days means the feed is not moving the pack either - not just that DfT has stopped re-cutting the extract.
 
-          Every run is still green: the build is reproducible, so an unchanged extract makes an identical pack and nothing is published. Riders are shown the cut's age on their phones, and orders made since then are not on their maps.
+          Every run can still be green: an unchanged picture makes an identical pack and nothing is published. Riders are shown this age on their phones, and orders made since then are not on their maps.
 
-          - Check what /dtros/all is serving, and ask d-tro@dft.gov.uk whether the extract is paused.
-          - tools/dtro_events.py fetches the live /events deltas, which would move the pack between extract cuts.
+          - Read the 'Build the pack' step: its events lines say how far the feed got and whether a run stopped at its time budget.
+          - Check what /dtros/all and /events are serving, and ask d-tro@dft.gov.uk whether either is paused.
 
           This issue is updated by every run while the extract stays old, and closed by the first run that sees a fresh one."
             FIRST=$(printf '%s\n' "$OPEN" | head -n 1)
