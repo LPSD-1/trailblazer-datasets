@@ -105,6 +105,88 @@ def check(label, file, old, new, n):
     return None
 
 
+# A red premise that is NOT an alarm defect: the hunt could not reach a
+# verdict (exit 3, a PREMISE line), or it crashed. Its headline must send the
+# owner to the hunt, not to .github/workflows and not to check 4's soft steps.
+# The stand-down renamed: the real hunt's check 3 can no longer find the step
+# it reads, so it reports PREMISE and exits 3 - a layout fault, not a defect.
+NO_VERDICT_MUTATION = ("refresh-data.yml",
+                       "      - name: Stand the alarm down if this worked",
+                       "      - name: Close the alarm if this worked")
+
+
+def _real_hunt_without_workflows():
+    """The real hunt run over a workflows folder that does not exist: it
+    crashes with a traceback and no FAIL line."""
+    import subprocess
+    import tempfile
+    missing = os.path.join(tempfile.mkdtemp(prefix="hunt_alarms_none_"),
+                           "no-workflows-here")
+    env = dict(os.environ, HUNT_WORKFLOWS=missing)
+    p = subprocess.run([sys.executable, base.HUNT], env=env,
+                       stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                       universal_newlines=True)
+    os.rmdir(os.path.dirname(missing))
+    return p.returncode, p.stdout
+
+
+def not_a_defect_cases():
+    """(label, kind, () -> (rc, out)) - kind is "verdict" or "crash"."""
+    file, old, new = NO_VERDICT_MUTATION
+    rc, out = base.run_hunt(file, old, new)
+    if rc != 3 or "PREMISE" not in out:
+        raise Premise("renaming the stand-down in %s should make the real "
+                      "hunt exit 3 with a PREMISE line; got exit %d:\n%s"
+                      % (file, rc, out))
+    crash = _real_hunt_without_workflows()
+    if crash[0] == 0 or "Traceback" not in crash[1] or \
+            any(l.startswith("FAIL") for l in crash[1].splitlines()):
+        raise Premise("the real hunt over a missing workflows folder should "
+                      "crash with a traceback and no FAIL line; got exit "
+                      "%d:\n%s" % crash)
+    return [
+        ("the real hunt cannot find check 3's step (exit 3)", "verdict",
+         lambda: (rc, out)),
+        ("a bare PREMISE line, exit 3", "verdict",
+         lambda: (3, "PREMISE  could not read the workflow layout\n")),
+        ("a check 4 PREMISE, exit 3", "verdict",
+         lambda: (3, "FAIL  check 4: PREMISE: no continue-on-error step "
+                     "found at all\n")),
+        ("the real hunt crashes (no workflows folder)", "crash",
+         lambda: crash),
+        ("a traceback, exit 1", "crash",
+         lambda: (1, "Traceback (most recent call last):\n  File \"hunt\", "
+                     "line 1\nKeyError: 'refresh'\n")),
+    ]
+
+
+def not_a_defect_wrong(label, kind, run):
+    real = base.run_hunt
+    base.run_hunt = lambda *a, **k: run()
+    try:
+        base.premise()
+        return "%s: the premise passed" % label
+    except base.Premise as e:
+        msg = str(e)
+    finally:
+        base.run_hunt = real
+    head = msg.splitlines()[0] if msg else ""
+    wrong = []
+    if ".github/workflows" in head:
+        wrong.append("sends the owner to .github/workflows")
+    if re.search(r"\bcheck 4\b", head) or "soft step" in head:
+        wrong.append("sends the owner to check 4's soft steps")
+    if HUNT_NAME not in head:
+        wrong.append("does not name %s" % HUNT_NAME)
+    said = {"verdict": "could not reach a verdict", "crash": "crashed"}[kind]
+    if said not in head:
+        wrong.append("does not say the hunt %s" % said)
+    if wrong:
+        return "%s: the headline %s; it said:\n%s" \
+               % (label, ", ".join(wrong), head)
+    return None
+
+
 def wrappers():
     """The tools/test_*.py files that run the hunt: by its path, or through
     the wrapper that does."""
@@ -121,6 +203,18 @@ def wrappers():
     return found
 
 
+STALE_GLOB = re.compile(
+    r"glob\s+(?:"
+    r"(?:does|do|will|can|could|shall)\s*(?:not\b|n['’]t\b)"
+    r"|cannot\b|can['’]t\b|won['’]t\b|never\b"
+    r"|will\s+(?:skip|exclude|ignore|miss|leave|pass\s+over)\b"
+    r"|(?:skips|excludes|ignores|misses|leaves|passes\s+over)\b)"
+    r"|not\s+(?:run|picked\s+up|collected|seen|matched)\s+by\s+"
+    r"(?:the\s+|that\s+)?(?:\S+\s+)?glob"
+    r"|(?:out\s+of|outside)\s+(?:the\s+|that\s+)?(?:\S+\s+)?glob",
+    re.I)
+
+
 def docstring_wrong():
     with open(os.path.join(TOOLS, HUNT_NAME), encoding="utf-8") as f:
         doc = ast.get_docstring(ast.parse(f.read())) or ""
@@ -130,8 +224,13 @@ def docstring_wrong():
                       "follow-up wrappers" % HUNT_NAME)
     flat = " ".join(doc.split())
     wrong = []
-    if re.search(r"glob (does not|leaves it|never) ", flat) \
-            or "Rename it in the fix" in flat:
+    # Every way of saying the glob leaves the hunt alone, in any case and
+    # with either apostrophe: "skips it", "doesn't", "won't", "will not",
+    # "will skip", "cannot", "can't", "ignores", "excludes", "misses",
+    # "passes over", "not run by the glob", "out of the glob". "would not
+    # pick it up" (past tense: the docstring tells the history that way) is
+    # deliberately not matched.
+    if STALE_GLOB.search(flat) or "Rename it in the fix" in flat:
         wrong.append("the docstring still says the tools/test_*.py glob "
                      "leaves the hunt alone")
     unnamed = [w for w in runs if w not in flat]
@@ -148,6 +247,13 @@ def test_premise():
 def test_premise_names_the_red_check():
     base.premise()
     wrong = [w for w in (check(*c) for c in CASES) if w]
+    assert not wrong, "\n".join(wrong)
+
+
+def test_premise_says_no_verdict_or_crash_not_defect():
+    base.premise()
+    wrong = [w for w in (not_a_defect_wrong(*c)
+                         for c in not_a_defect_cases()) if w]
     assert not wrong, "\n".join(wrong)
 
 
@@ -169,6 +275,15 @@ def main():
         except (Premise, base.Premise) as e:
             print("PREMISE  %s" % e)
             return 3
+        print("%-4s %s" % ("FAIL" if wrong else "ok", wrong or c[0]))
+        bad += bool(wrong)
+    try:
+        others = not_a_defect_cases()
+    except Premise as e:
+        print("PREMISE  %s" % e)
+        return 3
+    for c in others:
+        wrong = not_a_defect_wrong(*c)
         print("%-4s %s" % ("FAIL" if wrong else "ok", wrong or c[0]))
         bad += bool(wrong)
     try:
