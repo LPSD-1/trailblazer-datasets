@@ -81,6 +81,14 @@ jobs:
       - name: Check the imagery tiers
         run: python tools/test_build_satellite.py
 
+      # Seconds, and nothing else runs it: it is hunt_*, not test_*, so the
+      # lane refresh's glob leaves it alone (an imagery fault must not stop
+      # lane data). It runs the two alarm steps at the bottom of this file
+      # against a fake issue tracker: a cancelled or timed-out run must raise
+      # one, and a withdrawn area's alarm must not stay open for ever.
+      - name: Check the alarm wiring
+        run: python tools/hunt_data_pipeline_satellite_alarm_lifecycle.py
+
       # Which area, if any. The plan is derived from the catalogue's own
       # areas, so adding a lane region adds an imagery region with no second
       # list to keep in step.
@@ -426,16 +434,35 @@ jobs:
       # checksum. The alarm now carries the area it is about (`Area:` below,
       # "none" when the run stopped before choosing one), and is matched on
       # that line both ways.
+      #
+      # AND IT RINGS ON A CANCELLED RUN, which includes a TIMED-OUT one. This
+      # was `if: failure()`, and a job that reaches timeout-minutes above is
+      # cancelled, not failed - as is one stopped by hand - so `failure()` was
+      # false and nothing was raised. A run that times out inside Publish's
+      # upload is the worst case there is (packs replaced, checksums old) and
+      # it said nothing at all. `cancelled()` costs one issue when somebody
+      # stops a run on purpose, which they can close.
+      # tools/hunt_data_pipeline_satellite_alarm_lifecycle.py holds this.
       - name: Raise an issue if this run failed
-        if: failure()
+        if: failure() || cancelled()
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           AREA_ID: ${{ steps.plan.outputs.id }}
           UPLOADED: ${{ steps.publish.outputs.uploaded }}
           RECORDED: ${{ steps.publish.outputs.recorded }}
+          JOB_STATUS: ${{ job.status }}
         run: |
           KEY="${AREA_ID:-none}"
+          if [ "$JOB_STATUS" = "cancelled" ]; then
+            ENDED="was cancelled - by hand, or by the 350-minute timeout -"
+            HEADLINE="was cancelled or timed out"
+            AGAIN="Cancelled or timed out"
+          else
+            ENDED="failed"
+            HEADLINE="failed"
+            AGAIN="Failed again"
+          fi
           alarms_for() {
             gh issue list --label satellite --state open --limit 200 \
               --json number,body | python -c '
@@ -462,9 +489,10 @@ jobs:
           EOF
           )
           else
-            TITLE="Satellite build failed for $KEY on $(date -u +%Y-%m-%d)"
+            TITLE="Satellite build $HEADLINE for $KEY on $(date -u +%Y-%m-%d)"
             OUTCOME=$(cat <<EOF
-          The imagery build did not complete, so **nothing was published**.
+          The imagery build $ENDED before it finished, so **nothing was
+          published**.
           Riders keep whatever imagery they already have — this is the safe
           outcome, not an outage.
           EOF
@@ -478,10 +506,14 @@ jobs:
 
           Most likely causes, in order:
 
-          - **EOX was slow or refusing.** The staged tiles are cached, so a
-            re-run picks up where this stopped rather than starting again. If
-            it keeps happening, we are asking too much of a free service —
-            talk to them about the offline mosaic.
+          - **EOX was slow or refusing.** If it keeps happening, we are
+            asking too much of a free service — talk to them about the
+            offline mosaic.
+          - **It ran out of time** (cancelled at 350 minutes). The staged
+            tiles are cached only by a run that ends GREEN, so a failed,
+            cancelled or timed-out run's tiles are lost and a re-run fetches
+            this area again; one that keeps timing out needs a smaller
+            budget, not another try.
           - **The archive check objected.** Read what it said; a pack that
             will not open is worse than no pack.
           - **The push lost a race three times.** Another job kept committing
@@ -493,7 +525,7 @@ jobs:
           )
           EXISTING=$(alarms_for "$KEY" 2>/dev/null | head -n 1 || true)
           if [ -n "$EXISTING" ]; then
-            gh issue comment "$EXISTING" --body "Failed again: $RUN_URL
+            gh issue comment "$EXISTING" --body "$AGAIN: $RUN_URL
 
           $OUTCOME"
           else
@@ -517,6 +549,27 @@ jobs:
       # area (Publish's `recorded`), and the "none" alarms - a failure before
       # any area was chosen, or in pruning - close on any green run, because
       # every green run has planned and pruned.
+      #
+      # AN AREA NO RUN WILL EVER RECORD AGAIN. Closing only on "this run
+      # recorded that area" left an alarm open for ever once its area could
+      # not be recorded: the planner picks only areas the catalogue lists
+      # WITH LANES (tools/satellite_plan.py areas_with_lanes, asked directly
+      # below so there is no second definition to drift), and a forced run
+      # still goes through it. So, on every green run:
+      #
+      #   - an area the catalogue no longer lists at all is WITHDRAWN. No
+      #     rider is offered it and pruning removes its packs, so its alarm
+      #     is closed, saying so.
+      #   - an area still listed but no longer planned (it lost its lanes or
+      #     its bounds) still has its packs SERVED, possibly the mismatched
+      #     ones the alarm is about. That stays open - closing it would hide
+      #     an outage - and gets ONE comment saying no run will close it, so
+      #     it is not a twice-daily comment either.
+      #
+      # It does nothing on a catalogue it cannot read or that plans no area,
+      # for the reason pruning refuses one: a broken build looks exactly like
+      # "everything was withdrawn", and that reading would close every alarm.
+      # tools/hunt_data_pipeline_satellite_alarm_lifecycle.py holds all three.
       - name: Stand the alarm down if this worked
         if: success()
         env:
@@ -547,3 +600,50 @@ jobs:
                 --comment "Fixed: $RUN_URL succeeded for \`$key\`." || true
             done
           done
+
+          NOTE="No run will close this on its own"
+          unrecordable() {
+            gh issue list --label satellite --state open --limit 200 \
+              --json number,body,comments | python -c '
+          import json, re, sys
+          sys.path.insert(0, "tools")
+          from satellite_plan import areas_with_lanes
+          note = sys.argv[2]
+          try:
+              with open(sys.argv[1], encoding="utf-8") as f:
+                  catalogue = json.load(f)
+              alarms = json.load(sys.stdin)
+          except (OSError, ValueError) as e:
+              sys.exit("leaving every area alarm alone: %s" % e)
+          listed = {a.get("id") for c in catalogue.get("continents", [])
+                    for k in c.get("countries", []) for a in k.get("areas", [])}
+          planned = {a["id"] for a in areas_with_lanes(catalogue)}
+          if not listed or not planned:
+              sys.exit("the catalogue plans no area; leaving every area alarm alone")
+          for issue in alarms:
+              m = re.search(r"Area: `([^`]+)`", issue.get("body") or "")
+              if not m:
+                  continue
+              key = m.group(1)
+              if key in planned or not key.endswith("-satellite"):
+                  continue
+              area = key[:-len("-satellite")]
+              if area not in listed:
+                  print("withdrawn", issue["number"], key, area)
+                  continue
+              said = [(c.get("body") or "") if isinstance(c, dict) else str(c)
+                      for c in issue.get("comments") or []]
+              if not any(note in s for s in said):
+                  print("unplanned", issue["number"], key, area)
+          ' catalogue.json "$NOTE"
+          }
+          while read -r verb n key area; do
+            case "$verb" in
+              withdrawn)
+                gh issue close "$n" --comment "Withdrawn: \`$area\` is no longer in the catalogue, so no rider is offered its imagery and pruning removes its packs. No run will record \`$key\` again, so nothing is left for this alarm to watch. ($RUN_URL)" || true
+                ;;
+              unplanned)
+                gh issue comment "$n" --body "$NOTE: \`$area\` is still in the catalogue but no longer publishes lanes (or has lost its bounds), so the planner never picks \`$key\` and no run - scheduled or forced from the Actions tab - will record it. Its imagery packs are still published as they are. Give it lanes again, or withdraw the area so pruning removes its packs; this closes itself once either happens. ($RUN_URL)" || true
+                ;;
+            esac
+          done < <(unrecordable || true)

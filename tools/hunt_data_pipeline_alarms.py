@@ -96,6 +96,44 @@ def jobs_of(path):
     return jobs
 
 
+def fires_on_failure(cond, step_id):
+    """Does the `if:` text `cond` run when step `step_id` has FAILED?
+
+    Naming `steps.<id>.outcome` is not enough: `== 'cancelled'`, `==
+    'success'` or `== 'skipped'` mention it and never run on the failure the
+    follow-up exists to report, so the soft step goes orange, the run stays
+    green and nobody is told. Accepted: `outcome == 'failure'` and its
+    equivalent here `outcome != 'success'` (GitHub compares strings ignoring
+    case; string literals in expressions are single-quoted). Refused as well:
+    the comparison negated (`!(steps.x.outcome == 'failure')`), and
+    `steps.<id>.conclusion`, which continue-on-error turns into 'success' on
+    a failed step. tools/test_data_alarms_follow_up_fires_on_failure.py
+    holds this to each of those.
+
+    Also refused: the reference anywhere inside a negated group, however
+    deeply bracketed (`!((...))`, `!(always() && steps.x.outcome ...)`), and
+    an AND with `failure()` or `cancelled()`. continue-on-error keeps the job
+    successful, so `failure() && steps.x.outcome == 'failure'` never runs.
+    """
+    ref = r"steps\.%s\.outcome" % re.escape(step_id)
+    if re.search(r"!\s*" + ref, cond):
+        return False
+    for bang in re.finditer(r"!\s*\(", cond):
+        depth, k = 0, bang.end() - 1
+        while k < len(cond):
+            depth += {"(": 1, ")": -1}.get(cond[k], 0)
+            if depth == 0:
+                break
+            k += 1
+        if re.search(ref, cond[bang.end():k]):
+            return False
+    if re.search(r"\b(failure|cancelled)\(\)\s*&&|&&\s*(failure|cancelled)"
+                 r"\(\)", cond):
+        return False
+    return re.search(ref + r"\s*(==\s*'failure'|!=\s*'success')",
+                     cond, re.I) is not None
+
+
 def main():
     files = sorted(f for f in os.listdir(WORKFLOWS) if f.endswith(".yml"))
     all_jobs = {f: jobs_of(os.path.join(WORKFLOWS, f)) for f in files}
@@ -165,7 +203,7 @@ def main():
                     continue
                 soft_seen += 1
                 told = s["id"] and any(
-                    "steps.%s.outcome" % s["id"] in later["if"]
+                    fires_on_failure(later["if"], s["id"])
                     and "gh issue" in later["run"] for later in steps[n + 1:])
                 print("%-20s %-11s %-30s continue-on-error; issue on "
                       "failure: %s" % (f, job, s["name"][:30],

@@ -83,12 +83,17 @@ def main():
         check("the refetch moved evidence_dates",
               old.get("evidence_dates") != new.get("evidence_dates"))
 
-        # THE CHECK CAN FAIL: a date from the future is seen.
+        # THE CHECK CAN FAIL: a date from the future is seen. FAR future,
+        # not a calendar date: this planted '2026-10-01', five days after a
+        # build of 2026-09-26, and it stopped being "after the build" when
+        # the published container was rebuilt on 2026-10-01 - `after` is cut
+        # from it, so its built_at moved past the plant and the premise went
+        # red with nothing wrong in the generator.
         planted = os.path.join(tmp, "planted.tbmap")
         shutil.copyfile(after, planted)
         db = sqlite3.connect(planted)
         try:
-            db.execute("UPDATE meta SET value = '2026-10-01' "
+            db.execute("UPDATE meta SET value = '2099-01-01' "
                        "WHERE key = 'pois_checked'")
             db.execute("UPDATE fords SET source_date = '2099-01-01'")
             db.commit()

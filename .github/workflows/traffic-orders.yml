@@ -175,6 +175,49 @@ jobs:
       - name: Build the pack
         run: python tools/build_tro.py --key /tmp/dataset.key
 
+      # THE ASSET IS NAMED AFTER ITS OWN HASH, SO A NAME NEVER CHANGES MEANING.
+      #
+      # It used to go up under one stable name, gb-tro.tbpack, with --clobber.
+      # Then anything that stopped the run between the upload and the push -
+      # most often all three push attempts losing to the other workflows that
+      # commit catalogue.json - left the NEW bytes served at the URL the
+      # committed index gives with the OLD hash. The run went red and the alarm
+      # rang, but every phone that fetched orders until the next good run
+      # failed its checksum; the issue's "riders keep the last published pack"
+      # was not true.
+      #
+      # Content-addressed, the new bytes go up under a new name and the
+      # committed index keeps pointing at bytes that still match it, whatever
+      # happens afterwards. The phone stores the pack under its id, never the
+      # URL's name, so nothing on the phone changes. The name is a function of
+      # the hash, so an unchanged pack keeps an unchanged index and "Has
+      # anything changed?" still publishes nothing. build_tro.py writes the
+      # stable build name; this step renames the copy that is uploaded and
+      # rewrites `file` to match. tools/test_tro_push_race_keeps_its_index.py
+      # runs this step with every push rejected.
+      - name: Name the pack after its contents
+        run: |
+          python - <<'PY'
+          import hashlib, json, os, shutil, sys
+          path = "tro/index.json"
+          with open(path, encoding="utf-8") as fh:
+              index = json.load(fh)
+          pack = index["packs"][0]
+          built = os.path.join("dist", "tro", "gb-tro.tbpack")
+          with open(built, "rb") as fh:
+              got = hashlib.sha256(fh.read()).hexdigest()
+          if got != pack["sha256"]:
+              sys.exit("%s is %s but tro/index.json says %s"
+                       % (built, got, pack["sha256"]))
+          name = "gb-tro-%s.tbpack" % got[:16]
+          shutil.copyfile(built, os.path.join("dist", "tro", name))
+          pack["file"] = pack["file"].rsplit("/", 1)[0] + "/" + name
+          with open(path, "w", encoding="utf-8", newline="\n") as fh:
+              json.dump(index, fh, indent=2, sort_keys=True)
+              fh.write("\n")
+          print("the pack goes up as", name)
+          PY
+
       # THE GATE THAT READS WHAT WAS BUILT. check_closures refuses a live
       # closure count that collapsed or tripled since the published index, and
       # check_council_coverage refuses a pack that cannot say which councils
@@ -306,8 +349,9 @@ jobs:
 
       # THE CATALOGUE IS BUILT AND VERIFIED BEFORE THE PACK IS UPLOADED.
       #
-      # It used to come after. The upload replaces the release asset in place
-      # (stable name, --clobber), so a verify_catalogue refusal here then left
+      # It used to come after. The upload then replaced the release asset in
+      # place (stable name, --clobber; see "Name the pack after its contents"
+      # for why it no longer does), so a verify_catalogue refusal here left
       # NEW bytes served under the OLD committed hash: every rider's order
       # download failed its checksum until a later run republished, while
       # the failure issue told the owner riders "keep the last published
@@ -344,12 +388,36 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          # A single moving tag, like the routing mirror. Riders get the file
-          # from a stable URL and the catalogue's hash says which version they
-          # are entitled to expect.
+          # A single moving tag, like the routing mirror, holding one asset
+          # per pack, each named after its hash ("Name the pack after its
+          # contents"). The committed index says which one riders get.
           gh release view tro >/dev/null 2>&1 || \
             gh release create tro --notes "Traffic regulation orders, rebuilt through the day."
-          gh release upload tro dist/tro/gb-tro.tbpack --clobber
+          NAME=$(python -c "import json;print(json.load(open('tro/index.json'))['packs'][0]['file'].rsplit('/',1)[1])")
+          # NEVER --clobber. A name already in the release is these exact
+          # bytes, and may be the one the committed index names: replacing it
+          # deletes it first, and phones fetching in that gap get a 404. A
+          # forced republish, a re-run after a lost push, or orders that went
+          # back to an earlier cut all find it there.
+          HAVE=$(gh release view tro --json assets \
+                   --jq '.assets[] | select(.state == "uploaded") | .name')
+          if printf '%s\n' "$HAVE" | grep -qxF "$NAME"; then
+            echo "$NAME is already published"
+          else
+            # AN UPLOAD THAT DIED PART-WAY leaves the name behind in a state
+            # other than "uploaded". Nothing can download it, but gh refuses
+            # to upload over any name it finds without --clobber, so every
+            # run that built these bytes would fail here until the orders
+            # changed - for weeks, when the extract stalls. Remove it first;
+            # no phone can be fetching it.
+            BROKEN=$(gh release view tro --json assets \
+                       --jq '.assets[] | select(.state != "uploaded") | .name')
+            if printf '%s\n' "$BROKEN" | grep -qxF "$NAME"; then
+              echo "removing a half-uploaded $NAME"
+              gh release delete-asset tro "$NAME" --yes
+            fi
+            gh release upload tro "dist/tro/$NAME"
+          fi
 
       # Prove the pack riders will actually download is the one we just built,
       # rather than trusting that the upload went where it was told.
@@ -434,6 +502,61 @@ jobs:
           done
           echo "::error::could not push after three attempts"
           exit 1
+
+      # ONE ASSET PER PACK WOULD OTHERWISE GROW WITHOUT END.
+      #
+      # Kept: the pack just committed, the one it replaced (a phone that read
+      # the catalogue a minute ago is fetching that now), and anything uploaded
+      # in the last three days - a phone can hold an older catalogue than the
+      # newest and still deserves the bytes it names. Around a dozen packs of
+      # four megabytes. Never touched: gb-tro.tbpack, the asset from before
+      # packs were named after their hash; an old catalogue that names it
+      # names its bytes, and they still match. Runs only after the index is
+      # pushed, so an unpushed run never deletes what main still names. A
+      # failed tidy-up warns and never fails the run: the orders are already
+      # out, and the next run tries again.
+      - name: Clear away packs nothing names any more
+        if: steps.changed.outputs.publish == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          # Written by "Keep the published index to compare against".
+          PREVIOUS_INDEX: /tmp/tro-previous.json
+        run: |
+          if ! gh release view tro --json assets > dist/tro-assets.json; then
+            echo "::warning::could not list the order release; old packs not cleared"
+            exit 0
+          fi
+          OLD=$(python - <<'PY'
+          import datetime, json, os, re, sys
+          def named(path):
+              try:
+                  with open(path, encoding="utf-8") as fh:
+                      return json.load(fh)["packs"][0]["file"].rsplit("/", 1)[1]
+              except (OSError, ValueError, LookupError, AttributeError):
+                  return None
+          now = named("tro/index.json")
+          if not now:
+              sys.exit("cannot tell which pack main names; deleting nothing")
+          keep = {now, named(os.environ.get("PREVIOUS_INDEX", ""))}
+          print("keeping", " ".join(sorted(k for k in keep if k)),
+                file=sys.stderr)
+          cutoff = (datetime.datetime.now(datetime.timezone.utc)
+                    - datetime.timedelta(days=3)).strftime("%Y-%m-%dT%H:%M:%SZ")
+          with open("dist/tro-assets.json", encoding="utf-8") as fh:
+              assets = json.load(fh)["assets"] or []
+          for a in assets:
+              name = a.get("name") or ""
+              made = a.get("createdAt") or ""
+              if (re.fullmatch(r"gb-tro-[0-9a-f]+\.tbpack", name)
+                      and name not in keep and made and made < cutoff):
+                  print(name)
+          PY
+          ) || { echo "::warning::could not work out which packs to clear"; exit 0; }
+          for name in $OLD; do
+            echo "deleting $name"
+            gh release delete-asset tro "$name" --yes \
+              || echo "::warning::could not delete $name from the order release"
+          done
 
       - name: Raise an issue if this failed
         if: failure()

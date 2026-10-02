@@ -46,12 +46,18 @@ HOW IT IS SHOWN.
       push` rejected 0, 1, 3 and 4 times. Up to three lost races it must
       record; when every push is refused it must FAIL, so the alarm rings.
       (Its loop once ended on a commit it never pushed, and went green.)
+      Every one of those runs must say uploaded=true. A run whose record
+      changes nothing ("Nothing changed.", first time or after a lost race)
+      must finish green with recorded=true. A `gh release upload` that fails
+      must fail the step and still leave uploaded=true behind.
   (2) The real "Raise an issue" and "Stand the alarm down" steps are cut out
       and run by bash, with `gh` replaced by a fake issue tracker, through a
-      sequence of runs: Wales dies after uploading; the North succeeds; a run
-      finds nothing due; the North fails; Wales succeeds. The Wales alarm must
-      survive everything until Wales itself is recorded, and the North's
-      failure must not hide inside the Wales alarm.
+      sequence of runs: Wales dies after uploading; Wales dies again; the
+      North succeeds; a run finds nothing due; the North fails; Wales
+      succeeds. The Wales alarm must say checksum (not "nothing was
+      published"), stay ONE alarm through the second failure, and survive
+      everything until Wales itself is recorded; the North's failure must not
+      hide inside the Wales alarm, and must say nothing was published.
 """
 import json
 import os
@@ -225,62 +231,153 @@ def check_retry(bash, problems):
                                 "--clobber upload" % (code, last))
 
 
+def publish(bash, body, lost=0, unchanged_from=None, upload_fails=False):
+    """Run the real Publish step `body` under bash -e with every program
+    stubbed. `git push` is rejected the first `lost` times; `git diff
+    --cached --quiet` says "nothing staged" (0) from its `unchanged_from`th
+    call on (never, when None); `gh release upload` fails when
+    `upload_fails`. Returns (exit, GITHUB_OUTPUT text, pushes, diffs,
+    uploads tried, stdout)."""
+    scratch = tempfile.mkdtemp(prefix="hunt-satellite-push-")
+    try:
+        def path(name):
+            return os.path.join(scratch, name).replace("\\", "/")
+        out, pushes, diffs, uploads = (path("out"), path("pushes"),
+                                       path("diffs"), path("uploads"))
+        open(out, "w").close()
+        prelude = (
+            'export GITHUB_OUTPUT="%(out)s"\n'
+            'bump() { n=$(( $(cat "$1" 2>/dev/null || echo 0) + 1 )); '
+            'echo "$n" > "$1"; echo "$n"; }\n'
+            'gh() {\n'
+            '  if [ "$1" = release ] && [ "$2" = upload ]; then\n'
+            '    bump "%(uploads)s" >/dev/null\n'
+            '    return %(upload_rc)d\n'
+            '  fi\n'
+            '}\n'
+            'ls() { echo dist/satellite/gb-wales-satellite.pmtiles; }\n'
+            'python() { :; }\n'
+            'bash() { :; }\n'
+            'mv() { :; }\n'
+            'sleep() { :; }\n'
+            'git() {\n'
+            '  case "$1" in\n'
+            '    push) n=$(bump "%(pushes)s"); [ "$n" -gt %(lost)d ] ;;\n'
+            '    diff) n=$(bump "%(diffs)s")\n'
+            '      if [ "$n" -ge %(unchanged)d ]; then echo clean > "%(staged)s"\n'
+            '      else echo dirty > "%(staged)s"; return 1; fi ;;\n'
+            # As real git does: committing with nothing staged exits 1, so a
+            # "Nothing changed." branch that forgets its `exit 0` dies here
+            # rather than falling through to a push the stub would accept.
+            '    commit) [ "$(cat "%(staged)s" 2>/dev/null)" != clean ] ;;\n'
+            '    *) : ;;\n'
+            '  esac\n'
+            '}\n' % {"out": out, "pushes": pushes, "diffs": diffs,
+                     "staged": path("staged"),
+                     "uploads": uploads, "lost": lost,
+                     "upload_rc": 1 if upload_fails else 0,
+                     # A call count no run reaches stands for "never".
+                     "unchanged": unchanged_from or 1000000})
+        run = subprocess.run([bash, "--noprofile", "--norc", "-eo",
+                              "pipefail", "-c", prelude + body],
+                             stdout=subprocess.PIPE,
+                             stderr=subprocess.STDOUT,
+                             universal_newlines=True)
+        said = open(out).read()
+
+        def count(p):
+            return int(open(p).read().strip()) if os.path.exists(p) else 0
+        return (run.returncode, said, count(pushes), count(diffs),
+                count(uploads), run.stdout)
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
 def check_push_loop(bash, problems):
     """The real Publish step, every program stubbed, with `git push`
     rejected the first `lost` times. A run that never got its record pushed
-    must fail the step; one that did must say `recorded=true`."""
+    must fail the step; one that did must say `recorded=true`. Every run got
+    as far as the upload, so every run must say `uploaded=true`: that is what
+    turns the alarm from "nothing was published" into "does not match its
+    checksums"."""
     _, script = step("Publish")
     body = evaluate("\n".join(script), {"steps.plan.outputs.id":
                                             "gb-wales-satellite",
                                         "steps.plan.outputs.area":
                                             "gb-wales"})
     for lost in (0, 1, 3, 4):
-        scratch = tempfile.mkdtemp(prefix="hunt-satellite-push-")
-        try:
-            out = os.path.join(scratch, "out").replace("\\", "/")
-            count = os.path.join(scratch, "pushes").replace("\\", "/")
-            open(out, "w").close()
-            prelude = (
-                'export GITHUB_OUTPUT="%s"\n'
-                'gh() { :; }\n'
-                'ls() { echo dist/satellite/gb-wales-satellite.pmtiles; }\n'
-                'python() { :; }\n'
-                'bash() { :; }\n'
-                'mv() { :; }\n'
-                'sleep() { :; }\n'
-                'git() {\n'
-                '  case "$1" in\n'
-                '    push) n=$(( $(cat "%s" 2>/dev/null || echo 0) + 1 ))\n'
-                '          echo "$n" > "%s"; [ "$n" -gt %d ] ;;\n'
-                '    diff) return 1 ;;\n'
-                '    *) : ;;\n'
-                '  esac\n'
-                '}\n' % (out, count, count, lost))
-            run = subprocess.run([bash, "--noprofile", "--norc", "-eo",
-                                  "pipefail", "-c", prelude + body],
-                                 stdout=subprocess.PIPE,
-                                 stderr=subprocess.STDOUT,
-                                 universal_newlines=True)
-            said = open(out).read()
-            pushes = open(count).read().strip() if os.path.exists(count) \
-                else "0"
-        finally:
-            shutil.rmtree(scratch, ignore_errors=True)
+        code, said, pushes, _, uploads, stdout = publish(bash, body, lost)
         recorded = "recorded=true" in said
-        print("  %d push(es) rejected: %s pushes tried, step exits %d, "
-              "recorded=%s" % (lost, pushes, run.returncode, recorded))
-        if pushes == "0":
-            raise Premise("the stubbed Publish step never reached `git "
-                          "push`:\n%s" % run.stdout)
-        if lost <= 3 and (run.returncode != 0 or not recorded):
+        uploaded = "uploaded=true" in said
+        print("  %d push(es) rejected: %d pushes tried, step exits %d, "
+              "uploaded=%s, recorded=%s"
+              % (lost, pushes, code, uploaded, recorded))
+        if pushes == 0 or uploads == 0:
+            raise Premise("the stubbed Publish step never reached `gh "
+                          "release upload` and `git push` (%d upload(s), %d "
+                          "push(es)):\n%s" % (uploads, pushes, stdout))
+        if not uploaded:
+            problems.append("with %d lost push race(s) the Publish step "
+                            "replaced the packs without saying uploaded=true, "
+                            "so its alarm would claim nothing was published"
+                            % lost)
+        if lost <= 3 and (code != 0 or not recorded):
             problems.append("with %d lost push race(s) the Publish step did "
                             "not record (exit %d, recorded=%s)"
-                            % (lost, run.returncode, recorded))
-        if lost > 3 and (run.returncode == 0 or recorded):
+                            % (lost, code, recorded))
+        if lost > 3 and (code == 0 or recorded):
             problems.append("with every push rejected the Publish step "
                             "finished GREEN (exit %d) after replacing the "
                             "packs, so no alarm says their checksums are "
-                            "wrong" % run.returncode)
+                            "wrong" % code)
+
+    # The record is already what main holds: "Nothing changed." That run
+    # must still finish green AND say recorded=true, or the stand-down never
+    # closes this area's alarm. Likewise after a lost race, when the re-record
+    # on top of main finds someone else already recorded it.
+    for lost, unchanged_from, what in (
+            (0, 1, "the first record changes nothing"),
+            (1, 2, "after a lost race, main already holds the record")):
+        code, said, pushes, diffs, _, stdout = publish(
+            bash, body, lost, unchanged_from=unchanged_from)
+        recorded = "recorded=true" in said
+        uploaded = "uploaded=true" in said
+        print("  %s: %d diff(s), %d push(es), step exits %d, uploaded=%s, "
+              "recorded=%s" % (what, diffs, pushes, code, uploaded, recorded))
+        if diffs < unchanged_from:
+            raise Premise("the stubbed Publish step never asked `git diff` "
+                          "%d time(s), so %r was not exercised:\n%s"
+                          % (unchanged_from, what, stdout))
+        if code != 0 or not recorded:
+            problems.append("when %s the Publish step did not finish green "
+                            "with recorded=true (exit %d, recorded=%s), so "
+                            "this area's alarm is never stood down"
+                            % (what, code, recorded))
+        if not uploaded:
+            problems.append("when %s the Publish step did not say "
+                            "uploaded=true after replacing the packs" % what)
+
+    # The upload itself dies part-way: --clobber may already have removed
+    # served packs. The step must fail (so the alarm rings) and must already
+    # have said uploaded=true (so the alarm says riders' downloads fail).
+    code, said, pushes, _, uploads, stdout = publish(bash, body,
+                                                     upload_fails=True)
+    uploaded = "uploaded=true" in said
+    recorded = "recorded=true" in said
+    print("  the upload fails: %d upload(s) tried, step exits %d, "
+          "uploaded=%s, recorded=%s" % (uploads, code, uploaded, recorded))
+    if uploads == 0:
+        raise Premise("the stubbed Publish step never reached `gh release "
+                      "upload`:\n%s" % stdout)
+    if code == 0 or recorded:
+        problems.append("a failed `gh release upload` let the Publish step "
+                        "carry on (exit %d, recorded=%s), so no alarm rings "
+                        "over packs --clobber may have removed"
+                        % (code, recorded))
+    if not uploaded:
+        problems.append("a failed `gh release upload` left no uploaded=true, "
+                        "so the alarm says nothing was published while "
+                        "--clobber may have removed the served packs")
 
 
 # A fake `gh` holding issues in a JSON file: just the subcommands the two
@@ -389,6 +486,16 @@ def check_alarms(bash, problems):
             return [i["number"] for i in issues if i["state"] == "open"
                     and ("`%s`" % area_id) in (i["body"] or "")]
 
+        def flat(text):
+            # Words only: the body is markdown wrapped at whatever width the
+            # workflow is edited to, so "nothing was\npublished" says the
+            # same thing as "nothing was published".
+            return " ".join((text or "").lower().split())
+
+        def words_of(issues, number):
+            issue = [i for i in issues if i["number"] == number][0]
+            return flat("%s %s" % (issue["title"], issue["body"]))
+
         # 1. Wales dies inside Publish, after --clobber replaced its packs.
         issues = run_step(bash, fail, dict(wales, run="1", uploaded="true"),
                           scratch)
@@ -398,6 +505,29 @@ def check_alarms(bash, problems):
             raise Premise("the failure step raised no alarm about "
                           "gb-wales-satellite, so nothing after it means "
                           "anything: %s" % issues)
+        # Its packs were replaced, so it must say downloads fail their
+        # checksums - not reassure that nothing was published.
+        words = words_of(issues, open_about(issues, "gb-wales-satellite")[0])
+        print("    says checksum: %s, says nothing was published: %s"
+              % ("checksum" in words, "nothing was published" in words))
+        if "checksum" not in words or "nothing was published" in words:
+            problems.append("Wales died AFTER replacing its packs, but its "
+                            "alarm does not say they fail their checksums "
+                            "(or says nothing was published): %r" % words)
+        # 1b. Wales fails again, still after uploading: the same alarm hears
+        # about it; a second one would split the history and the close.
+        issues = run_step(bash, fail, dict(wales, run="1b", uploaded="true"),
+                          scratch)
+        about = open_about(issues, "gb-wales-satellite")
+        print("  1b Wales fails again: alarm(s) about Wales %s" % about)
+        if len(about) != 1:
+            problems.append("a second Wales failure left %d open Wales "
+                            "alarms, not exactly one" % len(about))
+        elif not any("/runs/1b" in (c or "") for c in
+                     [i for i in issues if i["number"] == about[0]][0]
+                     ["comments"]):
+            problems.append("a second Wales failure did not comment its run "
+                            "on the open Wales alarm")
         # 2. The North succeeds, and records the North.
         issues = run_step(bash, ok, dict(north, run="2", uploaded="true",
                                          recorded="true"), scratch)
@@ -423,6 +553,21 @@ def check_alarms(bash, problems):
             problems.append("the North's failure raised no alarm of its own "
                             "(it was folded into another area's issue, which "
                             "that area's success will close)")
+        else:
+            # Nothing was uploaded: riders keep what they have, and the alarm
+            # must say so rather than cry checksum.
+            number = open_about(issues, "gb-north-satellite")[0]
+            issue = [i for i in issues if i["number"] == number][0]
+            body = flat(issue["body"])
+            title = flat(issue["title"])
+            print("    says nothing was published: %s, title says checksum: "
+                  "%s" % ("nothing was published" in body,
+                          "checksum" in title))
+            if "nothing was published" not in body or "checksum" in title:
+                problems.append("the North failed BEFORE uploading, but its "
+                                "alarm does not say nothing was published "
+                                "(or is titled as a checksum mismatch): "
+                                "%r / %r" % (issue["title"], issue["body"]))
         # 5. Wales is rebuilt and recorded: its alarm, and only its, closes.
         issues = run_step(bash, ok, dict(wales, run="5", uploaded="true",
                                          recorded="true"), scratch)
