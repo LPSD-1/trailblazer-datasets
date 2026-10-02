@@ -17,9 +17,14 @@ WHAT IS RUN. The real hunt, as a subprocess, against a throwaway copy of the
 real workflow files with ONE `if:` rewritten (HUNT_WORKFLOWS points it there).
 The premise is the unmodified copy: green, with all three soft steps seen
 and each one told - so a mutation going red is the guard, not a harness that
-reds on everything.
+reds on everything. That premise needs ALL FOUR hunt checks green, and this
+file runs from refresh-data.yml's tools/test_*.py loop: when checks 1-3 go
+red on the real workflows, lane publishing stops here, and the PREMISE
+message names the red check and quotes its FAIL line so the owner fixes the
+workflow and not this file.
 """
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -66,13 +71,31 @@ def run_hunt(file=None, old=None, new=None):
 
 
 def premise():
+    """The hunt is green on the unmodified workflows, three soft steps told.
+
+    A red premise stops lane publishing, so its message says WHICH hunt
+    check is red and quotes that FAIL line, or the owner looks in the wrong
+    place (this file, or check 4's soft steps).
+    """
     rc, out = run_hunt()
     told = [l for l in out.splitlines()
             if "continue-on-error; issue on failure: yes" in l]
-    if rc != 0 or len(told) != 3:
-        raise Premise("the unmodified workflows should be green with three "
-                      "soft steps told; got exit %d, %d told:\n%s"
-                      % (rc, len(told), out))
+    if rc == 0 and len(told) == 3:
+        return
+    fails = [l for l in out.splitlines() if l.startswith("FAIL")]
+    if fails:
+        checks = sorted(set(re.findall(r"^FAIL\s+check (\d+):", out, re.M)),
+                        key=int)
+        raise Premise(
+            "tools/hunt_data_pipeline_alarms.py is red on the UNMODIFIED "
+            "workflows at %s (exit %d), before this test changed a line: a "
+            "real alarm defect in .github/workflows, to be fixed there. No "
+            "mutation can be judged until the hunt is green again.\n%s"
+            % (" and ".join("check %s" % c for c in checks)
+               or "a check it did not number", rc, "\n".join(fails)))
+    raise Premise("the unmodified workflows should be green with three "
+                  "soft steps told (hunt check 4); got exit %d, %d told:\n%s"
+                  % (rc, len(told), out))
 
 
 # (label, file, old, new, step the FAIL must name or None for "stays green")

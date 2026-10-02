@@ -4,9 +4,18 @@
     python tools/hunt_data_pipeline_alarms.py
 
 Exit 0: none of the defects below is present. Exit 1: at least one is.
+Exit 3: a check could not reach a verdict (PREMISE). Every FAIL line names
+its check by number ("FAIL  check 2: ...").
 
-Named hunt_*, not test_*, so the lane refresh's tools/test_*.py glob does not
-pick a red proof up and stop lane data publishing. Rename it in the fix.
+Named hunt_* while it was a red proof, so the lane refresh's tools/test_*.py
+glob would not pick it up. It is green now, and that glob DOES run it: it is
+the premise of test_data_alarms_follow_up_fires_on_failure.py,
+test_data_alarms_follow_up_refuses_what_never_runs.py and
+test_data_alarms_premise_names_the_check.py. Those need the whole hunt green
+on the unmodified workflows, so ANY check below going red stops lane data
+publishing at "Run every tool suite". Their PREMISE message names the red
+check and quotes its FAIL line: that is the defect to fix, in
+.github/workflows, not in the wrapper.
 
 Read from the workflow files as text, job by job and step by step, because
 the property is about the workflow and nothing else can be asked:
@@ -152,13 +161,13 @@ def main():
             print("%-20s %-11s publishes; failure alarm: %s"
                   % (f, job, "yes" if alarm else "NONE"))
             if not alarm:
-                problems.append(
+                problems.append((1,
                     "%s job `%s` commits and pushes, and has no `if: "
                     "failure()` step raising an issue: when it fails, what "
-                    "it publishes stops moving and nobody is told" % (f, job))
+                    "it publishes stops moving and nobody is told" % (f, job)))
     if publishing < 5:
-        problems.append("PREMISE: found %d publishing jobs; the five "
-                        "workflows have six" % publishing)
+        problems.append((1, "PREMISE: found %d publishing jobs; the five "
+                         "workflows have six" % publishing))
 
     # 2. --clobber, then a push that cannot lose a race and give up.
     for f, jobs in all_jobs.items():
@@ -176,23 +185,23 @@ def main():
                 print("%-20s %-11s %-30s clobbers, then %d bare push(es) "
                       "outside a retry" % (f, job, s["name"], len(unguarded)))
                 if unguarded:
-                    problems.append(
+                    problems.append((2,
                         "%s `%s` replaces release assets under their stable "
                         "names and then pushes the index once: a push lost "
                         "to another workflow leaves the served bytes new "
-                        "and the published sha256 old" % (f, s["name"]))
+                        "and the published sha256 old" % (f, s["name"])))
 
     # 3. A rehearsal does not close a real alarm.
     refresh = all_jobs.get("refresh-data.yml", {}).get("refresh", [])
     stand = [s for s in refresh if s["name"].startswith("Stand the alarm")]
     publish = [s for s in refresh if s["name"] == "Publish"]
     if not stand or not publish:
-        problems.append("PREMISE: refresh-data.yml refresh job has no "
-                        "stand-down or no Publish step")
+        problems.append((3, "PREMISE: refresh-data.yml refresh job has no "
+                         "stand-down or no Publish step"))
     elif "dry_run" in publish[0]["if"] and "dry_run" not in stand[0]["if"]:
-        problems.append("refresh-data.yml closes the data-refresh alarm on "
-                        "a successful run whose Publish was skipped by "
-                        "dry_run (stand-down `if: %s`)" % stand[0]["if"])
+        problems.append((3, "refresh-data.yml closes the data-refresh alarm "
+                         "on a successful run whose Publish was skipped by "
+                         "dry_run (stand-down `if: %s`)" % stand[0]["if"]))
 
     # 4. A step allowed to fail is still a failure somebody hears about.
     soft_seen = 0
@@ -209,17 +218,18 @@ def main():
                       "failure: %s" % (f, job, s["name"][:30],
                                        "yes" if told else "NONE"))
                 if not told:
-                    problems.append(
+                    problems.append((4,
                         "%s `%s` may fail without failing the job, and "
                         "nothing raises an issue when it does: the files it "
                         "writes age out on every phone and the owner is "
-                        "never told" % (f, s["name"]))
+                        "never told" % (f, s["name"])))
     if not soft_seen:
-        problems.append("PREMISE: no continue-on-error step found at all")
+        problems.append((4, "PREMISE: no continue-on-error step found at "
+                         "all"))
 
-    for p in problems:
-        print("FAIL  %s" % p)
-    if any(p.startswith("PREMISE") for p in problems):
+    for n, p in problems:
+        print("FAIL  check %d: %s" % (n, p))
+    if any(p.startswith("PREMISE") for _, p in problems):
         return 3
     return 1 if problems else 0
 

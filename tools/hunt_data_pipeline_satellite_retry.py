@@ -55,7 +55,8 @@ HOW IT IS SHOWN.
       sequence of runs: Wales dies after uploading; Wales dies again; the
       North succeeds; a run finds nothing due; the North fails; Wales
       succeeds. The Wales alarm must say checksum (not "nothing was
-      published"), stay ONE alarm through the second failure, and survive
+      published"), stay ONE alarm through the second failure - whose
+      comment must carry that run's URL and say checksum again - and survive
       everything until Wales itself is recorded; the North's failure must not
       hide inside the Wales alarm, and must say nothing was published.
 """
@@ -523,11 +524,33 @@ def check_alarms(bash, problems):
         if len(about) != 1:
             problems.append("a second Wales failure left %d open Wales "
                             "alarms, not exactly one" % len(about))
-        elif not any("/runs/1b" in (c or "") for c in
+        else:
+            # The comment is what a watcher is notified with: it must carry
+            # the run AND say again that downloads fail their checksums.
+            # A comment of just "Failed again: <url>" - or one that says
+            # nothing was published - reads as a routine retry note while
+            # the served packs still fail for every rider. A comment has no
+            # title, so the checksum wording is the body's own: "checksum"
+            # or the "OLD sha256" the index still carries. A bare "sha256"
+            # is not enough: "the sha256 was refreshed" mentions the hash
+            # while telling the watcher all is well.
+            again = [c for c in
                      [i for i in issues if i["number"] == about[0]][0]
-                     ["comments"]):
-            problems.append("a second Wales failure did not comment its run "
-                            "on the open Wales alarm")
+                     ["comments"] if "/runs/1b" in (c or "")]
+            said = flat(again[0]) if again else ""
+            checksum = "checksum" in said or "old sha256" in said
+            print("    comment carries the run: %s, says checksum: %s, says "
+                  "nothing was published: %s"
+                  % (bool(again), checksum, "nothing was published" in said))
+            if not again:
+                problems.append("a second Wales failure did not comment its "
+                                "run on the open Wales alarm")
+            elif not checksum or "nothing was published" in said:
+                problems.append("a second Wales failure, again AFTER "
+                                "replacing its packs, commented without "
+                                "repeating that downloads fail their "
+                                "checksums (or said nothing was published): "
+                                "%r" % said)
         # 2. The North succeeds, and records the North.
         issues = run_step(bash, ok, dict(north, run="2", uploaded="true",
                                          recorded="true"), scratch)

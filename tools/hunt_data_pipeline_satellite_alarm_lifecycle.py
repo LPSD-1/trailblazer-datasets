@@ -392,15 +392,28 @@ def check_withdrawn(bash, problems):
 
         # An unreadable, then an empty, catalogue must close nothing.
         for label, cat in (("missing", None), ("unreadable", "{not json"),
-                           ("empty", {"continents": []})):
+                           ("empty", {"continents": []}),
+                           # Areas listed, none with lanes: a lane build
+                           # that lost (or renamed) its lane kind. Not one
+                           # area is planned, so this is the same broken
+                           # build and must close nothing either.
+                           ("lane-less", {"continents": [{"countries": [
+                               {"code": "GB", "label": "GB", "areas": [
+                                   area("gb-wales", lanes=False),
+                                   area("gb-north", lanes=False),
+                                   area("gb-isle", lanes=False)]}]}]})):
             ws.set_catalogue(cat)
             ws.run(STAND_STEP, {"run": "30", "status": "success",
                                 "work": "false"})
             still = [k for k in keys if about(ws.issues(), k, "open")]
-            print("  %s catalogue: open %s" % (label, still))
+            said = sum(len(i["comments"]) for i in ws.issues())
+            print("  %s catalogue: open %s, %d comment" % (label, still, said))
             if len(still) != 3:
                 problems.append("a green run with a %s catalogue closed an "
                                 "area alarm: open now %s" % (label, still))
+            if said:
+                problems.append("a green run with a %s catalogue commented "
+                                "on an area alarm" % label)
         ws.set_catalogue(CATALOGUE)
 
         # Two green runs that found nothing due.
@@ -461,6 +474,14 @@ def main():
         print("BLIND: bash is needed to run the steps as the runner does")
         return 2
     problems = []
+    # Nothing else runs this hunt: satellite.yml must, before it plans, or a
+    # regression in the steps above ships with this file still green.
+    lines = [l.strip() for l in open(WORKFLOW, encoding="utf-8")]
+    me = "run: python tools/%s" % os.path.basename(__file__)
+    if me not in lines or "- name: What is due?" not in lines or \
+            lines.index(me) > lines.index("- name: What is due?"):
+        problems.append("satellite.yml does not run this hunt before it "
+                        "plans (`%s`)" % me)
     try:
         print("cancelled and timed-out runs:")
         check_cancelled(bash, problems)
