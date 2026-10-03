@@ -1,7 +1,7 @@
 {
  "schema": 1,
  "schemaVersion": 1,
- "generated": "2026-10-01T23:16:05Z",
+ "generated": "2026-10-03T05:15:56Z",
  "attribution": "Contains public sector information licensed under the Open Government Licence v3.0. Source: local highway authority definitive maps, via rowmaps.com.",
  "licence": "OGL-3.0",
  "source": "Local highway authority definitive maps via rowmaps.com",
@@ -12,7 +12,7 @@
  "contextRadiusKm": null,
  "contextNote": "Bridleways and restricted byways are not on this map: it carries only the ways a motor vehicle may use. Where none is shown, this map has not looked - it does not mean there is none on the ground.",
  "wayClassCounts": {
-  "boat": 10231
+  "boat": 8353
  },
  "notCarried": {
   "footpath": 435299
@@ -90,11 +90,12 @@
    "note": "Byways open to all traffic - the lanes you may legally ride. Bridleways and restricted byways are not on this map: it carries only the ways a motor vehicle may use. Where none is shown, this map has not looked - it does not mean there is none on the ground.",
    "contextScope": "none",
    "file": "packages/ways-south-west.tbpack",
-   "sha256": "76b9556309806070dae0223979ddac58262e8a148fde158f191197612a960d12",
-   "bytes": 311138,
-   "plainBytes": 2447524,
-   "laneCount": 1858,
-   "generated": "2026-09-26T18:40:10Z"
+   "sha256": "783b2adee4a248e2cf5c3092b1d372135fa08f7057aba0df8bbf19f2c8160e33",
+   "bytes": 321187,
+   "plainBytes": 2385887,
+   "laneCount": 1712,
+   "lengthKm": 912.49,
+   "generated": "2026-10-03T05:15:56Z"
   },
   {
    "package": "ways",
@@ -106,11 +107,12 @@
    "note": "Byways open to all traffic - the lanes you may legally ride. Bridleways and restricted byways are not on this map: it carries only the ways a motor vehicle may use. Where none is shown, this map has not looked - it does not mean there is none on the ground.",
    "contextScope": "none",
    "file": "packages/ways-south-east.tbpack",
-   "sha256": "f069a0447fbc528abd2201b67d096332dbed649e5b819975a54a2667103813b7",
-   "bytes": 537781,
-   "plainBytes": 4711522,
-   "laneCount": 3954,
-   "generated": "2026-09-26T18:40:10Z"
+   "sha256": "7e2e56157ed9a39c3f5bc799b99bab45f11f9bd7eae9d9ee22469ee4c084ed9d",
+   "bytes": 546437,
+   "plainBytes": 4119412,
+   "laneCount": 2899,
+   "lengthKm": 1813.127,
+   "generated": "2026-10-03T05:15:56Z"
   },
   {
    "package": "ways",
@@ -122,11 +124,12 @@
    "note": "Byways open to all traffic - the lanes you may legally ride. Bridleways and restricted byways are not on this map: it carries only the ways a motor vehicle may use. Where none is shown, this map has not looked - it does not mean there is none on the ground.",
    "contextScope": "none",
    "file": "packages/ways-east-anglia.tbpack",
-   "sha256": "bde65454674b3291975ec190d87026e27051134101bad462f784cc530bc4b387",
-   "bytes": 339558,
-   "plainBytes": 2252912,
-   "laneCount": 1444,
-   "generated": "2026-09-26T18:40:10Z"
+   "sha256": "51a45a21271ea258969160c80e7102d70c6db57eae1a3aac04321ab04ac1d738",
+   "bytes": 338876,
+   "plainBytes": 2134353,
+   "laneCount": 1280,
+   "lengthKm": 1077.506,
+   "generated": "2026-10-03T05:15:56Z"
   },
   {
    "package": "ways",
@@ -138,11 +141,12 @@
    "note": "Byways open to all traffic - the lanes you may legally ride. Bridleways and restricted byways are not on this map: it carries only the ways a motor vehicle may use. Where none is shown, this map has not looked - it does not mean there is none on the ground.",
    "contextScope": "none",
    "file": "packages/ways-midlands.tbpack",
-   "sha256": "0b1976e1e3a78d109c2ce0b3d321f4f1703ee971f0fbc79040a8e5bbda0a4740",
-   "bytes": 294558,
-   "plainBytes": 2579246,
-   "laneCount": 2138,
-   "generated": "2026-09-26T18:40:10Z"
+   "sha256": "996c121fd79a003101b8267063add31dd45f510deb7409d1398932a3c3a8c8a5",
+   "bytes": 302634,
+   "plainBytes": 2380130,
+   "laneCount": 1771,
+   "lengthKm": 1077.369,
+   "generated": "2026-10-03T05:15:56Z"
   },
   {
    "package": "ways",
@@ -154,11 +158,12 @@
    "note": "Byways open to all traffic - the lanes you may legally ride. Bridleways and restricted byways are not on this map: it carries only the ways a motor vehicle may use. Where none is shown, this map has not looked - it does not mean there is none on the ground.",
    "contextScope": "none",
    "file": "packages/ways-wales.tbpack",
-   "sha256": "a6f84cc1d48d17f46f9740af8cd402e3cd157f213147c6e14da1cc0f3bf445e2",
-   "bytes": 205025,
-   "plainBytes": 1719947,
-   "laneCount": 1390,
-   "generated": "2026-09-26T18:40:10Z"
+   "sha256": "4ea88d424634eaeef0186d09d4be29190721a14209f7cb585dbf31b66e37862e",
+   "bytes": 208626,
+   "plainBytes": 1653401,
+   "laneCount": 1266,
+   "lengthKm": 633.951,
+   "generated": "2026-10-03T05:15:56Z"
   },
   {
    "package": "ways",
@@ -170,11 +175,12 @@
    "note": "Byways open to all traffic - the lanes you may legally ride. Bridleways and restricted byways are not on this map: it carries only the ways a motor vehicle may use. Where none is shown, this map has not looked - it does not mean there is none on the ground.",
    "contextScope": "none",
    "file": "packages/ways-north.tbpack",
-   "sha256": "95932c487bd316314875680226305bb85c5c3570a79ae3e93bf34220c685f07f",
-   "bytes": 274978,
-   "plainBytes": 2257326,
-   "laneCount": 1792,
-   "generated": "2026-09-26T18:40:10Z"
+   "sha256": "9eb084aef248b4c6a2db7d63ef2f31d8cf13609b247a23b11571fd774bee1542",
+   "bytes": 283239,
+   "plainBytes": 2075717,
+   "laneCount": 1447,
+   "lengthKm": 1127.698,
+   "generated": "2026-10-03T05:15:56Z"
   }
  ]
 }
