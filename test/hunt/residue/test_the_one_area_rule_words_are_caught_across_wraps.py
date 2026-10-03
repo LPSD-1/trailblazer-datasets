@@ -118,8 +118,13 @@ def test_validate_container_does_not_say_containers_are_compared_to_each_other()
     assert "RETIRED" in check, (
         "PREMISE: the cross-area one-owner duty is retired")
     doc = _read("tools/validate_container.py")
-    m = re.search(r"compares containers AGAINST EACH OTHER", doc,
-                  re.IGNORECASE)
+    # Any wording of the claim (features-14 residue: "compares the
+    # containers against one another" got past the exact old phrase), and
+    # the noun form.
+    m = re.search(
+        r"compar\w*\s+(the\s+)?containers\s+(against|with|to)\s+"
+        r"(each\s+other|one\s+another)|cross[- ]container",
+        doc, re.IGNORECASE)
     assert not m, (
         "tools/validate_container.py says check_containers.py %r, then lists "
         "only per-container checks; the cross-container duty is the retired "
