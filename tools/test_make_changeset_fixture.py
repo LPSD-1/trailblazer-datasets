@@ -73,14 +73,17 @@ def _meta_keys(path):
         db.close()
 
 
-#: The meta key a build writes only where a record here carries one
-#: (build_map_container.write_container), so a cut of a region carries it
-#: only when one of its ways does. Checked by `_also_recorded_by_for`.
+#: The meta keys a build writes only where a record here carries one
+#: (build_map_container.write_container), as a map keyed by lane_uid, so a
+#: cut of a region carries each only when one of its ways does. Checked by
+#: `_per_way_meta_for`.
 ALSO = "also_recorded_by"
+JOINED = "joined_from"
+PER_WAY_META = (ALSO, JOINED)
 
 #: Keys a container carries or not by what it holds, never by schema:
-#: `ways_cut` (the stamps, checked below) and `also_recorded_by`.
-CONDITIONAL_META = {S.WAYS_CUT, ALSO}
+#: `ways_cut` (the stamps, checked below) and the PER_WAY_META.
+CONDITIONAL_META = {S.WAYS_CUT} | set(PER_WAY_META)
 
 
 def _meta_value(path, key):
@@ -94,9 +97,9 @@ def _meta_value(path, key):
         db.close()
 
 
-def _also_recorded_by_for(path):
-    """The published region's also_recorded_by, cut to `path`'s ways."""
-    published = json.loads(_meta_value(PUBLISHED, ALSO) or "{}")
+def _per_way_meta_for(path, key):
+    """The published region's per-way meta `key`, cut to `path`'s ways."""
+    published = json.loads(_meta_value(PUBLISHED, key) or "{}")
     db = sqlite3.connect("file:%s?mode=ro" % path.replace("\\", "/"),
                          uri=True)
     try:
@@ -142,12 +145,13 @@ def check_fixture(where, label):
               == _meta_keys(PUBLISHED) - CONDITIONAL_META,
               sorted((_meta_keys(path) ^ _meta_keys(PUBLISHED))
                      - CONDITIONAL_META))
-        want = _also_recorded_by_for(path)
-        got = _meta_value(path, ALSO)
-        check("%s: %s carries also_recorded_by for its own ways only, and "
-              "no key where none of them has one" % (label, name),
-              (json.loads(got) if got is not None else None)
-              == (want or None), (got, want))
+        for key in PER_WAY_META:
+            want = _per_way_meta_for(path, key)
+            got = _meta_value(path, key)
+            check("%s: %s carries %s for its own ways only, and no key "
+                  "where none of them has one" % (label, name, key),
+                  (json.loads(got) if got is not None else None)
+                  == (want or None), (got, want))
         counts = M.counts_of(path)
         empty = [t for t, n in counts.items() if n == 0 and t != "ford_gauges"]
         check("%s: %s has rows in every table" % (label, name), not empty,
@@ -174,7 +178,7 @@ def check_fixture(where, label):
           carries)
     for key in sorted((_meta_keys(PUBLISHED) - {"built_at", "kind"}
                        - CONDITIONAL_META)
-                      | (_meta_keys(after) & {ALSO})):
+                      | (_meta_keys(after) & set(PER_WAY_META))):
         check("%s: the changeset restates %s" % (label, key), key in meta)
     new_meta = C.snapshot(after)["meta"]
     old_meta = C.snapshot(before)["meta"]

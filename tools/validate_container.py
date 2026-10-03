@@ -31,20 +31,21 @@ SQLite database with a contract on top:
     in the file, its legal detail is in the file, and a tap on it finds
     nothing, because the r-tree is what the lookup goes through.
 
-WHAT THIS IS NOT. `check_containers.py` compares containers AGAINST EACH OTHER
-- tiles versus records per vehicle, one owning area per lane, the tile size
+WHAT THIS IS NOT. `check_containers.py` checks each container's tiles against
+its own records, that every record is drawn by its own area, and the tile size
 ceiling - and it assumes each file opens and holds the tables it expects. This
-asks the prior question, of one file at a time: will a reader open it, and does
-it agree with itself. Run both.
+asks the prior question: will a reader open the file at all, and does it agree
+with itself. Run both.
 
-REFUSALS AND NOTES. A refusal is a fault in THIS file. A note is something only
-a cross-container check can adjudicate, and it is printed rather than enforced
-because it is a legitimate published state: 3 of the 109 containers published
-today hold twelve to fifteen thousand lane records and no tiles at all, which
-looks alarming and is the boundary rule working. `wales-monmouthshire-and-3-
-more` is built after `south-west-monmouthshire-and-4-more`, every one of its
-lanes is already owned by that earlier pack, so it ships records and draws
-nothing. `--strict` promotes notes to refusals for a build that wants them.
+REFUSALS AND NOTES. A refusal is a fault in THIS file that this tool enforces.
+A note is printed rather than enforced, and names the check that enforces it.
+The one note today is a container holding records and no tiles. That was once
+a published state - the retired one-area rule let an area leave out the tiles
+of every way an earlier area drew, so `wales-monmouthshire-and-3-more` shipped
+twelve thousand records and drew nothing - and it is a FAULT now: since 2 Oct
+2026 every area draws every way it carries, because a rider may hold that area
+alone, and check_containers.py refuses an area whose records are in none of
+its tiles. `--strict` promotes notes to refusals here too.
 """
 import argparse
 import os
@@ -182,14 +183,15 @@ def _tile_problems(db, meta, records, out):
     ).fetchone()
     if not n:
         if records:
-            # BY DESIGN, AND MEASURED: see the module docstring. Every lane in
-            # here is drawn by an earlier area that claimed it first. Only a
-            # check that can see the other containers can say whether that is
-            # true, so this names the check rather than guessing.
+            # A FAULT, not a design: see the module docstring. Every area has
+            # drawn every way it carries since 2 Oct 2026, so records with no
+            # tiles are lanes a rider holding this area can find and cannot
+            # see. check_containers.py refuses it; this names that check.
             out.append((NOTE,
-                        "no tiles, but %d records. Legitimate when every lane "
-                        "is drawn by an earlier area; check_containers.py's "
-                        "agreement check is what adjudicates it." % records))
+                        "no tiles, but %d records: each is findable and "
+                        "invisible to a rider who holds this area. A record "
+                        "with no tile is a fault, and check_containers.py's "
+                        "agreement check refuses it." % records))
         else:
             out.append((REFUSE, "no tiles and no records: an empty container"))
         return

@@ -145,12 +145,6 @@ def test_the_guard_refuses_an_area_that_leaves_out_a_way_it_carries():
         shutil.rmtree(tmp, ignore_errors=True)
 
 
-def test_the_retired_one_area_rule_is_gone():
-    """A shared way drawn by both areas is the fix, not a fault."""
-    check("check_no_lane_in_two_areas no longer exists",
-          not hasattr(CC, "check_no_lane_in_two_areas"))
-
-
 def _run_the_guard(paths):
     """check_containers.main() over `paths`, as refresh-data.yml runs it.
 

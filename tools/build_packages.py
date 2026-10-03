@@ -714,12 +714,31 @@ def council_reference(ref, authority_code=None):
     The map-sheet suffix and rowmaps' "#n" piece suffix are not part of the
     council's reference and are dropped: two records that differ only in
     them are pieces of one way (see join_pieces).
+
+    UNLESS THE NUMBER ALREADY SAYS IT. Gwynedd's number carries its parish:
+    'GY|Abermaw|Prow Abermaw Rhif 2' published as "... Abermaw Prow Abermaw
+    Rhif 2" (87 of 113 Gwynedd references, measured 3 Oct 2026, every
+    'Prow <parish> Rhif N' one), on the sheet, the record card and in search.
+    The parish is left out when the number names it as a whole word, so
+    that one is ('Prow Abermaw Rhif 2',). Still one name per record: two
+    references that differ in parish differ in their number too, or keep it.
+
+    A WHOLE WORD AT EITHER END ONLY WHERE THAT END IS A LETTER. Nottingham-
+    shire's 'NT|Gamston (B)|Gamston (B)BOAT4' ends its parish in a bracket
+    with the number straight after it; asking for no letter after ")" kept
+    it as "Gamston (B) Gamston (B)BOAT4".
     """
     parts = [p.strip() for p in (ref or "").split("|")]
     number = _PIECE_SUFFIX.sub("", parts[-1]).strip()
     parish = _SHEET_SUFFIX.sub("", parts[-2]).strip() if len(parts) >= 3 \
         else ""
     if parish and parish == authority_code:
+        parish = ""
+    if parish and re.search(
+            (r"(?<!\w)" if re.match(r"\w", parish) else "")
+            + re.escape(parish)
+            + (r"(?!\w)" if re.search(r"\w$", parish) else ""),
+            number, re.IGNORECASE):
         parish = ""
     return tuple(p for p in (parish, number) if p)
 

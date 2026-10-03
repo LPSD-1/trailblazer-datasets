@@ -641,8 +641,10 @@ jobs:
 
       # The guard for the new format. check_build.py still guards the packs.
       #
-      # It refuses a tile over 512 kB, a record in no tile, a feature in no
-      # record, and a lane claimed by two areas. It caught a real one on its
+      # It refuses a tile over 512 kB, a feature in no record, and a record in
+      # none of its OWN area's tiles - every area draws every way it carries,
+      # so a way two areas share is drawn by both (the app draws it once), and
+      # an area that leaves one out is refused. It caught a real one on its
       # first run - every record in every area container was invisible,
       # because the zoom table for coalescing was inverted - and a second when
       # the national footpath overview would not fit at z6.

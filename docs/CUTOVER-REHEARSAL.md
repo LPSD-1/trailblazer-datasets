@@ -193,8 +193,9 @@ Britain`. So on the cutover publish the surviving gates are:
 * the declared region boxes;
 * the geometry-in-GB check **only if `--key` is passed** — CI does pass it
   (`refresh-data.yml:792`);
-* `check_containers.py` on the new format (tile size, orphan records, lanes
-  claimed by two areas);
+* `check_containers.py` on the new format (tile size, orphan records, and -
+  since 2 Oct 2026, when every area draws every way it carries - any area
+  holding a record that none of its own tiles draws);
 * the closure factor — which prints **`THIS GATE DID NOT RUN`** on every lane
   refresh, by design, because lanes and traffic orders are separate workflows.
 

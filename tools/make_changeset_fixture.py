@@ -99,12 +99,15 @@ import validate_changeset as V    # noqa: E402
 
 #: Two fords, 26 ways and ~50 POIs around Haverhill, in the smallest region.
 #:
-#: CHOSEN FOR ITS TILES, not only its rows. A way straddling two regions is
-#: drawn by ONE of them (build_containers' `claimed`), so a box can hold
-#: plenty of East Anglia's ways and hardly any of its tiles - the first box
-#: tried, east of Stevenage, had 34 ways and 6 of the 56 tiles they would
-#: need, because the South East draws them. Every tile this box's ways need
-#: is in the published container.
+#: CHOSEN FOR ITS TILES, not only its rows. It was picked under the retired
+#: one-area rule, when a way straddling two regions was drawn only by the
+#: area earlier in the manifest, so a box could hold plenty of East Anglia's
+#: ways and hardly any of its tiles - the first box tried, east of Stevenage,
+#: had 34 ways and 6 of the 56 tiles they would need, because the South East
+#: drew them. Since 2 Oct 2026 every area draws every way it carries, so a
+#: rebuilt container holds every tile its ways need wherever the box sits;
+#: this box is kept because it holds them in a container built under either
+#: rule, including one published before the change.
 DEFAULT_BOX = (0.298, 52.096, 0.458, 52.196)
 DEFAULT_SOURCE = "containers/ways-east-anglia.tbmap"
 CHANGESET_NAME = "before_to_after.tbchange"
@@ -187,32 +190,41 @@ def restate_meta(db, path):
             ("bounds", B._bounds_of(features_of(db)))]
     db.executemany("UPDATE meta SET value = ? WHERE key = ?",
                    [(v, k) for k, v in rows])
-    restate_also_recorded_by(db)
+    for key in PER_WAY_META:
+        restate_per_way_meta(db, key)
     db.commit()
     # Dates, not ages, and the legacy evidence_age dropped: see evidence_age.py.
     EA.write_meta(path)
 
 
-def restate_also_recorded_by(db):
-    """`also_recorded_by` for the ways the file now holds, as
+#: The meta keys build_map_container.write_container writes as a map keyed by
+#: lane_uid, and only where a record in the container carries an entry:
+#: `also_recorded_by` (other records of the same way) and `joined_from` (the
+#: pieces a council record was published as before it was joined).
+PER_WAY_META = ("also_recorded_by", "joined_from")
+
+
+def restate_per_way_meta(db, key):
+    """One of PER_WAY_META for the ways the file now holds, as
     build_map_container.write_container writes it: the entries of the kept
     ways only, and no key at all where none is left.
 
     Copied through untouched, a cut of a region kept the whole region's map,
-    so the fixture named duplicate records of ways it does not carry - a
-    meta a build of these rows would never write.
+    so the fixture named duplicate records (or joined pieces) of ways it does
+    not carry - a meta a build of these rows would never write.
     """
-    got = db.execute("SELECT value FROM meta WHERE key = 'also_recorded_by'"
+    got = db.execute("SELECT value FROM meta WHERE key = ?", (key,)
                      ).fetchone()
     if got is None:
         return
     kept = {r[0] for r in db.execute("SELECT way_uid FROM ways")}
-    also = {k: v for k, v in json.loads(got[0]).items() if k in kept}
-    if also:
-        db.execute("UPDATE meta SET value = ? WHERE key = 'also_recorded_by'",
-                   (json.dumps(also, sort_keys=True, separators=(",", ":")),))
+    cut = {k: v for k, v in json.loads(got[0]).items() if k in kept}
+    if cut:
+        db.execute("UPDATE meta SET value = ? WHERE key = ?",
+                   (json.dumps(cut, sort_keys=True, separators=(",", ":")),
+                    key))
     else:
-        db.execute("DELETE FROM meta WHERE key = 'also_recorded_by'")
+        db.execute("DELETE FROM meta WHERE key = ?", (key,))
 
 
 def base_day(db):

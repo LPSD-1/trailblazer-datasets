@@ -233,12 +233,15 @@ def unpack(path, key):
 
 
 def load_features(paths, key):
-    """Every feature from every pack, deduped by lane_uid.
+    """Every feature from every pack given, deduped by lane_uid.
 
-    A lane that straddles a boundary is published in BOTH neighbouring packs so
-    it is never cut in half. Records dedupe on the uid, exactly as the app's
-    loader does today; tiles need the same and get it here, because two copies
-    would draw the lane twice with different simplification (section 19.2).
+    WITHIN ONE CONTAINER. When the packs given here overlap - a lane that
+    straddles a boundary is published in BOTH neighbouring packs so it is never
+    cut in half - one container must hold it once, or its tiles would draw it
+    twice with different simplification. ACROSS containers nothing is
+    deduped: build_containers passes one pack per area, and every area draws
+    and records every way it carries; the app's tile merge (mergeVectorTiles,
+    by feature id) draws a shared way once.
 
     The winner is deterministic - first pack in sorted order - so a rebuild
     produces the same container.
@@ -710,17 +713,20 @@ def write_container(path, features, kind, zooms, source_date,
 
     ids = assign_ids(features, "lane_uid")
 
-    # ONE OWNER PER LANE, FOR TILES, ACROSS A VEHICLE'S AREAS.
+    # EVERY AREA DRAWS EVERY WAY IT CARRIES.
     #
-    # A lane straddling a boundary is published in BOTH neighbouring packs so it
-    # is never cut in half. Deduplicating inside one container is not enough:
-    # the copy in the next area is a different container and would be drawn as
-    # well, from a different simplification, so the lane comes out bolder than
-    # its neighbours and a hit test finds two of it.
+    # A way straddling a boundary is published in BOTH neighbouring packs so it
+    # is never cut in half, and since 2 Oct 2026 BOTH areas draw it as well as
+    # record it: a rider may hold either area alone, and an area that records a
+    # way it does not draw shows a findable, invisible lane. The double drawing
+    # this once guarded against is the app's to prevent, and it does -
+    # PmTilesServer._tileFor merges every mounted container's tiles and
+    # mergeVectorTiles keeps the first feature with a given id, which is
+    # stable_id(lane_uid) in both areas (build_containers.build_all).
     #
-    # RECORDS KEEP THEIR COPY. Whichever area a rider has downloaded must be
-    # able to answer about a lane that runs into it, so only the TILES get an
-    # owner - which is what section 19.2 says and what the guard checks.
+    # `tile_exclude` IS NOT A SHIPPING PATH. No build passes it; it survives
+    # only so tools/test_check_containers.py can build the broken shape - a
+    # record with no tile - and prove check_containers.py refuses it.
     tiles_from = ([f for f in features
                    if f["properties"].get("lane_uid") not in tile_exclude]
                   if tile_exclude else features)
