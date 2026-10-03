@@ -846,6 +846,22 @@ def write_container(path, features, kind, zooms, source_date,
             rows.append(("also_recorded_by",
                          json.dumps(also, sort_keys=True,
                                     separators=(",", ":"))))
+        # AND WHICH OF THOSE ARE THE LANE'S OWN PIECES. A council record the
+        # source drew in pieces is published as one lane (build_packages
+        # join_pieces), and each piece's old id rides on it in
+        # `also_recorded_by` so shipped apps follow it. `joined_from` says
+        # which entries are pieces of this same record rather than another
+        # authority's, which an app needs to move two pieces one rider holds
+        # onto the one lane, and to not tell the rider a lane is "also
+        # recorded by" its own council.
+        joined = dict((f["properties"]["lane_uid"],
+                       sorted(f["properties"]["joined_from"]))
+                      for f in features
+                      if f["properties"].get("joined_from"))
+        if joined:
+            rows.append(("joined_from",
+                         json.dumps(joined, sort_keys=True,
+                                    separators=(",", ":"))))
     for key, value in rows:
         db.execute("INSERT INTO meta VALUES (?,?)", (key, value))
 

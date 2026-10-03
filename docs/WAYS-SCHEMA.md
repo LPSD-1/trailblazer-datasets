@@ -259,7 +259,8 @@ checksum forever, and a signature over bytes that no longer exist.
 | `context_scope`, `context_note` | `build_map_container.py`, when given | what context is not carried, and the note the app shows (see Classes) |
 | `pois_checked` | `build_pois.py` (`write_pois`) | ISO day the region's POIs were last read; see below |
 | `evidence_dates` | `evidence_age.py --write` | JSON; see below |
-| `also_recorded_by` | `build_map_container.py`, from `duplicate_ways.py` | JSON; the other authorities' records of ways drawn once here; see below |
+| `also_recorded_by` | `build_map_container.py`, from `duplicate_ways.py` and `build_packages.py` (`join_pieces`) | JSON; the other records of ways drawn once here - another authority's, or this lane's own pieces; see below |
+| `joined_from` | `build_map_container.py`, from `build_packages.py` (`join_pieces`) | JSON; the piece ids each joined lane was published as; see below |
 
 **`built_at` must not leak into any pack's content hash** — a run stamp doing
 exactly that broke reproducibility once already.
@@ -310,13 +311,16 @@ their own (as `built_at` by the second rule, or as `ways_cut` by the last).
   `built_at` and `kind`, so a rider's patched copy keeps it, and each
   container's manifest entry says the same date as `waysCut`.
 
-### `also_recorded_by`: one way, two authorities
+### `also_recorded_by`: one way, recorded more than once
 
 Where two authorities both record the same way — a National Park and its
 county, Cumbria and its successor Westmorland and Furness, two councils either
-side of a boundary lane — `tools/duplicate_ways.py` publishes **one** record
-and drops the other from `ways`, because the map drew both as two lines a
-metre apart. What was dropped rides on the record kept:
+side of a boundary lane — or one authority records it twice under two numbers,
+`tools/duplicate_ways.py` publishes **one** record and drops the other from
+`ways`, because the map drew both as two lines a metre apart. So an entry is
+usually another authority's record, but can be the same authority's own
+double (and, below, the lane's own pieces). What was dropped rides on the
+record kept:
 
 ```json
 {"PW-34(A)/1-14bed95b37": [{"way_uid": "B1-000/3-a9f6911451",
@@ -332,13 +336,45 @@ column: a column is a schema change, which `build_changeset.py` refuses to
 bridge.
 
 A record is dropped only in favour of records it lies **wholly within 15 m
-of** and runs along (not across), same class, other authority, lengths within
-15% — one record against one, or one authority's records together against the
-other's where the two split the way differently — so every metre of it is
+of** and runs along (not across), same class, lengths within 15%, from another
+authority or the same one — one record against one, or one authority's
+records together against another's where the two split the way differently;
+a byte-identical double from one authority goes first — so every metre of it is
 still drawn. Which is kept, and why, is stated in `duplicate_ways.py`: the
 highway authority over a National Park, a current authority over an abolished
 one, otherwise the more complete line. A dropped record's `rowid` (a hash of
 its `way_uid`) is simply absent: it is never reused.
+
+**A lane's own pieces are listed here too** (since 3 Oct 2026). Where the
+source drew one council record in pieces, `build_packages.join_pieces`
+publishes it as one lane, and every piece id it absorbed — each one a lane of
+its own in earlier builds, and so an id riders hold notes, stars and plans
+against — is an entry on the joined lane, with its `authority`,
+`authority_code` and `name` set. That is what an app already in riders' hands
+follows a gone id by. Which entries are pieces rather than another
+authority's record is `joined_from`, below.
+
+### `joined_from`: the pieces a lane was published as
+
+```json
+{"KT-339-5f0c1e2a9b": ["KT-339-0a1b2c3d4e", "KT-339-77e1f0a2c3"]}
+```
+
+Keyed by the joined lane's `way_uid`; each list is the piece ids it absorbed,
+sorted, never including the lane's own id. Every id listed is also an
+`also_recorded_by` entry on the same lane. Written only on an area container
+holding at least one joined lane, so **absent** means none here was drawn in
+pieces (or the container predates 3 Oct 2026). An app uses it to move several
+pieces one rider holds onto the one lane — two notes on two pieces of one
+byway are about one byway — and to leave a lane's own pieces out of "Also
+recorded by", which is for another authority's record. Meta, not a column,
+for the same reason as `also_recorded_by`.
+
+The pieces of one record are joined by authority, row type and council
+reference, not by touching: a record whose pieces lie more than 1 km apart is
+still one lane, and `build_packages.py` lists every such lane in its output
+and in `dist/reports/joined-far-apart.json`, which `check_build.py` prints
+(and adds to the job summary) without refusing the build.
 
 ### `pois_checked`: when the POIs were last read
 

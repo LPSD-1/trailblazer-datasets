@@ -983,9 +983,11 @@ check_true("its id is the authority and number, and no piece's id",
 check("the same whichever order the source lists the pieces in",
       build_packages.join_pieces([_p3, _p1, _p2])[0]["properties"]["lane_uid"],
       _one["properties"]["lane_uid"])
-check("what any piece was also recorded as, the lane is, once each",
+check("what any piece was also recorded as, the lane is, once each - "
+      "and each piece's own id, so a rider's data follows it "
+      "(test_joined_pieces_are_followable.py)",
       [e["way_uid"] for e in _one["properties"]["also_recorded_by"]],
-      ["SU-9-a", "SU-9-b"])
+      sorted(_pieces_uids | {"SU-9-a", "SU-9-b"}))
 check("a record that was one piece keeps its id exactly",
       _j[1]["properties"]["lane_uid"], _340["properties"]["lane_uid"])
 check_true("and its single line", _j[1] is _340)

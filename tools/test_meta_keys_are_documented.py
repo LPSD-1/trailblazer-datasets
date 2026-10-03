@@ -64,7 +64,10 @@ def _way(uid, lon, lat):
                            "also_recorded_by": [
                                {"way_uid": "PW-1-0", "authority": "Powys",
                                 "authority_code": "PW",
-                                "name": "Byway open to all traffic 1"}]}}
+                                "name": "Byway open to all traffic 1"}],
+                           # And a lane joined from pieces, so it writes
+                           # meta.joined_from.
+                           "joined_from": ["DY-1-0", "DY-1-1"]}}
 
 
 def _poi(uid):
@@ -132,7 +135,7 @@ def test_every_meta_key_is_named_in_the_meta_section():
     check("PREMISE: the writers left keys to check", len(keys) >= 10,
           sorted(keys))
     for key in ("pois_checked", "ways_cut", "built_at", "evidence_dates",
-                "also_recorded_by"):
+                "also_recorded_by", "joined_from"):
         check("PREMISE: the pipeline wrote %s" % key, key in keys,
               sorted(keys))
     meta = _section(_doc(), "Meta")

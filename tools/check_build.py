@@ -15,8 +15,12 @@ step succeeds and a third of the country has silently vanished.
 What it gates, in order:
 
   * the authority floor       - MIN_AUTHORITIES answered
-  * the national drop         - MAX_NATIONAL_DROP, and the same per vehicle type
-  * the per-region drop       - MAX_AREA_DROP, and no region vanishing
+  * the national drop         - MAX_NATIONAL_DROP of the LENGTH of line, and
+                                the same per package type
+  * the per-region drop       - MAX_AREA_DROP of the length, and no region
+                                vanishing
+  * the row-count collapse    - MAX_ROW_COLLAPSE of the rows, nationally, per
+                                type and per region (rows fold; length does not)
   * the bounding box          - GB_BOUNDS, over the declared region bounds and
                                 over the geometry inside the opened packages
   * the closure factor        - MAX_CLOSURE_FACTOR, both directions
@@ -81,6 +85,20 @@ MAX_NATIONAL_DROP = 0.02
 # One area can legitimately move more - a council republishing its map, or our
 # own splitter regrouping authorities - but not by half.
 MAX_AREA_DROP = 0.25
+
+# THE LIMITS ABOVE ARE ON LENGTH, NOT ROWS, whenever both builds can be
+# measured (`lengthKm` on every manifest entry, or the packs to measure it
+# from). A row is a record, and the builder is entitled to fold records: one
+# council byway drawn in 16 pieces published as one lane, one line recorded
+# twice published as one way. The first build that did so (3 Oct 2026) went
+# 12,576 -> 10,375 rows, -17.5% nationally and -27% in the South East, and
+# was refused as data loss with every metre of every byway still in it -
+# 5,430 -> 5,364 km of line, the 66 km being the doubles it folded. Length is
+# what a rider gets, and it only falls when a way does.
+#
+# Rows are still printed, and still refused past THIS: a build that loses
+# more than half its rows has not folded anything, it has lost a fetch.
+MAX_ROW_COLLAPSE = 0.50
 
 # How far below its own rebaseline a cutover may land before it is refused.
 #
@@ -193,6 +211,114 @@ def lane_totals(manifest):
         by_package[pkg["package"]] = by_package.get(pkg["package"], 0) + count
         total += count
     return total, by_region, by_package
+
+
+def length_totals(manifest):
+    """-> (km, {package/region: km}, {package: km}) from each entry's
+    `lengthKm`, keyed exactly as lane_totals() keys rows - or None when any
+    entry has no length, because a total missing a region is not a total."""
+    if manifest is None:
+        return None
+    by_region = {}
+    by_package = {}
+    total = 0.0
+    for pkg in manifest.get("packages", []):
+        km = pkg.get("lengthKm")
+        if not isinstance(km, (int, float)) or isinstance(km, bool):
+            return None
+        key = "%s/%s" % (pkg["package"], pkg["region"])
+        by_region[key] = by_region.get(key, 0.0) + km
+        by_package[pkg["package"]] = by_package.get(pkg["package"], 0.0) + km
+        total += km
+    return total, by_region, by_package
+
+
+def open_pack(path, key):
+    """A sealed .tbpack -> its FeatureCollection, as the app opens it."""
+    import gzip
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+    with open(path, "rb") as fh:
+        blob = fh.read()
+    prefix, body = blob[:18], blob[18:]
+    if prefix[:4] != b"TBPK":
+        raise ValueError("not a .tbpack")
+    return json.loads(gzip.decompress(
+        AESGCM(key).decrypt(prefix[6:18], body, prefix)))
+
+
+def fill_lengths(manifest, pack_dir, key_path):
+    """Give every entry of [manifest] a `lengthKm`, measured from its pack
+    where the manifest does not carry one. -> None, or why it could not.
+
+    THE FIRST LENGTH-GATED RUN compares against a published manifest written
+    before `lengthKm` existed. That is measured, not skipped: the published
+    packs are in the checkout and open with the same key. A gate that let
+    the first build through unmeasured would be waving through exactly the
+    build it was rewritten for.
+    """
+    if manifest is None:
+        return None
+    wanting = [p for p in manifest.get("packages", [])
+               if not isinstance(p.get("lengthKm"), (int, float))]
+    if not wanting:
+        return None
+    if not key_path:
+        return ("%d package(s) carry no lengthKm and no --key was given to "
+                "measure them" % len(wanting))
+    import base64
+    try:
+        with open(key_path, encoding="utf8") as fh:
+            key = base64.b64decode(fh.read().strip())
+    except OSError as e:
+        return "the key could not be read (%s)" % e
+    import build_packages
+    for pkg in wanting:
+        path = os.path.join(pack_dir, os.path.basename(pkg.get("file", "")))
+        if not os.path.isfile(path):
+            return "%s carries no lengthKm and %s is not there to measure" % (
+                pkg.get("file"), path)
+        try:
+            collection = open_pack(path, key)
+        except Exception as e:  # noqa: BLE001 - any failure is a reason
+            return "%s could not be opened to measure it (%s)" % (path, e)
+        pkg["lengthKm"] = round(
+            build_packages.distinct_line_km(collection.get("features", [])), 3)
+    return None
+
+
+def report_joined_far_apart(path):
+    """Print the joined lanes whose pieces lie far apart, and put them in the
+    job summary. NEVER a problem: a byway broken by a road is one record and
+    one way. The owner is shown them because the joining is by council
+    reference and not by touching, and a reference shared by two ways would
+    be joined all the same. -> the rows, or None when there is no report."""
+    if not os.path.isfile(path):
+        print("  joined lanes: no report at %s - nothing to list" % path)
+        return None
+    with open(path, encoding="utf8") as fh:
+        report = json.load(fh)
+    rows = report.get("far_apart") or []
+    limit = report.get("limit_km", 1.0)
+    print("  joined lanes whose pieces lie more than %s km apart: %d of %d "
+          "(listed for the owner, not refused)"
+          % (limit, len(rows), report.get("joined", 0)))
+    lines = []
+    for r in rows:
+        line = "%6.2f km apart  %s  %s, %s  (%d pieces, %.2f km)" % (
+            r.get("gap_km", 0), r.get("way_uid"), r.get("authority"),
+            r.get("name"), r.get("pieces", 0), r.get("length_km", 0))
+        lines.append(line)
+        print("    " + line)
+    summary = os.environ.get("GITHUB_STEP_SUMMARY")
+    if summary and rows:
+        with open(summary, "a", encoding="utf8") as fh:
+            fh.write("### Joined lanes whose pieces lie more than %s km "
+                     "apart\n\nNot refused: each is one council record. "
+                     "Look at them.\n\n" % limit)
+            for line in lines:
+                fh.write("- `%s`\n" % line)
+            fh.write("\n")
+    return rows
 
 
 # ---------------------------------------------------------------- geometry
@@ -692,7 +818,9 @@ def check_authorities(cache_dir, problems):
 
 
 def check_totals(previous, new, problems, dropped=frozenset(),
-                 becomes=None):
+                 becomes=None, lengths_blind=None):
+    """[lengths_blind] is why main() could not give both manifests a length;
+    then the length gates cannot run, and that is a problem, not a pass."""
     new_total, new_areas, new_packages = lane_totals(new)
     print("  ways in this build: %d" % new_total)
 
@@ -814,12 +942,68 @@ def check_totals(previous, new, problems, dropped=frozenset(),
                 % ", ".join(sorted(dropped)))
             return
 
+    # LENGTH WHERE BOTH SIDES HAVE IT. See MAX_ROW_COLLAPSE.
+    new_km = length_totals(new)
+    old_km = length_totals(previous)
+    if dropped and new_km is not None and old_km is not None:
+        new_km = excluding(dropped, new_km[1], new_km[2])
+        old_km = excluding(dropped, old_km[1], old_km[2])
+    measured = new_km is not None and old_km is not None and old_km[0] > 0
+    if not measured:
+        if lengths_blind:
+            problems.append(
+                "the length gate could not run: %s. Rows alone cannot tell "
+                "a folded record from a lost byway, so this build is not "
+                "judged on them alone." % lengths_blind)
+        print("  length of line not known on both sides: rows are gated at "
+              "the length limits instead")
+    national_rows = MAX_ROW_COLLAPSE if measured else MAX_NATIONAL_DROP
+    area_rows = MAX_ROW_COLLAPSE if measured else MAX_AREA_DROP
+
     change = (new_total - old_total) / old_total
     print("  change: %+.2f%%" % (change * 100))
-    if change < -MAX_NATIONAL_DROP:
-        problems.append(
-            "the national total fell %.1f%% (%d ways). That is data loss, not "
-            "an amendment." % (-change * 100, old_total - new_total))
+    if change < -national_rows:
+        if measured:
+            problems.append(
+                "the national row count fell %.1f%% (%d ways). Folding "
+                "records never halves a build; that is a lost fetch."
+                % (-change * 100, old_total - new_total))
+        else:
+            problems.append(
+                "the national total fell %.1f%% (%d ways). That is data loss, "
+                "not an amendment." % (-change * 100, old_total - new_total))
+
+    if measured:
+        km_change = (new_km[0] - old_km[0]) / old_km[0]
+        print("  length of line: %.1f km -> %.1f km (%+.2f%%)"
+              % (old_km[0], new_km[0], km_change * 100))
+        if km_change < -MAX_NATIONAL_DROP:
+            problems.append(
+                "the national length of line fell %.1f%% (%.1f km -> %.1f "
+                "km). Rows can fold; length only falls when a way goes. That "
+                "is data loss, not an amendment."
+                % (-km_change * 100, old_km[0], new_km[0]))
+        for name, old in sorted(old_km[2].items()):
+            now = new_km[2].get(name, 0.0)
+            if old <= 0:
+                continue
+            moved = (now - old) / old
+            print("  %-8s %9.1f km -> %9.1f km (%+.2f%%)"
+                  % (name, old, now, moved * 100))
+            if moved < -MAX_NATIONAL_DROP:
+                problems.append(
+                    "%s line fell %.1f%% nationally (%.1f km -> %.1f km)"
+                    % (name, -moved * 100, old, now))
+        for key, old in sorted(old_km[1].items()):
+            now = new_km[1].get(key, 0.0)
+            if old <= 0 or now <= 0:
+                continue   # a region at zero is the row check's, below
+            moved = (now - old) / old
+            print("  %-24s %8.1f km -> %8.1f km (%+.2f%%)"
+                  % (key, old, now, moved * 100))
+            if moved < -MAX_AREA_DROP:
+                problems.append("%s line fell %.0f%% (%.1f km -> %.1f km)"
+                                % (key, -moved * 100, old, now))
 
     # PER VEHICLE TYPE, and this is the check that was missing.
     #
@@ -845,7 +1029,12 @@ def check_totals(previous, new, problems, dropped=frozenset(),
             continue
         moved = (now - old) / old
         print("  %-8s %6d -> %6d (%+.2f%%)" % (name, old, now, moved * 100))
-        if moved < -MAX_NATIONAL_DROP:
+        if measured and moved < -national_rows:
+            problems.append(
+                "%s rows fell %.1f%% nationally (%d -> %d). Folding records "
+                "never halves a build; that is a lost fetch."
+                % (name, -moved * 100, old, now))
+        elif not measured and moved < -national_rows:
             problems.append(
                 "%s ways fell %.1f%% nationally (%d -> %d). That is only "
                 "%.2f%% of the national total, which is why the check above "
@@ -862,7 +1051,7 @@ def check_totals(previous, new, problems, dropped=frozenset(),
             continue
         if now == 0:
             problems.append("%s lost every one of its %d ways" % (key, old))
-        elif (now - old) / old < -MAX_AREA_DROP:
+        elif (now - old) / old < -area_rows:
             problems.append("%s fell %.0f%% (%d -> %d ways)"
                             % (key, (1 - now / old) * 100, old, now))
 
@@ -934,14 +1123,8 @@ def check_packages_readable(new, dist_dir, key_path, problems):
                             % pkg["file"])
             continue
 
-        blob = open(path, "rb").read()
         try:
-            prefix, body = blob[:18], blob[18:]
-            if prefix[:4] != b"TBPK":
-                raise ValueError("not a .tbpack")
-            plain = gzip.decompress(
-                AESGCM(key).decrypt(prefix[6:18], body, prefix))
-            collection = json.loads(plain)
+            collection = open_pack(path, key)
         except Exception as e:
             problems.append(
                 "%s could not be opened with the packaging key (%s). "
@@ -975,6 +1158,10 @@ def main():
     ap.add_argument("--cache", default="cache")
     ap.add_argument("--dist", default="dist/packages")
     ap.add_argument("--key", default="")
+    ap.add_argument("--previous-packages", default=None,
+                    help="where the published packs are, to measure a "
+                         "published manifest that carries no lengthKm "
+                         "(default: packages/ beside --previous)")
     ap.add_argument("--force", action="store_true",
                     help="publish anyway; for a drop you have checked yourself")
     ap.add_argument("--closures-previous", default="tro/index.json",
@@ -1043,8 +1230,18 @@ def main():
     check_authorities(args.cache, problems)
     becomes = []
     dropped = load_baseline(args.baseline, previous, problems, becomes)
+    # Both sides measured in km before they are compared; see fill_lengths.
+    previous_packs = args.previous_packages or os.path.join(
+        os.path.dirname(os.path.abspath(args.previous)), "packages")
+    blind = [why for why in (
+        fill_lengths(previous, previous_packs, args.key),
+        fill_lengths(new, args.dist, args.key)) if why]
     check_totals(previous, new, problems, dropped,
-                 becomes[0] if becomes else None)
+                 becomes[0] if becomes else None,
+                 lengths_blind="; ".join(blind) if blind else None)
+    report_joined_far_apart(os.path.join(
+        os.path.dirname(os.path.abspath(args.new)), "reports",
+        "joined-far-apart.json"))
     check_declared_bounds(new, problems)
     closures_new = load(args.closures_new)
     check_closures(load(args.closures_previous), closures_new, problems)

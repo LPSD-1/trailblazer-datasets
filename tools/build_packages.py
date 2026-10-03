@@ -959,15 +959,157 @@ def _joined(members):
     props.pop("description", None)
     if len(descriptions) == 1 and None not in descriptions:
         props["description"] = descriptions.pop()
+    # EVERY PIECE'S OWN ID IS NAMED ON THE LANE IT BECAME, twice over.
+    #
+    # Each piece was published as a lane of its own until 2 Oct 2026, so
+    # riders hold notes, stars, photographs and plans against piece ids that
+    # leave the data the day this joins them. Nothing else maps one to the
+    # other: the joined id hashes ALL the parts, and a rowmaps "#n" piece's
+    # number ('KT-74#1-...') is not even the joined lane's ('KT-74-...').
+    # Measured on the first joined build: of 2,588 piece ids, the app's
+    # path-number rule could follow 1,226 - and only on a phone holding every
+    # area - and moved 5 onto a byway of the same number in another parish,
+    # up to 58 km away.
+    #
+    #   * `also_recorded_by`, because that is what SHIPPED apps follow: a
+    #     uid named there moves onto the record carrying it, for any set of
+    #     areas (the app's planLaneRepoint folds). Authority, code and name
+    #     are set, because the app's parser drops an entry with no authority.
+    #   * `joined_from`, so an app that knows it can tell "this lane's own
+    #     pieces" from "another council's record": it moves several pieces
+    #     one rider holds onto the one lane, and does not print the lane's own
+    #     pieces as "Also recorded by". The container carries it as meta
+    #     `joined_from` (build_map_container.py, docs/WAYS-SCHEMA.md).
+    pieces = sorted(set(m["properties"]["lane_uid"] for m in members)
+                    - {props["lane_uid"]})
+    for m in members:
+        p = m["properties"]
+        if p["lane_uid"] in pieces:
+            also.setdefault(p["lane_uid"], {
+                "way_uid": p["lane_uid"],
+                "authority": p.get("authority"),
+                "authority_code": p.get("authorityCode") or code,
+                "name": p.get("name"),
+            })
     props.pop("also_recorded_by", None)
     if also:
         props["also_recorded_by"] = [also[k] for k in sorted(
             also, key=lambda u: u or "")]
+    props.pop("joined_from", None)
+    if pieces:
+        props["joined_from"] = pieces
     if len(parts) == 1:
         geometry = {"type": "LineString", "coordinates": parts[0]}
     else:
         geometry = {"type": "MultiLineString", "coordinates": parts}
     return {"type": "Feature", "properties": props, "geometry": geometry}
+
+
+def distinct_line_km(features):
+    """Kilometres of line in [features], each distinct line counted ONCE.
+
+    THE MEASURE check_build.py gates on, and why it is not the row count. A
+    build that publishes one council record drawn in 16 pieces as one lane,
+    or one line recorded twice as one way, has fewer rows and exactly the
+    same byways: on 3 Oct 2026 the first such build went 12,576 -> 10,375
+    rows (-17.5%, the South East -27%) and refused itself as "data loss" with
+    every metre of every byway still in it. The length of line it carries is
+    what a rider gets, and it only falls when a way does.
+
+    Distinct, so a line two records both carry (the byte-identical doubles
+    duplicate_ways folds) is not counted twice on one side of the comparison
+    and not on the other. From the geometry, never from `lengthKm`, whose
+    unit changed once already (rowmaps' miles, read as km until 2 Oct 2026).
+    """
+    seen = {}
+    for f in features:
+        for line in lines_of(f):
+            key = _line_key(line)
+            if key in seen:
+                continue
+            seen[key] = sum(_km_between(line[k], line[k + 1])
+                            for k in range(len(line) - 1))
+    return sum(seen.values())
+
+
+#: Pieces of one joined lane further apart than this are listed for the
+#: owner to look at. Not refused: a byway broken by a stretch of road is one
+#: record and one legal way, and the council's reference is what joins it.
+JOINED_FAR_APART_KM = 1.0
+
+#: Two pieces whose nearest vertices lie within this are one chain.
+_PIECES_TOUCH_KM = 0.025
+
+
+def joined_gap_km(feature):
+    """The widest gap, in km, between the pieces of a joined lane: 0 when
+    every part chains to the others within [_PIECES_TOUCH_KM].
+
+    join_pieces joins by authority, row type and council reference, NOT by
+    the pieces touching. Measured on the first joined build: 720 of 812
+    joined lanes are one connected chain, 92 are not, and 7 have pieces more
+    than 1 km apart (Cambridgeshire's Balsham 4 by 1.8 km). Most will be one
+    way interrupted by a road; any that are two ways sharing a number are
+    for the owner to find, and this is how they are found.
+    """
+    parts = lines_of(feature)
+    if len(parts) < 2:
+        return 0.0
+
+    def apart(a, b):
+        return min(_km_between(p, q) for p in a for q in b)
+
+    owner = list(range(len(parts)))
+
+    def root(i):
+        while owner[i] != i:
+            owner[i] = owner[owner[i]]
+            i = owner[i]
+        return i
+
+    for i in range(len(parts)):
+        for j in range(i + 1, len(parts)):
+            if root(i) != root(j) and apart(parts[i], parts[j]) \
+                    <= _PIECES_TOUCH_KM:
+                owner[root(i)] = root(j)
+    groups = {}
+    for i in range(len(parts)):
+        groups.setdefault(root(i), []).append(parts[i])
+    if len(groups) == 1:
+        return 0.0
+    chains = list(groups.values())
+    worst = 0.0
+    for k, chain in enumerate(chains):
+        nearest = min(apart(a, b)
+                      for other in chains[:k] + chains[k + 1:]
+                      for a in chain for b in other)
+        worst = max(worst, nearest)
+    return worst
+
+
+def joined_far_apart(features, limit_km=JOINED_FAR_APART_KM):
+    """-> [{way_uid, authority, name, pieces, gap_km, length_km}], the
+    joined lanes whose pieces lie more than [limit_km] apart, widest first."""
+    out = []
+    for f in features:
+        p = f["properties"]
+        if not p.get("joined_from"):
+            continue
+        gap = joined_gap_km(f)
+        if gap > limit_km:
+            out.append({"way_uid": p["lane_uid"],
+                        "authority": p.get("authority"),
+                        "name": p.get("name"),
+                        "pieces": len(lines_of(f)),
+                        "joined_from": list(p["joined_from"]),
+                        "gap_km": round(gap, 3),
+                        "length_km": round(distinct_line_km([f]), 3)})
+    out.sort(key=lambda r: (-r["gap_km"], r["way_uid"]))
+    return out
+
+
+#: Where build_packages leaves the far-apart list for check_build.py.
+JOINED_REPORT = os.path.join("reports", "joined-far-apart.json")
 
 
 def report_orphans(orphans):
@@ -1147,6 +1289,10 @@ def write_package(pkg_name, region_id, region_label, area_label, features,
         "bytes": len(sealed),
         "plainBytes": len(payload),
         "laneCount": len(features),
+        # WHAT check_build.py GATES ON: km of line, each distinct line once
+        # (distinct_line_km). A row count cannot tell sixteen pieces joined
+        # into one lane from fifteen byways lost.
+        "lengthKm": round(distinct_line_km(features), 3),
         "generated": stamp,
     }
 
@@ -1246,9 +1392,29 @@ def main():
     print("council records the source drew in pieces (join_pieces)")
     print("  records now one lane each  %5d, from %d pieces"
           % (len(joined), sum(len(lines_of(f)) for f in joined)))
+    # JOINED BY REFERENCE, NOT BY TOUCHING, so the ones whose pieces lie far
+    # apart are listed: for the owner to look at, never a reason to refuse.
+    far_apart = joined_far_apart(joined)
+    print("  of them, pieces more than %.0f km apart  %5d  (listed, not "
+          "refused)" % (JOINED_FAR_APART_KM, len(far_apart)))
+    for r in far_apart:
+        print("    %6.2f km apart  %-34s %-24s %s (%d pieces, %.2f km)"
+              % (r["gap_km"], r["way_uid"], r["authority"], r["name"],
+                 r["pieces"], r["length_km"]))
 
     if args.measure_only:
         return
+
+    # For check_build.py, which prints it and puts it in the job summary.
+    # Under dist/, which the publish step never moves: a report for the
+    # owner, not data for riders.
+    report = os.path.join(dist_dir(), JOINED_REPORT)
+    os.makedirs(os.path.dirname(report), exist_ok=True)
+    with open(report, "w", encoding="utf8") as fh:
+        json.dump({"limit_km": JOINED_FAR_APART_KM,
+                   "joined": len(joined),
+                   "far_apart": far_apart}, fh, indent=1)
+        fh.write("\n")
 
     scope = context_fields(args.context)
     note = "Byways open to all traffic - the lanes you may legally ride."
