@@ -136,6 +136,12 @@ def write(path, text):
     os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
     with open(path, "w", encoding="utf-8", newline="\n") as fh:
         fh.write(text)
+    # A script must be EXECUTABLE or Linux skips it on PATH and runs the real
+    # command (gh, sleep). Git Bash on Windows does not care, which is how the
+    # stand-in passed here and stopped every lane refresh on ubuntu-latest
+    # from 2 to 3 Oct 2026.
+    if text.startswith("#!"):
+        os.chmod(path, 0o755)
 
 
 def write_json(path, obj):
