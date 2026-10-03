@@ -49,7 +49,8 @@ M_LON = 1.0 / (111320.0 * math.cos(math.radians(LAT0)))
 NAMES = {"B1": "Brecon Beacons National Park", "PW": "Powys",
          "CT": "Carmarthenshire", "CU": "Cumbria",
          "W1": "Westmorland and Furness", "L1": "Lake District National Park",
-         "WX": "Wrexham", "SH": "Shropshire"}
+         "WX": "Wrexham", "SH": "Shropshire", "GY": "Gwynedd",
+         "CB": "Cambridgeshire", "BK": "Central Bedfordshire"}
 
 BOAT = "byway_open_to_all_traffic"
 
@@ -113,7 +114,12 @@ def test_the_pencelli_pair_is_published_once_and_the_park_is_carried():
     check("the park's record rides on the council's", carried == [{
         "way_uid": uid(park), "authority": "Brecon Beacons National Park",
         "authority_code": "B1",
-        "name": "Byway open to all traffic (BOAT) 000/3"}], carried)
+        "name": park["properties"]["name"]}], carried)
+    # The name as normalise() writes it (since 2 Oct it carries the parish
+    # too); what matters here is that the park's own number rides along.
+    check("PREMISE: the park's name holds its number",
+          park["properties"]["name"].endswith("000/3"),
+          park["properties"]["name"])
     check("a way nobody else records carries nothing",
           "also_recorded_by" not in other["properties"])
 
@@ -236,12 +242,171 @@ def test_a_byway_and_a_restricted_byway_on_one_line_are_both_kept():
           kept_uids(kept))
 
 
-def test_one_authority_is_never_merged_with_itself():
-    a = way("PW", "46/1", line(length_m=500.0))
-    b = way("PW", "46/2", line(length_m=500.0, offset_m=2.0, step_m=35.0))
-    kept, _ = run([a, b])
-    check("one council's two records stay two", len(kept) == 2,
+# ------------------------------------------- one authority, twice (2 Oct 2026)
+#
+# This section replaces a test named "one authority is never merged with
+# itself", which asserted the defect: 41 lines published as two ways by one
+# council with byte-identical coordinates, and ~60 more a metre or three
+# apart, every one drawn twice and counted twice.
+
+def test_one_authority_recording_one_line_twice_publishes_it_once():
+    """Gwynedd's "Prow Aberdyfi (byw) Rhif 8#1" is its "Y35y8(bwy)#2", with
+    byte-identical coordinates. The uids differ only in the path number, so
+    load_all kept both, and the merge skipped every pair from one
+    authority."""
+    coords = line(length_m=600.0)
+    welsh = way("GY", "Prow Aberdyfi (byw) Rhif 8#1", coords)
+    code = way("GY", "Y35y8(bwy)#2", [list(p) for p in coords])
+    other = way("GY", "Y36y1(bwy)", line(start_m=3000.0, length_m=400.0))
+    check("PREMISE: two ids, one line", uid(welsh) != uid(code) and
+          D._coords(welsh) == D._coords(code), (uid(welsh), uid(code)))
+    keep, gone = sorted([welsh, code], key=uid)
+    kept, removed = run([welsh, code, other])
+    check("the line is published once", kept_uids(kept) ==
+          sorted([uid(keep), uid(other)]), kept_uids(kept))
+    check("removed in favour of its twin, 0 m from it",
+          [(uid(r), [uid(k) for k in ks], w) for r, ks, w in removed] ==
+          [(uid(gone), [uid(keep)], 0.0)], removed)
+    check("the other name rides on the record kept",
+          keep["properties"].get("also_recorded_by") == [{
+              "way_uid": uid(gone), "authority": "Gwynedd",
+              "authority_code": "GY",
+              "name": gone["properties"]["name"]}],
+          keep["properties"].get("also_recorded_by"))
+    check("a way recorded once carries nothing",
+          "also_recorded_by" not in other["properties"])
+    # Whichever order the records arrive in, the same one is kept.
+    coords = line(start_m=6000.0, length_m=600.0)
+    a, b = way("CB", "12", coords), way("CB", "14", [list(p) for p in coords])
+    first, _ = run([a, b])
+    a, b = way("CB", "12", coords), way("CB", "14", [list(p) for p in coords])
+    second, _ = run([b, a])
+    check("the choice is the same on every build",
+          kept_uids(first) == kept_uids(second) == [uid(a)],
+          (kept_uids(first), kept_uids(second)))
+
+
+def test_one_authority_recording_one_line_twice_a_metre_apart_once():
+    """Central Bedfordshire's BK-18 and BK-9 lie 3.7 m apart along their whole
+    length: two parallel lines, the Pencelli defect from one council. The
+    MORE COMPLETE is kept - here the higher id, so it is not the id that
+    decides - and rank, the authority being one, decides nothing."""
+    shorter = way("BK", "18", line(length_m=1000.0, offset_m=3.7))
+    longer = way("BK", "9", line(length_m=1030.0, step_m=45.0, phase_m=11.0))
+    check("PREMISE: the shorter has the lower id", uid(shorter) < uid(longer))
+    kept, removed = run([shorter, longer])
+    check("one line is drawn", kept_uids(kept) == [uid(longer)],
           kept_uids(kept))
+    for r, keeps, within in removed:
+        check("%s lies within 15 m of what was kept" % uid(r),
+              D.within_union(r, keeps) <= D.MATCH_M, within)
+    check("and is carried on it",
+          [e["way_uid"] for e in
+           longer["properties"].get("also_recorded_by", [])] == [uid(shorter)],
+          longer["properties"])
+    # Where each covers the other, covering cannot decide: completeness does.
+    a = way("BK", "18", line(start_m=6000.0, length_m=1000.0))
+    b = way("BK", "9", line(start_m=6000.0, length_m=1008.0, offset_m=3.0,
+                            step_m=45.0, phase_m=11.0))
+    m = D.compare(D._coords(a), D._coords(b))
+    check("PREMISE: each lies within 15 m of the other",
+          m["hausdorff_m"] <= D.MATCH_M and uid(a) < uid(b), m)
+    kept, _ = run([a, b])
+    check("of two covering records, the longer is kept, not the lower id",
+          kept_uids(kept) == [uid(b)], kept_uids(kept))
+
+
+def test_one_authoritys_two_different_ways_stay_two():
+    """The one-authority merge is the two-authority one: every test that
+    keeps two authorities' different ways apart keeps one authority's."""
+    cases = [
+        ("17 m apart along their length",
+         line(length_m=800.0),
+         line(length_m=800.0, offset_m=17.0, step_m=45.0, phase_m=10.0)),
+        ("end to end", line(length_m=500.0),
+         line(start_m=500.0, length_m=500.0, step_m=35.0)),
+        ("a shorter one on part of the line", line(length_m=1000.0),
+         line(length_m=800.0, offset_m=2.0, step_m=33.0)),
+        ("two stubs at a junction", straight([(0.0, 0.0), (12.0, 0.0)]),
+         straight([(0.0, 0.0), (0.0, 12.0)])),
+    ]
+    for n, (label, pa, pb) in enumerate(cases):
+        shift = 5000.0 * n * M_LON
+        a = way("PW", "60/%d" % n, [[p[0] + shift, p[1]] for p in pa])
+        b = way("PW", "61/%d" % n, [[p[0] + shift, p[1]] for p in pb])
+        kept, _ = run([a, b])
+        check("one council's two ways stay two: %s" % label, len(kept) == 2,
+              kept_uids(kept))
+    a = way("PW", "62/1", line(start_m=30000.0, length_m=500.0))
+    b = way("PW", "62/2", line(start_m=30000.0, length_m=500.0, offset_m=2.0,
+                               step_m=35.0), row_type="restricted_byway")
+    kept, _ = run([a, b], context="all")
+    check("one council's BOAT and restricted byway on one line both stay",
+          len(kept) == 2, kept_uids(kept))
+    # Byte-identical, so it is pass 0 (_twins) that must keep them apart.
+    coords = line(start_m=35000.0, length_m=500.0)
+    a = way("PW", "63/1", coords)
+    b = way("PW", "63/2", [list(p) for p in coords],
+            row_type="restricted_byway")
+    check("PREMISE: one line, two classes", D._coords(a) == D._coords(b)
+          and D._class(a) != D._class(b))
+    kept, _ = run([a, b], context="all")
+    check("one council's BOAT and restricted byway with identical "
+          "coordinates both stay", len(kept) == 2, kept_uids(kept))
+
+
+def test_a_split_group_merges_though_one_side_holds_a_line_twice():
+    """Pass 0 runs before the split pass. Run after it, the double counted
+    twice on its council's side - 1,200 m against 900 m, outside 15% - and
+    the whole group was left drawn twice."""
+    # 8 m longer than the three pieces, so the longer side - Shropshire's -
+    # is kept, as in test_a_split_group_is_kept_by_rank_then_length.
+    whole = way("SH", "UN8", line(length_m=908.0, offset_m=3.0))
+    pieces = [way("PW", "228/%d" % (k + 1),
+                  line(start_m=300.0 * k, length_m=300.0, step_m=35.0,
+                       phase_m=8.0)) for k in range(3)]
+    double = way("PW", "228/1A", [list(p) for p in D._coords(pieces[0])])
+    check("PREMISE: the double is the first piece, byte for byte",
+          D._coords(double) == D._coords(pieces[0]) and
+          uid(double) != uid(pieces[0]))
+    kept, removed = run([whole] + pieces + [double])
+    check("the lane is drawn once, by Shropshire",
+          kept_uids(kept) == [uid(whole)], kept_uids(kept))
+    check("every Powys record is removed, the double too",
+          sorted(uid(r) for r, _, _ in removed) ==
+          sorted(uid(p) for p in pieces + [double]), removed)
+    for r, keeps, within in removed:
+        check("%s lies within 15 m of what was kept" % uid(r),
+              D.within_union(r, keeps) <= D.MATCH_M, within)
+        check("%s is carried by what was kept" % uid(r),
+              all(uid(r) in [e["way_uid"] for e in
+                             k["properties"]["also_recorded_by"]]
+                  for k in keeps), keeps)
+
+
+def test_a_double_whose_twin_is_replaced_follows_its_twin():
+    """Cumbria lists a line twice; Westmorland and Furness, its successor,
+    records it once. Both Cumbrian records go, in favour of the successor's -
+    never in favour of a record that is itself removed - and both ride on
+    it."""
+    coords = line(length_m=800.0, step_m=40.0, offset_m=2.0)
+    old1 = way("CU", "070", coords)
+    old2 = way("CU", "071", [list(p) for p in coords])
+    new = way("W1", "070", line(length_m=800.0, step_m=55.0, phase_m=20.0))
+    kept, removed = run([old1, old2, new])
+    check("one line, the successor's", kept_uids(kept) == [uid(new)],
+          kept_uids(kept))
+    check("each removed in favour of a record kept",
+          sorted((uid(r), [uid(k) for k in ks]) for r, ks, _ in removed) ==
+          sorted([(uid(old1), [uid(new)]), (uid(old2), [uid(new)])]), removed)
+    for r, keeps, within in removed:
+        check("%s: the distance given is the distance measured" % uid(r),
+              abs(D.within_union(r, keeps) - within) < 0.01,
+              (within, D.within_union(r, keeps)))
+    check("both ride on the successor's",
+          sorted(e["way_uid"] for e in
+                 new["properties"].get("also_recorded_by", [])) ==
+          sorted([uid(old1), uid(old2)]), new["properties"])
 
 
 def test_a_chain_is_resolved_through_the_record_that_covers_it():
@@ -474,7 +639,7 @@ def test_the_container_carries_the_other_record_and_keeps_every_id():
                   "way_uid": uid(park),
                   "authority": "Brecon Beacons National Park",
                   "authority_code": "B1",
-                  "name": "Byway open to all traffic (BOAT) 000/3"}]}, carried)
+                  "name": park["properties"]["name"]}]}, carried)
         powys, park, other = fixtures()
         _rows, meta2 = build([powys, park, other], "overview.tbmap",
                              kind="overview")
@@ -509,6 +674,38 @@ def test_a_boundary_twin_is_resolved_the_same_in_both_regions():
     check("and both publish the same one record",
           len(set(tuple(v) for v in regions.values())) == 1 and
           all(len(v) == 1 for v in regions.values()), regions)
+
+
+def test_the_published_ways_once_merged_draw_no_line_twice():
+    """The ways in the published containers, read back and merged, as the
+    next build will: no line is kept as two ways. This is the build-side
+    half of test/hunt/lane-data/test_one_line_is_not_published_as_two_ways,
+    which reads the published containers and is green only once they are
+    rebuilt. Skipped, and said so, where no containers are checked out."""
+    directory = os.path.join(os.path.dirname(HERE), "containers")
+    if not os.path.exists(os.path.join(directory, "manifest.json")):
+        print("  (skipped: no published containers in %s)" % directory)
+        return
+    features = D.features_from_containers(directory)
+    check("PREMISE: the published ways were read", len(features) > 1000,
+          len(features))
+    lines = {}
+    for f in features:
+        lines.setdefault(tuple(D._coords(f)), []).append(uid(f))
+    before = sum(1 for u in lines.values() if len(u) > 1)
+    kept, removed = D.merge(features)
+    lines = {}
+    for f in kept:
+        lines.setdefault(tuple(D._coords(f)), []).append(uid(f))
+    twice = sorted(u for u in lines.values() if len(u) > 1)
+    check("no line is kept as two ways (%d were published so)" % before,
+          not twice, twice[:5])
+    kept_ids = set(id(f) for f in kept)
+    for r, keeps, within in removed:
+        if not all(id(k) in kept_ids for k in keeps) or \
+                D.within_union(r, keeps) > D.MATCH_M:
+            check("%s is removed only for a kept record within 15 m" % uid(r),
+                  False, within)
 
 
 def main():

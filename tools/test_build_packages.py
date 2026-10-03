@@ -764,12 +764,13 @@ _E2E_ROWS = {
 }
 
 
-def _e2e(*extra):
+def _e2e(*extra, rows_by_type=None):
     """main() over the fixture cache -> (manifest, [sealed bodies], root).
 
     Runs with --previous '' so the repository's published manifest.json is
     never read, and with cache_dir/dist_dir pointed at a scratch directory so
-    the checkout is never written.
+    the checkout is never written. [rows_by_type] replaces _E2E_ROWS; a row
+    may carry a third item, its rowmaps Description.
     """
     root = tempfile.mkdtemp(prefix="tbways-e2e-")
     cache, dist = os.path.join(root, "cache"), os.path.join(root, "dist")
@@ -777,13 +778,15 @@ def _e2e(*extra):
     os.makedirs(dist)
     with open(os.path.join(cache, "authorities.json"), "w") as fh:
         json.dump({"DE": "Derbyshire"}, fh)
-    for row_type, rows in _E2E_ROWS.items():
+    for row_type, rows in (rows_by_type or _E2E_ROWS).items():
         with open(os.path.join(cache, "DE", "%s.json" % row_type), "w") as fh:
             json.dump({"type": "FeatureCollection", "features": [
                 {"type": "Feature",
-                 "properties": {"Name": "DE|%s" % ref, "Description": ""},
-                 "geometry": {"type": "LineString", "coordinates": coords}}
-                for ref, coords in rows]}, fh)
+                 "properties": {"Name": "DE|%s" % row[0],
+                                "Description": row[2] if len(row) > 2
+                                else ""},
+                 "geometry": {"type": "LineString", "coordinates": row[1]}}
+                for row in rows]}, fh)
     keyfile = os.path.join(root, "key.b64")
     with open(keyfile, "w") as fh:
         fh.write(base64.b64encode(KEY).decode("ascii"))
@@ -853,6 +856,243 @@ _m, _bodies, _root = _e2e("--measure-only")
 check("--measure-only writes nothing at all",
       os.listdir(os.path.join(_root, "dist")), [])
 shutil.rmtree(_root, ignore_errors=True)
+
+
+# --- a byway's name keeps its parish (lane-data-4) ---------------------------
+#
+# In most councils a path number is unique only within its parish. The name
+# kept the number alone, so Wiltshire's "BOAT 1" was 21 byways in 21 parishes
+# and 6,711 of 10,231 published ways shared their exact name with another way
+# of their authority (measured 2 Oct 2026). Real references, from the cache.
+
+CR = build_packages.council_reference
+check("a Wiltshire reference keeps its parish code",
+      CR("WT|LACO|24", "WT"), ("LACO", "24"))
+check("Derbyshire's map-sheet suffix is not part of the parish",
+      CR("DY|Great Hucklow-WD41|18/3", "DY"), ("Great Hucklow", "18/3"))
+check("a parish with hyphens of its own keeps them",
+      CR("XX|Stoke-on-Trent|3", "XX"), ("Stoke-on-Trent", "3"))
+check("rowmaps' '#n' piece suffix is not part of the number",
+      CR("KT|SR|74#1", "KT"), ("SR", "74"))
+check("a reference with no parish field is its number", CR("ON|7", "ON"),
+      ("7",))
+check("an empty reference is nothing", CR("", "ON"), ())
+
+_BOAT = "byway_open_to_all_traffic"
+
+
+def _rec(ref, coords, desc="BO|X:1|0.100|none", code="WT",
+         authority="Wiltshire"):
+    return build_packages.normalise(
+        {"type": "Feature",
+         "geometry": {"type": "LineString", "coordinates": coords},
+         "properties": {"Name": ref, "Description": desc}},
+        code, authority, _BOAT)
+
+
+_laco = _rec("WT|LACO|24", [[-2.10642, 51.41366], [-2.10480, 51.41144]])
+_orch = _rec("WT|ORCH|24", [[-1.86000, 51.20000], [-1.85800, 51.19900]])
+_hucklow = _rec("DY|Great Hucklow-WD41|18/3",
+                [[-1.73368, 53.29869], [-1.73221, 53.29955]],
+                code="DY", authority="Derbyshire")
+check("two parishes' byway 24 publish under two names",
+      (_laco["properties"]["name"], _orch["properties"]["name"]),
+      ("Byway open to all traffic (BOAT) LACO 24",
+       "Byway open to all traffic (BOAT) ORCH 24"))
+check("Derbyshire's name is the parish and number a council officer uses",
+      _hucklow["properties"]["name"],
+      "Byway open to all traffic (BOAT) Great Hucklow 18/3")
+# THE ID DOES NOT MOVE, so every star a rider holds still points at a way.
+check("the id is still authority, number and the hash of the line",
+      _laco["properties"]["lane_uid"],
+      "WT-24-" + hashlib.sha1(json.dumps(
+          [[-2.10642, 51.41366], [-2.10480, 51.41144]],
+          separators=(",", ":")).encode()).hexdigest()[:10])
+
+
+# --- rowmaps' Description length is MILES (lane-data-5) ----------------------
+#
+# Over the 8,493 published ways of 100 m or more, length_m over the length of
+# the way's own geometry had a median of 0.623 - one mile per kilometre.
+
+def _line_m(line):
+    total = 0.0
+    for a, b in zip(line, line[1:]):
+        k = 111320.0 * math.cos(math.radians((a[1] + b[1]) / 2.0))
+        total += math.hypot((b[0] - a[0]) * k, (b[1] - a[1]) * 110574.0)
+    return total
+
+
+import math  # noqa: E402
+
+check("0.113 in the Description is 0.113 miles",
+      round(build_packages.parse_description(
+          "BO|DY:16247|0.113|none")["length_km"], 6),
+      round(0.113 * 1.609344, 6))
+# A line one statute mile long, due north, said by its Description to be 1.000.
+_mile = [[-1.70, 52.5], [-1.70, 52.5 + 1609.344 / 110574.0]]
+_mile_way = _rec("WT|LACO|99", _mile, desc="BO|WT:9|1.000|none")
+check_true("a way's lengthKm agrees with its own geometry, within 1%",
+           abs(_mile_way["properties"]["lengthKm"] * 1000.0
+               / _line_m(_mile) - 1.0) < 0.01)
+
+
+# --- one council byway is one lane (lane-data-3) -----------------------------
+#
+# rowmaps draws many byways in pieces under ONE reference - Kent's KT|AW|339
+# is 16 - and each piece was published as its own lane: Kent's 234 records
+# were 800 lanes. Three pieces of one record, a byway with the same number in
+# another parish, and one other byway.
+
+def _kt(ref, coords, miles):
+    return _rec(ref, coords, desc="BO|KT:1|%.3f|none" % miles, code="KT",
+                authority="Kent")
+
+
+_p1 = _kt("KT|AW|339", [[0.500, 51.20], [0.503, 51.20]], 0.130)
+_p2 = _kt("KT|AW|339", [[0.503, 51.20], [0.506, 51.20]], 0.130)
+_p3 = _kt("KT|AW|339", [[0.506, 51.20], [0.509, 51.20]], 0.130)
+_ae339 = _kt("KT|AE|339", [[0.600, 51.30], [0.603, 51.30]], 0.130)
+_340 = _kt("KT|AW|340", [[0.700, 51.25], [0.703, 51.25]], 0.130)
+_p1["properties"]["also_recorded_by"] = [{"way_uid": "SU-9-b"}]
+_p3["properties"]["also_recorded_by"] = [{"way_uid": "SU-9-a"},
+                                         {"way_uid": "SU-9-b"}]
+_pieces_uids = set(f["properties"]["lane_uid"] for f in (_p1, _p2, _p3))
+check("PREMISE: normalise gives each piece its own id",
+      len(_pieces_uids), 3)
+
+_j = build_packages.join_pieces([_p1, _p2, _340, _p3, _ae339])
+check("three pieces of one record are one lane; the others stay apart",
+      [f["properties"]["name"] for f in _j],
+      ["Byway open to all traffic (BOAT) AW 339",
+       "Byway open to all traffic (BOAT) AW 340",
+       "Byway open to all traffic (BOAT) AE 339"])
+_one = _j[0]
+check("drawn as one MultiLineString of its three parts",
+      (_one["geometry"]["type"], len(_one["geometry"]["coordinates"])),
+      ("MultiLineString", 3))
+check_true("its length is the whole byway's, not a piece's",
+           abs(_one["properties"]["lengthKm"] - 3 * 0.130 * 1.609344) < 1e-5)
+check_true("and agrees with its geometry within 1%",
+           abs(_one["properties"]["lengthKm"] * 1000.0
+               / sum(_line_m(l) for l in _one["geometry"]["coordinates"])
+               - 1.0) < 0.01)
+check_true("its id is the authority and number, and no piece's id",
+           _one["properties"]["lane_uid"].startswith("KT-339-")
+           and _one["properties"]["lane_uid"] not in _pieces_uids)
+check("the same whichever order the source lists the pieces in",
+      build_packages.join_pieces([_p3, _p1, _p2])[0]["properties"]["lane_uid"],
+      _one["properties"]["lane_uid"])
+check("what any piece was also recorded as, the lane is, once each",
+      [e["way_uid"] for e in _one["properties"]["also_recorded_by"]],
+      ["SU-9-a", "SU-9-b"])
+check("a record that was one piece keeps its id exactly",
+      _j[1]["properties"]["lane_uid"], _340["properties"]["lane_uid"])
+check_true("and its single line", _j[1] is _340)
+check("the pieces it was made from are untouched",
+      [f["geometry"]["type"] for f in (_p1, _p2, _p3)], ["LineString"] * 3)
+
+# rowmaps' '#n' pieces and the bare number are one chain: KT|SR|74#1 ends
+# where KT|SR|74 starts, and #1 and #2 are one source object (KT:8831).
+_chain = build_packages.join_pieces([
+    _kt("KT|SR|74#1", [[0.22245, 51.31488], [0.22042, 51.31381]], 0.115),
+    _kt("KT|SR|74#2", [[0.22276, 51.31509], [0.22245, 51.31488]], 0.02),
+    _kt("KT|SR|74", [[0.22042, 51.31381], [0.21973, 51.31312]], 0.056)])
+check("KT|SR|74, 74#1 and 74#2 are one lane named without the '#n'",
+      [(f["properties"]["name"], len(f["geometry"]["coordinates"]))
+       for f in _chain],
+      [("Byway open to all traffic (BOAT) SR 74", 3)])
+check_true("with no '#' left in its id",
+           "#" not in _chain[0]["properties"]["lane_uid"])
+
+# A way with no number has no reference to join on.
+_nameless = [_rec("", [[0.0, 51.0], [0.001, 51.0]]),
+             _rec("", [[0.1, 51.1], [0.101, 51.1]])]
+check("ways with no reference are never joined",
+      len(build_packages.join_pieces(_nameless)), 2)
+
+# ONE RECORD IS ONE AUTHORITY: a name is not unique across councils. Measured
+# from rowmaps, 2 Oct 2026: 94 names are carried by two authorities, e.g.
+# Cornwall's and Redcar's "118 5/1". Joined on the name alone, a Redcar byway
+# became part of a Cornwall lane 500 km long and no other check noticed.
+_cn = _rec("CN|118|5/1", [[-5.68238, 50.0798], [-5.680, 50.080]],
+           code="CN", authority="Cornwall")
+_rc = _rec("RC|118|5/1", [[-0.98544, 54.55767], [-0.983, 54.558]],
+           code="RC", authority="Redcar and Cleveland")
+check("PREMISE: two councils' byways carry one name",
+      _cn["properties"]["name"], _rc["properties"]["name"])
+check("two authorities' byways of one name stay two lanes",
+      [f["properties"]["authorityCode"]
+       for f in build_packages.join_pieces([_cn, _rc])], ["CN", "RC"])
+
+# A joined lane is placed in every region any of its parts is in.
+_split = {"type": "Feature", "properties": dict(_one["properties"]),
+          "geometry": {"type": "MultiLineString",
+                       "coordinates": [[[-10.0, 40.0], [-10.0, 40.1]],
+                                       [[-1.7, 52.5], [-1.6, 52.6]]]}}
+check("a joined lane is in the region its second part is in",
+      placed_regions(_split), ["midlands"])
+
+# THROUGH select_ways, THE FUNCTION main() AND golden CALL. The pieces are
+# joined AFTER duplicate_ways.merge(), which compares single lines: a
+# neighbour's record lying along piece 2 must still be merged with it, not
+# drawn beside a MultiLineString it cannot see into.
+_su = _rec("SU|X|9", [[0.503, 51.20001], [0.506, 51.20001]],
+           desc="BO|SU:1|0.130|none", code="SU", authority="Surrey")
+_gone = []
+_sel = build_packages.select_ways([_p1, _p2, _p3, _340, _su],
+                                  removed=_gone)
+check("PREMISE: the merge saw the neighbour's record of piece 2",
+      len(_gone), 1)
+check("select_ways publishes one lane per record, each line drawn once",
+      (len(_sel), sum(len(build_packages.lines_of(f)) for f in _sel)),
+      (2 if _gone and _gone[0][0] is _su else 3, 4))
+
+# END TO END: main() over a cache holding one byway in two pieces seals ONE
+# lane, the whole byway's length in km.
+_m, _bodies, _root = _e2e(rows_by_type={_BOAT: [
+    ("100|1/1", [(-1.700, 52.500), (-1.697, 52.500)], "BO|DE:1|0.127|none"),
+    ("100|1/1", [(-1.697, 52.500), (-1.694, 52.500)], "BO|DE:2|0.127|none"),
+    ("100|1/2", [(-1.600, 52.450), (-1.599, 52.451)], "BO|DE:3|0.081|none"),
+]})
+_sealed = [f for b in _bodies for f in b["features"]]
+check("main() seals a byway drawn in two pieces as one lane",
+      sorted((f["properties"]["name"], f["geometry"]["type"])
+             for f in _sealed),
+      [("Byway open to all traffic (BOAT) 100 1/1", "MultiLineString"),
+       ("Byway open to all traffic (BOAT) 100 1/2", "LineString")])
+check("and counts it once", _m["wayClassCounts"], {"boat": 2})
+_whole = [f for f in _sealed if f["geometry"]["type"] == "MultiLineString"]
+check_true("at the length of both pieces, in km",
+           _whole and abs(_whole[0]["properties"]["lengthKm"] * 1000.0 / sum(
+               _line_m(l) for l in _whole[0]["geometry"]["coordinates"])
+               - 1.0) < 0.02)
+shutil.rmtree(_root, ignore_errors=True)
+
+# AND THE CONTAINER, which is what a rider downloads: ways.length_m is the
+# way's length in METRES, for a one-piece way and a joined one alike.
+import sqlite3  # noqa: E402
+import build_map_container  # noqa: E402
+
+_cdir = tempfile.mkdtemp(prefix="tbways-len-")
+try:
+    _cpath = os.path.join(_cdir, "c.tbmap")
+    build_map_container.write_container(
+        _cpath, [_mile_way, _one, _340], "area", (11, 11),
+        "2026-10-02")
+    _db = sqlite3.connect(_cpath)
+    _rows = dict(_db.execute("SELECT way_uid, length_m FROM ways"))
+    _db.close()
+    check("PREMISE: the container holds the three ways", len(_rows), 3)
+    for _f in (_mile_way, _one, _340):
+        _walked = sum(_line_m(l) for l in build_packages.lines_of(_f))
+        check_true("length_m of %s is its length in metres (%.1f vs %.1f)"
+                   % (_f["properties"]["lane_uid"],
+                      _rows.get(_f["properties"]["lane_uid"]) or 0, _walked),
+                   abs((_rows.get(_f["properties"]["lane_uid"]) or 0)
+                       / _walked - 1.0) < 0.02)
+finally:
+    shutil.rmtree(_cdir, ignore_errors=True)
 
 
 if FAILURES:

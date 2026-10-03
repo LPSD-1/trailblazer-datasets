@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""One byway, one line: the same way recorded by two authorities is kept once.
+"""One byway, one line: the same way recorded twice is kept once.
 
 THE DEFECT, FOUND ON A REAL TABLET ON 26 SEP 2026. Where two authorities both
 publish a definitive-map record of the same way, rowmaps carries both, and the
@@ -14,8 +14,7 @@ THE TEST FOR "SAME WAY" IS GEOMETRY. Two records are one way when they have:
 
   * the SAME class. A BOAT and a restricted byway on one line are two
     authorities disagreeing about the law, and that disagreement is data;
-  * DIFFERENT authorities. One authority listing a way twice with identical
-    coordinates is already collapsed by build_packages.load_all;
+  * any authorities - two, or ONE (see ONE AUTHORITY, TWICE below);
   * lengths within LENGTH_RATIO (the shorter at least 85% of the longer), so
     a short byway that shares part of a long one's line is never merged into
     it; and
@@ -45,6 +44,36 @@ length, so they are compared side against side; see _grouped(). It runs
 before the one-to-one pass so a split group is taken whole: Hampshire's
 HP-17/1, /2 and /3 are Wiltshire's WT-11, and pairing /1 first left /2 and /3
 drawn twice. What it leaves is then paired one to one.
+
+ONE AUTHORITY, TWICE (2 Oct 2026). build_packages.load_all collapses a record
+listed twice only when its whole lane_uid repeats - the same PATH NUMBER and
+the same coordinates - and this module once skipped every pair from one
+authority. So one council's double record of one line was published as two
+ways, drawn twice and counted twice: 41 lines with BYTE-IDENTICAL coordinates
+(Gwynedd's 26 are each one record under its Welsh name and under its code,
+"Prow Aberdyfi (byw) Rhif 8#1" = "Y35y8(bwy)#2"; Cambridgeshire's boundary
+byways numbered in both parishes, CB-12 = CB-14), and more lying a metre or
+three apart (Central Bedfordshire's BK-18 and BK-9 at 3.7 m; Bedford's
+"10 K&S" and "8 WYM"), drawn as two parallel lines exactly as Pencelli was.
+Now:
+
+  * byte-identical doubles of one class and one authority go first, whole
+    (pass 0, _twins), before the split pass can count one twice on a side;
+  * the one-to-one pass pairs one authority's records with each other by the
+    same tests as two authorities' - same class, LENGTH_RATIO, lying wholly
+    within MATCH_M and running along (MIN_TRAVEL), the keeper covering the
+    removed;
+  * authority_rank() decides nothing between them, being one authority: the
+    more complete record is kept, then the lower id;
+  * the split pass stays between two authorities: it compares one side
+    against another.
+
+MEASURED on the containers published on 24 Sep 2026 (10,231 distinct ways,
+every cross-authority duplicate already gone): 102 one-authority records
+removed, leaving 10,129 - the 41 identical (Gwynedd 26, Cambridgeshire 11,
+Hertfordshire 3, Devon 1) and 61 within 15 m, 57 of those within 4 m. The
+furthest is Cornwall's CN-67/3, 48 m, lying within 14.7 m of CN-67/1. No two
+kept records then share a line.
 
 WHICH ONE IS KEPT, when both cover each other, by authority_rank() and then
 by completeness:
@@ -343,10 +372,12 @@ def _boxes_touch(a, b, slack):
                 a[1] > b[3] + slack or b[1] > a[3] + slack)
 
 
-def _candidates(features, match_m):
-    """Every (i, j), i < j, of two usable lines of the same class from
-    different authorities whose boxes come within [match_m], with the
-    lines, boxes and lengths the grid was built from."""
+def _candidates(features, match_m, same_authority=False):
+    """Every (i, j), i < j, of two usable lines of the same class whose
+    boxes come within [match_m], with the lines, boxes and lengths the grid
+    was built from. From different authorities only, unless
+    [same_authority]: pass 2 compares one authority's side against
+    another's, and has no use for a pair from one side."""
     lines = [_coords(f) for f in features]
     lats = [p[1] for line in lines for p in line]
     if not lats:
@@ -383,7 +414,8 @@ def _candidates(features, match_m):
                 seen.add((i, j))
                 if _class(features[i]) != _class(features[j]):
                     continue
-                if _code(features[i]) == _code(features[j]):
+                if not same_authority and \
+                        _code(features[i]) == _code(features[j]):
                     continue
                 if not _boxes_touch(boxes[i], boxes[j], slack):
                     continue
@@ -392,10 +424,14 @@ def _candidates(features, match_m):
     return out, lines, boxes, lengths
 
 
-def find_pairs(features, match_m=MATCH_M, ratio=LENGTH_RATIO):
-    """Every pair (i, j, measure) of [features] that are one way recorded by
-    two authorities, one record each. i < j, indices into [features]."""
-    candidates, lines, boxes, lengths = _candidates(features, match_m)
+def find_pairs(features, match_m=MATCH_M, ratio=LENGTH_RATIO,
+               same_authority=True):
+    """Every pair (i, j, measure) of [features] that are one way recorded
+    twice, one record each - by two authorities, or by one authority under
+    two numbers (see ONE AUTHORITY, TWICE in the module docstring). i < j,
+    indices into [features]."""
+    candidates, lines, boxes, lengths = _candidates(features, match_m,
+                                                    same_authority)
     slack = match_m * 1.1 + 2.0
     out = []
     for i, j in candidates:
@@ -557,6 +593,43 @@ def _grouped(features, alive, match_m, ratio):
     return out
 
 
+def _twins(features):
+    """Pass 0: ONE AUTHORITY'S BYTE-IDENTICAL DOUBLE. Run before the other
+    two (see merge()), on every record.
+
+    Records of one class and one authority whose coordinates are exactly the
+    same - Gwynedd's "Prow Aberdyfi (byw) Rhif 8#1" and "Y35y8(bwy)#2",
+    Cambridgeshire's CB-12 and CB-14. They are taken out first, whole,
+    because a double left in would count twice on its side in pass 2 and
+    put a split group's two sides more than 15% apart. Removing one loses
+    nothing: it lies 0 m from the record kept, and wherever that record is
+    itself later kept or removed, this one is exactly as near.
+
+    The authority is the same, so authority_rank() decides nothing: the
+    more complete record is kept (longer, more vertices - equal here, by
+    construction - then the lower id), so the choice is the same on every
+    build.
+
+    -> {removed index: twin index kept in its place}.
+    """
+    groups = {}
+    for i, f in enumerate(features):
+        line = _coords(f)
+        if len(line) < 2:
+            continue
+        groups.setdefault((_class(f), _code(f), tuple(line)), []).append(i)
+    out = {}
+    for members in groups.values():
+        if len(members) < 2:
+            continue
+        keep = min(members, key=lambda k: _keeper_order(
+            features[k], _line_length(features[k])))
+        for k in members:
+            if k != keep:
+                out[k] = keep
+    return out
+
+
 def _absorb(keeper, gone):
     """Carry [gone] - and whatever it had itself absorbed - on [keeper]."""
     props = keeper["properties"]
@@ -575,38 +648,54 @@ def _absorb(keeper, gone):
 
 
 def merge(features, match_m=MATCH_M, ratio=LENGTH_RATIO):
-    """-> (kept, removed): [features] with each cross-authority duplicate
-    removed, in input order, and [(removed, [kept in its place], within_m)],
-    where within_m is the furthest any part of the removed line lies from
-    the kept ones - at most [match_m], by construction, and re-measured by
-    main().
+    """-> (kept, removed): [features] with each duplicate removed - the same
+    way recorded by two authorities, or twice by one - in input order, and
+    [(removed, [kept in its place], within_m)], where within_m is the
+    furthest any part of the removed line lies from the kept ones - at most
+    [match_m], by construction, and re-measured by main().
 
     Each kept feature gains `also_recorded_by`: one entry per record removed
     in its favour, sorted by id. A record is only ever removed in favour of
     records it lies wholly within [match_m] of.
     """
-    # THE SPLIT PASS RUNS FIRST. Run second, it met Hampshire's HP-17 - which
-    # is Wiltshire's WT-11 split into /1 (622 m), /2 (4 m) and /3 (65 m) - only
-    # after pass 1 had taken /1 as WT-11's one-to-one twin (622/712 is within
-    # 15%), and the /2 and /3 left behind were no longer within 15% of WT-11:
-    # 69 m of the lane stayed drawn twice. Grouped first, the three go
-    # together; a group whose sides disagree is left whole, for pass 1.
+    # ONE AUTHORITY'S BYTE-IDENTICAL DOUBLES GO FIRST (pass 0, _twins), so
+    # pass 2 never counts one line twice on one side.
     everyone = list(range(len(features)))
-    grouped = _grouped(features, everyone, match_m, ratio)
-    alive = [i for i in everyone if i not in grouped]
+    twins = _twins(features)
+    alive0 = [i for i in everyone if i not in twins]
+    # THE SPLIT PASS RUNS NEXT. Run after pass 1, it met Hampshire's HP-17 -
+    # which is Wiltshire's WT-11 split into /1 (622 m), /2 (4 m) and /3 (65 m)
+    # - only after pass 1 had taken /1 as WT-11's one-to-one twin (622/712 is
+    # within 15%), and the /2 and /3 left behind were no longer within 15% of
+    # WT-11: 69 m of the lane stayed drawn twice. Grouped first, the three go
+    # together; a group whose sides disagree is left whole, for pass 1.
+    grouped = _grouped(features, alive0, match_m, ratio)
+    alive = [i for i in alive0 if i not in grouped]
+    # Pass 1 pairs one record with one, from two authorities or from one.
     paired = _pairwise([features[i] for i in alive], match_m, ratio)
     paired = dict((alive[k], ([alive[x] for x in keeps], within))
                   for k, (keeps, within) in paired.items())
-    if not grouped and not paired:
+    if not twins and not grouped and not paired:
         return list(features), []
-    # Absorbed in the order removed; a record is only ever removed once, and
-    # never in favour of a record that is itself removed.
+    # A pass-0 double follows its twin: kept in the twin's place where the
+    # twin is kept, and in favour of what replaced the twin where it is not -
+    # at exactly the twin's distance, since the two lines are one.
+    later = dict(grouped)
+    later.update(paired)
+    doubles = {}
+    for k, twin in twins.items():
+        doubles[k] = later.get(twin, ([twin], 0.0))
+    # Absorbed in the order removed - a double into its twin first, so that
+    # a twin later removed carries it on - and a record is only ever removed
+    # once, never in the end in favour of a record that is itself removed.
+    for k in sorted(twins):
+        _absorb(features[twins[k]], features[k])
     for removed_at in (grouped, paired):
         for k in sorted(removed_at):
             for keep in removed_at[k][0]:
                 _absorb(features[keep], features[k])
-    removed_at = dict(grouped)
-    removed_at.update(paired)
+    removed_at = dict(doubles)
+    removed_at.update(later)
     removed = [(features[k], [features[x] for x in removed_at[k][0]],
                 removed_at[k][1]) for k in sorted(removed_at)]
     kept = [f for i, f in enumerate(features) if i not in removed_at]
@@ -674,7 +763,10 @@ def main(argv=None):
     features = features_from_containers(args.containers)
     print("distinct ways read: %d" % len(features))
     kept, removed = merge(features)
-    print("cross-authority duplicates removed: %d" % len(removed))
+    one = sum(1 for r, keeps, _ in removed
+              if all(_code(k) == _code(r) for k in keeps))
+    print("duplicates removed: %d (%d by another authority, %d by the same "
+          "one)" % (len(removed), len(removed) - one, one))
     print("ways kept: %d" % len(kept))
     pairs = collections.Counter(
         "%s kept over %s" % ("+".join(sorted(set(_code(k) for k in keeps))),
@@ -704,6 +796,18 @@ def main(argv=None):
             return 1
     print("furthest any removed line lies from what was kept in its place: "
           "%.2f m (limit %.0f m)" % (worst, MATCH_M))
+    # AND NO LINE IS KEPT TWICE: two kept records of one class with the same
+    # coordinates are the defect of 2 Oct 2026, whoever recorded them.
+    lines = collections.defaultdict(list)
+    for f in kept:
+        lines[(_class(f), tuple(_coords(f)))].append(
+            f["properties"]["lane_uid"])
+    twice = sorted(sorted(u) for u in lines.values() if len(u) > 1)
+    for uids in twice[:args.examples]:
+        print("  KEPT TWICE: %s" % "  |  ".join(uids))
+    if twice:
+        print("  %d lines are kept as more than one way" % len(twice))
+        return 1
     for r, keeps, within in removed[:args.examples]:
         print("  removed %-28s kept %-44s within %5.1f m  %5.0f m"
               % (r["properties"]["lane_uid"],

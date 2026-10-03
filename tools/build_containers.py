@@ -147,11 +147,27 @@ def build_all(manifest_path, out_dir, key, signing_key=None, root=".",
     stamps = []
     entries = []
 
-    # Which ways already have an area drawing them. Packs are walked in
-    # manifest order, which is stable, so the owner of a boundary way is the
-    # same on every rebuild - and a rebuild that changed it would rewrite tiles
-    # in two areas for no reason.
-    claimed = set()
+    # EVERY AREA DRAWS EVERY WAY IT CARRIES. There is no `tile_exclude` here,
+    # and there must not be one again.
+    #
+    # Until 2 Oct 2026 this passed `tile_exclude=claimed`, so an area's tiles
+    # left out every way an area EARLIER in manifest order had already drawn
+    # (MAP_ARCHITECTURE.md 19.2 as first written: "tiles have no loader and no
+    # dedupe"). The record stayed, the line went. MEASURED on the published
+    # set: a rider who downloaded only Wales was shown 536 of its 1,390 byways
+    # from z11 up - Shropshire 171, Powys 169, Carmarthenshire 113 missing -
+    # and North 1,042 of 1,792, Midlands 1,771 of 2,138, East Anglia 1,084 of
+    # 1,444, South East 3,940 of 3,954. Only South West, first in the
+    # manifest, drew everything. Nothing else draws them: the app asks only
+    # mounted containers, and the overview stops at z10.
+    #
+    # The double drawing the rule was protecting against is the APP's to
+    # prevent, and it does: PmTilesServer._tileFor merges the tiles of every
+    # mounted container of the same kind and depth, and mergeVectorTiles keeps
+    # the first feature with a given id. The id is stable_id(lane_uid), so a
+    # boundary way has the same id in both areas and is drawn once.
+    # test_every_area_draws_its_own_ways.py drives this function over a way
+    # two areas share and fails if either area's tiles leave it out.
 
     for pack in manifest.get("packages", []):
         source = os.path.join(root, pack["file"])
@@ -167,10 +183,8 @@ def build_all(manifest_path, out_dir, key, signing_key=None, root=".",
         target = os.path.join(out_dir, name)
         features = B.load_features([source], key)
         B.write_container(target, features, "area", B.AREA_ZOOMS, pack_stamp,
-                          tile_exclude=claimed,
                           context_scope=context_scope,
                           context_note=context_note)
-        claimed.update(f["properties"].get("lane_uid") for f in features)
         # POIs AFTER THE WAYS, into the same file. Same container, own tables -
         # WAYS-SCHEMA.md - so a rider who downloads an area gets the fuel and
         # the toilets with it and there is no second download to forget.

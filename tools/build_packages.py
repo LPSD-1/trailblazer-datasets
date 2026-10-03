@@ -30,6 +30,7 @@ import hmac
 import json
 import math
 import os
+import re
 import sys
 from collections import Counter
 from datetime import datetime, timezone
@@ -362,7 +363,7 @@ def near_motor_ways(context, motor, radius_km=CONTEXT_RADIUS_KM):
         return []
     cells = {}
     for f in motor:
-        for lon, lat in f["geometry"]["coordinates"]:
+        for lon, lat in points_of(f):
             cells.setdefault(
                 (int(lon / (_KM_LON * radius_km)),
                  int(lat / (_KM_LAT * radius_km))), []).append((lon, lat))
@@ -370,7 +371,7 @@ def near_motor_ways(context, motor, radius_km=CONTEXT_RADIUS_KM):
     out = []
     for f in context:
         hit = False
-        for lon, lat in f["geometry"]["coordinates"]:
+        for lon, lat in points_of(f):
             cx = int(lon / (_KM_LON * radius_km))
             cy = int(lat / (_KM_LAT * radius_km))
             for dx in (-1, 0, 1):
@@ -444,7 +445,9 @@ def select_ways(features, context=DEFAULT_CONTEXT, near_uids=None,
     kept, gone = duplicate_ways.merge(chosen)
     if removed is not None:
         removed.extend(gone)
-    return kept
+    # AND ONE LANE PER COUNCIL RECORD, joined after the merge, which compares
+    # single lines: see join_pieces().
+    return join_pieces(kept)
 
 
 #: A fixed-width stand-in, replaced with the pack's real cut date in
@@ -648,12 +651,26 @@ def pack(payload_bytes, key):
     return prefix + sealed
 
 
+#: rowmaps' Description length is in MILES. One statute mile, in km.
+KM_PER_MILE = 1.609344
+
+
 def parse_description(desc):
     """rowmaps packs the useful fields into a pipe-separated Description.
 
     'BO|ON:22|0.144|none|-1.30876|51.66111|...'
-      type code, authority:sheet, length km, surface/notes, then endpoints.
+      type code, authority:object id, length MILES, then more fields and the
+      endpoints.
     Only the length is worth keeping; the rest we already know or can derive.
+
+    THE LENGTH IS MILES, NOT KILOMETRES. Derbyshire's DY 18/3 says 0.113 and
+    its line is about 182 m - 0.113 miles; read as km it was 113 m. Over the
+    8,493 published ways of 100 m or more, length_m over the length of the
+    way's own geometry had a median of 0.623 (1/1.604), p5-p95 0.617-0.630
+    (measured 2 Oct 2026): the mile-per-km factor, not survey noise. Every
+    way told every consumer of `length_m` (metres, WAYS-SCHEMA.md) that it
+    was 38% shorter than it is. Converted HERE, so `lengthKm` in the pack and
+    `length_m` in the container both mean what they say.
     """
     if not isinstance(desc, str):
         return {}
@@ -661,12 +678,50 @@ def parse_description(desc):
     out = {}
     if len(bits) > 2:
         try:
-            out["length_km"] = float(bits[2])
+            out["length_km"] = round(float(bits[2]) * KM_PER_MILE, 6)
         except (ValueError, IndexError):
             pass
     if len(bits) > 3 and bits[3] and bits[3] != "none":
         out["note"] = bits[3]
     return out
+
+
+#: rowmaps' piece suffix on a council number: 'KT|SR|74#1', 'KT|SR|74#2'.
+#: Both pieces carry one source object (Description 'KT:8831#1', 'KT:8831#2')
+#: and they meet end to end with 'KT|SR|74' itself: one byway, three records.
+_PIECE_SUFFIX = re.compile(r"#\d+$")
+
+#: rowmaps' map-sheet suffix on a parish: 'Great Hucklow-WD41'.
+_SHEET_SUFFIX = re.compile(r"\s*-\s*[A-Za-z]{1,4}\d+[A-Za-z]?$")
+
+
+def council_reference(ref, authority_code=None):
+    """rowmaps' Name -> (parish, number), the words a byway is known by.
+
+    'WT|LACO|24' -> ('LACO', '24'); 'DY|Great Hucklow-WD41|18/3' ->
+    ('Great Hucklow', '18/3'); 'KT|SR|74#1' -> ('SR', '74'); 'ON|7' -> ('7',).
+    Empty parts are left out, so it may be shorter than two.
+
+    THE PARISH IS PART OF THE NUMBER. In most councils a path number is only
+    unique within its parish: Wiltshire's reference is LACO24 (Lacock 24),
+    Kent's AE25, Derbyshire's "Great Hucklow 18/3". The name used to keep the
+    number alone, and measured from the council cache on 2 Oct 2026
+    Wiltshire's "BOAT 1" was 21 byways in 21 parishes; across the published
+    containers 6,711 of 10,231 ways shared their exact name with another way
+    of their authority. A rider could not search for one, quote it to the
+    council or set it against a traffic order.
+
+    The map-sheet suffix and rowmaps' "#n" piece suffix are not part of the
+    council's reference and are dropped: two records that differ only in
+    them are pieces of one way (see join_pieces).
+    """
+    parts = [p.strip() for p in (ref or "").split("|")]
+    number = _PIECE_SUFFIX.sub("", parts[-1]).strip()
+    parish = _SHEET_SUFFIX.sub("", parts[-2]).strip() if len(parts) >= 3 \
+        else ""
+    if parish and parish == authority_code:
+        parish = ""
+    return tuple(p for p in (parish, number) if p)
 
 
 def normalise(feature, authority_code, authority_name, row_type):
@@ -688,7 +743,9 @@ def normalise(feature, authority_code, authority_name, row_type):
     extra = parse_description(clean_text(props.get("Description")))
 
     # The council's own path number, e.g. 'ON|100|2/10'. Keep it: it is how a
-    # rider or a council officer would refer to this specific way.
+    # rider or a council officer would refer to this specific way. The NAME
+    # carries its parish too (council_reference); the id keeps the number
+    # alone, as it always has, so every id a rider has starred still exists.
     ref = clean_text(props.get("Name")) or ""
     path_no = ref.split("|")[-1] if "|" in ref else ref
 
@@ -709,8 +766,8 @@ def normalise(feature, authority_code, authority_name, row_type):
     uid = "%s-%s-%s" % (authority_code, path_no, geom_hash) if path_no \
         else "%s-%s" % (authority_code, geom_hash)
 
-    name = "%s %s" % (rule["designation"], path_no) if path_no \
-        else rule["designation"]
+    name = " ".join([rule["designation"]]
+                    + list(council_reference(ref, authority_code)))
 
     return {
         "type": "Feature",
@@ -786,12 +843,139 @@ def load_all(authorities):
     return by_type
 
 
+def lines_of(feature):
+    """A lane's lines: one for a LineString, several for a joined record."""
+    g = feature["geometry"]
+    if g.get("type") == "MultiLineString":
+        return g["coordinates"]
+    return [g["coordinates"]]
+
+
+def points_of(feature):
+    """Every vertex of a lane, whichever of the two shapes it has."""
+    return [p for line in lines_of(feature) for p in line]
+
+
+def _line_key(line):
+    return json.dumps([list(p) for p in line], separators=(",", ":"))
+
+
+def join_pieces(features):
+    """-> [features], each council record drawn in pieces made ONE lane.
+
+    THE DEFECT. rowmaps delivers many byways as several LineString pieces
+    under one council reference, usually split where the way crosses a road
+    or a parish line, end touching end: Kent's KT|AW|339 is 16 pieces,
+    Surrey's 526 is 19. Each piece's id carries a hash of its own coordinates
+    (normalise), so each piece was published as its own lane with the same
+    name. A rider who tapped one was told the length of that fragment, not
+    the byway; starring, My lanes and "take me to this lane" held a fragment;
+    and every count was inflated. Measured 2 Oct 2026: Kent's 234 records
+    were 800 lanes, Wiltshire's 92 multi-piece records 203; across the
+    published containers 627 byways whose same-name pieces meet end to end
+    were 2,113 lanes.
+
+    The app was built for the other shape: Lane.lengthM sums `lines` because
+    "a lane uid with several parts is one right of way the source has drawn
+    in pieces", and the container blob carries several lines per way. So the
+    pieces become one MultiLineString feature.
+
+    ONE RECORD IS ONE AUTHORITY, ONE ROW TYPE AND ONE NAME. The name is the
+    council's reference, parish and number (council_reference), with the
+    map-sheet and "#n" piece suffixes already gone - 'KT|SR|74#1', '#2' and
+    'KT|SR|74' are one chain of one byway. A way with no number has no
+    reference to join on and is left alone.
+
+    THE ID. A record that was one piece keeps its id exactly, so a star on it
+    survives. A joined record's id is the authority, the number and a hash
+    over ALL its parts, sorted, so it is the same whatever order the source
+    lists the pieces in, and it still differs from any one piece's id.
+
+    Run in select_ways() AFTER duplicate_ways.merge(), which compares single
+    lines: joined first, every record drawn in pieces would be invisible to
+    it and drawn twice where a neighbouring authority records it too. The
+    length is the sum of the parts' own lengths; a part lying exactly on one
+    already taken counts once.
+    """
+    groups = {}
+    order = []
+    for f in features:
+        p = f["properties"]
+        code = p.get("authorityCode") or ""
+        row_type = p.get("rowType")
+        designation = ROW_RULES.get(row_type, {}).get("designation")
+        if not code or not p.get("name") or p.get("name") == designation:
+            key = ("", id(f))
+        else:
+            key = (code, row_type, p["name"])
+        if key not in groups:
+            groups[key] = []
+            order.append(key)
+        groups[key].append(f)
+    return [_joined(groups[key]) for key in order]
+
+
+def _joined(members):
+    if len(members) == 1:
+        return members[0]
+    first = members[0]["properties"]
+    code = first["authorityCode"]
+
+    lines = {}
+    length_km = 0.0
+    lengths_known = True
+    descriptions = set()
+    also = {}
+    for m in members:
+        p = m["properties"]
+        fresh = [l for l in lines_of(m) if _line_key(l) not in lines]
+        for l in fresh:
+            lines[_line_key(l)] = [list(pt) for pt in l]
+        if fresh:
+            if p.get("lengthKm") is None:
+                lengths_known = False
+            else:
+                length_km += p["lengthKm"]
+        descriptions.add(p.get("description"))
+        for e in p.get("also_recorded_by") or []:
+            also.setdefault(e.get("way_uid"), e)
+
+    parts = [lines[k] for k in sorted(lines)]
+    uid = first["lane_uid"]
+    # normalise wrote '<code>-<number>-<hash of 10>'; the number may itself
+    # hold '-', so it is cut from both ends rather than split.
+    number = uid[len(code) + 1:-11] if uid.startswith(code + "-") \
+        and len(uid) > len(code) + 12 else ""
+    number = _PIECE_SUFFIX.sub("", number)
+    geom_hash = hashlib.sha1(
+        json.dumps(parts, separators=(",", ":")).encode()).hexdigest()[:10]
+
+    props = dict(first)
+    props["lane_uid"] = "%s-%s-%s" % (code, number, geom_hash) if number \
+        else "%s-%s" % (code, geom_hash)
+    props.pop("lengthKm", None)
+    if lengths_known:
+        props["lengthKm"] = round(length_km, 6)
+    props.pop("description", None)
+    if len(descriptions) == 1 and None not in descriptions:
+        props["description"] = descriptions.pop()
+    props.pop("also_recorded_by", None)
+    if also:
+        props["also_recorded_by"] = [also[k] for k in sorted(
+            also, key=lambda u: u or "")]
+    if len(parts) == 1:
+        geometry = {"type": "LineString", "coordinates": parts[0]}
+    else:
+        geometry = {"type": "MultiLineString", "coordinates": parts}
+    return {"type": "Feature", "properties": props, "geometry": geometry}
+
+
 def report_orphans(orphans):
     """Say WHERE the uncovered lanes are, so the boxes can be fixed."""
-    west = min(lon for f in orphans for lon, _ in f["geometry"]["coordinates"])
-    east = max(lon for f in orphans for lon, _ in f["geometry"]["coordinates"])
-    south = min(lat for f in orphans for _, lat in f["geometry"]["coordinates"])
-    north = max(lat for f in orphans for _, lat in f["geometry"]["coordinates"])
+    west = min(lon for f in orphans for lon, _ in points_of(f))
+    east = max(lon for f in orphans for lon, _ in points_of(f))
+    south = min(lat for f in orphans for _, lat in points_of(f))
+    north = max(lat for f in orphans for _, lat in points_of(f))
 
     by_authority = {}
     for f in orphans:
@@ -827,7 +1011,7 @@ def in_region(feature, box):
     packages are loaded together.
     """
     west, south, east, north = box
-    for lon, lat in feature["geometry"]["coordinates"]:
+    for lon, lat in points_of(feature):
         if west <= lon <= east and south <= lat <= north:
             return True
     return False
@@ -1055,6 +1239,13 @@ def main():
         print("  furthest any removed line lies from the kept one: %.1f m "
               "(limit %.0f m)" % (max(w for _, _, w in duplicates),
                                   duplicate_ways.MATCH_M))
+
+    # ONE LANE PER COUNCIL RECORD, and how many pieces that took.
+    joined = [f for f in pool if len(lines_of(f)) > 1]
+    print("")
+    print("council records the source drew in pieces (join_pieces)")
+    print("  records now one lane each  %5d, from %d pieces"
+          % (len(joined), sum(len(lines_of(f)) for f in joined)))
 
     if args.measure_only:
         return
