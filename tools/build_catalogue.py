@@ -1030,7 +1030,7 @@ def build(lanes_manifest, base_url, stamp, satellite_index=None,
         # people, continuously - a month is a long time to miss those. The
         # rider can still override any of it; they pay for the connection.
         "updates": {
-            "lanes": "monthly",
+            "lanes": "weekly",
             "routing": "monthly",
             "basemap": "monthly",
             "gpx": "weekly",
