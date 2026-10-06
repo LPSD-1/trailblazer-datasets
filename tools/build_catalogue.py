@@ -178,7 +178,7 @@ def mirrored_routing(path):
     """Routing tiles we host ourselves, by tile name.
 
     Riders pulling 139 MB each from a volunteer-run third party is a
-    dependency that fails by being blocked rather than by billing us, and it
+    dependency that can fail by being blocked, and it
     takes offline routing down for everyone at once when it does. Anything in
     here is served from our own release instead.
     """

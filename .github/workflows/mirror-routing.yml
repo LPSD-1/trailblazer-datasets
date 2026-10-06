@@ -4,12 +4,12 @@ name: Mirror routing tiles
 #
 # Every rider who plans a route offline in Britain currently pulls a 139 MB
 # tile from brouter.de — a volunteer-run service we have no agreement with and
-# no fallback for. It will not fail by sending us a bill; it will fail by being
+# no fallback for. If it fails, it fails by being
 # blocked, and then offline routing stops working for every rider at once, on a
 # moor, with the app reporting a download failure it cannot explain.
 #
-# GitHub releases have no total size limit and no bandwidth limit, so hosting
-# it ourselves costs nothing and removes the dependency.
+# Serving the tiles from this repository's own releases removes the
+# dependency.
 #
 # SIX TILES, NOT FIVE HUNDRED (plan step 1.6).
 #

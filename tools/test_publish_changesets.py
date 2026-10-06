@@ -345,7 +345,7 @@ def test_the_index_does_not_move_when_nothing_changed():
     A run stamp in this file would make the Publish step's "did anything
     change" diff answer yes on every run over data that never moved - which is
     the fault containers/manifest.json already has, and the reason this
-    repository's lane refresh is called a bandwidth bill four times a day.
+    repository's lane refresh republishes unchanged data four times a day.
     """
     print("an unchanged build writes nothing")
     found = published_containers()

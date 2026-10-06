@@ -9,9 +9,9 @@ WHY
 Every rider who wants to plan a route offline in Britain pulls a 139 MB tile
 from brouter.de - a volunteer-run service we have no agreement with, no
 relationship with and no fallback for. Across the published catalogue that is
-7.9 GB of somebody else's bandwidth, spent by an app that charges money.
+7.9 GB of somebody else's bandwidth.
 
-It will not fail by sending us a bill. It will fail by being rate-limited or
+If it fails, it fails by being rate-limited or
 blocked, and then offline routing stops working for every rider at once, on a
 moor, with the app reporting a download failure it cannot explain.
 
