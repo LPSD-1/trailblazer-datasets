@@ -1,0 +1,85 @@
+{
+ "bracknell-prow-tros": {
+  "authority": "Bracknell Forest",
+  "items": 12,
+  "last_ok": "2026-10-07",
+  "name": "Bracknell Forest Council - public rights of way TROs",
+  "records": 16,
+  "review": 0,
+  "unmatched": 0
+ },
+ "devon-closures": {
+  "authority": "Devon",
+  "items": 0,
+  "last_ok": "2026-10-07",
+  "name": "Devon County Council - temporary path closures",
+  "records": 44,
+  "review": 0,
+  "unmatched": 0
+ },
+ "dorset-closures": {
+  "authority": "Dorset",
+  "error": "gi.dorsetcouncil.gov.uk refused https://gi.dorsetcouncil.gov.uk/geoserver/countryside/wfs?service=WFS&version=2.0.0&request=GetFeature&typeNames=countryside:route_closed&outputFormat=application/json (HTTP 403)",
+  "failing_since": "2026-10-07",
+  "name": "Dorset Council - rights of way closures (WFS)"
+ },
+ "essex-prow-tros": {
+  "authority": "Essex",
+  "items": 44,
+  "last_ok": "2026-10-07",
+  "name": "Essex County Council - PRoW traffic regulation orders",
+  "records": 264,
+  "review": 1,
+  "unmatched": 0
+ },
+ "lancashire-closures": {
+  "authority": "Lancashire",
+  "items": 1,
+  "last_ok": "2026-10-07",
+  "name": "Lancashire County Council - public rights of way (temporary closures)",
+  "records": 78,
+  "review": 0,
+  "unmatched": 0
+ },
+ "northumberland-closures": {
+  "authority": "Northumberland",
+  "items": 7,
+  "last_ok": "2026-10-07",
+  "name": "Northumberland County Council - rights of way closures and TTROs",
+  "records": 34,
+  "review": 0,
+  "unmatched": 0
+ },
+ "somerset-closures": {
+  "authority": "Somerset",
+  "items": 0,
+  "last_ok": "2026-10-07",
+  "name": "Somerset Council - rights of way closures and traffic orders",
+  "records": 805,
+  "review": 0,
+  "unmatched": 0
+ },
+ "suffolk-prow-tros": {
+  "authority": "Suffolk",
+  "items": 76,
+  "last_ok": "2026-10-07",
+  "name": "Suffolk County Council - PROW traffic regulation orders",
+  "records": 90,
+  "review": 0,
+  "unmatched": 0
+ },
+ "suffolk-ttros": {
+  "authority": "Suffolk",
+  "items": 2,
+  "last_ok": "2026-10-07",
+  "name": "Suffolk County Council - live temporary PROW closures",
+  "records": 71,
+  "review": 0,
+  "unmatched": 0
+ },
+ "west-berkshire-closures": {
+  "authority": "West Berkshire",
+  "blocked": "robots.txt disallows the host",
+  "name": "West Berkshire Council - countryside closures layer"
+ }
+}
