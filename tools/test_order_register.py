@@ -15,6 +15,7 @@ import tempfile
 import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+HERE = os.path.dirname(os.path.abspath(__file__))
 
 import order_register as reg  # noqa: E402
 from byway_match import Byways, Way  # noqa: E402
@@ -303,6 +304,152 @@ class FollowedDocuments(unittest.TestCase):
             b'<a href="/news">c</a>'))
         self.assertEqual([d["url"] for d in docs],
                          ["https://www.cambs.example/asset-library/a.pdf"])
+
+
+class CollectedDocuments(unittest.TestCase):
+    """The collector keeps a council's order PDF as its digest only (the
+    owner's ruling, 7 October 2026). The check, which is what CI does with
+    those documents, must work from that exactly as it did from the bytes:
+    flag it once, credit it, and flag it again only when the digest moves."""
+
+    PAGE = "https://en.powys.example/article/2446"
+    PDF = "https://en.powys.example/media/10190/Gap-Road/pdf/gap.pdf?m=1"
+    BYTES = b"%PDF-1.4 the Gap Road order"
+
+    def setUp(self):
+        import hashlib
+        self.tmp = tempfile.mkdtemp()
+        self.home = os.path.join(self.tmp, "home-collected")
+        os.makedirs(os.path.join(self.home, "snapshots"))
+        with open(os.path.join(self.home, "collector.json"), "w") as fh:
+            json.dump({"sources": [{"id": "powys-2446", "url": self.PAGE,
+                                    "kind": "page"}]}, fh)
+        with open(os.path.join(self.home, "snapshots", "p.html"),
+                  "wb") as fh:
+            fh.write(b'<main><a href="/media/10190/Gap-Road/pdf/gap.pdf'
+                     b'?m=1">Gap Road</a></main>')
+        self.digest = hashlib.sha256(self.BYTES).hexdigest()
+        self.index({"digest": self.digest})
+        self.register = os.path.join(self.tmp, "register")
+        os.makedirs(self.register)
+        with open(os.path.join(self.register, "pages.json"), "w") as fh:
+            json.dump([{"id": "powys/2446", "url": self.PAGE,
+                        "council": "Powys County Council",
+                        "authorities": ["Powys"],
+                        "follow": r"^https://en\.powys\.example/media/"}],
+                      fh)
+
+    def index(self, doc):
+        with open(os.path.join(self.home, "index.json"), "w") as fh:
+            json.dump({self.PAGE: {"id": "powys-2446", "kind": "page",
+                                   "file": "p.html", "digest": "x",
+                                   "collected": "2026-10-07"},
+                       self.PDF: dict({"id": "powys-2446/doc/gap.pdf",
+                                       "kind": "document",
+                                       "collected": "2026-10-07",
+                                       "override": "powys-order-documents"},
+                                      **doc)}, fh)
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp)
+
+    def check(self):
+        from home_collector import HomeClient
+        # The network stand-in answers nothing: any request would KeyError.
+        return reg.check(HomeClient(Client({}), self.home),
+                         register=self.register, today="2026-10-08",
+                         manual_root=os.path.join(self.tmp, "manual"))
+
+    def test_a_held_pdf_is_flagged_by_its_digest_and_credited(self):
+        changed, unreachable, baselined = self.check()
+        self.assertEqual(unreachable, [])
+        self.assertEqual(baselined, ["powys/2446"])
+        (doc,) = changed
+        self.assertEqual(doc["page"], "powys/2446/doc/gap.pdf")
+        self.assertTrue(doc["new"])
+        self.assertEqual(doc["digest"], self.digest,
+                         "not the digest fingerprint() takes of the bytes")
+        self.assertEqual(doc["digest"], reg.fingerprint(
+            {"url": self.PDF}, self.BYTES)[0])
+        self.assertEqual(doc["provenance"],
+                         "collected directly from the council 2026-10-07")
+        self.assertIn("powys-order-documents", doc["read_under"])
+
+    def test_accepted_it_stays_quiet_until_the_digest_moves(self):
+        changed, _u, _b = self.check()
+        reg.accept([changed[0]["page"]], Client({}), register=self.register)
+        self.assertEqual(self.check()[0], [])
+        self.index({"digest": "0" * 64})
+        changed, _u, _b = self.check()
+        self.assertEqual([(c["page"], c["new"]) for c in changed],
+                         [("powys/2446/doc/gap.pdf", False)])
+
+    def test_the_real_collected_powys_documents_still_check(self):
+        # The committed home-collected/, as CI reads it: every Powys
+        # document the register already flagged comes out with the digest
+        # it was flagged with, from the digest alone, and nothing asks the
+        # network.
+        from home_collector import HOME, HomeClient
+        with open(os.path.join(os.path.dirname(HERE), "tro", "register",
+                               "pages.json")) as fh:
+            pages = [p for p in json.load(fh)
+                     if p["id"].startswith("powys")]
+        with open(os.path.join(os.path.dirname(HERE), "tro", "register",
+                               "changes.json")) as fh:
+            flagged = dict((c["page"], c["digest"]) for c in json.load(fh)
+                           if "/doc/" in c["page"]
+                           and c["page"].startswith("powys"))
+        self.assertTrue(pages and flagged)
+        with open(os.path.join(self.register, "pages.json"), "w") as fh:
+            json.dump(pages, fh)
+        changed, unreachable, _b = reg.check(
+            HomeClient(Client({}), HOME), register=self.register,
+            today="2026-10-08",
+            manual_root=os.path.join(self.tmp, "manual"))
+        self.assertEqual(unreachable, [])
+        got = dict((c["page"], c["digest"]) for c in changed
+                   if "/doc/" in c["page"])
+        self.assertEqual(got, flagged)
+
+
+class ReadUnderTheOwnersDecision(unittest.TestCase):
+    """CI wraps the real client in a HomeClient. The real client records an
+    overridden read only when it makes it, so `read_under` must come from
+    the client as it is after the read, not as it was when wrapped."""
+
+    URL = "https://www.cambs.example/rights-of-way-restrictions"
+    PDF = "https://www.cambs.example/asset-library/Soham-Byway-2016.pdf"
+
+    def test_a_document_read_under_the_override_says_so(self):
+        from home_collector import HomeClient
+        tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, tmp)
+        with open(os.path.join(tmp, "pages.json"), "w") as fh:
+            json.dump([{"id": "cambs/restrictions", "url": self.URL,
+                        "council": "Cambridgeshire County Council",
+                        "authorities": ["Cambridgeshire"],
+                        "follow": r"/asset-library/[^?]+\.pdf$"}], fh)
+
+        class Overriding(Client):
+            def get(inner, url):
+                if url == self.PDF:
+                    inner.overridden[url] = "cambridgeshire-byway-orders"
+                return Client.get(inner, url)
+
+        real = Overriding({self.URL: b'<main><a href="/asset-library/'
+                                     b'Soham-Byway-2016.pdf">x</a></main>',
+                           self.PDF: b"%PDF-1.4 order"})
+        real.overridden = {}
+        home = os.path.join(tmp, "home-collected")
+        os.makedirs(home)
+        changed, _u, _b = reg.check(HomeClient(real, home), register=tmp,
+                                    today="2026-10-08",
+                                    manual_root=os.path.join(tmp, "manual"))
+        self.assertEqual([c["page"] for c in changed],
+                         ["cambs/restrictions/doc/soham-byway-2016.pdf"])
+        self.assertIn("cambridgeshire-byway-orders",
+                      changed[0].get("read_under") or "",
+                      "the override read was not credited")
 
 
 class ManualInbox(unittest.TestCase):

@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
-"""The home collector stores only real changes, never leaves a partial file,
-keeps the last good snapshot, and the CI builds read its snapshots instead
-of asking councils that refuse GitHub's runners.
+"""The collector stores only real changes, never leaves a partial file,
+keeps the last good snapshot, keeps no council order PDF (only its digest),
+and the CI builds read its snapshots instead of asking councils that refuse
+GitHub's runners.
 
     python tools/test_home_collector.py
 
 No network and no git: a stand-in client and a temporary home-collected/.
 """
+import hashlib
 import json
 import os
 import shutil
@@ -100,9 +102,49 @@ class Collect(unittest.TestCase):
         self.assertEqual(failures, [])
         self.assertEqual([u for u, _lm in client.asked], [WFS, PAGE, PDF])
         self.assertIn("dorset-closures", changed)
-        self.assertEqual(self.snapshot(PDF), b"%PDF-1.4 order")
+        self.assertIn("Traffic orders", self.snapshot(PAGE).decode())
         self.assertFalse(any(n.endswith(".tmp") for n in os.listdir(
             os.path.join(self.home, "snapshots"))))
+
+    def test_an_order_pdf_is_kept_as_its_digest_never_its_bytes(self):
+        self.run_with({WFS: layer(1), PAGE: page("a"),
+                       PDF: b"%PDF-1.4 order"})
+        entry = self.index()[PDF]
+        self.assertNotIn("file", entry)
+        self.assertEqual(entry["digest"], hashlib.sha256(
+            b"%PDF-1.4 order").hexdigest())
+        self.assertEqual(entry["bytes"], len(b"%PDF-1.4 order"))
+        self.assertEqual(entry["collected"], "2026-10-08")
+        self.assertFalse([n for n in os.listdir(os.path.join(
+            self.home, "snapshots")) if n.lower().endswith(".pdf")])
+        # An amended order is still a change, by its digest.
+        _c, changed, _f = self.run_with({WFS: None, PAGE: None,
+                                         PDF: b"%PDF-1.4 amended"},
+                                        today="2026-10-15")
+        self.assertIn("powys-2446/doc/gap.pdf", changed)
+        self.assertEqual(self.index()[PDF]["collected"], "2026-10-15")
+
+    def test_a_pdf_kept_by_an_older_collector_is_removed_digest_kept(self):
+        # Before 7 October 2026 the PDF's bytes were committed. The next
+        # run - even one that reads nothing (a 304, or not due this week)
+        # - drops the file and keeps the digest the register compares.
+        self.run_with({WFS: layer(1), PAGE: page("a"), PDF: b"%PDF-1.4 x"})
+        index = self.index()
+        old = "powys-2446-doc-gap-pdf-0123456789.pdf"
+        with open(os.path.join(self.home, "snapshots", old), "wb") as fh:
+            fh.write(b"%PDF-1.4 x")
+        index[PDF]["file"] = old
+        with open(os.path.join(self.home, hc.INDEX), "w") as fh:
+            json.dump(index, fh)
+        _c, changed, _f = self.run_with(
+            {WFS: None, PAGE: None, PDF: NotDue("read 2 days ago")},
+            today="2026-10-09")
+        self.assertIn("index", changed)
+        self.assertNotIn("file", self.index()[PDF])
+        self.assertEqual(self.index()[PDF]["digest"],
+                         hashlib.sha256(b"%PDF-1.4 x").hexdigest())
+        self.assertFalse(os.path.exists(os.path.join(self.home, "snapshots",
+                                                     old)))
 
     def test_a_clock_or_a_footer_is_not_a_change(self):
         self.run_with({WFS: layer(1), PAGE: page("a"), PDF: b"%PDF"})
@@ -136,6 +178,22 @@ class Collect(unittest.TestCase):
         _c, changed, _f = self.run_with({WFS: None, PAGE: None, PDF: None},
                                         today="2026-10-09")
         self.assertEqual(changed, ["heartbeat"])
+
+    def test_one_source_failing_for_days_is_said_while_others_read(self):
+        # The heartbeat moves when ANY source reads, so it cannot see one
+        # council refusing for a week. index.json's failing_since can.
+        self.run_with({WFS: layer(1), PAGE: page("a"), PDF: b"%PDF"})
+        for day in ("2026-10-09", "2026-10-11", "2026-10-13"):
+            self.run_with({WFS: Refused("HTTP 403"), PAGE: None, PDF: None},
+                          today=day)
+        self.assertIsNone(hc.stale(self.home, 3, today="2026-10-12"))
+        said = hc.stale(self.home, 3, today="2026-10-13")
+        self.assertIsNotNone(said, "a source failing for four days was "
+                                   "not reported")
+        self.assertIn("dorset-closures has not been read since 2026-10-09",
+                      said)
+        self.assertIn("HTTP 403", said)
+        self.assertNotIn("powys", said)
 
     def test_stale_after_three_days(self):
         self.run_with({WFS: layer(1), PAGE: page("a"), PDF: b"%PDF"})
@@ -252,6 +310,64 @@ class HomeClientInCI(unittest.TestCase):
         self.assertEqual(client.get("https://other.example/x"),
                          b"from the network")
 
+    def test_a_held_pdf_answers_by_digest_and_never_by_bytes(self):
+        real = Real()
+        client = hc.HomeClient(real, self.home)
+        self.assertEqual(client.document_digest(PDF),
+                         hashlib.sha256(b"%PDF-1.4").hexdigest())
+        self.assertEqual(client.take_served(), {PDF: "2026-10-08"})
+        self.assertIsNone(client.document_digest(PAGE),
+                          "a page is served from its snapshot, not a digest")
+        with self.assertRaises(Refused):
+            client.get(PDF)
+        self.assertEqual(real.asked, [])
+
+    def test_reads_the_inner_client_overrides_during_the_run(self):
+        # order_register writes `read_under` from client.overridden after
+        # each read; the real client only records a read when it happens,
+        # so a copy taken when the HomeClient was made is always empty.
+        class Overriding(Real):
+            def __init__(self):
+                Real.__init__(self)
+                self.overridden = {}
+
+            def get(self, url):
+                self.overridden[url] = "cambridgeshire-byway-orders"
+                return Real.get(self, url)
+
+        real = Overriding()
+        client = hc.HomeClient(real, self.home)
+        url = "https://www.cambs.example/asset-library/byway.pdf"
+        client.get(url)
+        self.assertEqual(client.overridden.get(url),
+                         "cambridgeshire-byway-orders")
+
+
+class TheRepositoryKeepsNoOrderPdf(unittest.TestCase):
+    """The owner's ruling (7 October 2026): whole council order PDFs are not
+    kept in this public repository - only what the pipeline uses."""
+
+    def test_no_pdf_under_home_collected(self):
+        found = []
+        for folder, _dirs, files in os.walk(os.path.join(ROOT,
+                                                         "home-collected")):
+            for name in files:
+                with open(os.path.join(folder, name), "rb") as fh:
+                    if name.lower().endswith(".pdf") or \
+                            fh.read(4) == b"%PDF":
+                        found.append(name)
+        self.assertEqual(found, [])
+
+    def test_every_document_in_the_index_is_a_digest(self):
+        with open(os.path.join(ROOT, "home-collected", hc.INDEX)) as fh:
+            index = json.load(fh)
+        docs = [e for e in index.values() if e.get("kind") == "document"]
+        self.assertTrue(docs)
+        for entry in docs:
+            self.assertNotIn("file", entry, entry["id"])
+            self.assertRegex(entry.get("digest") or "", "^[0-9a-f]{64}$",
+                             entry["id"])
+
 
 class TheRealConfig(unittest.TestCase):
     def test_every_url_is_one_the_pipeline_asks_for(self):
@@ -325,12 +441,17 @@ class AClashNeverJamsTheClone(unittest.TestCase):
                   newline="\n") as fh:
             fh.write(text + "\n")
 
+    def setUp_no_sleep(self):
+        real = hc.time.sleep
+        hc.time.sleep = lambda s: None
+        self.addCleanup(setattr, hc.time, "sleep", real)
+
     def test_a_failed_rebase_is_abandoned_and_the_clone_reset(self):
+        self.setUp_no_sleep()
         self.write(self.a, "from a")
         hc.publish(self.a, "a", machine="server")
         self.write(self.b, "from b")
-        with self.assertRaises(RuntimeError):
-            hc.publish(self.b, "b", tries=1)
+        self.assertFalse(hc.publish(self.b, "b", tries=1))
         hc.sync(self.b)
         git_dir = os.path.join(self.b, ".git")
         self.assertFalse(os.path.isdir(os.path.join(git_dir,
@@ -340,6 +461,23 @@ class AClashNeverJamsTheClone(unittest.TestCase):
         self.assertEqual(self.git(self.b, "rev-parse", "HEAD"),
                          self.git(self.a, "rev-parse", "HEAD"))
         self.assertEqual(self.git(self.b, "status", "--porcelain"), "")
+
+    def test_a_run_whose_commit_was_reset_away_does_not_say_pushed(self):
+        # After the reset, the next push succeeds - with nothing of this
+        # run in it. It used to log "pushed" and return True.
+        self.setUp_no_sleep()
+        self.write(self.a, "from a")
+        hc.publish(self.a, "a", machine="server")
+        self.write(self.b, "from b")
+        with self.assertLogs("home-collector", level="INFO") as said:
+            pushed = hc.publish(self.b, "b", tries=3)
+        self.assertFalse(pushed, "a run whose changes were dropped said it "
+                                 "pushed them")
+        self.assertNotIn("INFO:home-collector:pushed", said.output)
+        self.assertTrue([m for m in said.output if m.startswith("WARNING")
+                         and "dropped" in m], said.output)
+        self.assertEqual(self.git(self.b, "rev-parse", "HEAD"),
+                         self.git(self.a, "rev-parse", "HEAD"))
 
     def test_a_clone_a_crash_left_mid_rebase_is_brought_back(self):
         self.write(self.a, "from a")
