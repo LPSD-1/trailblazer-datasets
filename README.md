@@ -150,6 +150,26 @@ automated access. No personal data is stored: contact names, phone numbers,
 e-mail addresses and applicants are dropped before anything is written. A
 source that fails, or suddenly returns nothing, keeps its last good copy.
 
+## The order register
+
+`tro/register/orders.json` holds the long-standing permanent and seasonal
+byway orders councils list on their own pages and in PDFs, transcribed once
+and reviewed: only entries marked `approved` are published (as the
+`order-register` source above); entries a reviewer could not settle are kept
+as `needs-review`, with why, and orders known only by their title (the PDFs
+robots.txt keeps us out of) as `listed-only`. `order-register.yml` re-reads
+the councils' pages every quarter and opens an issue with the diff when one
+changes; it never edits the register itself.
+
+## Status changes
+
+`status/status-changes.geojson` flags byways whose legal status is changing:
+Planning Inspectorate decisions on orders that add, upgrade, downgrade or
+delete a byway, read weekly from GOV.UK by `status-changes.yml`
+(`tools/pins_decisions.py`; Open Government Licence v3.0). Every byway
+decision found, matched to a lane or not, is listed in
+`status/pins-decisions.json`.
+
 ## Licence
 
 Data: Open Government Licence v3.0 — attribution required, no share-alike.

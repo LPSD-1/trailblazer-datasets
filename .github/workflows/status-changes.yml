@@ -1,0 +1,109 @@
+name: Status changes
+
+# BYWAYS WHOSE LEGAL STATUS IS CHANGING, as a layer beside the lanes
+# (status/). Weekly, because these move over months: a Planning Inspectorate
+# decision on an order that adds, upgrades, downgrades or deletes a byway
+# (tools/pins_decisions.py).
+#
+# Read from GOV.UK and the councils' own layers through tools/polite_http.py:
+# an honest User-Agent, robots.txt obeyed, paced, read only. A source that
+# fails leaves what it published last time exactly as it was.
+on:
+  schedule:
+    - cron: '37 6 * * 1'   # 06:37 UTC on Mondays
+  workflow_dispatch:
+
+permissions:
+  contents: write   # the committed status/ files
+  issues: write     # to raise one when a run fails
+
+concurrency:
+  group: status-changes
+  cancel-in-progress: false
+
+jobs:
+  status:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09  # v5
+
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1  # v6
+        with:
+          python-version: '3.12'
+
+      - name: Run the tests before trusting the read
+        run: |
+          python tools/test_polite_http.py
+          python tools/test_pins_decisions.py
+
+      - name: Read the Planning Inspectorate's decisions
+        run: python tools/pins_decisions.py
+
+      - name: Commit what changed
+        run: |
+          git config user.name  "trailblazer-data"
+          git config user.email "data@trailblazer.invalid"
+
+          commit_it() {
+            git add -A status
+            if git diff --cached --quiet; then
+              echo "nothing changed"
+              return 1
+            fi
+            git commit -m "Status changes: $(date -u +%Y-%m-%d)" \
+              -m "Read by .github/workflows/status-changes.yml"
+            return 0
+          }
+
+          commit_it || exit 0
+
+          # Only this job writes status/: on a lost race, take the newest
+          # main and put ours back over it.
+          mkdir -p dist
+          rm -rf dist/status-built
+          cp -r status dist/status-built
+          for attempt in 1 2 3; do
+            if git push; then
+              exit 0
+            fi
+            echo "push rejected; putting our files back on top of origin/main"
+            git fetch origin main
+            git reset --hard origin/main
+            rm -rf status
+            cp -r dist/status-built status
+            commit_it || exit 0
+            sleep $((attempt * 5))
+          done
+          echo "::error::could not push after three attempts"
+          exit 1
+
+      - name: Raise an issue if this failed
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          EXISTING=$(gh issue list --label status-changes --state open \
+                       --json number --jq '.[0].number' 2>/dev/null || true)
+          if [ -n "$EXISTING" ]; then
+            gh issue comment "$EXISTING" --body "Failed again: $RUN_URL"
+          else
+            gh label create status-changes --color D93F0B \
+              --description "Automated status-change layer problems" 2>/dev/null || true
+            gh issue create --label status-changes \
+              --title "Status changes failed" \
+              --body "$RUN_URL failed. The status layer already published in status/ is unchanged - nothing was blanked - but new decisions are not reaching it. GOV.UK's page layout changing (the reader refuses a page it parses no decisions from) or a lost push are the usual causes."
+          fi
+
+      - name: Stand the alarm down if this worked
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          for n in $(gh issue list --label status-changes --state open \
+                       --json number --jq '.[].number' 2>/dev/null || true); do
+            gh issue close "$n" --comment "Fixed: $RUN_URL succeeded." || true
+          done
