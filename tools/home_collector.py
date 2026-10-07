@@ -231,9 +231,13 @@ def collect(client, home=HOME, today=None, config=None):
 
 def git(repo, *args, check=True):
     exe = shutil.which("git") or "git"
+    # No console window for git when the collector itself runs without one
+    # (pythonw under the Windows task); the flag does not exist elsewhere.
     out = subprocess.run([exe] + list(args), cwd=repo, check=False,
                          stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                         universal_newlines=True)
+                         universal_newlines=True,
+                         creationflags=getattr(subprocess,
+                                               "CREATE_NO_WINDOW", 0))
     if check and out.returncode != 0:
         raise RuntimeError("git %s failed: %s" % (" ".join(args),
                                                   out.stdout[-500:]))
@@ -370,7 +374,8 @@ def main(argv=None):
     handler.setFormatter(logging.Formatter(
         "%(asctime)s %(levelname)s %(message)s"))
     log.addHandler(handler)
-    log.addHandler(logging.StreamHandler(sys.stdout))
+    if sys.stdout is not None:     # pythonw has no console to write to
+        log.addHandler(logging.StreamHandler(sys.stdout))
     log.setLevel(logging.INFO)
     log.info("run starts")
     try:
