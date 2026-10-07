@@ -1,5 +1,5 @@
 {
- "about": "The councils that refuse GitHub's runners (403, measured 7 October 2026) and answer an ordinary connection. Read by tools/home_collector.py on a machine at home; see HOME-COLLECTOR.md. URLs must be exactly those the pipeline asks for, so the CI builds find them here instead of asking the council. Sources marked \"machine\": \"server\" are read by the always-on server (Dorset and Powys answer it); the rest by the machine at home (Norfolk and Wiltshire refuse data centres).",
+ "about": "The councils that refuse GitHub's runners (403, measured 7 October 2026) and answer the always-on collector server. Read by tools/home_collector.py --machine server; see HOME-COLLECTOR.md. URLs must be exactly those the pipeline asks for, so the CI builds find them here instead of asking the council. Norfolk's and Wiltshire's pages were retired on 7 October 2026: they refuse every data centre (Cloudflare) and none of them fed a published order.",
  "log": "collector.log",
  "min_gap_s": 4.0,
  "sources": [
@@ -20,30 +20,6 @@
    "authority": "Dorset",
    "feeds": "DMMO register dorset-dmmo",
    "machine": "server"
-  },
-  {
-   "id": "norfolk-notices",
-   "url": "https://www.norfolk.gov.uk/article/42887/Notices-closures-and-temporary-route-changes",
-   "kind": "page",
-   "council": "Norfolk County Council",
-   "authority": "Norfolk",
-   "feeds": "order register page norfolk-county-council/notices-closures-and-temporary-route-changes"
-  },
-  {
-   "id": "norfolk-tros",
-   "url": "https://www.norfolk.gov.uk/article/39748/Traffic-Regulation-Orders",
-   "kind": "page",
-   "council": "Norfolk County Council",
-   "authority": "Norfolk",
-   "feeds": "order register page norfolk-county-council/traffic-regulation-orders"
-  },
-  {
-   "id": "wiltshire-rights-of-way",
-   "url": "https://www.wiltshire.gov.uk/recreation-rights-of-way",
-   "kind": "page",
-   "council": "Wiltshire Council",
-   "authority": "Wiltshire",
-   "feeds": "order register page wiltshire-council/recreation-rights-of-way"
   },
   {
    "id": "powys-2444",

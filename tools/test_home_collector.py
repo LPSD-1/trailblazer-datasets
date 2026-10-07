@@ -276,7 +276,6 @@ class TheRealConfig(unittest.TestCase):
             hosts = set(hc.polite_http.host_of(s["url"])
                         for s in json.load(fh)["sources"])
         self.assertEqual(hosts, {"gi.dorsetcouncil.gov.uk",
-                                 "www.norfolk.gov.uk", "www.wiltshire.gov.uk",
                                  "en.powys.gov.uk"})
 
 
@@ -368,19 +367,23 @@ class AClashNeverJamsTheClone(unittest.TestCase):
 
 class WhichMachineReadsWhat(unittest.TestCase):
     """Measured 7 Oct 2026 from the Oracle server in London: Dorset and
-    Powys answer it; Norfolk and Wiltshire (Cloudflare) refuse it with a
-    403. A council moved to the server that refuses it would go unread."""
+    Powys answer it. Norfolk's and Wiltshire's pages (Cloudflare) refuse
+    every data centre and fed no published order, so they were retired
+    rather than kept on the owner's PC. Nothing may depend on a machine at
+    home: a source left without "machine": "server" would go unread."""
 
-    def test_the_councils_that_refuse_data_centres_stay_at_home(self):
+    def test_every_source_is_read_by_the_server(self):
         with open(os.path.join(ROOT, "home-collected",
                                "collector.json")) as fh:
             sources = json.load(fh)["sources"]
-        where = dict((hc.polite_http.host_of(s["url"]), hc.machine_of(s))
-                     for s in sources)
-        self.assertEqual(where, {"gi.dorsetcouncil.gov.uk": "server",
-                                 "en.powys.gov.uk": "server",
-                                 "www.norfolk.gov.uk": "home",
-                                 "www.wiltshire.gov.uk": "home"})
+        self.assertTrue(sources)
+        self.assertEqual(set(hc.machine_of(s) for s in sources), {"server"})
+
+    def test_and_so_only_the_server_is_watched_for_going_quiet(self):
+        said = hc.stale(os.path.join(ROOT, "home-collected"), 3,
+                        today="2099-01-01")
+        self.assertIn("the server collector", said)
+        self.assertNotIn("the home collector", said)
 
 
 if __name__ == "__main__":

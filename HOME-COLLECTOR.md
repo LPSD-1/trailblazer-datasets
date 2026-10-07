@@ -1,36 +1,21 @@
-# The home collector
+# The collector
 
 ## What it does
 
-A few councils answer an ordinary home connection but refuse GitHub's
-servers with a 403 (measured 7 October 2026):
+A few councils refuse GitHub's shared runners with a 403 but answer an
+ordinary, single, fixed server (measured 7 October 2026):
 
 - Dorset's GeoServer: its rights of way closures layer and its register of
   definitive map applications.
-- Norfolk's notices and traffic regulation order pages.
-- Wiltshire's rights of way page.
 - Powys's byway order pages and the order documents they link to.
 
-The pipeline never tries to get past that refusal. Instead,
-`tools/home_collector.py` runs every six hours on two machines that share
-the work (`home-collected/collector.json` says which reads what). It reads
-only those sources and commits what changed to `home-collected/`:
-
-- **An always-on server** (Oracle Cloud, London) reads Dorset and Powys,
-  which answer it. Those sources say `"machine": "server"`.
-- **The PC at home** reads Norfolk and Wiltshire. Both sit behind
-  Cloudflare's bot challenge, which refuses data centres (measured from the
-  server on 7 October 2026: HTTP 403), so only a home connection reaches
-  them.
-
-Each machine reads only its own sources and keeps its own heartbeat
-(`heartbeat.json` for the PC, `heartbeat-server.json` for the server). They
-share `index.json`, but each touches only its own entries, and the server
-runs three hours after the PC, so they don't push at the same moment. The GitHub Actions builds then read those
-snapshots instead of asking the councils. Each snapshot is matched to the
-byways and published like any other source. It is credited to the council,
-and the coverage table says "collected directly from the council" with the
-date.
+`tools/home_collector.py` reads only those sources
+(`home-collected/collector.json`), every six hours, from one small server
+in London, and commits what changed to `home-collected/`. The GitHub
+Actions builds then read those snapshots instead of asking the councils.
+Each snapshot is matched to the byways and published like any other
+source. It is credited to the council, and the coverage table says
+"collected directly from the council" with the date.
 
 It disguises nothing. Every request goes through `tools/polite_http.py`,
 exactly as in CI:
@@ -39,9 +24,18 @@ exactly as in CI:
 - robots.txt obeyed, and the owner's recorded robots.txt decisions read at
   most weekly;
 - the same pacing;
-- read only.
+- read only;
+- one fixed address. It never changes address, and a council that refuses
+  the server is not asked from anywhere else.
 
-It is cheap to run:
+Norfolk's and Wiltshire's pages were read from a home connection until 7
+October 2026. They sit behind Cloudflare's bot challenge, which refuses
+every data centre including this server, and none of them fed a published
+order (Norfolk's are footpath and trail closures and a page about the TRO
+process; Wiltshire's is a guide that links elsewhere), so they were
+retired rather than kept on a machine at home.
+
+It is light on the councils:
 
 - It uses conditional requests where the council supports them.
 - It writes a snapshot only when the content really changed: a page's text,
@@ -53,29 +47,29 @@ It is cheap to run:
   heartbeat once a day.
 - It needs nothing but Python 3.9+ and git.
 
-If either machine's heartbeat is more than three days old, the council
-orders workflow opens an issue labelled `home-collector` naming which one,
-so a switched-off machine is noticed even while the other carries on.
+If the heartbeat is more than three days old, the council orders workflow
+opens an issue labelled `home-collector`, so a stopped server is noticed.
 
-If the two ever push at once, the loser rebases onto the winner's commit.
-If a rebase fails, the collector abandons it and resets its clone to
+Each source says which machine reads it (`"machine": "server"`). The code
+can share sources between more than one machine, each with its own
+heartbeat (`heartbeat-<machine>.json`), but today every source is the
+server's. If a push ever loses a race, the collector rebases onto the
+winner's commit; if a rebase fails, it abandons it and resets its clone to
 GitHub's copy, so a clash can never leave a clone stuck. The snapshots from
 that run are read again next time.
 
-## Where it runs now
+## Where it runs
 
-### The server (Dorset, Powys)
-
-- **Machine:** Oracle Cloud Always Free, London (Ampere, Ubuntu 24.04).
-  Security updates install themselves daily and it restarts at 04:00 UTC
-  when one needs it. SSH is by key only.
+- **Machine:** a small Linux server in London (Ubuntu 24.04). Security
+  updates install themselves daily and it restarts at 04:00 UTC when one
+  needs it. SSH is by key only.
 - **Clone:** `~/trailblazer-collector`, sparse, holding only `tools/` and
   `home-collected/`.
 - **Git:** pushes over SSH with a deploy key made on the server, which can
-  write to this repository only (Settings > Deploy keys, "Oracle collector
-  (London)"). Its private half never left the server.
+  write to this repository only (Settings > Deploy keys). Its private half
+  never left the server.
 - **Schedule:** cron, every 6 hours at 03:17, 09:17, 15:17 and 21:17 UTC,
-  three hours after the PC's runs, low priority:
+  low priority:
 
   ```
   17 3,9,15,21 * * * cd $HOME/trailblazer-collector && nice -n 10 /usr/bin/python3 tools/home_collector.py --machine server >/dev/null 2>&1
@@ -83,94 +77,22 @@ that run are read again next time.
 
 - **Log:** `~/trailblazer-collector/collector.log`, rotating at 256 KB.
 
-### The PC at home (Norfolk, Wiltshire)
-
-- **Machine:** Windows, the owner's PC.
-- **Clone:** a sparse clone at `C:\Users\lucas\trailblazer-collector`,
-  holding only `tools/` and `home-collected/`. It is separate from any
-  working copy.
-- **Scheduled task:** `TrailBlazer home collector`. It runs as the current
-  user every 6 hours, and at logon if a run was missed. It runs only when a
-  network is available, at low priority, with no window. It runs with no
-  `--machine`, which means `home`.
-- **Python:** `C:\Users\lucas\AppData\Local\Python\pythoncore-3.14-64\pythonw.exe`,
-  the windowless twin of `python.exe` in the same folder.
-- **Log:** `C:\Users\lucas\trailblazer-collector\collector.log`. It rotates
-  at 256 KB and keeps 3 old files.
-- **Git:** pushes with the GitHub CLI's stored credentials. No token is
-  written anywhere.
-
-Run either by hand:
+Run it by hand on the server:
 
 ```
-python3 tools/home_collector.py --machine server     # on the server
-python tools\home_collector.py                       # on the PC (home)
+cd ~/trailblazer-collector && python3 tools/home_collector.py --machine server
 ```
 
 ## How to stop it
 
-```
-schtasks /Delete /TN "TrailBlazer home collector" /F
-```
-
-Then delete `C:\Users\lucas\trailblazer-collector` if you like. The builds
-keep using the last snapshots committed. After three days, an issue says the
-collector has gone quiet.
-
-## Moving it to a Raspberry Pi (or any small Linux machine)
-
-1. Install git and Python 3.9 or later (Raspberry Pi OS has both):
-
-   ```
-   sudo apt install -y git python3
-   ```
-
-2. Make a fine-grained GitHub token that can push to this repository only.
-   On github.com, go to Settings, then Developer settings, then Personal
-   access tokens, then Fine-grained tokens, then Generate. Set the
-   repository access to `LPSD-1/trailblazer-datasets` only, and the
-   permissions to Contents: Read and write, nothing else. Pick an expiry
-   date and note it.
-
-3. Make the sparse clone and store the token for git (it goes into
-   `~/.git-credentials`, readable by your user only; it is never committed):
-
-   ```
-   git clone --filter=blob:none --sparse https://github.com/LPSD-1/trailblazer-datasets ~/trailblazer-collector
-   cd ~/trailblazer-collector
-   git sparse-checkout set tools home-collected
-   git config user.name  "trailblazer-home-collector"
-   git config user.email "home-collector@trailblazer.invalid"
-   git config credential.helper store
-   git pull   # username: your GitHub user; password: paste the token
-   chmod 600 ~/.git-credentials
-   ```
-
-4. Run it once by hand and read the log:
-
-   ```
-   python3 tools/home_collector.py
-   tail collector.log
-   ```
-
-5. Schedule it every 6 hours with cron (`crontab -e`), low priority:
-
-   ```
-   17 */6 * * * cd $HOME/trailblazer-collector && nice -n 10 /usr/bin/python3 tools/home_collector.py >/dev/null 2>&1
-   ```
-
-6. Switch off the Windows task so two machines are not collecting:
-
-   ```
-   schtasks /Delete /TN "TrailBlazer home collector" /F
-   ```
-
-7. Renew the token before it expires. When it lapses, pushes fail, and
-   three days later the `home-collector` issue opens.
+Remove the cron line (`crontab -e`) and delete the deploy key in the
+repository's settings. The builds keep using the last snapshots committed.
+After three days, an issue says the collector has gone quiet.
 
 ## Changing what it reads
 
 Edit `home-collected/collector.json` in the repository. Each URL must be
 exactly the one the pipeline asks for, and `tools/test_home_collector.py`
-checks that. Add only councils that refuse GitHub's servers. Anything CI can
-read, CI reads itself.
+checks that. Add only councils that refuse GitHub's servers and answer the
+collector server (check with one request from the server first), and mark
+them `"machine": "server"`. Anything CI can read, CI reads itself.
