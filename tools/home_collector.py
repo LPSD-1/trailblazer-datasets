@@ -62,8 +62,9 @@ PROVENANCE = "collected directly from the council"
 # Wiltshire (both behind Cloudflare's bot challenge) refuse it with a 403, as
 # they refuse GitHub's runners, and answer only a home connection. A source
 # says `"machine": "server"` to be read by the always-on server; anything
-# else stays with the machine at home. Each machine reads only its own and
-# keeps its own heartbeat, so two machines never write the same file - and a
+# else stays with the machine at home. Each machine reads only its own,
+# writes only its own snapshots and heartbeat, and touches only its own
+# entries in the shared index.json; their runs are three hours apart. A
 # switched-off PC is still noticed while the server carries on.
 MACHINES = ("home", "server")
 
@@ -271,8 +272,9 @@ def git(repo, *args, check=True):
 def sync(repo):
     """Bring the clone level with GitHub, whatever state a crash left it in.
 
-    Two machines push to home-collected/ now. They write different files,
-    so a rebase is clean - but if one ever is not, a clone left mid-rebase
+    Two machines push to home-collected/ now. They write different
+    snapshots and different entries of index.json, so a rebase is clean -
+    but if one ever is not, a clone left mid-rebase
     would fail every run after it, silently, until someone logged in. So a
     failed rebase is abandoned and the clone reset to GitHub's copy: the
     snapshots of this run are lost, and the next run reads them again, which
@@ -290,7 +292,7 @@ def sync(repo):
 
 def publish(repo, message, tries=3, machine="home"):
     """Commit home-collected/ and push it; on a lost race, rebase onto the
-    other machine's push (it writes other files) and try again."""
+    other machine's push (it writes other entries) and try again."""
     git(repo, "add", "-A", "home-collected")
     if git(repo, "diff", "--cached", "--quiet", check=False).returncode == 0:
         log.info("nothing changed; nothing pushed")

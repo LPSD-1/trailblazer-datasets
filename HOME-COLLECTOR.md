@@ -24,8 +24,9 @@ only those sources and commits what changed to `home-collected/`:
   them.
 
 Each machine reads only its own sources and keeps its own heartbeat
-(`heartbeat.json` for the PC, `heartbeat-server.json` for the server), so
-the two never write the same file. The GitHub Actions builds then read those
+(`heartbeat.json` for the PC, `heartbeat-server.json` for the server). They
+share `index.json`, but each touches only its own entries, and the server
+runs three hours after the PC, so they don't push at the same moment. The GitHub Actions builds then read those
 snapshots instead of asking the councils. Each snapshot is matched to the
 byways and published like any other source. It is credited to the council,
 and the coverage table says "collected directly from the council" with the
@@ -73,10 +74,11 @@ that run are read again next time.
 - **Git:** pushes over SSH with a deploy key made on the server, which can
   write to this repository only (Settings > Deploy keys, "Oracle collector
   (London)"). Its private half never left the server.
-- **Schedule:** cron, every 6 hours at 17 minutes past, low priority:
+- **Schedule:** cron, every 6 hours at 03:17, 09:17, 15:17 and 21:17 UTC,
+  three hours after the PC's runs, low priority:
 
   ```
-  17 */6 * * * cd $HOME/trailblazer-collector && nice -n 10 /usr/bin/python3 tools/home_collector.py --machine server >/dev/null 2>&1
+  17 3,9,15,21 * * * cd $HOME/trailblazer-collector && nice -n 10 /usr/bin/python3 tools/home_collector.py --machine server >/dev/null 2>&1
   ```
 
 - **Log:** `~/trailblazer-collector/collector.log`, rotating at 256 KB.
