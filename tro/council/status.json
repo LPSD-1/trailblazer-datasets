@@ -19,9 +19,12 @@
  },
  "dorset-closures": {
   "authority": "Dorset",
-  "error": "gi.dorsetcouncil.gov.uk refused https://gi.dorsetcouncil.gov.uk/geoserver/countryside/wfs?service=WFS&version=2.0.0&request=GetFeature&typeNames=countryside:route_closed&outputFormat=application/json (HTTP 403)",
-  "failing_since": "2026-10-07",
-  "name": "Dorset Council - rights of way closures (WFS)"
+  "items": 4,
+  "last_ok": "2026-10-07",
+  "name": "Dorset Council - rights of way closures (WFS)",
+  "records": 81,
+  "review": 0,
+  "unmatched": 0
  },
  "essex-prow-tros": {
   "authority": "Essex",
