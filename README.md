@@ -248,7 +248,7 @@ day into `council-ways/<CODE>.json` (`tools/council_ways.py`):
 | WT | Wiltshire Council | ArcGIS `OpenData/PublicRightsofWay` (query only) | OGL v3.0 |
 | BC | Bracknell Forest Council | ArcGIS `GIS_PublicRightsOfWay/7` | OGL v3.0 |
 | WB | West Berkshire Council | ArcGIS `gis.westberks.gov.uk` `PUBLIC_RIGHTS_OF_WAY/1` (query only) | not stated |
-| IW | Isle of Wight Council | ArcGIS `arcgis.iow.gov.uk` `PublicRightsOfWay/0` | not stated |
+| IW | Isle of Wight Council | ArcGIS `arcgis.iow.gov.uk` `PublicRightsOfWay/0`: a cross-check only, used if rowmaps ever has no Isle of Wight file | not stated |
 | HA | Hampshire County Council | ArcGIS Online `Hampshire_Rights_of_Way` (June 2023): a cross-check only, used if rowmaps ever has no Hampshire file | not stated |
 
 The lane build lets the council's layer decide which byways exist and keeps
@@ -256,8 +256,10 @@ every unchanged way's rowmaps record byte for byte, so its id does not move: a
 byway the council no longer draws is dropped, and one it draws that rowmaps
 lacks is added with the council's geometry. Such a way's `source` is
 `council:<authority>` and its attribution names the council. rowmaps stays the
-fallback: an unreadable layer keeps its last good file, and a council file
-that disagrees with rowmaps too much to be the same network is not used.
+fallback: an unreadable layer keeps its last good file, a council file
+that disagrees with rowmaps too much to be the same network is not used,
+and neither is one whose last good read is 30 days old or more
+(`council_ways.MAX_AGE_DAYS`), since rowmaps may have added byways since.
 West Berkshire's older GIS host (robots.txt) and its website (a bot
 challenge) are not read; its newer GIS host has no robots.txt and is. Dorset
 refuses GitHub's runners and is read by the home collector
