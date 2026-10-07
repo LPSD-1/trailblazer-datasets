@@ -1,0 +1,130 @@
+name: Street Manager closures
+
+# CLOSURES ON BYWAYS FILED IN STREET MANAGER, the Department for Transport's
+# street works service (tools/street_manager.py). Monthly, because its open
+# data archive is published monthly, on the 1st:
+#
+#   1. OS Open USRN (a GB GeoPackage, OGL) gives each published byway the
+#      Unique Street Reference Numbers of the streets it runs along
+#      (tro/streetworks/byway-usrn.json);
+#   2. the last three months of Street Manager's activity archive are read,
+#      and the closures filed against a byway's USRN, at the byway, are
+#      written to tro/streetworks/orders/street-manager.json, which the
+#      order build (traffic-orders.yml) lays under D-TRO and the councils'
+#      own feeds.
+#
+# A step that cannot read keeps the last good file; the run then fails and
+# raises an issue. Every request goes through tools/polite_http.py.
+on:
+  schedule:
+    - cron: '29 4 2 * *'   # 04:29 UTC on the 2nd of each month
+  workflow_dispatch:
+
+permissions:
+  contents: write   # the committed tro/streetworks/ files
+  issues: write     # to raise one when a run fails
+
+concurrency:
+  group: street-manager
+  cancel-in-progress: false
+
+jobs:
+  streetworks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09  # v5
+
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1  # v6
+        with:
+          python-version: '3.12'
+
+      - name: Run the tests before trusting the read
+        run: |
+          python tools/test_polite_http.py
+          python tools/test_osgb.py
+          python tools/test_street_manager.py
+
+      # Both steps run whatever the other did: a USRN table that could not be
+      # refreshed still matches this month's closures, and the reverse.
+      - name: Match byways to streets, then read Street Manager
+        run: |
+          : > /tmp/streetworks-failures.txt
+          python tools/street_manager.py usrn || echo "OS Open USRN (the byway USRN table)" >> /tmp/streetworks-failures.txt
+          python tools/street_manager.py fetch || echo "Street Manager's activity archive" >> /tmp/streetworks-failures.txt
+
+      - name: Commit what changed
+        run: |
+          git config user.name  "trailblazer-data"
+          git config user.email "data@trailblazer.invalid"
+
+          commit_it() {
+            git add -A tro/streetworks
+            if git diff --cached --quiet; then
+              echo "nothing changed"
+              return 1
+            fi
+            git commit -m "Street Manager closures: $(date -u +%Y-%m-%d)" \
+              -m "Read by .github/workflows/street-manager.yml"
+            return 0
+          }
+
+          commit_it || exit 0
+
+          # Only this job writes tro/streetworks/: on a lost race, take the
+          # newest main and put ours back over it.
+          mkdir -p dist
+          rm -rf dist/streetworks-built
+          cp -r tro/streetworks dist/streetworks-built
+          for attempt in 1 2 3; do
+            if git push; then
+              exit 0
+            fi
+            echo "push rejected; putting our files back on top of origin/main"
+            git fetch origin main
+            git reset --hard origin/main
+            rm -rf tro/streetworks
+            cp -r dist/streetworks-built tro/streetworks
+            commit_it || exit 0
+            sleep $((attempt * 5))
+          done
+          echo "::error::could not push after three attempts"
+          exit 1
+
+      - name: Fail if a source could not be read
+        run: |
+          if [ -s /tmp/streetworks-failures.txt ]; then
+            echo "::error::these could not be read (their last good files stand):"
+            cat /tmp/streetworks-failures.txt
+            exit 1
+          fi
+
+      - name: Raise an issue if this failed
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          EXISTING=$(gh issue list --label street-manager --state open \
+                       --json number --jq '.[0].number' 2>/dev/null || true)
+          if [ -n "$EXISTING" ]; then
+            gh issue comment "$EXISTING" --body "Failed again: $RUN_URL"
+          else
+            gh label create street-manager --color D93F0B \
+              --description "Automated Street Manager closure problems" 2>/dev/null || true
+            gh issue create --label street-manager \
+              --title "Street Manager closures failed" \
+              --body "$RUN_URL failed. The files in tro/streetworks/ are unchanged and the order pack still carries them - nothing was blanked - but this month's closures are not reaching it. The run log says whether OS Open USRN or Street Manager's archive could not be read."
+          fi
+
+      - name: Stand the alarm down if this worked
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          for n in $(gh issue list --label street-manager --state open \
+                       --json number --jq '.[].number' 2>/dev/null || true); do
+            gh issue close "$n" --comment "Fixed: $RUN_URL succeeded." || true
+          done

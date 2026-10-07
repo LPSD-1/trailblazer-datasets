@@ -170,5 +170,32 @@ class CouncilOrdersInThePack(unittest.TestCase):
         self.assertEqual(len(pack["features"]), 1)
 
 
+class StreetWorksDirectory(unittest.TestCase):
+    """Street Manager's closures live in their own directory (their own job
+    writes them) and are read with the councils' by the publishing build."""
+
+    def test_the_publishing_build_reads_both_directories(self):
+        import build_tro
+        tmp = tempfile.mkdtemp(prefix="tro-dirs-")
+        try:
+            a, b = os.path.join(tmp, "council"), os.path.join(tmp, "works")
+            os.makedirs(a)
+            os.makedirs(b)
+            with open(os.path.join(a, "essex-prow-tros.json"), "w") as fh:
+                json.dump(COUNCIL, fh)
+            sm = dict(COUNCIL, source=dict(COUNCIL["source"],
+                                           id="street-manager",
+                                           kind="street-manager"))
+            with open(os.path.join(b, "street-manager.json"), "w") as fh:
+                json.dump(sm, fh)
+            got = build_tro.read_council_dir([a, b])
+            self.assertEqual([src["id"] for src, _items in got],
+                             ["essex-prow-tros", "street-manager"])
+            self.assertTrue(build_tro.STREETWORKS_DIR.replace(
+                "\\", "/").endswith("tro/streetworks/orders"))
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=1)

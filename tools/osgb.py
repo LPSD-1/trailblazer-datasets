@@ -145,3 +145,31 @@ def grid_to_wgs84(easting, northing):
     lat, lon = grid_to_osgb36(easting, northing)
     lat, lon = osgb36_to_wgs84(lat, lon)
     return math.degrees(lon), math.degrees(lat)
+
+
+def wgs84_to_grid(lon, lat):
+    """(longitude, latitude) in degrees to National Grid metres.
+
+    The inverse of grid_to_wgs84 by Newton's method on it, rather than a
+    second set of formulas: the two directions then cannot disagree, which
+    matters more here than speed (a few thousand points a run). Converges to
+    well under a millimetre in three or four steps anywhere in Britain.
+    """
+    # A first guess good to a few kilometres: degrees from the true origin.
+    e = _E0 + (lon - math.degrees(_LON0)) * 111320.0 * math.cos(
+        math.radians(lat))
+    n = _N0 + (lat - math.degrees(_LAT0)) * 110574.0
+    h = 1.0
+    for _ in range(8):
+        x0, y0 = grid_to_wgs84(e, n)
+        fx, fy = x0 - lon, y0 - lat
+        if abs(fx) < 1e-11 and abs(fy) < 1e-11:
+            break
+        xe, ye = grid_to_wgs84(e + h, n)
+        xn, yn = grid_to_wgs84(e, n + h)
+        a, b = (xe - x0) / h, (xn - x0) / h
+        c, d = (ye - y0) / h, (yn - y0) / h
+        det = a * d - b * c
+        e -= (d * fx - b * fy) / det
+        n -= (a * fy - c * fx) / det
+    return e, n

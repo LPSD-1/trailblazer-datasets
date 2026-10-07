@@ -16,7 +16,8 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from osgb import grid_to_osgb36, grid_to_wgs84, osgb36_to_wgs84  # noqa: E402
+from osgb import (grid_to_osgb36, grid_to_wgs84, osgb36_to_wgs84,  # noqa: E402
+                  wgs84_to_grid)
 
 
 def _dms(deg, minutes, seconds):
@@ -160,6 +161,16 @@ class SelfConsistentWithTheApp(unittest.TestCase):
             self.assertLess(math.hypot(dx, dy), 0.01,
                             "round trip at %.2f,%.2f lost %.3f m"
                             % (lat, lon, math.hypot(dx, dy)))
+
+
+class Inverse(unittest.TestCase):
+    def test_grid_to_wgs84_and_back_lands_on_the_same_metre(self):
+        for e, n in [(651409.903, 313177.270), (377934.1, 159051.3),
+                     (130000.0, 30000.0), (420000.0, 1100000.0),
+                     (550000.0, 110000.0)]:
+            lon, lat = grid_to_wgs84(e, n)
+            e2, n2 = wgs84_to_grid(lon, lat)
+            self.assertLess(math.hypot(e2 - e, n2 - n), 0.001, (e, n))
 
 
 if __name__ == "__main__":

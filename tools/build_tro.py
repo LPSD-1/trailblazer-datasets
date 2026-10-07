@@ -907,6 +907,10 @@ def corpus_date(path):
 # ---------------------------------------------------------------------------
 
 COUNCIL_DIR = os.path.join(ROOT, "tro", "council")
+#: Street Manager's closures on byways (tools/street_manager.py). Its own
+#: directory because its own job writes it, monthly; tro/council/ belongs to
+#: council-orders.yml, which puts its whole directory back on a lost race.
+STREETWORKS_DIR = os.path.join(ROOT, "tro", "streetworks", "orders")
 
 DTRO_ATTRIBUTION = ("Contains public sector information licensed under the "
                     "Open Government Licence v3.0. Source: Department for "
@@ -926,9 +930,12 @@ def attribution(sources):
 def read_council_dir(path):
     """[(source, items)] from every tro/council/<source>.json.
 
-    A file that exists and cannot be read raises ValueError: it was written
-    by our own job, so it is a broken checkout, never a quiet day.
+    `path` may be one directory or a list of them. A file that exists and
+    cannot be read raises ValueError: it was written by our own job, so it
+    is a broken checkout, never a quiet day.
     """
+    if isinstance(path, (list, tuple)):
+        return [pair for p in path for pair in read_council_dir(p)]
     out = []
     if not os.path.isdir(path):
         return out
@@ -1378,7 +1385,7 @@ def main():
     # build unless asked for, exactly as the feed is.
     council_dir = args.council
     if council_dir is None and not args.csv:
-        council_dir = COUNCIL_DIR
+        council_dir = [COUNCIL_DIR, STREETWORKS_DIR]
     council = {"sources": [], "features": [], "added": 0, "folded": 0}
     if council_dir and not args.no_council:
         try:

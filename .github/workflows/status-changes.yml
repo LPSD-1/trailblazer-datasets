@@ -1,9 +1,14 @@
 name: Status changes
 
-# BYWAYS WHOSE LEGAL STATUS IS CHANGING, as a layer beside the lanes
-# (status/). Weekly, because these move over months: a Planning Inspectorate
-# decision on an order that adds, upgrades, downgrades or deletes a byway
-# (tools/pins_decisions.py).
+# BYWAYS WHOSE LEGAL STATUS IS CHANGING, as layers beside the lanes
+# (status/). Weekly, because these move over months:
+#   * Planning Inspectorate decisions on orders that add, upgrade, downgrade
+#     or delete a byway (tools/pins_decisions.py);
+#   * councils' registers of applications to modify the definitive map that
+#     concern byways, with every applicant's name and address left out
+#     (tools/dmmo_applications.py);
+#   * the MoD's monthly firing notices for the ranges in England and Wales
+#     (tools/mod_ranges.py).
 #
 # Read from GOV.UK and the councils' own layers through tools/polite_http.py:
 # an honest User-Agent, robots.txt obeyed, paced, read only. A source that
@@ -41,9 +46,18 @@ jobs:
         run: |
           python tools/test_polite_http.py
           python tools/test_pins_decisions.py
+          python tools/test_dmmo_applications.py
+          python tools/test_mod_ranges.py
 
-      - name: Read the Planning Inspectorate's decisions
-        run: python tools/pins_decisions.py
+      # Each reader keeps its own last good file when it cannot read; one
+      # failing must not stop the others publishing, so all three run and
+      # their failures are collected for the step after the commit.
+      - name: Read the decisions, the registers and the firing notices
+        run: |
+          : > /tmp/status-failures.txt
+          python tools/pins_decisions.py || echo "Planning Inspectorate decisions (tools/pins_decisions.py)" >> /tmp/status-failures.txt
+          python tools/dmmo_applications.py || echo "DMMO application registers (tools/dmmo_applications.py)" >> /tmp/status-failures.txt
+          python tools/mod_ranges.py || echo "MoD firing notices (tools/mod_ranges.py)" >> /tmp/status-failures.txt
 
       - name: Commit what changed
         run: |
@@ -83,6 +97,14 @@ jobs:
           echo "::error::could not push after three attempts"
           exit 1
 
+      - name: Fail if a reader could not read
+        run: |
+          if [ -s /tmp/status-failures.txt ]; then
+            echo "::error::these could not be read (their last good files stand):"
+            cat /tmp/status-failures.txt
+            exit 1
+          fi
+
       - name: Raise an issue if this failed
         if: failure()
         env:
@@ -98,7 +120,7 @@ jobs:
               --description "Automated status-change layer problems" 2>/dev/null || true
             gh issue create --label status-changes \
               --title "Status changes failed" \
-              --body "$RUN_URL failed. The status layer already published in status/ is unchanged - nothing was blanked - but new decisions are not reaching it. GOV.UK's page layout changing (the reader refuses a page it parses no decisions from) or a lost push are the usual causes."
+              --body "$RUN_URL failed. What each reader published last in status/ is unchanged - nothing was blanked - but new decisions, applications or firing notices are not reaching it. The run log says which reader: a GOV.UK page layout changing (the readers refuse a page they parse nothing from), a council register refusing or failing, or a lost push are the usual causes."
           fi
 
       - name: Stand the alarm down if this worked

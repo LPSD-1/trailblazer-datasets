@@ -170,6 +170,34 @@ delete a byway, read weekly from GOV.UK by `status-changes.yml`
 decision found, matched to a lane or not, is listed in
 `status/pins-decisions.json`.
 
+`status/dmmo-applications.json` lists the applications to modify the
+definitive map that concern byways, from the registers Devon, Northumberland
+(current and 2020), Caerphilly, Bradford and Derbyshire publish as map layers
+(`tools/dmmo_applications.py`), each matched to the byways it runs along;
+`status/dmmo-applications.geojson` draws the ones still open. Applicants'
+and landowners' names and addresses, case officers' names and scanned
+applications are never requested, so they never reach this repository.
+Dorset's register refuses GitHub's runners and is not read.
+
+`status/mod-ranges.json` carries the MoD's current firing notice for every
+range in England and Wales from GOV.UK (`tools/mod_ranges.py`): the month,
+the link and the timings as published. No open boundary data exists for the
+ranges, so no byway is placed in one by a guess; a reviewer who has checked
+a range's byelaw map may list its byways in `status/mod-ranges-ways.json`.
+All three run weekly in `status-changes.yml`.
+
+## Street works closures
+
+`street-manager.yml` runs monthly. It gives every byway the Unique Street
+Reference Numbers of the streets it runs along, from OS Open USRN
+(`tro/streetworks/byway-usrn.json`; contains OS data, Crown copyright and
+database right, OGL), then reads the last three months of the Department for
+Transport's Street Manager activity archive (England, OGL) and writes the
+closures filed against a byway's USRN, at the byway, to
+`tro/streetworks/orders/street-manager.json`. The order build lays them under
+D-TRO and the councils' own feeds. Skips, scaffolding and other works that
+do not shut the way are left out.
+
 ## Byways from the councils' own layers
 
 rowmaps.com copies each council's definitive map, and many of its copies are

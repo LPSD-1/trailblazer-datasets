@@ -148,6 +148,7 @@ jobs:
           python tools/test_byway_match.py
           python tools/test_council_orders.py
           python tools/test_build_tro_council.py
+          python tools/test_street_manager.py
           # THE COUNCIL TABLE. build_tro.py reads tools/tro_authorities.csv and
           # refuses to publish without it, and the lane sheet names the
           # council from the `authorities` block it writes. These three are
