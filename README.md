@@ -136,6 +136,8 @@ council's own `url` for it:
 | `essex-prow-tros` | Essex County Council - PRoW traffic regulation orders | Published by the council |
 | `northumberland-closures` | Northumberland County Council - rights of way closures and TTROs | Published by the council |
 | `bracknell-prow-tros` | Bracknell Forest Council - public rights of way TROs | Published by the council |
+| `hertfordshire-ptros` | Hertfordshire County Council - rights of way layer (permanent traffic regulation orders) | Open Government Licence v3.0 |
+| `order-register` | Published lists of permanent and seasonal byway orders: East Sussex, Surrey, West and North Northamptonshire, Central Bedfordshire, Derbyshire, Lake District NPA (and others as reviewed) | Published by each council; transcribed and reviewed |
 
 The pack's own `attribution` and `sources` name every one of these, and each
 council's row in its `authorities` block lists which sources cover it.

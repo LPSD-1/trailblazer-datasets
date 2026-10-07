@@ -721,6 +721,59 @@ def read_somerset(client):
     return len(closures) + len(tros), out
 
 
+HERTS = ("https://gis.hertfordshire.gov.uk/webmaps/rest/services/public/"
+         "row/MapServer/3")
+_HERTS_TYPES = {
+    "prohibiting use of motor vehicles": ("motor_vehicles", None),
+    "height restriction": ("height_limit", "Height restriction"),
+    "weight restriction": ("weight_limit", "Weight restriction"),
+    "prohibiting use of specified vehicles": (
+        "other", "Specified vehicles prohibited - see the order"),
+}
+
+
+def read_hertfordshire(client):
+    """Permanent orders recorded on Hertfordshire's own path layer.
+
+    `PTROTYPE` names the kind of order and `PTROYEAR` the year; which
+    vehicles a "specified vehicles" order names is only in the order
+    itself, so it is published as a restriction to read, never as a ban.
+    """
+    feats = arcgis_query(
+        client, HERTS, where="VALCHAR='BOAT'",
+        out_fields="PATHNAME,PARISH,PATHNUMB,UNITID,PTROTYPE,PTROYEAR,"
+                   "PTROURL,OBJECTID")
+    out = []
+    for f in feats:
+        a = f.get("attributes") or {}
+        kind = (a.get("PTROTYPE") or "").strip()
+        if not kind:
+            continue
+        vehicles, label = _HERTS_TYPES.get(kind.lower(),
+                                           ("other", kind[:80]))
+        year = str(a.get("PTROYEAR") or "").strip()
+        name = (a.get("PATHNAME") or "").strip()
+        parish = (a.get("PARISH") or "").strip().title()
+        item = {
+            "id": "%s|%s" % (a.get("UNITID"), a.get("OBJECTID")),
+            "ref": "%s %s" % (name, kind),
+            "title": "Hertfordshire County Council permanent order%s: %s" % (
+                (" (%s)" % year) if re.match(r"^\d{4}$", year) else "",
+                kind),
+            "where": "Byway %s, %s" % (str(a.get("PATHNUMB") or "")
+                                       .lstrip("0"), parish),
+            "vehicles": vehicles, "form": "permanent",
+            "url": a.get("PTROURL") or "https://www.hertfordshire.gov.uk/"
+                                       "ptros",
+            "lines": esri_lines(f.get("geometry")),
+            "refs": [(parish, a.get("PATHNUMB"))],
+        }
+        if label:
+            item["label"] = label
+        out.append(item)
+    return len(feats), out
+
+
 def read_blocked(_client):
     raise Refused("not read: robots.txt on gis2.westberks.gov.uk disallows "
                   "all automated access")
@@ -771,6 +824,11 @@ SOURCES = [
      "name": "Bracknell Forest Council - public rights of way TROs",
      "kind": "council-layer", "licence": "Published by the council",
      "endpoint": BRACKNELL, "read": read_bracknell},
+    {"id": "hertfordshire-ptros", "authority": "Hertfordshire",
+     "name": "Hertfordshire County Council - rights of way layer "
+             "(permanent traffic regulation orders)",
+     "kind": "council-layer", "licence": "Open Government Licence v3.0",
+     "endpoint": HERTS, "read": read_hertfordshire},
     {"id": "west-berkshire-closures", "authority": "West Berkshire",
      "name": "West Berkshire Council - countryside closures layer",
      "kind": "council-layer", "licence": "Published by the council",

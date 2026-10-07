@@ -68,6 +68,10 @@ VEHICLES = {
         "councilProhibitionExceptMotorcycles", "motors_except_motorcycles",
         "No motor vehicles except solo motorcycles"),
     "vehicles_over_width": ("dimensionMaximumWidth", "width", "Width limit"),
+    "height_limit": ("dimensionMaximumHeightStructural", "height",
+                     "Height limit"),
+    "weight_limit": ("dimensionMaximumWeightStructural", "weight",
+                     "Weight limit"),
     "other": ("councilRestriction", "other", "Restriction"),
 }
 
@@ -130,7 +134,8 @@ def label_for(item):
         label = "Width limit %s m" % _fmt(item["width_m"])
     elif item.get("vehicles") == "all_users" and item.get("partial"):
         label = "Byway partly closed"
-    elif item.get("vehicles") == "other" and item.get("label"):
+    elif item.get("vehicles") in ("other", "height_limit",
+                                  "weight_limit") and item.get("label"):
         label = item["label"]
     return code, otype, label
 

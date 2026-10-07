@@ -236,6 +236,34 @@ class Suffolk(unittest.TestCase):
         self.assertEqual(g["season"], {"from": "10-01", "to": "04-30"})
 
 
+# ------------------------------------------------------------ Hertfordshire
+
+
+class Hertfordshire(unittest.TestCase):
+    def test_a_specified_vehicles_order_is_never_published_as_a_ban(self):
+        data = {"features": [
+            esri({"PATHNAME": "TRING TOWN 028", "PARISH": "TRING TOWN",
+                  "PATHNUMB": "028", "UNITID": "1", "OBJECTID": 1,
+                  "PTROTYPE": "Prohibiting Use of Specified Vehicles",
+                  "PTROYEAR": "1987"}, (492000, 211000), (492500, 211000)),
+            esri({"PATHNAME": "KNEBWORTH 041", "PARISH": "KNEBWORTH",
+                  "PATHNUMB": "041", "UNITID": "2", "OBJECTID": 2,
+                  "PTROTYPE": "Prohibiting Use of Motor Vehicles",
+                  "PTROYEAR": "2011"}, (523000, 221000), (523500, 221000)),
+            esri({"PATHNAME": "ARDELEY 005", "PARISH": "ARDELEY",
+                  "PATHNUMB": "005", "UNITID": "3", "OBJECTID": 3},
+                 (532000, 227000), (532400, 227000)),
+        ]}
+        n, got = cs.read_hertfordshire(Client({"row/MapServer": data}))
+        self.assertEqual(n, 3)
+        by = dict((g["id"].split("|")[0], g) for g in got)
+        self.assertEqual(sorted(by), ["1", "2"], "a path with no order")
+        self.assertEqual(by["1"]["vehicles"], "other")
+        self.assertIn("see the order", by["1"]["label"])
+        self.assertEqual(by["2"]["vehicles"], "motor_vehicles")
+        self.assertIn("2011", by["2"]["title"])
+
+
 # ------------------------------------------------- devon, somerset (by ref)
 
 
