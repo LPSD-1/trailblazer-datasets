@@ -1,0 +1,24 @@
+{
+ "items": [],
+ "records": 95,
+ "review": [
+  {
+   "id": "S26|95",
+   "ref": "S26",
+   "ways": [
+    "IW-26-ed8dd47121"
+   ],
+   "where": "Byway S26",
+   "why": "the council's byway layer says \"closed\" with no order, date or reason: confirm before publishing"
+  }
+ ],
+ "source": {
+  "authority": "Isle of Wight",
+  "endpoint": "https://arcgis.iow.gov.uk/arcgis/rest/services/EsriTesting/PublicRightsOfWay/MapServer/0",
+  "id": "isle-of-wight-byway-comments",
+  "kind": "council-layer",
+  "licence": "Published by the council (no licence stated)",
+  "name": "Isle of Wight Council - public rights of way map (byway comments, held for review)"
+ },
+ "unmatched": []
+}
