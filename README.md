@@ -227,7 +227,7 @@ do not shut the way are left out.
 ## Byways from the councils' own layers
 
 rowmaps.com copies each council's definitive map, and many of its copies are
-over a year old. Fourteen councils publish their rights of way live, and for
+over a year old. Sixteen councils publish their rights of way live, and for
 them `council-ways.yml` reads the byways (BOATs only) from the council every
 day into `council-ways/<CODE>.json` (`tools/council_ways.py`):
 
@@ -247,6 +247,9 @@ day into `council-ways/<CODE>.json` (`tools/council_ways.py`):
 | EX | Essex County Council | ArcGIS `PROW_view` | not stated |
 | WT | Wiltshire Council | ArcGIS `OpenData/PublicRightsofWay` (query only) | OGL v3.0 |
 | BC | Bracknell Forest Council | ArcGIS `GIS_PublicRightsOfWay/7` | OGL v3.0 |
+| WB | West Berkshire Council | ArcGIS `gis.westberks.gov.uk` `PUBLIC_RIGHTS_OF_WAY/1` (query only) | not stated |
+| IW | Isle of Wight Council | ArcGIS `arcgis.iow.gov.uk` `PublicRightsOfWay/0` | not stated |
+| HA | Hampshire County Council | ArcGIS Online `Hampshire_Rights_of_Way` (June 2023): a cross-check only, used if rowmaps ever has no Hampshire file | not stated |
 
 The lane build lets the council's layer decide which byways exist and keeps
 every unchanged way's rowmaps record byte for byte, so its id does not move: a
@@ -255,8 +258,11 @@ lacks is added with the council's geometry. Such a way's `source` is
 `council:<authority>` and its attribution names the council. rowmaps stays the
 fallback: an unreadable layer keeps its last good file, and a council file
 that disagrees with rowmaps too much to be the same network is not used.
-West Berkshire (robots.txt and a bot challenge) and Dorset (refuses GitHub's
-runners) are not read.
+West Berkshire's older GIS host (robots.txt) and its website (a bot
+challenge) are not read; its newer GIS host has no robots.txt and is. Dorset
+refuses GitHub's runners and is read by the home collector
+(HOME-COLLECTOR.md). Kent's, Dartmoor's and Exmoor's own layers carry
+licences that restrict their use and are not read.
 
 ## Licence
 

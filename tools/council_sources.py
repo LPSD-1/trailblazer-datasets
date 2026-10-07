@@ -187,9 +187,14 @@ def classify(text):
 _EMAIL = re.compile(r"\S+@\S+")
 
 
+_PHONE = re.compile(r"(?:\+44\s?|\b0)\d{2,4}[\s-]?\d{3,4}[\s-]?\d{3,4}\b")
+
+
 def strip_personal(text):
-    """Drop e-mail addresses and named contacts from a council's summary."""
-    text = _EMAIL.sub("", text or "")
+    """Drop e-mail addresses, phone numbers and named contacts from a
+    council's summary."""
+    text = _PHONE.sub("", _EMAIL.sub("", text or ""))
+    text = re.sub(r"(?i)\bfor (further )?information,?\s*$", "", text.strip())
     # "- Tom Partridge Pendle Bc Contact" / "Name Contact": everything from
     # a dash to the word Contact is a person, not the closure.
     text = re.sub(r"\s+-\s+[^-()]*?\bcontact\b", "", text, flags=re.I)
@@ -774,9 +779,100 @@ def read_hertfordshire(client):
     return len(feats), out
 
 
+WEST_BERKS = ("https://gis.westberks.gov.uk/server/rest/services/Layers/"
+              "PUBLIC_RIGHTS_OF_WAY_CLOSURES/FeatureServer/2")
+
+#: Rows that only point at a third-party roadworks site (one.network is
+#: ruled out); they are not orders and nothing is taken from them.
+_ONE_NETWORK = re.compile(r"(?i)one\.network")
+
+
+def read_west_berkshire(client):
+    """West Berkshire's PROW orders layer, on its newer GIS host.
+
+    gis2.westberks.gov.uk disallows robots; this host (gis.westberks.gov.uk)
+    has no robots.txt and serves the same layer. Its FeatureServer
+    advertises editing to anonymous users: only /query is ever called.
+    """
+    feats = arcgis_query(client, WEST_BERKS, where="Active='y'",
+                         out_fields="OBJECTID,Id,TRO_title,Start,Finish,"
+                                    "Notes,Routecode,PermOrTemp,Active")
+    out = []
+    for f in feats:
+        a = f.get("attributes") or {}
+        title = clean_text(a.get("TRO_title") or "").strip()
+        notes = clean_text(a.get("Notes") or "").strip()
+        if _ONE_NETWORK.search(title + " " + notes):
+            continue
+        text = "%s. %s" % (title, notes)
+        vehicles, width = classify(text)
+        season = parse_season(notes) or parse_season(title)
+        temporary = (a.get("PermOrTemp") or "").lower().startswith("temp")
+        form = "temporary" if temporary else "seasonal" if season \
+            else "permanent"
+        code = (a.get("Routecode") or "").strip()
+        parish, _, rest = code.partition("/")
+        number = rest.split("/")[0] if rest else ""
+        end = from_epoch_ms(a.get("Finish"))
+        item = {
+            "id": "%s|%s" % (a.get("Id") if a.get("Id") is not None
+                             else a.get("OBJECTID"), code),
+            "ref": code,
+            "title": strip_personal(title)[:240],
+            "where": "%s %s" % (parish, number) if number else code,
+            "vehicles": vehicles or "other", "width_m": width,
+            "form": form, "season": season,
+            "start": from_epoch_ms(a.get("Start")) if temporary else None,
+            "end": end if temporary else None,
+            "url": "https://www.westberks.gov.uk/prowrestrictions",
+            "lines": esri_lines(f.get("geometry")),
+            "refs": [(parish, number)] if number else [],
+            # Bridleway and footpath closures share the layer: only an
+            # order on one of our byways is kept, and the rest is not
+            # "unmatched".
+            "claims_byway": "byway" in text.lower(),
+        }
+        if vehicles is None:
+            item["label"] = (notes[:1].upper() + notes[1:80]) or \
+                "Restriction"
+        out.append(item)
+    return len(feats), out
+
+
+IOW_PROW = ("https://arcgis.iow.gov.uk/arcgis/rest/services/EsriTesting/"
+            "PublicRightsOfWay/MapServer/0")
+
+
+def read_iow_comments(client):
+    """The Isle of Wight's byway layer says "closed" on a segment, with no
+    order, date or reason. That is a flag for a person, never a closure
+    published on its say-so: every such segment goes to review."""
+    feats = arcgis_query(client, IOW_PROW, where="COMMENT IS NOT NULL",
+                         out_fields="OBJECTID,P_NUMBER,COMMENT")
+    out = []
+    for f in feats:
+        a = f.get("attributes") or {}
+        comment = clean_text(a.get("COMMENT") or "").strip()
+        if "closed" not in comment.lower():
+            continue
+        code = (a.get("P_NUMBER") or "").strip()
+        out.append({
+            "id": "%s|%s" % (code, a.get("OBJECTID")), "ref": code,
+            "title": "Isle of Wight byway %s marked \"%s\" on the council's "
+                     "map" % (code, comment),
+            "where": "Byway %s" % code, "vehicles": "all_users",
+            "form": "temporary",
+            "url": "https://www.iow.gov.uk/article/2998",
+            "lines": esri_lines(f.get("geometry")),
+            "review_only": "the council's byway layer says \"%s\" with no "
+                           "order, date or reason: confirm before "
+                           "publishing" % comment,
+        })
+    return len(feats), out
+
+
 def read_blocked(_client):
-    raise Refused("not read: robots.txt on gis2.westberks.gov.uk disallows "
-                  "all automated access")
+    raise Refused("not read")
 
 
 # id -> definition. `authority` is the container's authority name (what the
@@ -830,11 +926,16 @@ SOURCES = [
      "kind": "council-layer", "licence": "Open Government Licence v3.0",
      "endpoint": HERTS, "read": read_hertfordshire},
     {"id": "west-berkshire-closures", "authority": "West Berkshire",
-     "name": "West Berkshire Council - countryside closures layer",
-     "kind": "council-layer", "licence": "Published by the council",
-     "endpoint": "https://gis2.westberks.gov.uk/arcgis/rest/services/"
-                 "Wbc_Countryside/MapServer/2",
-     "read": read_blocked, "blocked": "robots.txt disallows the host"},
+     "name": "West Berkshire Council - public rights of way orders layer",
+     "kind": "council-layer",
+     "licence": "Published by the council (no licence stated)",
+     "endpoint": WEST_BERKS, "read": read_west_berkshire},
+    {"id": "isle-of-wight-byway-comments", "authority": "Isle of Wight",
+     "name": "Isle of Wight Council - public rights of way map (byway "
+             "comments, held for review)",
+     "kind": "council-layer",
+     "licence": "Published by the council (no licence stated)",
+     "endpoint": IOW_PROW, "read": read_iow_comments},
 ]
 
 
@@ -961,6 +1062,7 @@ def match(candidates, byways, authority):
         lines = c.pop("lines", None) or []
         refs = c.pop("refs", None) or []
         claims = c.pop("claims_byway", True)
+        review_only = c.pop("review_only", None)
         ways, how = [], None
         if lines:
             got = byways.match_geometry(lines, authorities={authority})
@@ -975,6 +1077,11 @@ def match(candidates, byways, authority):
             if claims:
                 unmatched.append({"id": c.get("id"), "ref": c.get("ref"),
                                   "where": c.get("where")})
+            continue
+        if review_only:
+            review.append({"id": c.get("id"), "ref": c.get("ref"),
+                           "where": c.get("where"), "ways": ways,
+                           "why": review_only})
             continue
         if c.get("form") == "seasonal" and not c.get("season"):
             # "Seasonal" with no season stated: there are no dates to draw

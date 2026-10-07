@@ -264,6 +264,77 @@ class Hertfordshire(unittest.TestCase):
         self.assertIn("2011", by["2"]["title"])
 
 
+class WestBerkshire(unittest.TestCase):
+    ROWS = [
+        esri({"OBJECTID": 1, "Id": 3, "Routecode": "Beed/22/2",
+              "TRO_title": "West Berkshire District Council (Byway Open to "
+                           "All Traffic - Beedon 22 (part)) Prohibition of "
+                           "motor vehicles or vehicles (except motorcycles)) "
+                           "Order 2010",
+              "Notes": "Prohibition of all motor vehicles except motorbikes "
+                       "between 1st October and 31st May each year",
+              "PermOrTemp": "Permanent", "Active": "y",
+              "Start": 1287100800000, "Finish": 32503680000000},
+             (450000, 175000), (450500, 175000)),
+        esri({"OBJECTID": 2, "Id": None, "Routecode": "LAMB/2/2",
+              "TRO_title": "https://one.network/?tmi=GB1. Gas works",
+              "Notes": "https://one.network/?tmi=GB1.",
+              "PermOrTemp": "Temp", "Active": "y"},
+             (440000, 175000), (440100, 175000)),
+        esri({"OBJECTID": 3, "Id": 36, "Routecode": "Buck/54a/1",
+              "TRO_title": "WBDC temporary closure of public bridleway "
+                           "Buck54a. For information contact Broadview "
+                           "Farm on 0790 607 922",
+              "Notes": "Demolition works", "PermOrTemp": "Temp",
+              "Active": "y", "Start": 1620086400000,
+              "Finish": 1856908800000},
+             (445000, 172000), (445300, 172000)),
+    ]
+
+    def read(self):
+        return cs.read_west_berkshire(Client({
+            "PUBLIC_RIGHTS_OF_WAY_CLOSURES": {"features": self.ROWS}}))
+
+    def test_the_seasonal_ban_is_seasonal_with_its_season(self):
+        n, got = self.read()
+        self.assertEqual(n, 3)
+        beedon = [g for g in got if g["ref"] == "Beed/22/2"][0]
+        self.assertEqual(beedon["vehicles"],
+                         "motor_vehicles_except_motorcycles")
+        self.assertEqual(beedon["form"], "seasonal")
+        self.assertEqual(beedon["season"], {"from": "10-01", "to": "05-31"})
+        self.assertEqual(beedon["refs"], [("Beed", "22")])
+
+    def test_one_network_rows_are_not_taken(self):
+        _n, got = self.read()
+        self.assertFalse(any("one.network" in json.dumps(g) for g in got))
+
+    def test_a_bridleway_closure_does_not_claim_a_byway(self):
+        _n, got = self.read()
+        buck = [g for g in got if g["ref"] == "Buck/54a/1"][0]
+        self.assertNotIn("0790", buck["title"], "a phone number was kept")
+        self.assertFalse(buck["claims_byway"])
+        self.assertEqual(buck["form"], "temporary")
+
+
+class IsleOfWight(unittest.TestCase):
+    def test_closed_is_held_for_review_never_published(self):
+        data = {"features": [
+            esri({"OBJECTID": 7, "P_NUMBER": "S26", "COMMENT": "closed"},
+                 (446000, 85000), (446400, 85000)),
+            esri({"OBJECTID": 8, "P_NUMBER": "V60", "COMMENT": "surfaced"},
+                 (450000, 85000), (450400, 85000))]}
+        n, cands = cs.read_iow_comments(Client({"PublicRightsOfWay": data}))
+        self.assertEqual((n, [c["ref"] for c in cands]), (2, ["S26"]))
+        byways = Byways([way_at("IW-S26", "Isle of Wight",
+                                "Byway open to all traffic (BOAT) S 26",
+                                (446000, 85003), (446400, 85003))])
+        items, _u, review = cs.match(cands, byways, "Isle of Wight")
+        self.assertEqual(items, [])
+        self.assertEqual(review[0]["ways"], ["IW-S26"])
+        self.assertIn("confirm", review[0]["why"])
+
+
 # ------------------------------------------------- devon, somerset (by ref)
 
 
@@ -390,12 +461,15 @@ class _Many(object):
 
 
 class Registry(unittest.TestCase):
-    def test_west_berkshire_is_listed_and_never_read(self):
+    def test_west_berkshire_is_read_from_its_open_host_not_gis2(self):
         source = cs.by_id()["west-berkshire-closures"]
-        self.assertIn("robots", source["blocked"])
-        entry = cs.fetch_one(source, None, None, tempfile.gettempdir(),
-                             "2026-10-07")
-        self.assertFalse(entry["ok"])
+        self.assertNotIn("blocked", source)
+        self.assertTrue(source["endpoint"].startswith(
+            "https://gis.westberks.gov.uk/"))
+        from polite_http import blocked, host_of
+        self.assertFalse(blocked(host_of(source["endpoint"])))
+        self.assertTrue(blocked("gis2.westberks.gov.uk"))
+        self.assertTrue(blocked("www.westberks.gov.uk"))
 
     def test_every_source_is_credited_by_name_and_licence(self):
         for s in cs.SOURCES:

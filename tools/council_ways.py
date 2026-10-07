@@ -168,6 +168,22 @@ def _ref_wiltshire(a):
     return _split_code(a.get("REF"))
 
 
+def _ref_west_berkshire(a):
+    """'Beed/22/2' -> ('BEED', '22'): parish code and route number."""
+    code = str(a.get("RouteCode") or "")
+    parts = code.split("/")
+    return (parts[0].upper(), parts[1]) if len(parts) >= 2 else ("", code)
+
+
+def _ref_isle_of_wight(a):
+    return _split_code(a.get("P_NUMBER"))
+
+
+def _ref_hampshire(a):
+    return (a.get("PARISH") or "").strip(), \
+        str(a.get("ROWCODE") or "").strip()
+
+
 def _ref_bracknell(a):
     m = re.search(r"(\d+\w*)\s*$", str(a.get("UniqueID") or ""))
     return (a.get("Parish") or "").strip().upper(), m.group(1) if m else ""
@@ -345,6 +361,32 @@ LAYERS = [
      "url": "https://maps.wiltshire.gov.uk/arcgis/rest/services/OpenData/"
             "PublicRightsofWay/FeatureServer/0",
      "where": "TYPE='1'"},
+    # Licence unstated; read under the owner's decision that council data is
+    # public information. Its FeatureServer advertises anonymous editing:
+    # only /query is ever called (polite_http refuses anything else).
+    {"code": "WB", "council": "West Berkshire Council",
+     "licence": None, "read": read_arcgis, "ref": _ref_west_berkshire,
+     "url": "https://gis.westberks.gov.uk/server/rest/services/Layers/"
+            "PUBLIC_RIGHTS_OF_WAY/FeatureServer/1",
+     "where": "StatusDescr='BOAT'",
+     "fields": "OBJECTID,RouteCode,ParishDescr,RouteNo,StatusDescr"},
+    # The layer holds byways only (its other layers are the other classes).
+    {"code": "IW", "council": "Isle of Wight Council",
+     "licence": None, "read": read_arcgis, "ref": _ref_isle_of_wight,
+     "url": "https://arcgis.iow.gov.uk/arcgis/rest/services/EsriTesting/"
+            "PublicRightsOfWay/MapServer/0",
+     "where": "1=1", "fields": "OBJECTID,P_NUMBER"},
+    # HAMPSHIRE IS A CROSS-CHECK, NOT A SOURCE: the council's own layer was
+    # last edited in June 2023 and rowmaps' copy (April 2026) is newer. It is
+    # read and compared (status.json says how far the two agree) and used
+    # only if rowmaps ever has no Hampshire file at all. EMAIL_ADDR and the
+    # other office fields are never requested.
+    {"code": "HA", "council": "Hampshire County Council",
+     "licence": None, "read": read_arcgis, "ref": _ref_hampshire,
+     "role": "cross-check",
+     "url": "https://services-eu1.arcgis.com/JZryykSnmiY7YI6X/arcgis/rest/"
+            "services/Hampshire_Rights_of_Way/FeatureServer/0",
+     "where": "ROW_TYPE='BOAT'", "fields": "OBJECTID,ROWCODE,PARISH"},
     {"code": "BC", "council": "Bracknell Forest Council",
      "licence": "OGL-3.0", "read": read_arcgis, "ref": _ref_bracknell,
      "url": "https://services9.arcgis.com/5eO9hmsd8SoBl0Cj/arcgis/rest/"
@@ -366,9 +408,12 @@ def attribution(layer):
 
 
 def public(layer):
-    return {"code": layer["code"], "council": layer["council"],
-            "url": layer["url"], "licence": layer.get("licence"),
-            "attribution": attribution(layer)}
+    out = {"code": layer["code"], "council": layer["council"],
+           "url": layer["url"], "licence": layer.get("licence"),
+           "attribution": attribution(layer)}
+    if layer.get("role"):
+        out["role"] = layer["role"]
+    return out
 
 
 # ---------------------------------------------------------------- geometry
@@ -609,7 +654,9 @@ def agrees(report):
             report["rowmaps"]:
         return ("the council layer still draws only %d of rowmaps' %d "
                 "byways" % (report["kept"], report["rowmaps"]))
-    if report["new_share"] > MAX_NEW_SHARE:
+    # With nothing from rowmaps to compare, everything is "new": the
+    # council's layer is then the only record there is.
+    if report["rowmaps"] and report["new_share"] > MAX_NEW_SHARE:
         return ("%.0f%% of the council's byway length is not in rowmaps"
                 % (100 * report["new_share"]))
     return None
@@ -640,6 +687,10 @@ def byways_for(code, rowmaps_features, out_dir=None, log=print):
     council file exists and agrees with rowmaps, else rowmaps unchanged."""
     council = read_json(os.path.join(out_dir or OUT, "%s.json" % code))
     if not council:
+        return rowmaps_features, None
+    if (council.get("source") or {}).get("role") == "cross-check" and \
+            rowmaps_features:
+        # A cross-check layer stands in only when rowmaps has nothing.
         return rowmaps_features, None
     features, report = merge(code, rowmaps_features or [], council)
     why = agrees(report)

@@ -186,6 +186,19 @@ class BuildUsesIt(unittest.TestCase):
                                             "Council.")
         self.assertNotIn("TB_council", p1)
 
+    def test_a_cross_check_layer_stands_in_only_when_rowmaps_is_empty(self):
+        data = council(("Ash", "1", [B1]))
+        data["source"]["role"] = "cross-check"
+        self.write("ZZ", data)
+        mine = [rowmaps("ZZ|Ash|1", line(0, 3, 600, 3, n=9))]
+        got, report = cw.byways_for("ZZ", mine, out_dir=self.tmp,
+                                    log=lambda *_: None)
+        self.assertIs(got, mine)
+        got, _r = cw.byways_for("ZZ", [], out_dir=self.tmp,
+                                log=lambda *_: None)
+        self.assertEqual([f["properties"]["Name"] for f in got],
+                         ["ZZ|Ash|1"])
+
     def test_a_rowmaps_way_still_says_rowmaps(self):
         p = build_packages.normalise(rowmaps("ZZ|Ash|1", B1), "ZZ",
                                      "Zedshire", "byway_open_to_all_traffic"
@@ -219,6 +232,11 @@ class References(unittest.TestCase):
             (cw._ref_essex, {"Parish": "Roxwell", "Central_As":
                              "PROW 230_73"}, ("Roxwell", "73")),
             (cw._ref_wiltshire, {"REF": "LACO24"}, ("LACO", "24")),
+            (cw._ref_west_berkshire, {"RouteCode": "Beed/22/2"},
+             ("BEED", "22")),
+            (cw._ref_isle_of_wight, {"P_NUMBER": "GL48"}, ("GL", "48")),
+            (cw._ref_hampshire, {"PARISH": "Kingsclere",
+                                 "ROWCODE": "706"}, ("Kingsclere", "706")),
             (cw._ref_bracknell, {"Parish": "Winkfield",
                                  "UniqueID": "WIN BOAT16 "},
              ("WINKFIELD", "16")),
@@ -332,6 +350,12 @@ class Layers(unittest.TestCase):
             else:
                 self.assertEqual(layer["params"].get(
                     "request", layer["params"].get("REQUEST")), "GetFeature")
+
+    def test_no_personal_or_office_field_is_asked_for(self):
+        for layer in cw.LAYERS:
+            fields = (layer.get("fields") or "*").upper()
+            self.assertNotIn("EMAIL", fields, layer["code"])
+        self.assertEqual(cw.by_code()["HA"]["role"], "cross-check")
 
     def test_no_restricted_byway_filter_and_no_blocked_host(self):
         from polite_http import blocked, host_of

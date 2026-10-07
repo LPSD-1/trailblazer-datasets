@@ -57,8 +57,11 @@ BLOCKED_HOSTS = (
     "peakdistrict.gov.uk", "exmoor-nationalpark.gov.uk",
     "dartmoor.gov.uk", "northyorkmoors.org.uk",
     # robots.txt disallows the whole host: ROBOTS_HOSTS, below.
-    # A bot challenge measured on the council's own pages, 7 October 2026.
-    "westberks.gov.uk", "iow.gov.uk",
+    # A bot challenge measured on the council's own pages, 7 October 2026:
+    # the www hosts. Their GIS servers (gis.westberks.gov.uk,
+    # arcgis.iow.gov.uk) answer without one and have no robots.txt; they are
+    # read like any council layer. gis2.westberks.gov.uk is ROBOTS_HOSTS.
+    "www.westberks.gov.uk", "www.iow.gov.uk",
     # Ruled out.
     "publicnoticeportal.uk", "one.network", "roadworks.org",
     "thegazette.co.uk", "glass-uk.org", "trf.org.uk", "trailwise.org.uk",

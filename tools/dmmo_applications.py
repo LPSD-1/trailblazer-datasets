@@ -151,6 +151,17 @@ def _nland_legacy(source, a, lines):
                     "appeal": _clean(a.get("APPEAL_INFORMATION"))})
 
 
+def _west_berks(source, a, lines):
+    notes = a.get("Notes") or ""
+    if not _BOAT.search(notes):
+        return None
+    status = (a.get("Status") or "").strip()
+    return _app(source, a.get("s53B_Refer"), None, notes, None,
+                "determined" if re.search(r"(?i)determin|confirm|refus|"
+                                          r"withdr|reject|closed", status)
+                else "open", lines, {"status": _clean(status)})
+
+
 def _caerphilly(source, a, lines):
     return _app(source, a.get("routecode"), None,
                 "Byway open to all traffic (claimed)",
@@ -319,6 +330,14 @@ SOURCES = [
      "fields": ["OBJECTID", "REF_NO", "PROPOSAL", "PATH_NO", "REF_NAME",
                 "PARISH_C", "APP_DATE", "DIRECTION", "DECISION", "APPEAL",
                 "MADE", "CONFIRM"]},
+    # Licence unstated (owner's decision: council data is public). The
+    # FeatureServer advertises anonymous editing: only /query is called.
+    {"id": "west-berkshire-s53b", "council": "West Berkshire Council",
+     "authority": "West Berkshire", "read": _arcgis, "shape": _west_berks,
+     "url": "https://gis.westberks.gov.uk/server/rest/services/Layers/"
+            "PUBLIC_RIGHTS_OF_WAY_SECTION_53B_WCA81/FeatureServer/5",
+     "where": "1=1",
+     "fields": ["OBJECTID", "Notes", "s53B_Refer", "Status"]},
     {"id": "derbyshire-applications", "council": "Derbyshire County "
      "Council", "authority": "Derbyshire", "read": _wfs_derbyshire,
      "url": "https://wms.derbyshire.gov.uk/geoserver/DCC/wfs",
