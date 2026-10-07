@@ -29,7 +29,8 @@ CREATE TABLE ways (
   -- LEGAL PROVENANCE. Per way, never per pack: a region may hold statutory
   -- and OSM-derived ways side by side and the map colours them differently.
   legal_tier   TEXT NOT NULL,      -- 'statutory' | 'osm'
-  source       TEXT NOT NULL,      -- e.g. 'rowmaps:derbyshire'
+  source       TEXT NOT NULL,      -- e.g. 'rowmaps:derbyshire', or 'council:devon'
+                                   --   for a byway read from the council's own layer
   source_date  TEXT NOT NULL,      -- ISO date of the record we read
 
   -- PHYSICAL, from OSM. NULL means unknown, and unknown is not 'no'.

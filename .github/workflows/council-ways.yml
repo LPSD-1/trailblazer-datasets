@@ -1,0 +1,156 @@
+name: Council byway layers
+
+# THE COUNCILS' OWN LIVE BYWAY LAYERS, read beside rowmaps
+# (tools/council_ways.py). rowmaps.com copies each council's definitive map
+# and is our source for all of them, but many of its copies are over a year
+# old. Where a council publishes its own rights of way layer, this reads the
+# byways (BOATs only) from it into council-ways/<CODE>.json, and the lane
+# build (build_packages.py) then takes from it which byways exist - keeping
+# every unchanged way's rowmaps record, so its id does not move.
+#
+# A layer that cannot be read, or reads as a collapse, leaves its last good
+# file exactly as it was; the build falls back to rowmaps for any council
+# file that disagrees with rowmaps too much to be the same network. Every
+# request goes through tools/polite_http.py: an honest User-Agent,
+# robots.txt obeyed, paced, ArcGIS /query and WFS GetFeature only.
+on:
+  schedule:
+    - cron: '17 3 * * *'   # 03:17 UTC daily
+  workflow_dispatch:
+
+permissions:
+  contents: write   # the committed council-ways/ files
+  issues: write     # to say when a layer could not be read, or a run fails
+
+concurrency:
+  group: council-ways
+  cancel-in-progress: false
+
+jobs:
+  layers:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09  # v5
+
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1  # v6
+        with:
+          python-version: '3.12'
+
+      # The tests check the merge through build_packages, which imports the
+      # sealing code.
+      - name: Install the one dependency
+        run: pip install --quiet cryptography
+
+      # rowmaps' byway files, as the lane build last fetched them, so each
+      # read can say what the build will make of it. Restore only: this job
+      # never writes that cache.
+      - name: Restore the council data cache
+        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25  # v5
+        with:
+          path: cache
+          key: rowmaps-council-ways-${{ github.run_id }}
+          restore-keys: rowmaps-
+
+      - name: Run the tests before trusting the read
+        run: |
+          python tools/test_polite_http.py
+          python tools/test_council_ways.py
+
+      - name: Read the councils' byway layers
+        run: python tools/council_ways.py fetch --report /tmp/council-ways-problems.txt
+
+      - name: Commit what changed
+        run: |
+          git config user.name  "trailblazer-data"
+          git config user.email "data@trailblazer.invalid"
+
+          commit_it() {
+            git add -A council-ways
+            if git diff --cached --quiet; then
+              echo "nothing changed"
+              return 1
+            fi
+            git commit -m "Council byway layers: $(date -u +%Y-%m-%d)" \
+              -m "Read by .github/workflows/council-ways.yml"
+            return 0
+          }
+
+          commit_it || exit 0
+
+          # Only this job writes council-ways/: on a lost race, take the
+          # newest main and put ours back over it.
+          mkdir -p dist
+          rm -rf dist/council-ways-built
+          cp -r council-ways dist/council-ways-built
+          for attempt in 1 2 3; do
+            if git push; then
+              exit 0
+            fi
+            echo "push rejected; putting our files back on top of origin/main"
+            git fetch origin main
+            git reset --hard origin/main
+            rm -rf council-ways
+            cp -r dist/council-ways-built council-ways
+            commit_it || exit 0
+            sleep $((attempt * 5))
+          done
+          echo "::error::could not push after three attempts"
+          exit 1
+
+      - name: Say which layers could not be used
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          OPEN=$(gh issue list --label council-layers --state open \
+                   --json number --jq '.[0].number' 2>/dev/null || true)
+          if [ -s /tmp/council-ways-problems.txt ]; then
+            BODY="These councils' byway layers could not be read or used on $RUN_URL. Each keeps the last good file in council-ways/, and the lane build falls back to rowmaps for any authority whose council file does not agree with it; no byway was blanked.
+
+          $(sed 's/^/- /' /tmp/council-ways-problems.txt)
+
+          A 403 or a robots.txt refusal is the council's decision and is never worked around. 'not used' means the layer was read but disagrees with rowmaps too much to be the same network (tools/council_ways.py agrees): look at the layer before changing the thresholds."
+            if [ -n "$OPEN" ]; then
+              gh issue edit "$OPEN" --body "$BODY" || true
+            else
+              gh label create council-layers --color FBCA04 \
+                --description "A council byway layer could not be read or used" 2>/dev/null || true
+              gh issue create --label council-layers \
+                --title "Council byway layers: a layer could not be read or used" \
+                --body "$BODY" || true
+            fi
+          elif [ -f /tmp/council-ways-problems.txt ] && [ -n "$OPEN" ]; then
+            gh issue close "$OPEN" --comment "Every layer read and used: $RUN_URL" || true
+          fi
+
+      - name: Raise an issue if this failed
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          EXISTING=$(gh issue list --label council-ways --state open \
+                       --json number --jq '.[0].number' 2>/dev/null || true)
+          if [ -n "$EXISTING" ]; then
+            gh issue comment "$EXISTING" --body "Failed again: $RUN_URL"
+          else
+            gh label create council-ways --color D93F0B \
+              --description "Automated council byway layer problems" 2>/dev/null || true
+            gh issue create --label council-ways \
+              --title "Council byway layers failed" \
+              --body "$RUN_URL failed. The files already in council-ways/ are unchanged and the lane build still uses them (or rowmaps) - nothing was blanked - but councils' changes are not reaching the map until this is fixed."
+          fi
+
+      - name: Stand the alarm down if this worked
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          for n in $(gh issue list --label council-ways --state open \
+                       --json number --jq '.[].number' 2>/dev/null || true); do
+            gh issue close "$n" --comment "Fixed: $RUN_URL succeeded." || true
+          done

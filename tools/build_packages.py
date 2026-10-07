@@ -2,6 +2,8 @@
 """Turn the fetched rights-of-way data into encrypted, timestamped packages.
 
 Input:  cache/<AUTHORITY>/<type>.json   (from fetch_rights_of_way.py)
+        council-ways/<AUTHORITY>.json  (from council_ways.py: the council's
+                                        own live byway layer, where it has one)
 Output: dist/
           manifest.json
           <vehicle>-<area>.tbpack       encrypted AES-256-GCM
@@ -36,6 +38,7 @@ from collections import Counter
 from datetime import datetime, timezone
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import council_ways  # noqa: E402
 import duplicate_ways  # noqa: E402
 from text_clean import clean_text  # noqa: E402
 
@@ -803,7 +806,11 @@ def normalise(feature, authority_code, authority_name, row_type):
             # statutory and OSM-derived ways side by side once the world tier
             # lands, and the map colours them differently.
             "legal_tier": rule["legal_tier"],
-            "source": "rowmaps:%s" % slugify(authority_name),
+            # A byway read from the council's own live layer says so, and
+            # credits that council (council_ways.py); every other way came
+            # from the council's definitive map via rowmaps.
+            "source": ("council:%s" if props.get("TB_council")
+                       else "rowmaps:%s") % slugify(authority_name),
             # Overwritten with this pack's cut date at seal time; fixed width
             # so the size accounting in split_by_authority stays exact.
             "source_date": SOURCE_DATE_PLACEHOLDER,
@@ -814,12 +821,18 @@ def normalise(feature, authority_code, authority_name, row_type):
             "access_reason": rule["access_reason"],
             "access_evidence": rule["access_evidence"],
             # Licence condition. Travels with every feature.
-            "attribution": OGL,
+            "attribution": clean_text(props.get("TB_attribution")) or OGL,
             **({"lengthKm": extra["length_km"]} if "length_km" in extra else {}),
             **({"description": extra["note"]} if "note" in extra else {}),
         },
         "geometry": {"type": "LineString", "coordinates": coords},
     }
+
+
+#: The one rowmaps file a council's own layer can stand in for.
+COUNCIL_LAYER_TYPE = "byway_open_to_all_traffic"
+#: The authorities whose byways this build took from the council's layer.
+COUNCIL_LAYERS_USED = []
 
 
 def load_all(authorities):
@@ -845,7 +858,16 @@ def load_all(authorities):
             except (ValueError, OSError) as e:
                 skipped["unreadable %s/%s" % (code, row_type)] += 1
                 continue
-            for f in fc.get("features", []):
+            features = fc.get("features", [])
+            if row_type == COUNCIL_LAYER_TYPE:
+                # The council's live layer decides which byways exist, where
+                # it publishes one; rowmaps stays the fallback. Unchanged
+                # ways keep their rowmaps record, so their ids do not move.
+                rowmaps = features
+                features, _report = council_ways.byways_for(code, rowmaps)
+                if features is not rowmaps:
+                    COUNCIL_LAYERS_USED.append(name)
+            for f in features:
                 lane = normalise(f, code, name, row_type)
                 if lane is None:
                     skipped["bad geometry"] += 1
@@ -1514,9 +1536,19 @@ def main():
         "schema": 1,
         "schemaVersion": 1,
         "generated": stamp,
-        "attribution": OGL,
+        "attribution": OGL + (
+            " Byways for %s read from the councils' own live layers."
+            % ", ".join(sorted(set(clean_text(n) for n in
+                                   COUNCIL_LAYERS_USED)))
+            if COUNCIL_LAYERS_USED else ""),
         "licence": "OGL-3.0",
-        "source": "Local highway authority definitive maps via rowmaps.com",
+        "source": "Local highway authority definitive maps via rowmaps.com"
+                  + ("; byways for %d authorities from the council's own "
+                     "live layer" % len(COUNCIL_LAYERS_USED)
+                     if COUNCIL_LAYERS_USED else ""),
+        **({"councilLayers": sorted(set(clean_text(n) for n in
+                                        COUNCIL_LAYERS_USED))}
+           if COUNCIL_LAYERS_USED else {}),
         "authorities": len(authorities),
         "maxPlainBytes": MAX_PLAIN_BYTES,
         "dataset": DATASET,

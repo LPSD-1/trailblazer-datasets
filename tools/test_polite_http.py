@@ -199,6 +199,22 @@ class ReadOnly(unittest.TestCase):
         with self.assertRaises(Refused):
             Stand({}).client().get(self.LAYER + "/0/attachments/1")
 
+    WFS = "https://maps.cheshireeast.example/geoserver/CEOpenData/wfs"
+
+    def test_a_wfs_transaction_is_refused_before_any_request(self):
+        for op in ("Transaction", "transaction", "LockFeature",
+                   "GetFeatureWithLock"):
+            stand = Stand({})
+            with self.assertRaises(Refused):
+                stand.client().get(self.WFS + "?service=WFS&REQUEST=" + op)
+            self.assertEqual(stand.asked, [], op)
+
+    def test_a_wfs_getfeature_is_allowed(self):
+        stand = Stand({"/robots.txt": (404, {}, b""),
+                       "/wfs": (200, {}, b"{}")})
+        stand.client().get(self.WFS + "?service=WFS&version=2.0.0&"
+                           "request=GetFeature&typeNames=x")
+
 
 class Gentle(unittest.TestCase):
     def test_two_requests_to_one_host_are_spaced(self):

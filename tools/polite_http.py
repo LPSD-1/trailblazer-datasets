@@ -20,8 +20,10 @@ rather than re-stated (and eventually forgotten) in each fetcher:
     a small retry budget, and a server's Retry-After honoured (up to a cap) on
     429 and 503.
   * READ ONLY. GET only. An ArcGIS URL is allowed only for layer metadata or
-    `/query`: some council FeatureServers advertise editing to anonymous
-    users, and nothing in this repository ever calls an edit operation.
+    `/query`, and an OGC service only for GetCapabilities, DescribeFeature-
+    Type and GetFeature: some council FeatureServers and GeoServers advertise
+    editing to anonymous users, and nothing in this repository ever calls an
+    edit operation.
 
 Pure standard library, so every CI job can import it without installing
 anything.
@@ -68,6 +70,12 @@ _ARCGIS_PATH = re.compile(r"/rest/services/", re.I)
 _ARCGIS_READS = re.compile(r"/(FeatureServer|MapServer)(/\d+)?(/query)?/?$",
                            re.I)
 
+# The only OGC (WFS/WMS) requests ever sent. WFS-T `Transaction` and
+# `LockFeature` change or lock data and are refused.
+_OGC_READS = ("getcapabilities", "describefeaturetype", "getfeature",
+              "getpropertyvalue", "liststoredqueries",
+              "describestoredqueries")
+
 # What a bot challenge looks like when a site answers 200 or 403 with one.
 _CHALLENGE = re.compile(
     rb"(cf-browser-verification|challenge-platform|__cf_chl_|"
@@ -104,6 +112,14 @@ def check_read_only(url):
                 "/rest/services")):
         raise Refused("refusing an ArcGIS URL that is neither layer "
                       "metadata nor /query: %s" % url)
+    # OGC services the same way: Cheshire's and Derbyshire's GeoServers
+    # advertise WFS-T Transaction to anonymous users. Only reads are sent.
+    params = dict((k.lower(), v) for k, v in urllib.parse.parse_qsl(
+        urllib.parse.urlsplit(url).query, keep_blank_values=True))
+    request = (params.get("request") or "").lower()
+    if request and request not in _OGC_READS:
+        raise Refused("refusing an OGC %s request: %s"
+                      % (params.get("request"), url))
 
 
 PRODUCT = "trailblazer-datasets"

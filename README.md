@@ -170,6 +170,40 @@ delete a byway, read weekly from GOV.UK by `status-changes.yml`
 decision found, matched to a lane or not, is listed in
 `status/pins-decisions.json`.
 
+## Byways from the councils' own layers
+
+rowmaps.com copies each council's definitive map, and many of its copies are
+over a year old. Fourteen councils publish their rights of way live, and for
+them `council-ways.yml` reads the byways (BOATs only) from the council every
+day into `council-ways/<CODE>.json` (`tools/council_ways.py`):
+
+| Code | Council | Layer | Licence |
+|---|---|---|---|
+| CB | Cambridgeshire County Council | iShare WFS `ccc:public_rights_of_way` | OGL v3.0 |
+| BK | Central Bedfordshire Council | iShare WFS `RoW_Legal_Network_1` | OGL v3.0 |
+| WJ | Wokingham Borough Council | ArcGIS `PRoW_in_Wokingham_(Public)` | OGL v3.0 |
+| DN | Devon County Council | ArcGIS `Environment/Public_Access/0` | not stated |
+| CH | Cheshire East Council | GeoServer `CEOpenData` BOAT layer | not stated |
+| CC | Cheshire West and Chester Council | GeoServer `CWaCOpenData` BOAT layer | OGL v3.0 |
+| ON | Oxfordshire County Council | ArcGIS `CAMS_PRoW` | OGL v3.0 |
+| LA | Lancashire County Council | ArcGIS `Public_Rights_of_Way` | OGL v3.0 |
+| ND | Northumberland County Council | ArcGIS `PRoW_rowwork_ln_MASTER_view` | OGL v3.0 |
+| ES | East Sussex County Council | ArcGIS `Rights_of_Way_(non_definitive)` | OGL v3.0 |
+| HD | Hertfordshire County Council | ArcGIS `public/row/3` | OGL v3.0 |
+| EX | Essex County Council | ArcGIS `PROW_view` | not stated |
+| WT | Wiltshire Council | ArcGIS `OpenData/PublicRightsofWay` (query only) | OGL v3.0 |
+| BC | Bracknell Forest Council | ArcGIS `GIS_PublicRightsOfWay/7` | OGL v3.0 |
+
+The lane build lets the council's layer decide which byways exist and keeps
+every unchanged way's rowmaps record byte for byte, so its id does not move: a
+byway the council no longer draws is dropped, and one it draws that rowmaps
+lacks is added with the council's geometry. Such a way's `source` is
+`council:<authority>` and its attribution names the council. rowmaps stays the
+fallback: an unreadable layer keeps its last good file, and a council file
+that disagrees with rowmaps too much to be the same network is not used.
+West Berkshire (robots.txt and a bot challenge) and Dorset (refuses GitHub's
+runners) are not read.
+
 ## Licence
 
 Data: Open Government Licence v3.0 — attribution required, no share-alike.
