@@ -13,6 +13,41 @@ import unittest
 import build_tro
 
 
+class WayAccess(unittest.TestCase):
+    """Parity with the app (7 October 2026): a PERMANENT "motor vehicles
+    prohibited, motorcycles exempt" order hides the lane from a 4x4 as a
+    weight or width limit does, and leaves it to a motorbike. A dated one
+    hides nothing: its dates are applied on the day ridden."""
+
+    def test_a_permanent_motors_except_motorcycles_order_hides_a_4x4(self):
+        got = build_tro.way_access([("motors_except_motorcycles",
+                                     "permanent")])
+        self.assertEqual((got["motorbike_ok"], got["fourxfour_ok"],
+                          got["access_evidence"]), (1, 0, "order"))
+        self.assertIn("motorcycles exempt", got["access_reason"])
+
+    def test_it_is_hidden_exactly_as_a_width_limit_is(self):
+        mine = build_tro.way_access([("motors_except_motorcycles",
+                                      "permanent")])
+        width = build_tro.way_access([("width", "permanent")])
+        for key in ("motorbike_ok", "fourxfour_ok", "access_evidence"):
+            self.assertEqual(mine[key], width[key], key)
+
+    def test_a_dated_one_hides_nothing_but_still_says_why(self):
+        for form in ("seasonal", "experimental"):
+            got = build_tro.way_access([("motors_except_motorcycles", form)])
+            self.assertEqual((got["motorbike_ok"], got["fourxfour_ok"],
+                              got["access_evidence"]), (1, 1, "order"), form)
+            self.assertIn(build_tro.ORDER_FORMS[form]["when"],
+                          got["access_reason"], form)
+
+    def test_the_order_type_check_passes(self):
+        import contextlib
+        import io
+        with contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(build_tro.check_order_types(), 0)
+
+
 class ParseWkt(unittest.TestCase):
     def test_a_point(self):
         kind, coords = build_tro.parse_wkt("SRID=27700;POINT(400000 300000)")
