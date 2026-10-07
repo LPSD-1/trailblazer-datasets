@@ -267,7 +267,7 @@ def collect(client, home=HOME, today=None, config=None, machine=None):
                          else "digest recorded")
             if getattr(client, "overridden", {}).get(url):
                 entry["override"] = client.overridden[url]
-        if entry.get("kind") == "document" and entry.get("file", "") \
+        if src.get("kind") == "document" and (entry.get("file") or "") \
                 .lower().endswith(".pdf"):
             forget_document_bytes(home, entry)
         entry.pop("failing_since", None)
