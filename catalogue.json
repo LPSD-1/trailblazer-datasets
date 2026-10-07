@@ -1,6 +1,6 @@
 {
  "schema": 2,
- "generated": "2026-10-07T12:40:59Z",
+ "generated": "2026-10-07T13:16:31Z",
  "attribution": "Map and routing data (c) OpenStreetMap contributors, ODbL. United Kingdom rights of way contain public sector information licensed under the Open Government Licence v3.0, via rowmaps.com.",
  "baseUrl": "https://lpsd-1.github.io/trailblazer-datasets/",
  "overviews": [
@@ -155,7 +155,7 @@
   ]
  },
  "updates": {
-  "lanes": "weekly",
+  "lanes": "sixHourly",
   "routing": "monthly",
   "basemap": "monthly",
   "gpx": "weekly",
@@ -2790,18 +2790,18 @@
          "format": "tbmap",
          "label": "Green lanes and byways - South East",
          "file": "containers/ways-south-east.tbmap",
-         "sha256": "39d96cb6085452412cea12c4b96ca6b7e4595faeefdc596814e73eeef88facc2",
+         "sha256": "b86a1479d7301c018dfc0a6ac70d722850ed7e2a6c9da813e0de6101ff2fb1f9",
          "bytes": 24129536,
-         "downloadBytes": 9571879,
-         "signature": "Y6KQ2so8V2Z3s3kBSHYcO18+Z7r2Wn1kOg85iMZ116xpdgj5Hebhfs6MD8b1vGwiYkyh6Q58P8wbIm3kXpXnBA==",
+         "downloadBytes": 9571906,
+         "signature": "UAGkfiRs8NFOLuvMYc6SsJtoyvh6rGpVibopIGMtERnh0rg6SfZM2rxhweFkEu2znpD5B3HZM2kvm3RLn5pMAw==",
          "legacyFile": "packages/ways-south-east.tbpack",
-         "plainBytes": 4135450,
+         "plainBytes": 4128674,
          "featureCount": 2899,
          "legalBasis": "official",
          "note": "Byways open to all traffic - the lanes you may legally ride. Bridleways and restricted byways are not on this map: it carries only the ways a motor vehicle may use. Where none is shown, this map has not looked - it does not mean there is none on the ground.",
-         "generated": "2026-10-07T10:27:45Z",
-         "waysCut": "2026-10-07T10:27:45Z",
-         "build": "2026-10-07T10:27:45Z",
+         "generated": "2026-10-07T13:13:36Z",
+         "waysCut": "2026-10-07T13:13:36Z",
+         "build": "2026-10-07T13:13:36Z",
          "changesets": [
           {
            "from": "2026-10-01T23:17:21Z",
@@ -2818,6 +2818,14 @@
            "sha256": "9fd4de951525c297b0b2bde99e59cfafc9614d576999c5f69c77f0ee2bb243ab",
            "bytes": 1773568,
            "signature": "p1ZRcJ7EfGjMFTiLnxPJzAAn4OKOCy2o4KGzGATWYWnM08zLNWfSw1jGsXdP+mvJ3Wr26gDuxuBFnLhj89sjDg=="
+          },
+          {
+           "from": "2026-10-07T10:27:45Z",
+           "to": "2026-10-07T13:13:36Z",
+           "file": "changes/gb-south-east/20261007T102745Z-20261007T131336Z.tbchange",
+           "sha256": "b15cca590f3e3710f808bb1861fcab775b2f5a43f363d50ad6f4d2d4737e2227",
+           "bytes": 531968,
+           "signature": "1f96267mcn4ZQeYWo959HVNkaTAscbMsNugoHLji64HpPjOmRaK29A08P5N/qYD2O1CJPHNPpwBEi3XOJr8vAA=="
           }
          ]
         },

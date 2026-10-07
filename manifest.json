@@ -1,10 +1,10 @@
 {
  "schema": 1,
  "schemaVersion": 1,
- "generated": "2026-10-07T10:27:45Z",
- "attribution": "Contains public sector information licensed under the Open Government Licence v3.0. Source: local highway authority definitive maps, via rowmaps.com. Byways for Bracknell Forest, Cambridgeshire, Central Bedfordshire, Cheshire East, Cheshire West and Chester, Devon, East Sussex, Essex, Hertfordshire, Lancashire, Northumberland, Oxfordshire, Wiltshire, Wokingham read from the councils' own live layers.",
+ "generated": "2026-10-07T13:13:36Z",
+ "attribution": "Contains public sector information licensed under the Open Government Licence v3.0. Source: local highway authority definitive maps, via rowmaps.com. Byways for Bracknell Forest, Cambridgeshire, Central Bedfordshire, Cheshire East, Cheshire West and Chester, Devon, East Sussex, Essex, Hertfordshire, Lancashire, Northumberland, Oxfordshire, West Berkshire, Wiltshire, Wokingham read from the councils' own live layers.",
  "licence": "OGL-3.0",
- "source": "Local highway authority definitive maps via rowmaps.com; byways for 14 authorities from the council's own live layer",
+ "source": "Local highway authority definitive maps via rowmaps.com; byways for 15 authorities from the council's own live layer",
  "councilLayers": [
   "Bracknell Forest",
   "Cambridgeshire",
@@ -18,6 +18,7 @@
   "Lancashire",
   "Northumberland",
   "Oxfordshire",
+  "West Berkshire",
   "Wiltshire",
   "Wokingham"
  ],
@@ -123,12 +124,12 @@
    "note": "Byways open to all traffic - the lanes you may legally ride. Bridleways and restricted byways are not on this map: it carries only the ways a motor vehicle may use. Where none is shown, this map has not looked - it does not mean there is none on the ground.",
    "contextScope": "none",
    "file": "packages/ways-south-east.tbpack",
-   "sha256": "01b34938cf2b75d98352a3f694e38007444dd24f5f8cff8231b900d2628b5da1",
-   "bytes": 547070,
-   "plainBytes": 4135450,
+   "sha256": "ac10ad7d1112a72739dccdc6120042e76c4ac8d57215b1f2e74d0afb7ffea07d",
+   "bytes": 547288,
+   "plainBytes": 4128674,
    "laneCount": 2899,
    "lengthKm": 1813.127,
-   "generated": "2026-10-07T10:27:45Z"
+   "generated": "2026-10-07T13:13:36Z"
   },
   {
    "package": "ways",
