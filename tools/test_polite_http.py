@@ -13,6 +13,7 @@ import json
 import os
 import sys
 import unittest
+import urllib.parse
 import urllib.request
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -546,6 +547,166 @@ class Honest(unittest.TestCase):
         (_url, headers), = transport.asked
         self.assertEqual(headers.get("User-agent"), polite_http.USER_AGENT)
         self.assertEqual(transport.methods, ["GET"])
+
+
+# ------------------------------------------------- the one POST (7 Oct 2026)
+
+FIXTURES = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                        "fixtures", "wiltshire")
+PAGE = "https://apps.wiltshire.gov.uk/RightsOfWay/Closure"
+ACTION = "https://apps.wiltshire.gov.uk/RightsOfWay/Closure/Result"
+SEARCH = {"RowType": "1", "ClosureType": "0", "Act": "Search"}
+
+
+def _fixture(name):
+    with open(os.path.join(FIXTURES, name), "rb") as fh:
+        return fh.read()
+
+
+class FormTransport(Transport):
+    """Transport, also keeping each request's body and its Cookie header."""
+
+    def __init__(self, answers):
+        Transport.__init__(self, answers)
+        self.bodies, self.cookies = [], []
+
+    def https_open(self, req):
+        self.bodies.append(req.data)
+        self.cookies.append(req.get_header("Cookie") or
+                            req.unredirected_hdrs.get("Cookie"))
+        return Transport.https_open(self, req)
+
+
+def form_client(page=None):
+    answers = {
+        "https://apps.wiltshire.gov.uk/robots.txt": (404, {}, b""),
+        PAGE: (200, {"Set-Cookie": ".AspNetCore.Antiforgery.x=tok; "
+                                   "path=/; secure"},
+               page if page is not None else _fixture("form.html")),
+        ACTION: (200, {}, _fixture("result-boat.html")),
+    }
+    transport = FormTransport(answers)
+    client = PoliteClient(sleep=lambda s: None, log=lambda *a: None)
+    client._handlers = (transport,)
+    return client, transport
+
+
+class TheOnePost(unittest.TestCase):
+    """The owner approved one POST on 7 October 2026: Wiltshire's closures
+    register's own search form, read only. Every other POST is refused
+    before a request is made; the one that is sent carries the form's own
+    fields and nothing else."""
+
+    def posted(self, transport):
+        return [(u, m) for (u, _h), m in zip(transport.asked,
+                                             transport.methods)
+                if m != "GET"]
+
+    def test_the_approved_search_is_submitted_as_its_page_offers_it(self):
+        client, transport = form_client()
+        body = client.post_form(PAGE, ACTION, SEARCH)
+        self.assertIn(b"Showing all 49 items", body)
+        self.assertEqual(transport.methods, ["GET", "GET", "POST"])
+        self.assertEqual([u for u, _h in transport.asked],
+                         ["https://apps.wiltshire.gov.uk/robots.txt", PAGE,
+                          ACTION])
+        sent = dict(urllib.parse.parse_qsl(transport.bodies[2].decode(),
+                                           keep_blank_values=True))
+        # The form's own fields, exactly: its hidden ones as the page gave
+        # them, its token, and the search; no button but the one pressed.
+        self.assertEqual(sorted(sent), sorted([
+            "AppID", "RowID", "Day", "Month", "Year", "Parish",
+            "GridReference", "PostCode", "ClosureType", "RowType",
+            "UserID", "Archived", "__RequestVerificationToken", "Act"]))
+        self.assertEqual(sent["__RequestVerificationToken"], "FIXTURE-TOKEN")
+        self.assertEqual(sent["Archived"], "ActiveOnly")
+        self.assertEqual((sent["RowType"], sent["ClosureType"], sent["Act"]),
+                         ("1", "0", "Search"))
+        # The page's anti-forgery cookie goes back with the POST, and only
+        # there; no request after it carries one.
+        self.assertEqual(transport.cookies[2], ".AspNetCore.Antiforgery.x=tok")
+        self.assertIsNone(client._cookies)
+        (_u, headers), = [transport.asked[2]]
+        self.assertEqual(headers.get("User-agent"), polite_http.USER_AGENT)
+
+    def test_no_other_action_on_the_same_host(self):
+        for action in ("https://apps.wiltshire.gov.uk/RightsOfWay/Map/Result",
+                       "https://apps.wiltshire.gov.uk/RightsOfWay/Closure/"
+                       "Create",
+                       ACTION + "?id=1", ACTION + "/",
+                       "http://apps.wiltshire.gov.uk/RightsOfWay/Closure/"
+                       "Result"):
+            client, transport = form_client()
+            with self.assertRaises(Refused, msg=action):
+                client.post_form(PAGE, action, SEARCH)
+            self.assertEqual(transport.asked, [], action)
+
+    def test_no_other_host(self):
+        client, transport = form_client()
+        with self.assertRaises(Refused):
+            client.post_form("https://h.example/form",
+                             "https://h.example/form/Result", SEARCH)
+        self.assertEqual(transport.asked, [])
+
+    def test_not_from_another_page(self):
+        client, transport = form_client()
+        with self.assertRaises(Refused):
+            client.post_form("https://apps.wiltshire.gov.uk/RightsOfWay/Map",
+                             ACTION, SEARCH)
+        self.assertEqual(transport.asked, [])
+
+    def test_no_field_beyond_the_search(self):
+        for extra in ({"Delete": "1"}, {"Archived": "All"},
+                      {"__RequestVerificationToken": "x"}, {"UserID": "me"}):
+            client, transport = form_client()
+            with self.assertRaises(Refused, msg=extra):
+                client.post_form(PAGE, ACTION, dict(SEARCH, **extra))
+            self.assertEqual(transport.asked, [], extra)
+
+    def test_no_value_the_form_does_not_offer(self):
+        for bad in ({"RowType": "9"}, {"Act": "Delete"},
+                    {"ClosureType": "0; drop"}):
+            client, transport = form_client()
+            with self.assertRaises(Refused, msg=bad):
+                client.post_form(PAGE, ACTION, dict(SEARCH, **bad))
+            self.assertEqual(self.posted(transport), [], bad)
+
+    def test_a_page_whose_form_posts_elsewhere_gets_no_post(self):
+        page = _fixture("form.html").replace(
+            b'action="/RightsOfWay/Closure/Result"',
+            b'action="/RightsOfWay/Closure/Update"')
+        client, transport = form_client(page)
+        with self.assertRaises(FetchFailed):
+            client.post_form(PAGE, ACTION, SEARCH)
+        self.assertEqual(self.posted(transport), [])
+
+    def test_a_get_never_carries_a_body_or_a_cookie(self):
+        client, transport = form_client()
+        client.post_form(PAGE, ACTION, SEARCH)
+        client.get(PAGE)
+        self.assertEqual(transport.methods[-1], "GET")
+        self.assertIsNone(transport.bodies[-1])
+        self.assertIsNone(transport.cookies[-1])
+
+    def test_the_allowlist_is_that_one_form(self):
+        self.assertEqual(sorted(polite_http.FORM_POSTS), [ACTION])
+        self.assertIn("7 October 2026", polite_http.FORM_POSTS[ACTION][
+            "decided"])
+        self.assertIn("THE ONE POST", polite_http.__doc__)
+
+    def test_council_fetchers_reach_the_web_only_through_this_client(self):
+        # A council module opening its own connection could POST around
+        # every check above.
+        here = os.path.dirname(os.path.abspath(__file__))
+        for name in ("council_sources", "council_orders", "council_ways",
+                     "order_register", "home_collector", "dmmo_applications"):
+            with open(os.path.join(here, name + ".py"),
+                      encoding="utf-8") as fh:
+                text = fh.read()
+            for needle in ("urllib.request", "http.client", "socket",
+                           "requests"):
+                self.assertNotRegex(text, r"(?m)^\s*(import|from)\s+%s"
+                                    % needle.replace(".", r"\."), name)
 
 
 if __name__ == "__main__":
