@@ -189,6 +189,11 @@ def assign_ids(features, key):
 
 def order_kind(code):
     code = code or ""
+    # A council's REQUEST to keep off (council_orders.VEHICLES "voluntary").
+    # First, because its code says "Closure" and it is not one: the app draws
+    # it in a family of its own, `request` (TrafficOrder.kindId, build 118).
+    if code == "councilVoluntaryClosure":
+        return "request"
     if (code in ("miscFootwayClosure", "miscCycleLaneClosure",
                  "miscPedestrianZone") or "Closure" in code):
         return "closure"
