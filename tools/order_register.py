@@ -22,11 +22,14 @@ the URL it was read from, and REVIEWED: only entries with `status:
 file as `needs-review` (with why), and orders known only by their title as
 `listed-only` - Cambridgeshire's 38 and Hertfordshire's 15 were, because
 robots.txt kept us out of their PDFs. Since the owner's decision of
-8 October 2026 those PDFs are read (tools/robots_override.json): `check`
+7 October 2026 those PDFs are read (tools/robots_override.json): `check`
 follows them from their council's page (`follow` in pages.json) and flags
-each for a person to transcribe. Documents no request may reach (a bot
-challenge, a refusal of GitHub's runners) are saved by hand or sent by the
-council into manual/<CODE>/ and are checked from disk the same way.
+each for a person to transcribe. A council that refuses GitHub's runners
+is read from the one fixed collector server instead (HOME-COLLECTOR.md) and
+served here from home-collected/ - for an order PDF, by its digest alone.
+Documents no request may reach (a bot challenge, a refusal of that server
+too) are saved by hand or sent by the council into manual/<CODE>/ and are
+checked from disk the same way.
 
 `check` is the schedule (quarterly, order-register.yml). It re-reads each
 council page listed in `tro/register/pages.json`, reduces it to its text,
@@ -483,8 +486,16 @@ def check(client, register=REGISTER, today=None, manual_root=None,
         if page.get("blocked"):
             continue
         hash_path, text_path = snapshot_paths(register, page["id"])
+        # A council's order PDF the collector holds as a digest only
+        # (home_collector: the bytes stay with the council). Its digest is
+        # the SHA-256 of its bytes - what fingerprint() takes of any PDF.
+        held = None
+        if not page.get("local") and hasattr(client, "document_digest"):
+            held = client.document_digest(page["url"])
         try:
-            if page.get("local"):
+            if held:
+                body = None
+            elif page.get("local"):
                 with open(page["local"], "rb") as fh:
                     body = fh.read()
             else:
@@ -504,8 +515,11 @@ def check(client, register=REGISTER, today=None, manual_root=None,
         if served and not page.get("provenance"):
             from home_collector import provenance_of
             page = dict(page, provenance=provenance_of(served))
-        queue.extend(linked_documents(page, body))
-        digest, lines = fingerprint(page, body)
+        if held:
+            digest, lines = held, None
+        else:
+            queue.extend(linked_documents(page, body))
+            digest, lines = fingerprint(page, body)
         try:
             with open(hash_path, encoding="utf-8") as fh:
                 old = fh.read().strip()

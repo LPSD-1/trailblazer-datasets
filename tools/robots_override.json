@@ -1,6 +1,6 @@
 {
- "decision": "Owner decision, 8 October 2026: no e-mails to councils; the pipeline itself reads the council documents that robots.txt alone keeps it from. Only the paths below, only by the order register's check (which logs every read in tro/register/override-reads.json and reads each at most weekly), with the honest User-Agent and the usual pacing. A 403, a bot challenge or a block from GitHub's runners is never got past: those stay blocked, and manual/ is their backstop.",
- "decided": "2026-10-08",
+ "decision": "Owner decision, 7 October 2026: no e-mails to councils; the pipeline itself reads the council documents that robots.txt alone keeps it from. Only the paths below, only by the order register's check and, for Powys, by the collector server (each logs every read - tro/register/override-reads.json, home-collected/override-reads.json - and reads each at most weekly), with the honest User-Agent and the usual pacing. A council that refuses GitHub's shared runners may be read from the one fixed, honestly named collector server (the owner's policy, 7 October 2026; HOME-COLLECTOR.md); that is not a disguise or a rotation of addresses, and a council that refuses that server too is not asked from anywhere else. A real block - a 403 to the server, a bot challenge - is never got past: no proxies, no other addresses, no borrowed User-Agent, no headless browser; manual/ is the backstop.",
+ "decided": "2026-10-07",
  "paths": [
   {
    "id": "cambridgeshire-byway-orders",
@@ -23,7 +23,7 @@
    "authority": "Powys",
    "council": "Powys County Council",
    "prefix": "https://en.powys.gov.uk/media/",
-   "why": "The order documents linked from Powys's byway and traffic order articles (2444, 2446); robots.txt disallows /media/. Powys also refuses GitHub's runners (403), which is never got past."
+   "why": "The order documents linked from Powys's byway and traffic order articles (2444, 2446); robots.txt disallows /media/. Powys also refuses GitHub's shared runners (403), so by the owner's policy of 7 October 2026 it is read from the one fixed collector server instead (HOME-COLLECTOR.md), which keeps only each document's digest. If Powys refused that server too, it would not be asked from anywhere else."
   },
   {
    "id": "derbyshire-path-closure-register",

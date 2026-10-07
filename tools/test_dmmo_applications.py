@@ -200,8 +200,8 @@ class Run(unittest.TestCase):
 
 
 class DorsetFromHome(unittest.TestCase):
-    """Dorset's register refuses GitHub's runners; it is read from the home
-    collector's snapshot, and only its byway claims are kept."""
+    """Dorset's register refuses GitHub's runners; it is read from the
+    collector server's snapshot, and only its byway claims are kept."""
 
     def test_byway_claims_and_never_restricted_byways(self):
         feats = [{"properties": {"dmmo_ref_no": ref,

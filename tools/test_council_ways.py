@@ -146,9 +146,13 @@ class BuildUsesIt(unittest.TestCase):
     def tearDown(self):
         shutil.rmtree(self.tmp)
 
-    def write(self, code, data):
+    def write(self, code, data, last_ok=None):
+        import datetime
         with open(os.path.join(self.tmp, "%s.json" % code), "w") as fh:
             json.dump(data, fh)
+        with open(os.path.join(self.tmp, "status.json"), "w") as fh:
+            json.dump({code: {"ok": True, "last_ok": last_ok or
+                              datetime.date.today().isoformat()}}, fh)
 
     def test_no_council_file_means_rowmaps_untouched(self):
         mine = [rowmaps("ZZ|Ash|1", B1)]
@@ -198,6 +202,41 @@ class BuildUsesIt(unittest.TestCase):
                                 log=lambda *_: None)
         self.assertEqual([f["properties"]["Name"] for f in got],
                          ["ZZ|Ash|1"])
+
+    def test_a_council_file_a_month_old_is_not_used(self):
+        # The layer has failed for a month; rowmaps may since have added
+        # byways the old council file does not draw, and the merge would
+        # drop them.
+        mine = [rowmaps("ZZ|Ash|1", B1), rowmaps("ZZ|Ash|2", B2)]
+        self.write("ZZ", council(("Ash", "1", [B1]), ("Ash", "2", [B2])),
+                   last_ok="2026-09-08")
+        said = []
+        got, report = cw.byways_for("ZZ", mine, out_dir=self.tmp,
+                                    log=said.append, today="2026-10-08")
+        self.assertIs(got, mine, "a council file 30 days old was used")
+        self.assertIsNone(report)
+        self.assertIn("30 days ago", said[0])
+        got, report = cw.byways_for("ZZ", mine, out_dir=self.tmp,
+                                    log=lambda *_: None,
+                                    today="2026-10-07")
+        self.assertIsNot(got, mine, "a council file 29 days old was not "
+                                    "used")
+        self.assertIsNotNone(report)
+
+    def test_with_nothing_from_rowmaps_an_old_file_still_stands_in(self):
+        self.write("ZZ", council(("Ash", "1", [B1])), last_ok="2026-01-01")
+        got, _r = cw.byways_for("ZZ", [], out_dir=self.tmp,
+                                log=lambda *_: None, today="2026-10-08")
+        self.assertEqual([f["properties"]["Name"] for f in got],
+                         ["ZZ|Ash|1"])
+
+    def test_a_council_file_with_no_recorded_read_is_not_used(self):
+        mine = [rowmaps("ZZ|Ash|1", B1)]
+        self.write("ZZ", council(("Ash", "1", [B1])))
+        os.remove(os.path.join(self.tmp, "status.json"))
+        got, _r = cw.byways_for("ZZ", mine, out_dir=self.tmp,
+                                log=lambda *_: None, today="2026-10-08")
+        self.assertIs(got, mine)
 
     def test_a_rowmaps_way_still_says_rowmaps(self):
         p = build_packages.normalise(rowmaps("ZZ|Ash|1", B1), "ZZ",
@@ -326,6 +365,24 @@ class Fetch(unittest.TestCase):
         layer = dict(self.LAYER, licence=None)
         self.assertIn("without stating a licence", cw.attribution(layer))
         self.assertNotIn("Open Government", cw.attribution(layer))
+
+    def test_a_cross_check_layer_is_reported_as_not_used(self):
+        # status.json said "used": true for Isle of Wight and Hampshire,
+        # which the build never uses while rowmaps has a file.
+        os.makedirs(os.path.join(self.cache, "ZZ"))
+        with open(os.path.join(self.cache, "ZZ", cw.BOAT_FILE), "w") as fh:
+            json.dump({"type": "FeatureCollection", "features": [
+                rowmaps("ZZ|Ash|%d" % i, line(0, 100 * i, 600, 100 * i))
+                for i in range(9)]}, fh)
+
+        def read(_client, _layer):
+            ways = [self.way(i) for i in range(9)]
+            return len(ways), ways
+        entry = cw.fetch_one(dict(self.LAYER, read=read, role="cross-check"),
+                             None, self.tmp, "2026-10-07", cache=self.cache)
+        self.assertFalse(entry["merge"]["used"])
+        self.assertIn("cross-check", entry["merge"]["why_not"])
+        self.assertEqual(entry["merge"]["kept"], 9)
 
     def test_with_rowmaps_in_the_cache_the_merge_is_previewed(self):
         os.makedirs(os.path.join(self.cache, "ZZ"))

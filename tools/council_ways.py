@@ -28,7 +28,11 @@ ROWMAPS STAYS THE FALLBACK, at three levels:
     time, is refused as a bad read and the last good file is kept;
   * at build time, a council file that disagrees with rowmaps too much to be
     the same network (`agrees`) is not used at all - the authority is built
-    from rowmaps, with a warning.
+    from rowmaps, with a warning;
+  * at build time, a council file whose last good read (status.json
+    `last_ok`) is more than MAX_AGE_DAYS old is not used either: the layer
+    has been failing for a month, and rowmaps may since have added byways
+    the old file would drop.
 
 READ ONLY AND POLITE. Every request goes through tools/polite_http.py: an
 honest User-Agent, robots.txt obeyed, paced, ArcGIS `/query` and WFS
@@ -60,6 +64,14 @@ BOAT_FILE = "byway_open_to_all_traffic.json"
 
 #: Keep-last-good: a read under this share of the last good one is refused.
 FLOOR_SHARE = 2.0 / 3.0
+
+#: A council file last read well this many days ago or more is not used:
+#: the build falls back to rowmaps. A month: the layers are read daily, so a
+#: few days' outage (a council server down over a weekend) changes nothing,
+#: while rowmaps refreshes its copies far less often than monthly, so a
+#: council file a month old is about the age at which rowmaps' copy may be
+#: the newer of the two.
+MAX_AGE_DAYS = 30
 
 #: Two lines are the same way where they lie within this of each other. The
 #: two copies come from one council survey, so they normally coincide to a
@@ -689,18 +701,53 @@ def load_rowmaps(code, cache=None):
     return None if fc is None else (fc.get("features") or [])
 
 
-def byways_for(code, rowmaps_features, out_dir=None, log=print):
+def not_used_because(role, rowmaps_features, report):
+    """None if the build uses a council file, else why not. The one rule
+    byways_for applies and status.json reports, so they cannot disagree."""
+    if role == "cross-check" and rowmaps_features:
+        return ("a cross-check layer: compared with rowmaps, and used only "
+                "if rowmaps has no file for the authority")
+    return agrees(report)
+
+
+def too_old(code, out_dir, today, max_age_days=MAX_AGE_DAYS):
+    """Why the council file is too old to use, or None. Its age is its
+    last good read in status.json; a file with none recorded has no age
+    anyone can vouch for and counts as too old."""
+    status = read_json(os.path.join(out_dir, "status.json"), {}) or {}
+    last = (status.get(code) or {}).get("last_ok")
+    if not last:
+        return "no good read of it is recorded in status.json"
+    age = (datetime.date.fromisoformat(today)
+           - datetime.date.fromisoformat(last)).days
+    if age >= max_age_days:
+        return ("its last good read was %s, %d days ago (the limit is %d)"
+                % (last, age, max_age_days))
+    return None
+
+
+def byways_for(code, rowmaps_features, out_dir=None, log=print, today=None):
     """What build_packages uses for an authority's byways: the merge when a
-    council file exists and agrees with rowmaps, else rowmaps unchanged."""
-    council = read_json(os.path.join(out_dir or OUT, "%s.json" % code))
+    council file exists, is recent and agrees with rowmaps, else rowmaps
+    unchanged."""
+    out_dir = out_dir or OUT
+    council = read_json(os.path.join(out_dir, "%s.json" % code))
     if not council:
         return rowmaps_features, None
-    if (council.get("source") or {}).get("role") == "cross-check" and \
-            rowmaps_features:
+    role = (council.get("source") or {}).get("role")
+    if role == "cross-check" and rowmaps_features:
         # A cross-check layer stands in only when rowmaps has nothing.
         return rowmaps_features, None
+    old = too_old(code, out_dir,
+                  today or datetime.date.today().isoformat())
+    if old and rowmaps_features:
+        # With nothing from rowmaps, an old council file is still the only
+        # record there is, and better than no byways at all.
+        log("::warning::%s: council byway layer NOT used, rowmaps kept: %s"
+            % (code, old))
+        return rowmaps_features, None
     features, report = merge(code, rowmaps_features or [], council)
-    why = agrees(report)
+    why = not_used_because(role, rowmaps_features, report)
     if why:
         log("::warning::%s: council byway layer NOT used, rowmaps kept: %s"
             % (code, why))
@@ -744,13 +791,14 @@ def fetch_one(layer, client, out_dir, today, cache=None):
     rowmaps = load_rowmaps(layer["code"], cache)
     if rowmaps is not None:
         _f, report = merge(layer["code"], rowmaps, data)
+        why = not_used_because(layer.get("role"), rowmaps, report)
         entry["merge"] = {"kept": report["kept"],
                           "rowmaps": report["rowmaps"],
                           "dropped": report["dropped"][:40],
                           "added": report["added"][:40],
                           "new_share": report["new_share"],
-                          "used": agrees(report) is None,
-                          "why_not": agrees(report)}
+                          "used": why is None,
+                          "why_not": why}
     return entry
 
 
@@ -784,7 +832,10 @@ def fetch(codes=None, out_dir=None, today=None, client=None, report=None):
             failed.append("%s (%s): %s" % (layer["code"], layer["council"],
                                            entry["error"]))
         merge_note = entry.get("merge") or {}
-        if merge_note and not merge_note.get("used"):
+        # A cross-check is not used by design; that is not a problem to
+        # raise every day.
+        if merge_note and not merge_note.get("used") and \
+                layer.get("role") != "cross-check":
             failed.append("%s (%s): read, but not used - %s"
                           % (layer["code"], layer["council"],
                              merge_note.get("why_not")))

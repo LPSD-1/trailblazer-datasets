@@ -332,7 +332,14 @@ def vehicles_for(otype, oform="permanent"):
 # stand on. Height and length are NOT in it: §5.3 says "maybe" for both, and
 # a bridge limit is typically over three metres, which stops no 4x4. They are
 # carried as advice, which is what an unquantified maybe is worth.
-HIDES_FOURXFOUR = ("weight", "width")
+#
+# "Motor vehicles prohibited, motorcycles exempt" is in it too, for the same
+# reason and with less doubt: a permanent one shuts the lane to every car
+# and 4x4 and to no motorbike. The app hides such a lane from a 4x4 exactly
+# as it does a weight or width limit (7 October 2026), and this list is kept
+# level with it. A dated one (seasonal, experimental) hides nothing here,
+# like every other type: the app applies its dates on the day ridden.
+HIDES_FOURXFOUR = ("weight", "width", "motors_except_motorcycles")
 ADVISES_FOURXFOUR = ("height", "length")
 SHUTS_TO_MOTORS = ("prohibition",)
 
@@ -367,7 +374,9 @@ def way_access(orders):
             evidence = "order"
         elif otype in HIDES_FOURXFOUR and not dated:
             fourxfour_ok = 0
-            reasons.append("%s (%s for a 4x4)" % (row["label"], row["x4_note"]))
+            reasons.append("%s (%s for a 4x4)" % (row["label"], row["x4_note"])
+                           if row["x4"] == "sometimes"
+                           else "%s (no 4x4s)" % row["label"])
             evidence = "order"
         elif otype in SHUTS_TO_MOTORS or otype in HIDES_FOURXFOUR:
             reasons.append("%s, %s" % (row["label"],
@@ -1122,13 +1131,15 @@ def check_order_types(mutate=False):
                 " 4x4=%s)" % (name, want_type, want_form, want_bike, want_x4,
                               got_type, got_form, got_bike, got_x4))
 
-    # THE SECOND HALF, and the one the ways schema turns on: weight and width
-    # must reach `access_evidence = 'order'` with fourxfour_ok = 0, because
-    # they are the only official 4x4-specific restriction we hold.
+    # THE SECOND HALF, and the one the ways schema turns on: weight, width
+    # and "motor vehicles except motorcycles" must reach `access_evidence =
+    # 'order'` with fourxfour_ok = 0, because they are the official
+    # 4x4-specific restrictions we hold.
     print()
     expected_access = {
         "weight": (1, 0, "order"),
         "width": (1, 0, "order"),
+        "motors_except_motorcycles": (1, 0, "order"),
         "height": (1, 1, "order"),      # §5.3 says "maybe" - advice, not a hide
         "prohibition": (0, 0, "order"),
         "oneway": (1, 1, "none"),       # direction, not access
@@ -1153,12 +1164,16 @@ def check_order_types(mutate=False):
 
     # A seasonal prohibition is NOT shut (spec §5.4), and it still carries its
     # evidence, so the rider is told why the lane is amber rather than green.
-    seasonal = way_access([("prohibition", "seasonal")])
-    if seasonal["fourxfour_ok"] != 1 or seasonal["access_evidence"] != "order":
-        failures.append("a seasonal prohibition shut the way: %r" % seasonal)
-    else:
-        print("way_access(seasonal prohibition) -> fourxfour_ok=1 "
-              "evidence=order  ok  [%s]" % seasonal["access_reason"])
+    for otype in ("prohibition", "motors_except_motorcycles"):
+        seasonal = way_access([(otype, "seasonal")])
+        if seasonal["fourxfour_ok"] != 1 or \
+                seasonal["access_evidence"] != "order":
+            failures.append("a seasonal %s shut the way: %r"
+                            % (otype, seasonal))
+        else:
+            print("way_access(seasonal %s) -> fourxfour_ok=1 "
+                  "evidence=order  ok  [%s]"
+                  % (otype, seasonal["access_reason"]))
 
     # WAYS-SCHEMA.md: access_evidence must never be 'none' where
     # fourxfour_ok = 0. Asserted over every type and form this build can emit,
@@ -1188,7 +1203,8 @@ def check_order_types(mutate=False):
                                           + len(expected_access)))
         return 1
     print("all %d spec-5.3 order types resolve to the right vehicles; "
-          "weight and width reach access_evidence='order'" % len(_CHECK_CASES))
+          "weight, width and motors-except-motorcycles reach "
+          "access_evidence='order'" % len(_CHECK_CASES))
     return 0
 
 

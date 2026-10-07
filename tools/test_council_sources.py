@@ -417,6 +417,22 @@ class KeepLastGood(unittest.TestCase):
         self.assertIsNotNone(cs.guard(30, 9))
         self.assertIsNone(cs.guard(4, 1), "a layer of four may fall to one")
 
+    def test_a_person_can_accept_a_shrink_the_guard_refused(self):
+        # A temporary closures layer whose closures were all lifted shrinks
+        # for real; without a way to take that read, the lifted closures
+        # would be published for ever.
+        self.good()
+        lifted = {"features": []}
+        self.assertFalse(self.run_with(lifted)["ok"])
+        self.source["read"] = lambda c: cs.read_dorset(
+            Client({"route_closed": lifted}))
+        entry = cs.fetch_one(self.source, None, self.byways, self.tmp,
+                             "2026-10-08", accept_shrink=True)
+        self.assertTrue(entry.get("ok"), entry)
+        self.assertIn("accepted by hand", entry["accepted_shrink"])
+        with open(self.path, encoding="utf-8") as fh:
+            self.assertEqual(json.load(fh)["items"], [])
+
     def test_an_unchanged_read_is_not_rewritten(self):
         self.good()
         entry = self.run_with(DORSET)

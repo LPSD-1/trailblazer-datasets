@@ -1161,7 +1161,12 @@ def write_json(path, data):
 
 
 def guard(previous_records, records):
-    """A reason to refuse this read, or None. The keep-last-good rule."""
+    """A reason to refuse this read, or None. The keep-last-good rule.
+
+    A temporary closures layer can shrink for real: closures lifted all at
+    once. A person who has checked that runs the fetch with
+    `--accept-shrink SOURCE_ID` (the workflow's `accept_shrink` input), and
+    that one run takes the new read whatever this says."""
     if not previous_records:
         return None
     if records == 0:
@@ -1174,9 +1179,11 @@ def guard(previous_records, records):
     return None
 
 
-def fetch_one(source, client, byways, out_dir, today):
+def fetch_one(source, client, byways, out_dir, today, accept_shrink=False):
     """Read one source. Returns its status entry. Never raises for a fault in
-    the source; a fault in OUR code still raises."""
+    the source; a fault in OUR code still raises. `accept_shrink`: a person
+    has checked that this source really did shrink; the guard is overruled
+    for this read, and the status entry says so."""
     path = os.path.join(out_dir, "%s.json" % source["id"])
     previous = read_json(path) or {}
     entry = {"name": source["name"], "authority": source["authority"]}
@@ -1194,7 +1201,10 @@ def fetch_one(source, client, byways, out_dir, today):
         from home_collector import provenance_of
         source = dict(source, supplied=provenance_of(served))
     refusal = guard(previous.get("records"), records)
-    if refusal:
+    if refusal and accept_shrink:
+        entry["accepted_shrink"] = "%s: %s (accepted by hand)" % (today,
+                                                                  refusal)
+    elif refusal:
         entry.update({"ok": False, "error": "kept the last good read: %s"
                       % refusal})
         return entry
@@ -1218,6 +1228,10 @@ def main(argv=None):
     f.add_argument("--out", default=OUT)
     f.add_argument("--today", default=datetime.date.today().isoformat())
     f.add_argument("--report", help="write the failures here (one per line)")
+    f.add_argument("--accept-shrink", default="",
+                   help="comma-separated source ids whose shrunken read a "
+                        "person has checked: taken this run despite the "
+                        "keep-last-good guard")
     sub.add_parser("list")
     args = ap.parse_args(argv)
 
@@ -1238,6 +1252,8 @@ def main(argv=None):
               "to match against a broken checkout" % len(byways))
         return 1
     wanted = set((args.only or "").split(",")) - {""}
+    accept = set(x.strip() for x in (args.accept_shrink or "").split(",")
+                 if x.strip())
     from home_collector import HomeClient
     client = HomeClient(polite_http.PoliteClient())
     import manual_inbox
@@ -1254,7 +1270,8 @@ def main(argv=None):
         if wanted and source["id"] not in wanted:
             continue
         print("--- %s" % source["id"])
-        entry = fetch_one(source, client, byways, args.out, args.today)
+        entry = fetch_one(source, client, byways, args.out, args.today,
+                          accept_shrink=source["id"] in accept)
         old = status.get(source["id"]) or {}
         if entry.get("ok"):
             print("  %d records, %d on our byways, %d naming a byway we do "

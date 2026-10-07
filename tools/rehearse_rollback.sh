@@ -7,8 +7,10 @@
 # rollback."
 set -u
 
-SRC=/c/Users/lucas/Desktop/trailblazer-datasets
-WORK=/c/Users/lucas/AppData/Local/Temp/rollback-rehearsal
+# The clone this script lives in, unless SRC says otherwise; a scratch
+# directory under the system temp folder, unless WORK does.
+SRC=${SRC:-$(cd "$(dirname "$0")/.." && pwd)}
+WORK=${WORK:-${TMPDIR:-/tmp}/rollback-rehearsal}
 rm -rf "$WORK" 2>/dev/null
 mkdir -p "$WORK"
 
@@ -105,7 +107,7 @@ echo "   manifest schema: $(python -c "import json,io;print(json.load(io.open('m
 echo "   ways-* left behind: $(ls containers/ways-* 2>/dev/null | wc -l)  (0 expected)"
 echo "   git status clean: $([ -z "$(git status --porcelain)" ] && echo yes || echo NO)"
 
-cd /c/Users/lucas/Desktop
+cd "$SRC" || exit 1
 rm -rf "$WORK"
 echo
 echo "== scratch clone deleted =="

@@ -8,14 +8,26 @@ rather than re-stated (and eventually forgotten) in each fetcher:
   * SAY WHO WE ARE. The User-Agent names this repository and how to reach it.
     No fetcher here ever presents itself as a browser.
   * OBEY robots.txt, per host, before the first request to it, by RFC 9309: a
-    4xx robots.txt means "no rules", a 5xx or an unreachable one means "assume
-    everything is disallowed" until it can be read. A disallowed path raises
-    `Refused`; nothing here works around it.
+    4xx robots.txt means "no rules"; a 200 is read and obeyed; anything else
+    (a 5xx, no answer at all, a 304 or any other status) means "assume
+    everything is disallowed" until it can be read. robots.txt is always
+    asked for plainly, never with another request's validators. A
+    disallowed path raises `Refused`; nothing here works around it.
   * NEVER WORK AROUND A BLOCK. A 403, or a Cloudflare-style challenge page,
     is a refusal and is reported as one - there is no retry with different
-    headers. The hosts listed in `BLOCKED_HOSTS` are refused outright, before
-    any request: sites behind bot challenges, and sources the project has
-    ruled out.
+    headers, no proxy, no other address, no browser. The hosts listed in
+    `BLOCKED_HOSTS` are refused outright, before any request: sites behind
+    bot challenges, and sources the project has ruled out. A redirect is
+    followed only to a URL that passes every check here itself (https, not
+    blocked, read only, allowed by robots.txt).
+  * ONE FIXED, NAMED COLLECTOR SERVER (the owner's policy, 7 October 2026).
+    Dorset and Powys refuse GitHub's shared runners but answer an ordinary
+    server, so tools/home_collector.py reads them from one fixed server in
+    London, through this same client and these same rules, and commits what
+    it read for the builds (HOME-COLLECTOR.md). That is not a disguise and
+    not a rotation of addresses: the User-Agent is the same, the address
+    never changes, and a council that refuses that server too is not asked
+    from anywhere else.
   * BE GENTLE. At least `min_gap` seconds between two requests to one host,
     a small retry budget, and a server's Retry-After honoured (up to a cap) on
     429 and 503.
@@ -110,7 +122,7 @@ ROBOTS_HOSTS = ("apps.derbyshire.gov.uk", "gis2.westberks.gov.uk",
 
 BLOCKED_HOSTS = BLOCKED_HOSTS + ROBOTS_HOSTS
 
-# THE OWNER'S ROBOTS.TXT DECISIONS (8 October 2026). The specific council
+# THE OWNER'S ROBOTS.TXT DECISIONS (7 October 2026). The specific council
 # documents robots.txt alone keeps us from - byway order PDFs and the like,
 # public records - that the owner has chosen to read anyway, each listed by
 # URL prefix in tools/robots_override.json. For those paths only: robots.txt
@@ -196,6 +208,13 @@ def check_read_only(url):
 PRODUCT = "trailblazer-datasets"
 
 
+def _is_us(agent):
+    """Whether a robots.txt user-agent value names our product token
+    ("TrailBlazer-datasets", any case, with or without a version)."""
+    token = (agent or "").strip().lower().split("/", 1)[0].strip()
+    return token == PRODUCT
+
+
 class Robots(object):
     """One host's robots.txt, matched by RFC 9309 - not urllib.robotparser.
 
@@ -227,8 +246,11 @@ class Robots(object):
                     rules.append((key == "allow", value))
         if agents:
             groups.append((agents, rules))
+        # RFC 9309 2.2.1: our group is one whose user-agent value is our
+        # product token, matched case-insensitively - equality, not a
+        # substring, or a `User-agent: data` group would be taken as ours.
         own = [r for a, rs in groups for r in rs
-               if any(x and x != "*" and x in PRODUCT for x in a)]
+               if any(_is_us(x) for x in a)]
         self.rules = own if own else [r for a, rs in groups for r in rs
                                       if "*" in a]
 
@@ -260,19 +282,45 @@ class Robots(object):
 def robots_verdict(status, text):
     """What one robots.txt response means (RFC 9309 section 2.3.1).
 
-    Returns a Robots, or the strings "allow-all" / "disallow-all": a 4xx
-    file is "unavailable" and allows everything, a 5xx or no answer at all
-    is "unreachable" and allows nothing.
+    Returns a Robots, or the strings "allow-all" / "disallow-all": a 200 is
+    the file, a 4xx file is "unavailable" and allows everything, and
+    anything else allows nothing. That includes a 5xx or no answer at all
+    ("unreachable"), and also a 304 or any other status that is not a file:
+    an empty body there is not an empty robots.txt.
     """
-    if status is None or status >= 500:
-        return "disallow-all"
-    if 400 <= status < 500:
+    if status == 200:
+        return Robots(text)
+    if status is not None and 400 <= status < 500:
         return "allow-all"
-    return Robots(text)
+    return "disallow-all"
+
+
+class _CheckedRedirects(urllib.request.HTTPRedirectHandler):
+    """Follow a redirect only to a URL that passes every check the URL
+    asked for passed: https, not on the block list, read only, allowed by
+    robots.txt. urllib would otherwise follow any Location silently - to
+    http, to a blocked host, to a path robots.txt disallows."""
+
+    def __init__(self, check):
+        self._check = check
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        try:
+            self._check(newurl)
+        except Refused as e:
+            fp.close()
+            raise Refused("%s redirected to a URL that is not fetched: %s"
+                          % (req.full_url, e))
+        return urllib.request.HTTPRedirectHandler.redirect_request(
+            self, req, fp, code, msg, headers, newurl)
 
 
 class PoliteClient(object):
     """GET with robots.txt, pacing, a block list and an honest User-Agent."""
+
+    #: Extra urllib handlers for the real opener (a stand-in transport in
+    #: the tests); the redirect check is always installed.
+    _handlers = ()
 
     def __init__(self, min_gap=2.0, retries=2, timeout=90, max_wait=120,
                  opener=None, sleep=time.sleep, clock=time.monotonic,
@@ -309,8 +357,10 @@ class PoliteClient(object):
                    "Accept": "text/html, application/json;q=0.9, */*;q=0.8"}
         headers.update(self._extra_headers)
         request = urllib.request.Request(url, headers=headers)
+        opener = urllib.request.build_opener(_CheckedRedirects(self._check),
+                                             *self._handlers)
         try:
-            with urllib.request.urlopen(request, timeout=timeout) as resp:
+            with opener.open(request, timeout=timeout) as resp:
                 return resp.status, dict(resp.headers), resp.read()
         except urllib.error.HTTPError as e:
             try:
@@ -333,6 +383,8 @@ class PoliteClient(object):
         self.requests += 1
         try:
             return self._open(url, self.timeout)
+        except Refused:
+            raise   # a refused redirect: a refusal, never a retry
         except Exception as e:  # noqa: BLE001 - network faults are data here
             return None, {}, str(e).encode("utf-8", "replace")
 
@@ -372,7 +424,16 @@ class PoliteClient(object):
         if host not in self._robots:
             parts = urllib.parse.urlsplit(url)
             robots_url = "%s://%s/robots.txt" % (parts.scheme, parts.netloc)
-            status, _headers, body = self._raw(robots_url)
+            # Never with the validators of the request that brought us here
+            # (get_if_changed): robots.txt would answer 304 with no body.
+            saved, self._extra_headers = self._extra_headers, {}
+            try:
+                status, _headers, body = self._raw(robots_url)
+            except Refused:
+                # Redirected somewhere we never go: not a file we can read.
+                status, body = None, b""
+            finally:
+                self._extra_headers = saved
             self._robots[host] = robots_verdict(
                 status, body.decode("utf-8", "replace") if body else "")
         verdict = self._robots[host]
@@ -412,18 +473,7 @@ class PoliteClient(object):
     def _get(self, url, allow_304=False):
         """(status, body, headers) for a 200 (or a 304 when asked)."""
         host = host_of(url)
-        if not url.lower().startswith("https://"):
-            raise Refused("only https is fetched: %s" % url)
-        override = override_for(url, self.overrides) \
-            if self.override_log else None
-        if blocked(host) and not (override and _under(host, ROBOTS_HOSTS)):
-            raise Refused("%s is on the block list" % host)
-        check_read_only(url)
-        if override is None and not self.allowed(url):
-            raise Refused("robots.txt on %s disallows %s" % (host, url))
-        if override is not None and not self.allowed(url):
-            # robots.txt says no, and the owner has decided to read this.
-            self._override_due(url, override)
+        self._check(url)
 
         attempt = 0
         while True:
@@ -447,6 +497,26 @@ class PoliteClient(object):
             self._log("  %s answered %s; waiting %.0f s (attempt %d of %d)"
                       % (host, status, wait, attempt, self.retries))
             self._sleep(wait)
+
+    def _check(self, url):
+        """Refused unless `url` may be requested: https, not blocked, read
+        only, and allowed by robots.txt (or by the owner's decision). Run on
+        the URL asked for and on every URL a redirect leads to."""
+        host = host_of(url)
+        if not url.lower().startswith("https://"):
+            raise Refused("only https is fetched: %s" % url)
+        override = override_for(url, self.overrides) \
+            if self.override_log else None
+        if blocked(host) and not (override and _under(host, ROBOTS_HOSTS)):
+            raise Refused("%s is on the block list" % host)
+        check_read_only(url)
+        if urllib.parse.urlsplit(url).path == "/robots.txt":
+            return   # robots.txt is never disallowed by robots.txt
+        if override is None and not self.allowed(url):
+            raise Refused("robots.txt on %s disallows %s" % (host, url))
+        if override is not None and not self.allowed(url):
+            # robots.txt says no, and the owner has decided to read this.
+            self._override_due(url, override)
 
     def _retry_after(self, headers, attempt):
         value = None

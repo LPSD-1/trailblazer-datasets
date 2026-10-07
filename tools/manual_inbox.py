@@ -4,8 +4,10 @@
     python tools/manual_inbox.py          # list what the inbox holds
 
 Some council documents cannot be read by this pipeline: pages behind a bot
-challenge, and pages that refuse GitHub's runners. Neither is ever got
-past. Instead the owner saves them in a browser, or the council sends them
+challenge, and pages that refuse both GitHub's runners and the one fixed
+collector server (HOME-COLLECTOR.md; the owner's policy of 7 October 2026
+allows that server, and nothing else). Neither is ever got past. Instead
+the owner saves them in a browser, or the council sends them
 (an Environmental Information Regulations reply), and commits them to
 manual/<CODE>/ - CODE being the authority's two-letter code in
 manual/authorities.json. See manual/README.md.

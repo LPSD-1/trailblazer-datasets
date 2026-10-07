@@ -13,11 +13,13 @@ name: Order register check
 #
 # Every request goes through tools/polite_http.py: an honest User-Agent,
 # robots.txt obeyed, four seconds between requests to one council. The one
-# exception is the owner's decision of 8 October 2026
+# exception is the owner's decision of 7 October 2026
 # (tools/robots_override.json): specific council order documents read
 # despite robots.txt, each at most weekly, every read logged in
-# tro/register/override-reads.json and credited as overridden. A 403, a
-# bot challenge or a refusal of GitHub's runners is never got past; those
+# tro/register/override-reads.json and credited as overridden. A council
+# that refuses GitHub's runners is read only from the one fixed collector
+# server (the owner's policy, HOME-COLLECTOR.md) and served here from
+# home-collected/. A 403 or a bot challenge is never got past; those
 # councils' documents come from manual/ (see manual/README.md), which this
 # check reads from disk like any other page.
 on:

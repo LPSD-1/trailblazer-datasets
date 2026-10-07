@@ -1,32 +1,44 @@
 #!/usr/bin/env python3
-"""Reads the councils that refuse GitHub's servers, from a home connection.
+"""Reads the councils that refuse GitHub's runners, from the collector server.
 
-    python tools/home_collector.py                 # collect, commit, push
-    python tools/home_collector.py --no-git        # collect only
+    python tools/home_collector.py --machine server   # collect, commit, push
+    python tools/home_collector.py --no-git           # collect only
     python tools/home_collector.py --check-stale 3 --report FILE   # (CI)
 
-A few councils answer an ordinary connection and refuse GitHub's runners
-(403, measured 7 October 2026): Dorset's GeoServer (its rights of way
-closures and its register of definitive map applications), Norfolk's and
-Wiltshire's pages, Powys's order pages and documents. Nothing in this
-repository gets past that refusal. Instead the owner runs this on a machine
-at home, where those councils answer it, and it commits what it read to
+A few councils refuse GitHub's shared runners (403, measured 7 October
+2026) and answer an ordinary server: Dorset's GeoServer (its rights of way
+closures and its register of definitive map applications) and Powys's
+order pages and the order documents they link to. This runs on one fixed
+server in London, reads only those sources, and commits what it read to
 home-collected/; the Actions builds then read those snapshots instead of
-asking the councils themselves (HomeClient, below).
+asking the councils themselves (HomeClient, below). The name is historical:
+the sources were first read from a machine at home.
+
+THE OWNER'S POLICY (7 October 2026). Reading a council from this one fixed,
+honestly named server after it refuses GitHub's shared runners is allowed:
+it is not a disguise and not a rotation of addresses. If a council refuses
+this server too, it is not asked from anywhere else. A real block - a 403
+to this server, a bot challenge - is never worked around: no proxies, no
+other addresses, no borrowed User-Agent, no headless browser.
 
 IT DISGUISES NOTHING. Every request goes through tools/polite_http.py
 exactly as in CI: the same honest User-Agent naming this repository,
 robots.txt obeyed (with the owner's recorded robots.txt decisions, read at
 most weekly), the same pacing, read only. It only runs somewhere else.
 
-IT IS CHEAP. Conditional requests where the council supports them; a
-snapshot rewritten only when its content changed (a page's readable text,
-a layer's features, a document's bytes - not a timestamp in a footer);
-every file written to a temporary name and renamed, so a crash leaves the
-last good one; a commit and a push only when something changed (plus a
-heartbeat once a day, so CI can tell a quiet week from a switched-off
-machine). Standard library only; Python 3.9 or later; nothing
-Windows-specific, so the same clone runs on a Raspberry Pi.
+IT IS LIGHT ON THE COUNCILS. Conditional requests where the council
+supports them; a snapshot rewritten only when its content changed (a
+page's readable text, a layer's features, a document's bytes - not a
+timestamp in a footer); every file written to a temporary name and
+renamed, so a crash leaves the last good one; a commit and a push only
+when something changed (plus a heartbeat once a day, so CI can tell a quiet
+week from a stopped server). Standard library only; Python 3.9 or later.
+
+ORDER DOCUMENTS ARE NOT KEPT. A PDF a page links to (Powys's orders) is
+recorded by its SHA-256, size and date only - the one thing the order
+register's check uses from it - never its bytes: whole council documents
+do not belong in a public repository, and a person transcribing one opens
+it at the council's own URL.
 
 Configuration: home-collected/collector.json. See HOME-COLLECTOR.md.
 """
@@ -57,15 +69,15 @@ INDEX = "index.json"
 HEARTBEAT = "heartbeat.json"
 PROVENANCE = "collected directly from the council"
 
-# WHICH MACHINE READS WHICH COUNCIL. Measured 7 October 2026 from an Oracle
-# Cloud server in London: Dorset and Powys answer a data centre, Norfolk and
+# WHICH MACHINE READS WHICH COUNCIL. Measured 7 October 2026 from the
+# collector server in London: Dorset and Powys answer it. Norfolk and
 # Wiltshire (both behind Cloudflare's bot challenge) refuse it with a 403, as
-# they refuse GitHub's runners, and answer only a home connection. A source
-# says `"machine": "server"` to be read by the always-on server; anything
-# else stays with the machine at home. Each machine reads only its own,
-# writes only its own snapshots and heartbeat, and touches only its own
-# entries in the shared index.json; their runs are three hours apart. A
-# switched-off PC is still noticed while the server carries on.
+# they refuse GitHub's runners; they were retired rather than read from
+# anywhere else. Every source now says `"machine": "server"`. The code still
+# allows more than one machine (a source without one belongs to "home"):
+# each reads only its own sources, writes only its own snapshots and
+# heartbeat, and touches only its own entries in the shared index.json, and
+# a stopped one is noticed while another carries on.
 MACHINES = ("home", "server")
 
 
@@ -132,6 +144,26 @@ def snapshot_name(source_id, url):
 
 
 # ------------------------------------------------------------- content
+
+def is_pdf(url, body):
+    """Whether a followed document is a PDF: by its bytes, or its name."""
+    path = urllib.parse.urlsplit(url).path.lower()
+    return (body or b"")[:4] == b"%PDF" or path.endswith(".pdf")
+
+
+def forget_document_bytes(home, entry):
+    """Drop a document's stored bytes, keeping its digest. Returns whether
+    anything was removed (snapshots from before documents were kept as a
+    digest only)."""
+    name = entry.pop("file", None)
+    if not name:
+        return False
+    try:
+        os.remove(os.path.join(home, "snapshots", name))
+    except OSError:
+        pass
+    return True
+
 
 def canonical(kind, body):
     """(bytes to store, digest of what matters). A page's digest is of its
@@ -210,15 +242,34 @@ def collect(client, home=HOME, today=None, config=None, machine=None):
                               if k.lower() == header), None)
                 if value:
                     entry[key] = value
+            keep_bytes = not (src.get("kind") == "document"
+                              and is_pdf(url, body))
             if digest != entry.get("digest"):
-                name = entry.get("file") or snapshot_name(src["id"], url)
-                write_atomic(os.path.join(home, "snapshots", name), stored)
-                entry.update({"file": name, "digest": digest,
-                              "collected": today})
+                if keep_bytes:
+                    name = entry.get("file") or snapshot_name(src["id"], url)
+                    write_atomic(os.path.join(home, "snapshots", name),
+                                 stored)
+                    entry["file"] = name
+                else:
+                    # A council's order PDF: its digest, size and type are
+                    # what the order register uses; the bytes stay with
+                    # the council.
+                    forget_document_bytes(home, entry)
+                    entry["bytes"] = len(body)
+                    kind_of = next((v for k, v in (headers or {}).items()
+                                    if k.lower() == "content-type"), None)
+                    if kind_of:
+                        entry["content_type"] = kind_of
+                entry.update({"digest": digest, "collected": today})
                 changed.append(src["id"])
-                log.info("%s: changed, snapshot written", src["id"])
+                log.info("%s: changed, %s", src["id"],
+                         "snapshot written" if keep_bytes
+                         else "digest recorded")
             if getattr(client, "overridden", {}).get(url):
                 entry["override"] = client.overridden[url]
+        if src.get("kind") == "document" and (entry.get("file") or "") \
+                .lower().endswith(".pdf"):
+            forget_document_bytes(home, entry)
         entry.pop("failing_since", None)
         entry.pop("error", None)
         entry.update({"id": src["id"], "kind": src.get("kind", "page"),
@@ -271,14 +322,15 @@ def git(repo, *args, check=True):
 
 def sync(repo):
     """Bring the clone level with GitHub, whatever state a crash left it in.
+    Returns True if it rebased cleanly, False if it had to reset.
 
-    Two machines push to home-collected/ now. They write different
+    More than one machine may push to home-collected/. They write different
     snapshots and different entries of index.json, so a rebase is clean -
     but if one ever is not, a clone left mid-rebase
     would fail every run after it, silently, until someone logged in. So a
     failed rebase is abandoned and the clone reset to GitHub's copy: the
-    snapshots of this run are lost, and the next run reads them again, which
-    is cheap. The clone is the collector's own; nobody edits it by hand."""
+    snapshots of this run are lost, and the next run reads them again. The
+    clone is the collector's own; nobody edits it by hand."""
     git_dir = os.path.join(repo, ".git")
     if os.path.isdir(os.path.join(git_dir, "rebase-merge")) or \
             os.path.isdir(os.path.join(git_dir, "rebase-apply")):
@@ -288,6 +340,8 @@ def sync(repo):
         git(repo, "rebase", "--abort", check=False)
         git(repo, "fetch", "-q")
         git(repo, "reset", "-q", "--hard", "@{u}")
+        return False
+    return True
 
 
 def publish(repo, message, tries=3, machine="home"):
@@ -306,17 +360,26 @@ def publish(repo, message, tries=3, machine="home"):
             return True
         log.info("push rejected; pull --rebase and try again (%d)", attempt)
         time.sleep(5 * attempt)
-        sync(repo)
+        if not sync(repo):
+            # The reset took this run's commit with it: a push now would
+            # push nothing and say "pushed". Stop, and say what happened.
+            log.warning("this run's changes were dropped when the clone was "
+                        "reset to GitHub's copy; nothing was pushed, and the "
+                        "next run reads them again")
+            return False
     raise RuntimeError("could not push after %d attempts" % tries)
 
 
 # -------------------------------------------------- read by the CI builds
 
 def stale(home=HOME, days=3, today=None):
-    """A sentence if any collecting machine has not run for `days`, else
-    None. Each machine with sources in collector.json is asked after by its
-    own heartbeat: the server carrying on must not hide a PC that has
-    stopped, nor the other way round."""
+    """A sentence if any collecting machine has not run for `days`, or any
+    one source has been failing for longer than that, else None. Each
+    machine with sources in collector.json is asked after by its own
+    heartbeat: the server carrying on must not hide a PC that has stopped,
+    nor the other way round. And a heartbeat moves when ANY source reads,
+    so one council refusing for a week is named here by index.json's
+    `failing_since`, or nothing would ever say so."""
     today = datetime.date.fromisoformat(
         today or datetime.date.today().isoformat())
     config = read_json(os.path.join(home, "collector.json"), {}) or {}
@@ -337,6 +400,17 @@ def stale(home=HOME, days=3, today=None):
             said.append("%s last read its councils on %s, %d days ago: the "
                         "machine may be off, offline or failing"
                         % (who, last, age))
+    index = read_json(os.path.join(home, INDEX), {}) or {}
+    for url, entry in sorted(index.items(),
+                             key=lambda kv: str(kv[1].get("id"))):
+        since = (entry or {}).get("failing_since")
+        if not since:
+            continue
+        age = (today - datetime.date.fromisoformat(since)).days
+        if age > days:
+            said.append("%s has not been read since %s, %d days ago (%s): "
+                        "%s" % (entry.get("id") or url, since, age, url,
+                                entry.get("error") or "no error recorded"))
     return "; ".join(said) or None
 
 
@@ -354,10 +428,32 @@ class HomeClient(object):
         self.hosts = set(polite_http.host_of(s["url"])
                          for s in config.get("sources") or [])
         self.served = {}
-        self.overridden = dict(getattr(client, "overridden", {}) or {})
+        self._overridden = {}
+
+    @property
+    def overridden(self):
+        """{url: override id} read under the owner's robots.txt decision:
+        the collector's, as recorded in its index, merged with the inner
+        client's AS IT IS NOW - it records its own during the run, so a copy
+        taken when this was made would miss every one of them."""
+        merged = dict(getattr(self.client, "overridden", {}) or {})
+        merged.update(self._overridden)
+        return merged
 
     def __getattr__(self, name):
         return getattr(self.client, name)
+
+    def document_digest(self, url):
+        """The SHA-256 of a document the collector holds only as a digest
+        (a council's order PDF), or None. Credited like any snapshot."""
+        entry = self.index.get(url)
+        if not entry or entry.get("file") or not entry.get("digest") or \
+                entry.get("kind") != "document":
+            return None
+        self.served[url] = entry.get("collected")
+        if entry.get("override"):
+            self._overridden[url] = entry["override"]
+        return entry["digest"]
 
     def _home(self, url):
         entry = self.index.get(url)
@@ -371,8 +467,11 @@ class HomeClient(object):
             if body is not None:
                 self.served[url] = entry.get("collected")
                 if entry.get("override"):
-                    self.overridden[url] = entry["override"]
+                    self._overridden[url] = entry["override"]
                 return body
+        if entry and entry.get("digest") and not entry.get("file"):
+            raise Refused("home-collected/ keeps only the digest of %s, not "
+                          "its bytes; open it at the council" % url)
         if polite_http.host_of(url) in self.hosts:
             raise Refused("%s is read only by the collector, and "
                           "home-collected/ holds no snapshot of %s"
