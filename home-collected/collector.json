@@ -1,5 +1,5 @@
 {
- "about": "The councils that refuse GitHub's runners (403, measured 7 October 2026) and answer an ordinary connection. Read by tools/home_collector.py on a machine at home; see HOME-COLLECTOR.md. URLs must be exactly those the pipeline asks for, so the CI builds find them here instead of asking the council.",
+ "about": "The councils that refuse GitHub's runners (403, measured 7 October 2026) and answer an ordinary connection. Read by tools/home_collector.py on a machine at home; see HOME-COLLECTOR.md. URLs must be exactly those the pipeline asks for, so the CI builds find them here instead of asking the council. Sources marked \"machine\": \"server\" are read by the always-on server (Dorset and Powys answer it); the rest by the machine at home (Norfolk and Wiltshire refuse data centres).",
  "log": "collector.log",
  "min_gap_s": 4.0,
  "sources": [
@@ -9,7 +9,8 @@
    "kind": "json",
    "council": "Dorset Council",
    "authority": "Dorset",
-   "feeds": "council source dorset-closures"
+   "feeds": "council source dorset-closures",
+   "machine": "server"
   },
   {
    "id": "dorset-dmmo",
@@ -17,7 +18,8 @@
    "kind": "json",
    "council": "Dorset Council",
    "authority": "Dorset",
-   "feeds": "DMMO register dorset-dmmo"
+   "feeds": "DMMO register dorset-dmmo",
+   "machine": "server"
   },
   {
    "id": "norfolk-notices",
@@ -50,7 +52,8 @@
    "council": "Powys County Council",
    "authority": "Powys",
    "feeds": "order register page powys-county-council/2444",
-   "follow": "^https://en\\.powys\\.gov\\.uk/media/\\d+/"
+   "follow": "^https://en\\.powys\\.gov\\.uk/media/\\d+/",
+   "machine": "server"
   },
   {
    "id": "powys-2446",
@@ -59,7 +62,8 @@
    "council": "Powys County Council",
    "authority": "Powys",
    "feeds": "order register page powys-county-council/2446",
-   "follow": "^https://en\\.powys\\.gov\\.uk/media/\\d+/"
+   "follow": "^https://en\\.powys\\.gov\\.uk/media/\\d+/",
+   "machine": "server"
   }
  ]
 }

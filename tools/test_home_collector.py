@@ -147,6 +147,64 @@ class Collect(unittest.TestCase):
         self.assertIn("never", hc.stale(self.home, 3, today="2026-10-12"))
 
 
+SPLIT = {"sources": [
+    dict(CONFIG["sources"][0], machine="server"),
+    dict(CONFIG["sources"][1])]}
+
+
+class TwoMachines(unittest.TestCase):
+    """The server reads Dorset and Powys; the PC at home reads the councils
+    that refuse data centres. Neither may read or write the other's."""
+
+    def setUp(self):
+        self.home = tempfile.mkdtemp()
+        with open(os.path.join(self.home, "collector.json"), "w") as fh:
+            json.dump(SPLIT, fh)
+
+    def tearDown(self):
+        shutil.rmtree(self.home)
+
+    def beat(self, machine):
+        path = os.path.join(self.home, hc.heartbeat_name(machine))
+        if not os.path.exists(path):
+            return None
+        with open(path) as fh:
+            return json.load(fh)
+
+    def test_each_machine_reads_only_its_own_sources(self):
+        server = Client({WFS: layer(1)})
+        hc.collect(server, self.home, today="2026-10-08", machine="server")
+        self.assertEqual([u for u, _lm in server.asked], [WFS])
+        home = Client({PAGE: page("a"), PDF: b"%PDF"})
+        hc.collect(home, self.home, today="2026-10-08", machine="home")
+        self.assertEqual([u for u, _lm in home.asked], [PAGE, PDF],
+                         "the documents a page links follow their page")
+
+    def test_each_machine_keeps_its_own_heartbeat(self):
+        hc.collect(Client({WFS: layer(1)}), self.home, today="2026-10-08",
+                   machine="server")
+        self.assertEqual(self.beat("server")["sources_read"], 1)
+        self.assertIsNone(self.beat("home"),
+                          "the server wrote the PC's heartbeat")
+        self.assertEqual(hc.heartbeat_name("home"), "heartbeat.json")
+
+    def test_a_pc_that_stops_is_noticed_while_the_server_carries_on(self):
+        hc.collect(Client({PAGE: page("a"), PDF: b"%PDF"}), self.home,
+                   today="2026-10-01", machine="home")
+        hc.collect(Client({WFS: layer(1)}), self.home, today="2026-10-08",
+                   machine="server")
+        said = hc.stale(self.home, 3, today="2026-10-08")
+        self.assertIn("the home collector last read its councils on "
+                      "2026-10-01", said)
+        self.assertNotIn("server", said)
+
+    def test_and_a_server_that_stops_is_noticed_too(self):
+        hc.collect(Client({PAGE: page("a"), PDF: b"%PDF"}), self.home,
+                   today="2026-10-08", machine="home")
+        self.assertIn("the server collector has never reported",
+                      hc.stale(self.home, 3, today="2026-10-08"))
+
+
 class Real(object):
     def __init__(self):
         self.asked = []
@@ -178,7 +236,7 @@ class HomeClientInCI(unittest.TestCase):
         self.assertEqual(len(client.get_json(WFS)["features"]), 2)
         self.assertEqual(real.asked, [])
         self.assertEqual(hc.provenance_of(client.take_served()),
-                         "collected from a home connection 2026-10-08")
+                         "collected directly from the council 2026-10-08")
         self.assertEqual(client.take_served(), {})
 
     def test_a_home_host_is_never_asked_from_ci(self):
@@ -220,6 +278,109 @@ class TheRealConfig(unittest.TestCase):
         self.assertEqual(hosts, {"gi.dorsetcouncil.gov.uk",
                                  "www.norfolk.gov.uk", "www.wiltshire.gov.uk",
                                  "en.powys.gov.uk"})
+
+
+class AClashNeverJamsTheClone(unittest.TestCase):
+    """Real git, local only: a bare repository standing in for GitHub and two
+    clones standing in for the two machines. If both ever change the same
+    file, the loser's rebase fails - and a clone left mid-rebase would fail
+    every run after it, silently. sync() must leave it level with GitHub."""
+
+    def git(self, cwd, *args):
+        import subprocess
+        out = subprocess.run(["git"] + list(args), cwd=cwd,
+                             stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                             universal_newlines=True)
+        self.assertEqual(out.returncode, 0, out.stdout)
+        return out.stdout.strip()
+
+    def setUp(self):
+        self.root = tempfile.mkdtemp()
+        self.origin = os.path.join(self.root, "origin.git")
+        self.git(self.root, "init", "-q", "--bare", "-b", "main",
+                 self.origin)
+        self.a = self.clone("a")
+        os.makedirs(os.path.join(self.a, "home-collected"))
+        self.write(self.a, "seed")
+        self.git(self.a, "add", "-A")
+        self.git(self.a, "commit", "-q", "-m", "seed")
+        self.git(self.a, "push", "-q", "-u", "origin", "main")
+        self.b = self.clone("b")
+
+    def tearDown(self):
+        def unlock(func, path, _exc):
+            os.chmod(path, 0o700)
+            func(path)
+        shutil.rmtree(self.root, onerror=unlock)
+
+    def clone(self, name):
+        path = os.path.join(self.root, name)
+        self.git(self.root, "clone", "-q", self.origin, path)
+        self.git(path, "config", "user.name", name)
+        self.git(path, "config", "user.email", "%s@example.invalid" % name)
+        self.git(path, "config", "core.autocrlf", "false")
+        return path
+
+    def write(self, repo, text):
+        with open(os.path.join(repo, "home-collected", "index.json"), "w",
+                  newline="\n") as fh:
+            fh.write(text + "\n")
+
+    def test_a_failed_rebase_is_abandoned_and_the_clone_reset(self):
+        self.write(self.a, "from a")
+        hc.publish(self.a, "a", machine="server")
+        self.write(self.b, "from b")
+        with self.assertRaises(RuntimeError):
+            hc.publish(self.b, "b", tries=1)
+        hc.sync(self.b)
+        git_dir = os.path.join(self.b, ".git")
+        self.assertFalse(os.path.isdir(os.path.join(git_dir,
+                                                    "rebase-merge")))
+        self.assertFalse(os.path.isdir(os.path.join(git_dir,
+                                                    "rebase-apply")))
+        self.assertEqual(self.git(self.b, "rev-parse", "HEAD"),
+                         self.git(self.a, "rev-parse", "HEAD"))
+        self.assertEqual(self.git(self.b, "status", "--porcelain"), "")
+
+    def test_a_clone_a_crash_left_mid_rebase_is_brought_back(self):
+        self.write(self.a, "from a")
+        hc.publish(self.a, "a", machine="server")
+        self.write(self.b, "from b")
+        self.git(self.b, "commit", "-q", "-am", "b")
+        import subprocess
+        subprocess.run(["git", "pull", "-q", "--rebase"], cwd=self.b,
+                       stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        self.assertTrue(os.path.isdir(os.path.join(self.b, ".git",
+                                                   "rebase-merge")) or
+                        os.path.isdir(os.path.join(self.b, ".git",
+                                                   "rebase-apply")),
+                        "PREMISE: the clone is stuck mid-rebase")
+        hc.sync(self.b)
+        # HEAD alone proves nothing: mid-rebase it already sits on a's
+        # commit. The rebase must be gone and the tree clean.
+        for leftover in ("rebase-merge", "rebase-apply"):
+            self.assertFalse(os.path.isdir(os.path.join(self.b, ".git",
+                                                        leftover)))
+        self.assertEqual(self.git(self.b, "status", "--porcelain"), "")
+        self.assertEqual(self.git(self.b, "rev-parse", "HEAD"),
+                         self.git(self.a, "rev-parse", "HEAD"))
+
+
+class WhichMachineReadsWhat(unittest.TestCase):
+    """Measured 7 Oct 2026 from the Oracle server in London: Dorset and
+    Powys answer it; Norfolk and Wiltshire (Cloudflare) refuse it with a
+    403. A council moved to the server that refuses it would go unread."""
+
+    def test_the_councils_that_refuse_data_centres_stay_at_home(self):
+        with open(os.path.join(ROOT, "home-collected",
+                               "collector.json")) as fh:
+            sources = json.load(fh)["sources"]
+        where = dict((hc.polite_http.host_of(s["url"]), hc.machine_of(s))
+                     for s in sources)
+        self.assertEqual(where, {"gi.dorsetcouncil.gov.uk": "server",
+                                 "en.powys.gov.uk": "server",
+                                 "www.norfolk.gov.uk": "home",
+                                 "www.wiltshire.gov.uk": "home"})
 
 
 if __name__ == "__main__":

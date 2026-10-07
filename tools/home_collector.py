@@ -55,7 +55,29 @@ HOME = os.path.join(ROOT, "home-collected")
 CONFIG = os.path.join(HOME, "collector.json")
 INDEX = "index.json"
 HEARTBEAT = "heartbeat.json"
-PROVENANCE = "collected from a home connection"
+PROVENANCE = "collected directly from the council"
+
+# WHICH MACHINE READS WHICH COUNCIL. Measured 7 October 2026 from an Oracle
+# Cloud server in London: Dorset and Powys answer a data centre, Norfolk and
+# Wiltshire (both behind Cloudflare's bot challenge) refuse it with a 403, as
+# they refuse GitHub's runners, and answer only a home connection. A source
+# says `"machine": "server"` to be read by the always-on server; anything
+# else stays with the machine at home. Each machine reads only its own and
+# keeps its own heartbeat, so two machines never write the same file - and a
+# switched-off PC is still noticed while the server carries on.
+MACHINES = ("home", "server")
+
+
+def machine_of(source):
+    return source.get("machine") or "home"
+
+
+def heartbeat_name(machine):
+    """heartbeat.json for the machine at home, as it always was, so the CI
+    check needs no migration; heartbeat-<machine>.json for any other."""
+    if machine in (None, "home"):
+        return HEARTBEAT
+    return "heartbeat-%s.json" % machine
 
 log = logging.getLogger("home-collector")
 
@@ -145,13 +167,15 @@ _VOLATILE_ID = re.compile(r"\.fid--[0-9a-f]+_[0-9a-f]+_-?[0-9a-f]+$")
 
 # --------------------------------------------------------------- collect
 
-def collect(client, home=HOME, today=None, config=None):
-    """One pass over the configured sources. Returns (changed, failures)."""
+def collect(client, home=HOME, today=None, config=None, machine=None):
+    """One pass over the configured sources - only [machine]'s when one is
+    named, every source when not. Returns (changed, failures)."""
     today = today or datetime.date.today().isoformat()
     config = config or read_json(os.path.join(home, "collector.json"), {})
     index_path = os.path.join(home, INDEX)
     index = read_json(index_path, {}) or {}
-    queue = [dict(s) for s in config.get("sources") or []]
+    queue = [dict(s) for s in config.get("sources") or []
+             if machine is None or machine_of(s) == machine]
     changed, failures, seen = [], [], set()
     while queue:
         src = queue.pop(0)
@@ -216,7 +240,7 @@ def collect(client, home=HOME, today=None, config=None):
                               "authority": src.get("authority")})
     if write_if_changed(index_path, index):
         changed.append("index")
-    beat_path = os.path.join(home, HEARTBEAT)
+    beat_path = os.path.join(home, heartbeat_name(machine))
     beat = read_json(beat_path, {}) or {}
     ok = [s for s in seen if not (index.get(s) or {}).get("error")]
     new_beat = {"last_run": today,
@@ -244,41 +268,74 @@ def git(repo, *args, check=True):
     return out
 
 
-def publish(repo, message, tries=3):
-    """Commit home-collected/ and push it; on a lost race, pull --rebase
-    (only this machine writes home-collected/, so it rebases cleanly)."""
+def sync(repo):
+    """Bring the clone level with GitHub, whatever state a crash left it in.
+
+    Two machines push to home-collected/ now. They write different files,
+    so a rebase is clean - but if one ever is not, a clone left mid-rebase
+    would fail every run after it, silently, until someone logged in. So a
+    failed rebase is abandoned and the clone reset to GitHub's copy: the
+    snapshots of this run are lost, and the next run reads them again, which
+    is cheap. The clone is the collector's own; nobody edits it by hand."""
+    git_dir = os.path.join(repo, ".git")
+    if os.path.isdir(os.path.join(git_dir, "rebase-merge")) or \
+            os.path.isdir(os.path.join(git_dir, "rebase-apply")):
+        git(repo, "rebase", "--abort", check=False)
+    if git(repo, "pull", "-q", "--rebase", check=False).returncode != 0:
+        log.warning("pull --rebase failed; resetting to GitHub's copy")
+        git(repo, "rebase", "--abort", check=False)
+        git(repo, "fetch", "-q")
+        git(repo, "reset", "-q", "--hard", "@{u}")
+
+
+def publish(repo, message, tries=3, machine="home"):
+    """Commit home-collected/ and push it; on a lost race, rebase onto the
+    other machine's push (it writes other files) and try again."""
     git(repo, "add", "-A", "home-collected")
     if git(repo, "diff", "--cached", "--quiet", check=False).returncode == 0:
         log.info("nothing changed; nothing pushed")
         return False
     git(repo, "commit", "-q", "-m", message, "-m",
-        "Collected by tools/home_collector.py on a home connection.")
+        "Collected by tools/home_collector.py on the %s machine."
+        % machine)
     for attempt in range(1, tries + 1):
         if git(repo, "push", "-q", check=False).returncode == 0:
             log.info("pushed")
             return True
         log.info("push rejected; pull --rebase and try again (%d)", attempt)
-        git(repo, "pull", "-q", "--rebase")
         time.sleep(5 * attempt)
+        sync(repo)
     raise RuntimeError("could not push after %d attempts" % tries)
 
 
 # -------------------------------------------------- read by the CI builds
 
 def stale(home=HOME, days=3, today=None):
-    """A sentence if the home collector has not run for `days`, else None."""
+    """A sentence if any collecting machine has not run for `days`, else
+    None. Each machine with sources in collector.json is asked after by its
+    own heartbeat: the server carrying on must not hide a PC that has
+    stopped, nor the other way round."""
     today = datetime.date.fromisoformat(
         today or datetime.date.today().isoformat())
-    beat = read_json(os.path.join(home, HEARTBEAT), {}) or {}
-    last = beat.get("last_ok")
-    if not last:
-        return "the home collector has never reported (no %s)" % HEARTBEAT
-    age = (today - datetime.date.fromisoformat(last)).days
-    if age > days:
-        return ("the home collector last read its councils on %s, %d days "
-                "ago: the machine may be off, offline or failing" % (last,
-                                                                      age))
-    return None
+    config = read_json(os.path.join(home, "collector.json"), {}) or {}
+    machines = sorted(set(machine_of(s) for s in
+                          config.get("sources") or [])) or ["home"]
+    said = []
+    for machine in machines:
+        name = heartbeat_name(machine)
+        who = ("the home collector" if machine == "home"
+               else "the %s collector" % machine)
+        beat = read_json(os.path.join(home, name), {}) or {}
+        last = beat.get("last_ok")
+        if not last:
+            said.append("%s has never reported (no %s)" % (who, name))
+            continue
+        age = (today - datetime.date.fromisoformat(last)).days
+        if age > days:
+            said.append("%s last read its councils on %s, %d days ago: the "
+                        "machine may be off, offline or failing"
+                        % (who, last, age))
+    return "; ".join(said) or None
 
 
 class HomeClient(object):
@@ -315,7 +372,7 @@ class HomeClient(object):
                     self.overridden[url] = entry["override"]
                 return body
         if polite_http.host_of(url) in self.hosts:
-            raise Refused("%s is read only from a home connection, and "
+            raise Refused("%s is read only by the collector, and "
                           "home-collected/ holds no snapshot of %s"
                           % (polite_http.host_of(url), url))
         return None
@@ -355,6 +412,8 @@ def main(argv=None):
     ap.add_argument("--check-stale", type=int, metavar="DAYS",
                     help="(CI) report whether the collector has gone quiet")
     ap.add_argument("--report", help="with --check-stale: write it here")
+    ap.add_argument("--machine", choices=MACHINES, default="home",
+                    help="read only this machine's sources (default: home)")
     args = ap.parse_args(argv)
 
     if args.check_stale is not None:
@@ -377,20 +436,22 @@ def main(argv=None):
     if sys.stdout is not None:     # pythonw has no console to write to
         log.addHandler(logging.StreamHandler(sys.stdout))
     log.setLevel(logging.INFO)
-    log.info("run starts")
+    log.info("run starts (%s)", args.machine)
     try:
         if not args.no_git:
-            git(ROOT, "pull", "-q", "--rebase")
+            sync(ROOT)
         client = polite_http.PoliteClient(
             min_gap=float(config.get("min_gap_s") or 4.0),
             override_log=os.path.join(HOME, "override-reads.json"),
             log=log.info)
-        changed, failures = collect(client, HOME, config=config)
+        changed, failures = collect(client, HOME, config=config,
+                                    machine=args.machine)
         for line in failures:
             log.warning("not read: %s", line)
         if changed and not args.no_git:
-            publish(ROOT, "Home collector: %s"
-                    % datetime.date.today().isoformat())
+            publish(ROOT, "Collector (%s): %s"
+                    % (args.machine, datetime.date.today().isoformat()),
+                    machine=args.machine)
         log.info("run ends: %d change(s), %d source(s) not read",
                  len(changed), len(failures))
         return 0

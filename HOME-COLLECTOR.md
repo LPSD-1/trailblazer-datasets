@@ -12,12 +12,23 @@ servers with a 403 (measured 7 October 2026):
 - Powys's byway order pages and the order documents they link to.
 
 The pipeline never tries to get past that refusal. Instead,
-`tools/home_collector.py` runs on a machine at home every six hours. It
-reads only those sources (`home-collected/collector.json`) and commits what
-changed to `home-collected/`. The GitHub Actions builds then read those
+`tools/home_collector.py` runs every six hours on two machines that share
+the work (`home-collected/collector.json` says which reads what). It reads
+only those sources and commits what changed to `home-collected/`:
+
+- **An always-on server** (Oracle Cloud, London) reads Dorset and Powys,
+  which answer it. Those sources say `"machine": "server"`.
+- **The PC at home** reads Norfolk and Wiltshire. Both sit behind
+  Cloudflare's bot challenge, which refuses data centres (measured from the
+  server on 7 October 2026: HTTP 403), so only a home connection reaches
+  them.
+
+Each machine reads only its own sources and keeps its own heartbeat
+(`heartbeat.json` for the PC, `heartbeat-server.json` for the server), so
+the two never write the same file. The GitHub Actions builds then read those
 snapshots instead of asking the councils. Each snapshot is matched to the
 byways and published like any other source. It is credited to the council,
-and the coverage table says "collected from a home connection" with the
+and the coverage table says "collected directly from the council" with the
 date.
 
 It disguises nothing. Every request goes through `tools/polite_http.py`,
@@ -41,11 +52,36 @@ It is cheap to run:
   heartbeat once a day.
 - It needs nothing but Python 3.9+ and git.
 
-If the heartbeat is more than three days old, the council orders workflow
-opens an issue labelled `home-collector`, so a switched-off machine is
-noticed.
+If either machine's heartbeat is more than three days old, the council
+orders workflow opens an issue labelled `home-collector` naming which one,
+so a switched-off machine is noticed even while the other carries on.
+
+If the two ever push at once, the loser rebases onto the winner's commit.
+If a rebase fails, the collector abandons it and resets its clone to
+GitHub's copy, so a clash can never leave a clone stuck. The snapshots from
+that run are read again next time.
 
 ## Where it runs now
+
+### The server (Dorset, Powys)
+
+- **Machine:** Oracle Cloud Always Free, London (Ampere, Ubuntu 24.04).
+  Security updates install themselves daily and it restarts at 04:00 UTC
+  when one needs it. SSH is by key only.
+- **Clone:** `~/trailblazer-collector`, sparse, holding only `tools/` and
+  `home-collected/`.
+- **Git:** pushes over SSH with a deploy key made on the server, which can
+  write to this repository only (Settings > Deploy keys, "Oracle collector
+  (London)"). Its private half never left the server.
+- **Schedule:** cron, every 6 hours at 17 minutes past, low priority:
+
+  ```
+  17 */6 * * * cd $HOME/trailblazer-collector && nice -n 10 /usr/bin/python3 tools/home_collector.py --machine server >/dev/null 2>&1
+  ```
+
+- **Log:** `~/trailblazer-collector/collector.log`, rotating at 256 KB.
+
+### The PC at home (Norfolk, Wiltshire)
 
 - **Machine:** Windows, the owner's PC.
 - **Clone:** a sparse clone at `C:\Users\lucas\trailblazer-collector`,
@@ -53,7 +89,8 @@ noticed.
   working copy.
 - **Scheduled task:** `TrailBlazer home collector`. It runs as the current
   user every 6 hours, and at logon if a run was missed. It runs only when a
-  network is available, at low priority, with no window.
+  network is available, at low priority, with no window. It runs with no
+  `--machine`, which means `home`.
 - **Python:** `C:\Users\lucas\AppData\Local\Python\pythoncore-3.14-64\pythonw.exe`,
   the windowless twin of `python.exe` in the same folder.
 - **Log:** `C:\Users\lucas\trailblazer-collector\collector.log`. It rotates
@@ -61,11 +98,11 @@ noticed.
 - **Git:** pushes with the GitHub CLI's stored credentials. No token is
   written anywhere.
 
-Run it by hand:
+Run either by hand:
 
 ```
-cd C:\Users\lucas\trailblazer-collector
-C:\Users\lucas\AppData\Local\Python\pythoncore-3.14-64\python.exe tools\home_collector.py
+python3 tools/home_collector.py --machine server     # on the server
+python tools\home_collector.py                       # on the PC (home)
 ```
 
 ## How to stop it

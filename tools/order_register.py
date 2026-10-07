@@ -300,7 +300,7 @@ def provenance_of(items, overrides=None, manual=None, home_index=None):
                       % entry.get("id"))
         home = (home_index or {}).get(url)
         if home and home.get("collected"):
-            notes.add("collected from a home connection %s"
+            notes.add("collected directly from the council %s"
                       % home["collected"])
     return dict((a, sorted(n)) for a, n in sorted(out.items()) if n)
 
