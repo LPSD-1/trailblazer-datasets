@@ -64,6 +64,7 @@ jobs:
           python tools/test_order_register.py
           python tools/test_manual_inbox.py
           python tools/test_home_collector.py
+          python tools/test_wiltshire_closures.py
 
       - name: Read the councils' sources
         # Inputs reach the shell through env, quoted: never pasted into

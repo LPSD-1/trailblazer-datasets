@@ -3,11 +3,17 @@
 ## What it does
 
 A few councils refuse GitHub's shared runners with a 403 but answer an
-ordinary, single, fixed server (measured 7 October 2026):
+ordinary, single, fixed server (measured 7 October 2026), and one more
+answers that server and has not been tried from the runners:
 
 - Dorset's GeoServer: its rights of way closures layer and its register of
   definitive map applications.
 - Powys's byway order pages and the order documents they link to.
+- Wiltshire's register of rights of way closures
+  (`apps.wiltshire.gov.uk/RightsOfWay/Closure`): its search for closures on
+  Byways Open To All Traffic, and each listed closure's detail page. It
+  answered the server on 7 October 2026; whether it answers GitHub's
+  runners is unknown, so it is read here rather than risk a refusal in CI.
 
 `tools/home_collector.py` reads only those sources
 (`home-collected/collector.json`), every six hours, from one small server
@@ -36,12 +42,48 @@ exactly as in CI:
 - one fixed address. It never changes address, and a council that refuses
   the server is not asked from anywhere else.
 
-Norfolk's and Wiltshire's pages were read from a home connection until 7
-October 2026. They sit behind Cloudflare's bot challenge, which refuses
-every data centre including this server, and none of them fed a published
-order (Norfolk's are footpath and trail closures and a page about the TRO
-process; Wiltshire's is a guide that links elsewhere), so they were
-retired rather than kept on a machine at home.
+Norfolk's pages and Wiltshire's `www.wiltshire.gov.uk` guide page were
+read from a home connection until 7 October 2026. They sit behind
+Cloudflare's bot challenge, which refuses every data centre including this
+server, and none of them fed a published order (Norfolk's are footpath and
+trail closures and a page about the TRO process; Wiltshire's is a guide that
+links elsewhere), so they were retired rather than kept on a machine at
+home. Wiltshire's closures register is a different host
+(`apps.wiltshire.gov.uk`, an ordinary IIS server, no bot challenge, no
+robots.txt) and is read as above.
+
+## The one POST (the owner's decision, 7 October 2026)
+
+Every request the collector makes is a GET, with one exception the owner
+approved on 7 October 2026. Wiltshire's closures register is a search form
+and nothing else: a GET with the same fields answers "There are no closures
+that match your search criteria". So it is read the way a person reads it:
+the collector GETs the form page (for its anti-forgery token and cookie)
+and submits the form's own search, Byway Open To All Traffic, any type of
+closure. That is read only, exactly what pressing Search does.
+
+The exception is as narrow as `tools/polite_http.py` can make it
+(`FORM_POSTS`, `post_form`):
+
+- a POST goes only to `https://apps.wiltshire.gov.uk/RightsOfWay/Closure/Result`,
+  from the page `https://apps.wiltshire.gov.uk/RightsOfWay/Closure`, and only
+  while that page's form still posts there;
+- it carries only that form's own fields: its hidden fields and token as the
+  page gave them, and the search fields, each set to a value the form itself
+  offers;
+- any other POST, to any other host or path or with any other field, is
+  refused before a request is made;
+- every other rule still applies to both requests: the honest User-Agent,
+  robots.txt (the host has none: a 404, so no rules), the pacing, https
+  only, checked redirects, the block list.
+
+Nothing in this repository writes to any council service. The builds never
+send this POST: they read its answer from `home-collected/` (HomeClient),
+filed under the search itself (`polite_http.form_key`). Each closure's
+detail page is then an ordinary GET, at the address it answers without a
+session (`/RightsOfWay/Closure/Detail?row=...`); detail pages are re-read at
+most daily unless the list itself changed, and only the page's `<main>` is
+kept.
 
 It is light on the councils:
 
@@ -110,4 +152,7 @@ Edit `home-collected/collector.json` in the repository. Each URL must be
 exactly the one the pipeline asks for, and `tools/test_home_collector.py`
 checks that. Add only councils that refuse GitHub's servers and answer the
 collector server (check with one request from the server first), and mark
-them `"machine": "server"`. Anything CI can read, CI reads itself.
+them `"machine": "server"`. Anything CI can read, CI reads itself. A
+`"kind": "form"` source is sent as a POST, and only a form the owner has
+approved and `FORM_POSTS` lists can be: today, Wiltshire's closures
+register alone.

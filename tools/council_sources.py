@@ -871,6 +871,21 @@ def read_iow_comments(client):
     return len(feats), out
 
 
+def read_wiltshire(client):
+    """Wiltshire Council's register of rights of way closures, BOATs only.
+
+    A search form: the collector server submits the form's own search (the
+    one POST the owner approved, 7 October 2026) and reads each closure's
+    detail page; the builds read its snapshots through HomeClient. What each
+    of the register's five types becomes - and why a voluntary closure is
+    held for review rather than drawn - is in tools/wiltshire_closures.py.
+    """
+    import wiltshire_closures
+    return wiltshire_closures.read(
+        client, parse_date, parse_season,
+        lambda text: strip_personal(clean_text(text or "")), log=print)
+
+
 def read_blocked(_client):
     raise Refused("not read")
 
@@ -936,6 +951,12 @@ SOURCES = [
      "kind": "council-layer",
      "licence": "Published by the council (no licence stated)",
      "endpoint": IOW_PROW, "read": read_iow_comments},
+    {"id": "wiltshire-closures", "authority": "Wiltshire",
+     "name": "Wiltshire Council - rights of way closures register",
+     "kind": "council-page",
+     "licence": "Published by the council (no licence stated)",
+     "endpoint": "https://apps.wiltshire.gov.uk/RightsOfWay/Closure",
+     "read": read_wiltshire},
 ]
 
 

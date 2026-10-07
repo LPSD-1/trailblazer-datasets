@@ -699,7 +699,8 @@ class TheOnePost(unittest.TestCase):
         # every check above.
         here = os.path.dirname(os.path.abspath(__file__))
         for name in ("council_sources", "council_orders", "council_ways",
-                     "order_register", "home_collector", "dmmo_applications"):
+                     "order_register", "home_collector", "dmmo_applications",
+                     "wiltshire_closures"):
             with open(os.path.join(here, name + ".py"),
                       encoding="utf-8") as fh:
                 text = fh.read()
