@@ -19,9 +19,14 @@ as law. So the orders are transcribed once into `tro/register/orders.json`,
 each with its council, path, restriction, season, order name and date and
 the URL it was read from, and REVIEWED: only entries with `status:
 "approved"` are published. Entries a reviewer could not settle stay in the
-file as `needs-review` (with why), and orders known only by their title -
-Cambridgeshire's 38 and Hertfordshire's 15, whose PDFs robots.txt keeps us
-out of - as `listed-only`.
+file as `needs-review` (with why), and orders known only by their title as
+`listed-only` - Cambridgeshire's 38 and Hertfordshire's 15 were, because
+robots.txt kept us out of their PDFs. Since the owner's decision of
+8 October 2026 those PDFs are read (tools/robots_override.json): `check`
+follows them from their council's page (`follow` in pages.json) and flags
+each for a person to transcribe. Documents no request may reach (a bot
+challenge, a refusal of GitHub's runners) are saved by hand or sent by the
+council into manual/<CODE>/ and are checked from disk the same way.
 
 `check` is the schedule (quarterly, order-register.yml). It re-reads each
 council page listed in `tro/register/pages.json`, reduces it to its text,
@@ -218,6 +223,24 @@ def match_order(byways, order):
     return sorted(ways), how, None
 
 
+def public_url(url):
+    """A manual/ document is linked where this site serves it."""
+    import manual_inbox
+    if url and url.startswith("manual/"):
+        return manual_inbox.PAGES_BASE + url
+    return url
+
+
+def source_name(order):
+    url = order.get("source_url") or ""
+    if url.startswith("manual/"):
+        import manual_inbox
+        doc = manual_inbox.documents_by_id().get(url)
+        how = manual_inbox.provenance(doc) if doc else "saved by hand"
+        return "%s - order document (%s)" % (order.get("council"), how)
+    return "%s - published list of byway orders" % order.get("council")
+
+
 def item_of(order, byways, ways, how):
     """A register order as a council_orders item."""
     from council_sources import as_geometry
@@ -235,9 +258,8 @@ def item_of(order, byways, ways, how):
         "where": where.strip(),
         "vehicles": order.get("vehicles") or "other",
         "form": order.get("form") or "permanent",
-        "url": order.get("source_url"),
-        "source_name": "%s - published list of byway orders" %
-                       order.get("council"),
+        "url": public_url(order.get("source_url")),
+        "source_name": source_name(order),
         "ways": ways, "match": how,
         "geometry": as_geometry(byways.geometry(ways)),
     }
@@ -245,6 +267,34 @@ def item_of(order, byways, ways, how):
         if order.get(key) not in (None, ""):
             item[key] = order[key]
     return item
+
+
+def provenance_of(items, overrides=None, manual=None):
+    """{authority: [how its published orders were obtained]} for the
+    coverage table: a document saved by hand or supplied by the council
+    (manual/), or read under the owner's robots.txt decision."""
+    import manual_inbox
+    import polite_http
+    if overrides is None:
+        try:
+            overrides = polite_http.load_overrides()
+        except ValueError:
+            overrides = []
+    docs = manual_inbox.documents_by_id() if manual is None else manual
+    out = {}
+    for item in items:
+        url = item.get("url") or ""
+        notes = out.setdefault(item["authority"], set())
+        doc = docs.get(url) or docs.get(
+            url.replace(manual_inbox.PAGES_BASE, ""))
+        if doc:
+            notes.add(manual_inbox.provenance(doc))
+            continue
+        entry = polite_http.override_for(url, overrides)
+        if entry:
+            notes.add("robots.txt overridden by owner decision (%s)"
+                      % entry.get("id"))
+    return dict((a, sorted(n)) for a, n in sorted(out.items()) if n)
 
 
 def build(byways, orders):
@@ -266,6 +316,7 @@ def build(byways, orders):
     source["name"] = ("Published lists of permanent and seasonal byway "
                       "orders: " + "; ".join(sorted(councils)))
     source["authorities"] = sorted(set(i["authority"] for i in items))
+    source["provenance"] = provenance_of(items)
     return {"source": source, "records": len(orders), "items": items,
             "unmatched": [], "review": problems}, problems
 
@@ -341,77 +392,168 @@ def snapshot_paths(register, page_id):
     return base + ".sha256", base + ".txt"
 
 
-def check(client, register=REGISTER, today=None):
-    """Re-read every page. Returns (changed, unreachable, baselined)."""
-    from polite_http import FetchFailed, Refused
-    pages = read_json(os.path.join(register, "pages.json"), []) or []
+#: The most documents followed from one page in one check.
+FOLLOW_CAP = 80
+
+_HREF = re.compile(r"""href\s*=\s*["']([^"'#]+)""", re.I)
+
+
+def linked_documents(page, body):
+    """The documents a page links to that its `follow` pattern names, as
+    pages of their own: [{id, url, council, authorities, parent}]."""
+    if not page.get("follow"):
+        return []
+    import urllib.parse
+    seen, out = set(), []
+    for href in _HREF.findall(body.decode("utf-8", "replace")):
+        url = urllib.parse.urljoin(page["url"], html.unescape(href.strip()))
+        url = url.split("#", 1)[0]
+        if url in seen or not re.search(page["follow"], url):
+            continue
+        seen.add(url)
+        name = re.sub(r"[^A-Za-z0-9._-]+", "-",
+                      urllib.parse.unquote(url.rstrip("/").rsplit("/", 1)[-1]))
+        out.append({"id": "%s/doc/%s" % (page["id"], name.lower()[:120]),
+                    "url": url, "council": page.get("council"),
+                    "authorities": page.get("authorities"),
+                    "parent": page["id"], "new_is_review": True})
+    return sorted(out, key=lambda d: d["id"])[:FOLLOW_CAP]
+
+
+def manual_pages(root=None):
+    """The inbox's documents (manual/<CODE>/) as pages read from disk."""
+    import manual_inbox
+    out = []
+    for box in manual_inbox.inboxes(root or manual_inbox.MANUAL):
+        for doc in box["docs"]:
+            if doc["kind"] != "document":
+                continue
+            out.append({"id": doc["id"], "url": doc["public_url"],
+                        "council": box["council"],
+                        "authorities": [box["authority"]],
+                        "local": doc["path"], "new_is_review": True,
+                        "provenance": manual_inbox.provenance(doc)})
+    return out
+
+
+def _snapshot(register, page, digest, lines):
+    hash_path, text_path = snapshot_paths(register, page["id"])
+    os.makedirs(os.path.dirname(hash_path), exist_ok=True)
+    with open(hash_path, "w", encoding="utf-8", newline="\n") as fh:
+        fh.write(digest + "\n")
+    if lines is not None:
+        with open(text_path, "w", encoding="utf-8", newline="\n") as fh:
+            fh.write("\n".join(lines) + "\n")
+
+
+def check(client, register=REGISTER, today=None, manual_root=None,
+          automated_off=None):
+    """Re-read every page. Returns (changed, unreachable, baselined).
+
+    `automated_off`: authorities whose documents come from manual/ instead;
+    none of their pages is requested. A followed or hand-saved document
+    seen for the first time is flagged for review (its orders still have to
+    be transcribed), not quietly baselined.
+    """
+    from polite_http import FetchFailed, NotDue, Refused
+    if automated_off is None:
+        import manual_inbox
+        automated_off = manual_inbox.automated_off(
+            manual_root or manual_inbox.MANUAL)
+    pages = [p for p in read_json(os.path.join(register, "pages.json"), [])
+             or [] if not set(p.get("authorities") or ()) & automated_off]
+    queue = list(pages) + manual_pages(manual_root)
     changes_path = os.path.join(register, "changes.json")
     previous = dict((c["page"], c) for c in
                     (read_json(changes_path, []) or []))
     changed, unreachable, baselined = [], [], []
-    for page in pages:
+    while queue:
+        page = queue.pop(0)
         if page.get("blocked"):
             continue
         hash_path, text_path = snapshot_paths(register, page["id"])
         try:
-            body = client.get(page["url"])
-        except (Refused, FetchFailed) as e:
+            if page.get("local"):
+                with open(page["local"], "rb") as fh:
+                    body = fh.read()
+            else:
+                body = client.get(page["url"])
+        except NotDue:
+            # Read under the owner's robots.txt decision within the week:
+            # its snapshot and any pending change stand as they are.
+            if page["id"] in previous:
+                changed.append(previous[page["id"]])
+            continue
+        except (Refused, FetchFailed, OSError) as e:
             unreachable.append({"page": page["id"], "url": page["url"],
                                 "why": str(e)[:300]})
             continue
+        queue.extend(linked_documents(page, body))
         digest, lines = fingerprint(page, body)
         try:
             with open(hash_path, encoding="utf-8") as fh:
                 old = fh.read().strip()
         except OSError:
             old = None
-        if old is None:
-            os.makedirs(os.path.dirname(hash_path), exist_ok=True)
-            with open(hash_path, "w", encoding="utf-8", newline="\n") as fh:
-                fh.write(digest + "\n")
-            if lines is not None:
-                with open(text_path, "w", encoding="utf-8",
-                          newline="\n") as fh:
-                    fh.write("\n".join(lines) + "\n")
+        overridden = getattr(client, "overridden", {}).get(page["url"])
+        if old is None and not page.get("new_is_review"):
+            _snapshot(register, page, digest, lines)
             baselined.append(page["id"])
             continue
         if old == digest:
             continue
         diff = []
-        if lines is not None and os.path.exists(text_path):
+        if old is None:
+            diff = ["(newly readable - transcribe its orders into "
+                    "tro/register/orders.json)"] + (lines or [])[:60]
+        elif lines is not None and os.path.exists(text_path):
             with open(text_path, encoding="utf-8") as fh:
                 before = fh.read().splitlines()
             diff = list(difflib.unified_diff(before, lines, "before",
                                              "now", n=1, lineterm=""))[:80]
         entry = {"page": page["id"], "url": page["url"],
                  "council": page.get("council"),
+                 "new": old is None,
+                 "digest": digest,
                  "detected": (previous.get(page["id"]) or {}).get(
                      "detected") or today,
                  "diff": diff or ["(the document's bytes changed; "
                                   "open it to compare)"]}
+        if lines is not None:
+            entry["text"] = lines[:2000]
+        if overridden:
+            entry["read_under"] = ("robots.txt overridden by owner "
+                                   "decision (%s)" % overridden)
+        if page.get("provenance"):
+            entry["provenance"] = page["provenance"]
         changed.append(entry)
     write_json(changes_path, changed)
     return changed, unreachable, baselined
 
 
 def accept(page_ids, client, register=REGISTER):
-    """Take the page as it stands now as the reviewed snapshot."""
+    """Take the page as it stands now as the reviewed snapshot.
+
+    A flagged page is taken as it was when flagged (its digest is in
+    changes.json), without reading it again.
+    """
     pages = dict((p["id"], p) for p in
                  read_json(os.path.join(register, "pages.json"), []) or [])
+    changes_path = os.path.join(register, "changes.json")
+    pending = dict((c["page"], c) for c in
+                   (read_json(changes_path, []) or []))
     for page_id in page_ids:
+        flagged = pending.get(page_id)
+        if flagged and flagged.get("digest"):
+            _snapshot(register, {"id": page_id}, flagged["digest"],
+                      flagged.get("text"))
+            continue
         page = pages[page_id]
         body = client.get(page["url"])
         digest, lines = fingerprint(page, body)
-        hash_path, text_path = snapshot_paths(register, page_id)
-        os.makedirs(os.path.dirname(hash_path), exist_ok=True)
-        with open(hash_path, "w", encoding="utf-8", newline="\n") as fh:
-            fh.write(digest + "\n")
-        if lines is not None:
-            with open(text_path, "w", encoding="utf-8", newline="\n") as fh:
-                fh.write("\n".join(lines) + "\n")
-    changes_path = os.path.join(register, "changes.json")
-    left = [c for c in (read_json(changes_path, []) or [])
-            if c["page"] not in page_ids]
+        _snapshot(register, page, digest, lines)
+    left = [c for c in pending.values() if c["page"] not in page_ids]
+    left.sort(key=lambda c: c["page"])
     write_json(changes_path, left)
 
 
@@ -454,7 +596,12 @@ def main(argv=None):
 
     if args.cmd in ("check", "accept"):
         import polite_http
-        client = polite_http.PoliteClient(min_gap=4.0)
+        # The register's check is the one reader of the paths the owner
+        # chose to read despite robots.txt (tools/robots_override.json); it
+        # logs every such read, which also holds each to once a week.
+        client = polite_http.PoliteClient(
+            min_gap=4.0, today=today,
+            override_log=os.path.join(REGISTER, "override-reads.json"))
         if args.cmd == "accept":
             accept(args.pages, client)
             return 0
@@ -464,10 +611,19 @@ def main(argv=None):
               % (len(changed), len(unreachable), len(baselined)))
         lines = []
         for c in changed:
-            lines.append("CHANGED %s %s" % (c["page"], c["url"]))
+            lines.append("%s %s %s%s" % (
+                "NEW" if c.get("new") else "CHANGED", c["page"], c["url"],
+                " (%s)" % (c.get("read_under") or c.get("provenance"))
+                if c.get("read_under") or c.get("provenance") else ""))
         for u in unreachable:
             lines.append("UNREADABLE %s %s - %s" % (u["page"], u["url"],
                                                     u["why"]))
+        # A file in manual/ the pipeline cannot use is said here, in the
+        # review issue - never as a failed test that would stop a refresh.
+        import manual_inbox
+        for box in manual_inbox.inboxes():
+            for problem in box["problems"]:
+                lines.append("INBOX %s" % problem)
         for line in lines:
             print("  " + line)
         if args.report:

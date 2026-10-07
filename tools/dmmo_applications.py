@@ -340,8 +340,13 @@ def run(client, byways, out_dir=OUT, today=None, log=print):
     held = read_json(path, {}) or {}
     state = held.get("sources") or {}
     failed = []
+    import manual_inbox
+    by_hand = manual_inbox.automated_off()
     for source in SOURCES:
         old = state.get(source["id"]) or {}
+        if source.get("authority") in by_hand and not source.get("blocked"):
+            source = dict(source, blocked="the council's documents come "
+                          "from manual/ instead; not fetched")
         if source.get("blocked"):
             state[source["id"]] = dict(old, council=source["council"],
                                        ok=False, blocked=source["blocked"])

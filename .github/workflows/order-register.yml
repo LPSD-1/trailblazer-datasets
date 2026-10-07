@@ -12,7 +12,14 @@ name: Order register check
 # `python tools/order_register.py accept <page>`.
 #
 # Every request goes through tools/polite_http.py: an honest User-Agent,
-# robots.txt obeyed, four seconds between requests to one council.
+# robots.txt obeyed, four seconds between requests to one council. The one
+# exception is the owner's decision of 8 October 2026
+# (tools/robots_override.json): specific council order documents read
+# despite robots.txt, each at most weekly, every read logged in
+# tro/register/override-reads.json and credited as overridden. A 403, a
+# bot challenge or a refusal of GitHub's runners is never got past; those
+# councils' documents come from manual/ (see manual/README.md), which this
+# check reads from disk like any other page.
 on:
   schedule:
     - cron: '41 5 3 1,4,7,10 *'   # 05:41 UTC on the 3rd of each quarter
@@ -42,6 +49,7 @@ jobs:
         run: |
           python tools/test_polite_http.py
           python tools/test_order_register.py
+          python tools/test_manual_inbox.py
 
       - name: Re-read the councils' pages
         run: python tools/order_register.py check --report /tmp/register-report.txt
@@ -53,6 +61,9 @@ jobs:
 
           commit_it() {
             git add -A tro/register/snapshots tro/register/changes.json
+            if [ -f tro/register/override-reads.json ]; then
+              git add tro/register/override-reads.json
+            fi
             if git diff --cached --quiet; then
               echo "nothing changed"
               return 1
@@ -71,6 +82,9 @@ jobs:
           mkdir -p dist/register-built
           cp -r tro/register/snapshots dist/register-built/
           cp tro/register/changes.json dist/register-built/
+          if [ -f tro/register/override-reads.json ]; then
+            cp tro/register/override-reads.json dist/register-built/
+          fi
           for attempt in 1 2 3; do
             if git push; then
               exit 0
@@ -81,6 +95,9 @@ jobs:
             rm -rf tro/register/snapshots
             cp -r dist/register-built/snapshots tro/register/
             cp dist/register-built/changes.json tro/register/
+            if [ -f dist/register-built/override-reads.json ]; then
+              cp dist/register-built/override-reads.json tro/register/
+            fi
             commit_it || exit 0
             sleep $((attempt * 5))
           done

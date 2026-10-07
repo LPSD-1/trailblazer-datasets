@@ -7,7 +7,8 @@
   ],
   "url": "https://www.cambridgeshire.gov.uk/residents/libraries-leisure-culture/countryside-access/rights-of-way/rights-of-way-restrictions",
   "layout": "HTML \"Permanent and seasonal restrictions\" section: a list of 38 download items (title - year, size) linking to /asset-library/*.pdf, oldest 1969 to newest 2019; also a \"Voluntary restraints\" paragraph (Glatton Byway 6)",
-  "region": "the downloads list under the \"Permanent and seasonal restrictions\" heading (div.dItem items inside the main markup block)"
+  "region": "the downloads list under the \"Permanent and seasonal restrictions\" heading (div.dItem items inside the main markup block)",
+  "follow": "^https://www\\.cambridgeshire\\.gov\\.uk/asset-library/[^?]+\\.pdf$"
  },
  {
   "id": "central-bedfordshire-council/byways-open-all-traffic",
@@ -49,6 +50,16 @@
   "url": "https://www.denbighshire.gov.uk/en/parking-roads-and-travel/parking-and-permits/traffic-regulation-orders.aspx",
   "layout": "short prose; no order list",
   "region": "main#main-content"
+ },
+ {
+  "id": "derbyshire-county-council/path-closure-register",
+  "council": "Derbyshire County Council",
+  "authorities": [
+   "Derbyshire"
+  ],
+  "url": "https://apps.derbyshire.gov.uk/applications/path-closure-register/",
+  "layout": "The council's register of rights of way closure orders (apps host; robots.txt disallows it, read under the owner's decision of 8 October 2026)",
+  "region": "the register table"
  },
  {
   "id": "derbyshire-county-council/permanent-traffic-regulation-orders-affecting-public-rights-",
@@ -99,7 +110,8 @@
   ],
   "url": "https://www.hertfordshire.gov.uk/services/recycling-waste-and-environment/countryside-access/rights-of-way/current-rights-of-way/permanent-traffic-regulation-orders-ptros.aspx",
   "layout": "HTML \"Current orders\" list of 20 PDF links (one per order, titled by parish + path numbers); later sections describe order types and the 10-year review",
-  "region": "article.altStandardArticle[role=main] div#lfoldercontent ul.liblist"
+  "region": "article.altStandardArticle[role=main] div#lfoldercontent ul.liblist",
+  "follow": "^https://www\\.hertfordshire\\.gov\\.uk/media-library/documents/environment-and-planning/countryside-access-and-management/rights-of-way/ptros/[^?]+\\.pdf$"
  },
  {
   "id": "isle-of-wight-council/2998",
@@ -210,7 +222,8 @@
   ],
   "url": "https://en.powys.gov.uk/article/2444",
   "layout": "HTML prose blocks per temporary closure: Detail of Route / Closure commenced / Order Expires / Reason / PDF links",
-  "region": "main#maincontent div.a-body div.a-body__inner"
+  "region": "main#maincontent div.a-body div.a-body__inner",
+  "follow": "^https://en\\.powys\\.gov\\.uk/media/\\d+/"
  },
  {
   "id": "powys-county-council/2446",
@@ -220,7 +233,8 @@
   ],
   "url": "https://en.powys.gov.uk/article/2446",
   "layout": "HTML prose blocks: \"Detail of Byway/Bridleway Closure:\" paragraph, PDF link, \"Commenced:\" line per order",
-  "region": "main#maincontent div.a-body div.a-body__inner"
+  "region": "main#maincontent div.a-body div.a-body__inner",
+  "follow": "^https://en\\.powys\\.gov\\.uk/media/\\d+/"
  },
  {
   "id": "surrey-county-council/list-of-boats-and-tros-april-2023-pdf",

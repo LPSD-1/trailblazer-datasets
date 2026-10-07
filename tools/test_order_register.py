@@ -188,7 +188,8 @@ class Check(unittest.TestCase):
 
     def run_check(self, body):
         return reg.check(Client({self.URL: body}), register=self.tmp,
-                         today="2027-01-01")
+                         today="2027-01-01",
+                         manual_root=os.path.join(self.tmp, "manual"))
 
     def test_first_read_takes_a_snapshot_and_flags_nothing(self):
         changed, unreachable, baselined = self.run_check(
@@ -229,6 +230,154 @@ class Check(unittest.TestCase):
     def test_a_blocked_page_is_never_fetched(self):
         # The stand-in has no answer for it: fetching it would KeyError.
         self.run_check(self.page(["a"]))
+
+
+class FollowedDocuments(unittest.TestCase):
+    """Documents linked from a page (`follow`) - the PDFs the owner chose
+    to read despite robots.txt - are flagged for review when first read."""
+
+    URL = "https://www.cambs.example/rights-of-way-restrictions"
+    PDF = "https://www.cambs.example/asset-library/Soham-Byway-2016.pdf"
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        with open(os.path.join(self.tmp, "pages.json"), "w") as fh:
+            json.dump([{"id": "cambs/restrictions", "url": self.URL,
+                        "council": "Cambridgeshire County Council",
+                        "authorities": ["Cambridgeshire"],
+                        "follow": r"/asset-library/[^?]+\.pdf$"}], fh)
+        self.manual = os.path.join(self.tmp, "manual")
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp)
+
+    def client(self, pdf=b"%PDF-1.4 order", overridden=True):
+        page = (b'<main><ul><li><a href="/asset-library/Soham-Byway-2016.pdf">'
+                b'Soham Byway - 2016</a></li><li><a href="/news">News</a>'
+                b'</li></ul></main>')
+        client = Client({self.URL: page, self.PDF: pdf})
+        client.overridden = {self.PDF: "cambridgeshire-byway-orders"} \
+            if overridden else {}
+        return client
+
+    def check(self, client):
+        return reg.check(client, register=self.tmp, today="2026-10-08",
+                         manual_root=self.manual)
+
+    def test_a_linked_pdf_is_flagged_new_and_credited_to_the_override(self):
+        changed, unreachable, baselined = self.check(self.client())
+        self.assertEqual(baselined, ["cambs/restrictions"])
+        self.assertEqual(unreachable, [])
+        self.assertEqual([c["page"] for c in changed],
+                         ["cambs/restrictions/doc/soham-byway-2016.pdf"])
+        self.assertTrue(changed[0]["new"])
+        self.assertIn("owner decision", changed[0]["read_under"])
+
+    def test_it_stays_flagged_until_accepted_and_accept_reads_nothing(self):
+        self.check(self.client())
+        changed, _u, _b = self.check(self.client())
+        self.assertEqual(len(changed), 1)
+        doc = changed[0]["page"]
+        reg.accept([doc], Client({}), register=self.tmp)
+        changed, _u, _b = self.check(self.client())
+        self.assertEqual(changed, [])
+        changed, _u, _b = self.check(self.client(pdf=b"%PDF-1.4 amended"))
+        self.assertEqual([(c["page"], c["new"]) for c in changed],
+                         [(doc, False)])
+
+    def test_not_due_this_week_keeps_the_flag_and_reads_nothing(self):
+        from polite_http import NotDue
+        self.check(self.client())
+        client = self.client(pdf=NotDue("read 2 days ago"))
+        changed, unreachable, _b = self.check(client)
+        self.assertEqual(len(changed), 1)
+        self.assertEqual(unreachable, [])
+
+    def test_only_links_the_pattern_names_are_followed(self):
+        page = {"id": "p", "url": self.URL,
+                "follow": r"/asset-library/[^?]+\.pdf$"}
+        docs = reg.linked_documents(page, (
+            b'<a href="/asset-library/a.pdf">a</a>'
+            b'<a href="/asset-library/a.pdf#page=2">again</a>'
+            b'<a href="https://elsewhere.example/asset-library/b.docx">b</a>'
+            b'<a href="/news">c</a>'))
+        self.assertEqual([d["url"] for d in docs],
+                         ["https://www.cambs.example/asset-library/a.pdf"])
+
+
+class ManualInbox(unittest.TestCase):
+    """manual/<CODE>/: documents the owner saved by hand or a council sent,
+    read like a snapshot; the authority's own pages are then not fetched."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.manual = os.path.join(self.tmp, "manual")
+        os.makedirs(os.path.join(self.manual, "IW"))
+        with open(os.path.join(self.manual, "authorities.json"), "w") as fh:
+            json.dump({"IW": {"authority": "Isle of Wight"}}, fh)
+        with open(os.path.join(self.manual, "IW",
+                               "byway-orders-2026-10-08.html"), "w") as fh:
+            fh.write("<main><p>Byway N12 Brighstone: no motor vehicles "
+                     "1 Oct to 30 Apr</p></main>")
+        with open(os.path.join(self.tmp, "pages.json"), "w") as fh:
+            json.dump([{"id": "iow/2998", "url": "https://www.iow.example/x",
+                        "council": "Isle of Wight Council",
+                        "authorities": ["Isle of Wight"]}], fh)
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp)
+
+    def test_a_saved_page_is_flagged_with_how_and_when_it_came(self):
+        # No answers at all: any request would KeyError.
+        changed, unreachable, _b = reg.check(
+            Client({}), register=self.tmp, today="2026-10-08",
+            manual_root=self.manual)
+        self.assertEqual(unreachable, [])
+        self.assertEqual([c["page"] for c in changed],
+                         ["manual/IW/byway-orders-2026-10-08.html"])
+        self.assertEqual(changed[0]["provenance"],
+                         "saved by hand 2026-10-08")
+        self.assertIn("Byway N12 Brighstone: no motor vehicles 1 Oct to 30 "
+                      "Apr", changed[0]["diff"])
+
+    def test_a_council_reply_says_so(self):
+        with open(os.path.join(self.manual, "IW", "manifest.json"),
+                  "w") as fh:
+            json.dump({"files": {"byway-orders-2026-10-08.html": {
+                "how": "eir", "date": "2026-09-30"}}}, fh)
+        changed, _u, _b = reg.check(Client({}), register=self.tmp,
+                                    today="2026-10-08",
+                                    manual_root=self.manual)
+        self.assertEqual(changed[0]["provenance"],
+                         "supplied by the council 2026-09-30")
+
+    def test_automated_on_reads_the_page_as_well(self):
+        with open(os.path.join(self.manual, "IW", "manifest.json"),
+                  "w") as fh:
+            json.dump({"automated": "on"}, fh)
+        _c, unreachable, baselined = reg.check(
+            Client({"https://www.iow.example/x": b"<main>x</main>"}),
+            register=self.tmp, today="2026-10-08", manual_root=self.manual)
+        self.assertEqual(baselined, ["iow/2998"])
+
+    def test_the_coverage_table_says_how_each_authority_came(self):
+        import manual_inbox
+        docs = dict((d["id"], d) for b in manual_inbox.inboxes(self.manual)
+                    for d in b["docs"])
+        items = [{"authority": "Isle of Wight",
+                  "url": manual_inbox.PAGES_BASE +
+                  "manual/IW/byway-orders-2026-10-08.html"},
+                 {"authority": "Cambridgeshire",
+                  "url": "https://www.cambs.example/asset-library/x.pdf"},
+                 {"authority": "Essex", "url": "https://essex.example/a"}]
+        got = reg.provenance_of(items, overrides=[{
+            "id": "cambridgeshire-byway-orders",
+            "prefix": "https://www.cambs.example/asset-library/"}],
+            manual=docs)
+        self.assertEqual(got, {
+            "Cambridgeshire": ["robots.txt overridden by owner decision "
+                               "(cambridgeshire-byway-orders)"],
+            "Isle of Wight": ["saved by hand 2026-10-08"]})
 
 
 if __name__ == "__main__":

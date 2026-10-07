@@ -838,6 +838,109 @@ SOURCES = [
 ]
 
 
+# ------------------------------------------------- the inbox (manual/)
+#
+# A map layer a council sent (an EIR reply) or the owner saved by hand,
+# committed to manual/<CODE>/ with a `layer` mapping in its manifest.json.
+# Read from disk, never from the network; otherwise a source like any other.
+
+
+def _mapped(mapping, props, key):
+    value = mapping.get(key)
+    if isinstance(value, str) and value.startswith("$"):
+        return props.get(value[1:])
+    return value
+
+
+def read_manual_layer(doc):
+    """(records, candidates) from a GeoJSON file in manual/."""
+    import council_orders
+    try:
+        with open(doc["path"], encoding="utf-8-sig") as fh:
+            data = json.load(fh)
+    except (OSError, ValueError) as e:
+        raise FetchFailed("%s could not be read: %s" % (doc["id"], e))
+    feats = data.get("features") if isinstance(data, dict) else None
+    if not isinstance(feats, list):
+        raise FetchFailed("%s is not a GeoJSON FeatureCollection"
+                          % doc["id"])
+    mapping = doc.get("layer") or {}
+    out = []
+    for i, f in enumerate(feats):
+        props = f.get("properties") or {}
+        geometry = f.get("geometry") or {}
+        coords = geometry.get("coordinates") or []
+        flat = coords
+        while isinstance(flat, list) and flat and isinstance(flat[0], list):
+            flat = flat[0]
+        if flat and abs(float(flat[0])) > 180:
+            lines = geojson_lines(geometry)          # British National Grid
+        else:
+            lines = [[(float(x), float(y)) for x, y, *_ in l]
+                     for l in ([coords] if geometry.get("type") ==
+                               "LineString" else coords)
+                     if len(l) >= 2] if geometry.get("type") in (
+                "LineString", "MultiLineString") else []
+        text = clean_text(str(_mapped(mapping, props, "vehicles") or ""))
+        if text in council_orders.VEHICLES:
+            vehicles, width = text, None
+        else:
+            vehicles, width = classify(text)
+        form = str(_mapped(mapping, props, "form") or "permanent").lower()
+        item = {
+            "id": "%s|%s" % (doc["id"], _mapped(mapping, props, "id") or i),
+            "ref": _mapped(mapping, props, "ref"),
+            "title": clean_text(str(_mapped(mapping, props, "title") or
+                                    "%s order" % doc["council"]))[:240],
+            "where": clean_text(str(_mapped(mapping, props, "where") or "")),
+            "vehicles": vehicles or "other", "width_m": width,
+            "form": form if form in council_orders.FORMS or
+            form == "permanent" else "permanent",
+            "start": _manual_date(_mapped(mapping, props, "start")),
+            "end": _manual_date(_mapped(mapping, props, "end")),
+            "season": mapping.get("season"),
+            "url": _mapped(mapping, props, "url") or doc.get("url") or
+            doc["public_url"],
+            "lines": lines,
+        }
+        if vehicles is None:
+            item["label"] = (text[:1].upper() + text[1:80]) or "Restriction"
+        out.append(item)
+    return len(feats), out
+
+
+def _manual_date(value):
+    if isinstance(value, (int, float)):
+        return from_epoch_ms(value)
+    return parse_date(value)
+
+
+def manual_sources(root=None):
+    """The inbox's map layers as council sources."""
+    import manual_inbox
+    out = []
+    for box in manual_inbox.inboxes(root or manual_inbox.MANUAL):
+        for doc in box["docs"]:
+            if doc["kind"] != "layer" or not box["authority"]:
+                continue
+            stem = re.sub(r"[^a-z0-9]+", "-",
+                          os.path.splitext(doc["name"])[0].lower()).strip("-")
+            how = manual_inbox.provenance(doc)
+            supplied = doc["how"] == "supplied by the council"
+            out.append({
+                "id": "manual-%s-%s" % (box["code"].lower(), stem),
+                "authority": box["authority"],
+                "name": "%s - %s (%s)" % (box["council"], doc["title"], how),
+                "kind": "council-layer" if supplied else "council-page",
+                "licence": "Supplied by the council" if supplied else
+                           "Published by the council; saved by hand",
+                "endpoint": doc["public_url"],
+                "supplied": how,
+                "read": lambda _client, doc=doc: read_manual_layer(doc),
+            })
+    return out
+
+
 def by_id():
     return dict((s["id"], s) for s in SOURCES)
 
@@ -1024,10 +1127,17 @@ def main(argv=None):
         return 1
     wanted = set((args.only or "").split(",")) - {""}
     client = polite_http.PoliteClient()
+    import manual_inbox
+    by_hand = manual_inbox.automated_off()
+    sources = [dict(src, blocked="the council's documents come from "
+                    "manual/ instead (no automated fetch for %s)"
+                    % src["authority"])
+               if src["authority"] in by_hand and not src.get("blocked")
+               else src for src in SOURCES] + manual_sources()
     status_path = os.path.join(args.out, "status.json")
     status = read_json(status_path, {}) or {}
     failures = []
-    for source in SOURCES:
+    for source in sources:
         if wanted and source["id"] not in wanted:
             continue
         print("--- %s" % source["id"])
@@ -1062,7 +1172,7 @@ def main(argv=None):
         with open(args.report, "w", encoding="utf-8", newline="\n") as fh:
             for line in failures:
                 fh.write(line + "\n")
-    tried = [s for s in SOURCES if not s.get("blocked")
+    tried = [s for s in sources if not s.get("blocked")
              and (not wanted or s["id"] in wanted)]
     if tried and len(failures) == len(tried):
         print("::error::every source failed; nothing was updated")

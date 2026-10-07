@@ -9,6 +9,7 @@ robots.txt, never work around a block, keep request rates gentle, and never
 write to a council's service. Each test below is the one that goes red if a
 rule is broken.
 """
+import json
 import os
 import sys
 import unittest
@@ -250,6 +251,106 @@ class Conditional(unittest.TestCase):
                        "/a.json": (304, {}, b"")})
         with self.assertRaises(FetchFailed):
             stand.client().get("https://h.example/a.json")
+
+
+class OwnersRobotsDecision(unittest.TestCase):
+    """robots_override.json: the paths the owner chose to read anyway."""
+
+    OVERRIDE = [{"id": "x-orders", "prefix": "https://c.example/library/",
+                 "pattern": r"(?i)\.pdf$"}]
+    DOC = "https://c.example/library/byway-7-order.pdf"
+    ROBOTS = (200, {}, b"User-agent: *\nDisallow: /library/\n")
+
+    def setUp(self):
+        import tempfile
+        self.tmp = tempfile.mkdtemp()
+        self.log = os.path.join(self.tmp, "reads.json")
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self.tmp)
+
+    def client(self, stand, today="2026-10-08", log=True):
+        return stand.client(overrides=self.OVERRIDE, today=today,
+                            override_log=self.log if log else None)
+
+    def test_an_overridden_path_is_read_logged_and_credited(self):
+        stand = Stand({"/robots.txt": self.ROBOTS,
+                       "/library/": (200, {}, b"%PDF-1.4")})
+        client = self.client(stand)
+        self.assertEqual(client.get(self.DOC), b"%PDF-1.4")
+        self.assertEqual(client.overridden, {self.DOC: "x-orders"})
+        with open(self.log) as fh:
+            self.assertEqual(json.load(fh)[self.DOC]["read"], "2026-10-08")
+
+    def test_at_most_weekly(self):
+        stand = Stand({"/robots.txt": self.ROBOTS,
+                       "/library/": (200, {}, b"%PDF-1.4")})
+        self.client(stand).get(self.DOC)
+        with self.assertRaises(Refused):
+            self.client(stand, today="2026-10-14").get(self.DOC)
+        self.assertEqual(self.client(stand, today="2026-10-15").get(
+            self.DOC), b"%PDF-1.4")
+
+    def test_everything_else_on_the_host_still_obeys_robots(self):
+        stand = Stand({"/robots.txt": self.ROBOTS})
+        # In the prefix, but not what the pattern names.
+        with self.assertRaises(Refused):
+            self.client(stand).get("https://c.example/library/minutes.docx")
+        self.assertEqual(stand.asked, ["https://c.example/robots.txt"])
+
+    def test_no_log_no_override(self):
+        stand = Stand({"/robots.txt": self.ROBOTS})
+        with self.assertRaises(Refused):
+            self.client(stand, log=False).get(self.DOC)
+
+    def test_a_403_on_an_overridden_path_is_still_a_refusal(self):
+        stand = Stand({"/robots.txt": self.ROBOTS,
+                       "/library/": (403, {}, b"Forbidden")})
+        with self.assertRaises(Refused):
+            self.client(stand).get(self.DOC)
+
+    def test_a_whole_host_robots_block_opens_only_for_the_listed_path(self):
+        stand = Stand({"/robots.txt": (200, {}, b"User-agent: *\n"
+                                                b"Disallow: /\n"),
+                       "/applications/": (200, {}, b"<html>register</html>")})
+        client = stand.client(overrides=[{
+            "id": "d", "prefix": "https://apps.derbyshire.gov.uk/"
+                                 "applications/path-closure-register/"}],
+            override_log=self.log, today="2026-10-08")
+        self.assertIn(b"register", client.get(
+            "https://apps.derbyshire.gov.uk/applications/"
+            "path-closure-register/"))
+        with self.assertRaises(Refused):
+            client.get("https://apps.derbyshire.gov.uk/applications/"
+                       "right-of-way/results.asp")
+
+    def test_no_override_can_reach_a_challenge_or_ruled_out_host(self):
+        for host in ("www.kent.gov.uk", "www.thegazette.co.uk",
+                     "www.westberks.gov.uk"):
+            path = os.path.join(self.tmp, "o.json")
+            with open(path, "w") as fh:
+                json.dump({"paths": [{"id": "bad", "prefix":
+                                      "https://%s/x/" % host}]}, fh)
+            with self.assertRaises(ValueError):
+                polite_http.load_overrides(path)
+
+    def test_a_challenge_host_stays_refused_even_if_an_override_names_it(self):
+        stand = Stand({})
+        client = stand.client(overrides=[{"id": "bad", "prefix":
+                                          "https://www.kent.gov.uk/x/"}],
+                              override_log=self.log)
+        with self.assertRaises(Refused):
+            client.get("https://www.kent.gov.uk/x/a.pdf")
+        self.assertEqual(stand.asked, [])
+
+    def test_the_owners_file_loads_and_names_only_what_was_decided(self):
+        got = polite_http.load_overrides()
+        self.assertEqual(sorted(e["authority"] for e in got),
+                         ["Cambridgeshire", "Derbyshire", "Hertfordshire",
+                          "Powys"])
+        for e in got:
+            self.assertTrue(e["prefix"].startswith("https://"))
 
 
 class Gentle(unittest.TestCase):

@@ -19,6 +19,10 @@ rather than re-stated (and eventually forgotten) in each fetcher:
   * BE GENTLE. At least `min_gap` seconds between two requests to one host,
     a small retry budget, and a server's Retry-After honoured (up to a cap) on
     429 and 503.
+  * THE OWNER'S ROBOTS.TXT DECISIONS are the one exception to the second
+    rule: specific council document paths listed in robots_override.json,
+    read at most weekly, recorded as overridden wherever they are credited.
+    Nothing else in that rule, or in any other, is relaxed for them.
   * READ ONLY. GET only. An ArcGIS URL is allowed only for layer metadata or
     `/query`, and an OGC service only for GetCapabilities, DescribeFeature-
     Type and GetFeature: some council FeatureServers and GeoServers advertise
@@ -28,7 +32,9 @@ rather than re-stated (and eventually forgotten) in each fetcher:
 Pure standard library, so every CI job can import it without installing
 anything.
 """
+import datetime
 import json
+import os
 import re
 import time
 import urllib.error
@@ -50,9 +56,7 @@ BLOCKED_HOSTS = (
     "hants.gov.uk", "kent.gov.uk", "leicestershire.gov.uk",
     "peakdistrict.gov.uk", "exmoor-nationalpark.gov.uk",
     "dartmoor.gov.uk", "northyorkmoors.org.uk",
-    # robots.txt disallows the whole host.
-    "apps.derbyshire.gov.uk", "gis2.westberks.gov.uk", "map.cornwall.gov.uk",
-    "roam.somerset.gov.uk",
+    # robots.txt disallows the whole host: ROBOTS_HOSTS, below.
     # A bot challenge measured on the council's own pages, 7 October 2026.
     "westberks.gov.uk", "iow.gov.uk",
     # Ruled out.
@@ -86,8 +90,72 @@ class Refused(Exception):
     """The request was not made, or the server refused it. Never retried."""
 
 
+class NotDue(Refused):
+    """Not requested: a path read under the owner's robots.txt decision was
+    read within the last week. Its last reading stands."""
+
+
 class FetchFailed(Exception):
     """The request was made and did not succeed (network, 5xx, bad body)."""
+
+
+# Hosts refused because their robots.txt disallows the whole host. Unlike
+# the hosts above, a path on one of these may be read when the owner has
+# chosen to (robots_override.json) - and only that path.
+ROBOTS_HOSTS = ("apps.derbyshire.gov.uk", "gis2.westberks.gov.uk",
+                "map.cornwall.gov.uk", "roam.somerset.gov.uk")
+
+BLOCKED_HOSTS = BLOCKED_HOSTS + ROBOTS_HOSTS
+
+# THE OWNER'S ROBOTS.TXT DECISIONS (8 October 2026). The specific council
+# documents robots.txt alone keeps us from - byway order PDFs and the like,
+# public records - that the owner has chosen to read anyway, each listed by
+# URL prefix in tools/robots_override.json. For those paths only: robots.txt
+# is not consulted; everything else here still applies (honest User-Agent,
+# pacing, read only, a 403 or a bot challenge is still a refusal and is
+# never got past). An overridden path is read at most once a week.
+OVERRIDE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                             "robots_override.json")
+OVERRIDE_EVERY_DAYS = 7
+
+
+def _under(host, hosts):
+    return any(host == b or host.endswith("." + b) for b in hosts)
+
+
+def load_overrides(path=OVERRIDE_FILE):
+    """The override entries, each checked: a prefix on https, never on a
+    host refused for anything but robots.txt."""
+    try:
+        with open(path, encoding="utf-8") as fh:
+            data = json.load(fh)
+    except OSError:
+        return []
+    out = []
+    never = [h for h in BLOCKED_HOSTS if h not in ROBOTS_HOSTS]
+    for entry in data.get("paths") or []:
+        prefix = entry.get("prefix") or ""
+        host = host_of(prefix)
+        if not prefix.startswith("https://") or not host or \
+                urllib.parse.urlsplit(prefix).path in ("", "/"):
+            raise ValueError("override %r: not an https path prefix"
+                             % entry.get("id"))
+        if _under(host, never):
+            raise ValueError("override %r: %s is refused for a bot "
+                             "challenge or by project decision, not by "
+                             "robots.txt; no override reaches it"
+                             % (entry.get("id"), host))
+        out.append(entry)
+    return out
+
+
+def override_for(url, overrides):
+    for entry in overrides or ():
+        if url.startswith(entry["prefix"]) and (
+                not entry.get("pattern")
+                or re.search(entry["pattern"], url)):
+            return entry
+    return None
 
 
 def host_of(url):
@@ -205,7 +273,7 @@ class PoliteClient(object):
 
     def __init__(self, min_gap=2.0, retries=2, timeout=90, max_wait=120,
                  opener=None, sleep=time.sleep, clock=time.monotonic,
-                 log=print):
+                 log=print, overrides=None, override_log=None, today=None):
         self.min_gap = min_gap
         self.retries = retries
         self.timeout = timeout
@@ -219,14 +287,23 @@ class PoliteClient(object):
         # Conditional-request headers for the request in flight only
         # (get_if_changed); never anything that changes who we say we are.
         self._extra_headers = {}
+        # The owner's robots.txt decisions, and the file keeping the date
+        # each overridden URL was last read. Without that file a client
+        # never uses an override.
+        self.overrides = load_overrides() if overrides is None else overrides
+        self.override_log = override_log
+        self.today = today or datetime.date.today().isoformat()
+        self.overridden = {}   # url -> override id, for this run
         self.requests = 0
 
     # -- plumbing ---------------------------------------------------------
 
     def _urlopen(self, url, timeout):
         """(status, headers, body). HTTP errors come back as a status."""
+        # HTML first: Durham's site answers 404 to an Accept that leads
+        # with JSON (measured 7 October 2026); a JSON API ignores it.
         headers = {"User-Agent": USER_AGENT,
-                   "Accept": "application/json, text/html, */*"}
+                   "Accept": "text/html, application/json;q=0.9, */*;q=0.8"}
         headers.update(self._extra_headers)
         request = urllib.request.Request(url, headers=headers)
         try:
@@ -255,6 +332,35 @@ class PoliteClient(object):
             return self._open(url, self.timeout)
         except Exception as e:  # noqa: BLE001 - network faults are data here
             return None, {}, str(e).encode("utf-8", "replace")
+
+    # -- the owner's overrides ---------------------------------------------
+
+    def _override_due(self, url, override):
+        """An overridden URL is read at most every OVERRIDE_EVERY_DAYS."""
+        log = {}
+        try:
+            with open(self.override_log, encoding="utf-8") as fh:
+                log = json.load(fh)
+        except (OSError, ValueError):
+            pass
+        last = (log.get(url) or {}).get("read")
+        if last:
+            age = (datetime.date.fromisoformat(self.today)
+                   - datetime.date.fromisoformat(last)).days
+            if age < OVERRIDE_EVERY_DAYS:
+                raise NotDue("%s was read %d day(s) ago; a path read under "
+                              "the owner's robots.txt decision is read at "
+                              "most every %d days"
+                              % (url, age, OVERRIDE_EVERY_DAYS))
+        log[url] = {"read": self.today, "override": override.get("id")}
+        folder = os.path.dirname(self.override_log)
+        if folder:
+            os.makedirs(folder, exist_ok=True)
+        with open(self.override_log, "w", encoding="utf-8",
+                  newline="\n") as fh:
+            json.dump(log, fh, indent=1, sort_keys=True)
+            fh.write("\n")
+        self.overridden[url] = override.get("id")
 
     # -- robots -----------------------------------------------------------
 
@@ -305,11 +411,16 @@ class PoliteClient(object):
         host = host_of(url)
         if not url.lower().startswith("https://"):
             raise Refused("only https is fetched: %s" % url)
-        if blocked(host):
+        override = override_for(url, self.overrides) \
+            if self.override_log else None
+        if blocked(host) and not (override and _under(host, ROBOTS_HOSTS)):
             raise Refused("%s is on the block list" % host)
         check_read_only(url)
-        if not self.allowed(url):
+        if override is None and not self.allowed(url):
             raise Refused("robots.txt on %s disallows %s" % (host, url))
+        if override is not None and not self.allowed(url):
+            # robots.txt says no, and the owner has decided to read this.
+            self._override_due(url, override)
 
         attempt = 0
         while True:

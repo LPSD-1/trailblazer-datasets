@@ -1,0 +1,36 @@
+{
+ "decision": "Owner decision, 8 October 2026: no e-mails to councils; the pipeline itself reads the council documents that robots.txt alone keeps it from. Only the paths below, only by the order register's check (which logs every read in tro/register/override-reads.json and reads each at most weekly), with the honest User-Agent and the usual pacing. A 403, a bot challenge or a block from GitHub's runners is never got past: those stay blocked, and manual/ is their backstop.",
+ "decided": "2026-10-08",
+ "paths": [
+  {
+   "id": "cambridgeshire-byway-orders",
+   "authority": "Cambridgeshire",
+   "council": "Cambridgeshire County Council",
+   "prefix": "https://www.cambridgeshire.gov.uk/asset-library/",
+   "pattern": "(?i)\\.pdf$",
+   "why": "The permanent and seasonal byway order PDFs listed on the council's rights of way restrictions page; robots.txt disallows /asset-library/."
+  },
+  {
+   "id": "hertfordshire-ptros",
+   "authority": "Hertfordshire",
+   "council": "Hertfordshire County Council",
+   "prefix": "https://www.hertfordshire.gov.uk/media-library/documents/environment-and-planning/countryside-access-and-management/rights-of-way/ptros/",
+   "pattern": "(?i)\\.pdf$",
+   "why": "The permanent traffic regulation order PDFs linked from the council's PTRO page; robots.txt disallows /media-library/documents/."
+  },
+  {
+   "id": "powys-order-documents",
+   "authority": "Powys",
+   "council": "Powys County Council",
+   "prefix": "https://en.powys.gov.uk/media/",
+   "why": "The order documents linked from Powys's byway and traffic order articles (2444, 2446); robots.txt disallows /media/. Powys also refuses GitHub's runners (403), which is never got past."
+  },
+  {
+   "id": "derbyshire-path-closure-register",
+   "authority": "Derbyshire",
+   "council": "Derbyshire County Council",
+   "prefix": "https://apps.derbyshire.gov.uk/applications/path-closure-register/",
+   "why": "The council's register of rights of way closure orders; robots.txt disallows the whole apps host."
+  }
+ ]
+}

@@ -703,10 +703,20 @@ def fetch(codes=None, out_dir=None, today=None, client=None, report=None):
     status_path = os.path.join(out_dir, "status.json")
     status = read_json(status_path, {}) or {}
     failed = []
+    import manual_inbox
+    by_hand = set(b["code"] for b in manual_inbox.inboxes()
+                  if not b["automated"])
     for layer in LAYERS:
         if codes and layer["code"] not in codes:
             continue
         old = status.get(layer["code"]) or {}
+        if layer["code"] in by_hand:
+            # The owner supplies this council's documents by hand
+            # (manual/): nothing is fetched; the last file read stands.
+            status[layer["code"]] = dict(old, skipped="documents come from "
+                                         "manual/%s; not fetched"
+                                         % layer["code"])
+            continue
         entry = fetch_one(layer, client, out_dir, today)
         if entry["ok"]:
             entry["failing_since"] = None

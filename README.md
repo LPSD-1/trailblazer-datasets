@@ -170,6 +170,23 @@ robots.txt keeps us out of) as `listed-only`. `order-register.yml` re-reads
 the councils' pages every quarter and opens an issue with the diff when one
 changes; it never edits the register itself.
 
+### Documents robots.txt keeps us from, and documents saved by hand
+
+By the owner's decision of 8 October 2026, a few council order documents
+that robots.txt alone disallows are read anyway: Cambridgeshire's and
+Hertfordshire's byway order PDFs, Powys's `/media/` order documents and
+Derbyshire's path closure register (`tools/robots_override.json`). Only
+those paths are affected. They are read only by the order register's check,
+at most once a week, with the same honest User-Agent and pacing, and every
+read is logged in `tro/register/override-reads.json`. The order pack's
+coverage table says "robots.txt overridden by owner decision" against
+anything published from them. A 403, a bot challenge or a refusal of
+GitHub's servers is never got past. Documents behind those are saved by
+hand, or sent by the council, into `manual/<CODE>/` (see
+`manual/README.md`). They are read from disk like any page, and the
+coverage table credits them "saved by hand" or "supplied by the council"
+with the date.
+
 ## Status changes
 
 `status/status-changes.geojson` flags byways whose legal status is changing:

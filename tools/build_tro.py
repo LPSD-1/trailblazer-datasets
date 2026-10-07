@@ -1415,6 +1415,23 @@ def main():
             src["id"] for src in council["sources"]
             if src.get("authority") in row["lanes"]
             or set(src.get("authorities") or ()) & set(row["lanes"]))
+    # HOW EACH SOURCE CAME, where it was not simply read off the council's
+    # site: a document saved by hand or supplied by the council (manual/),
+    # or one read under the owner's robots.txt decision.
+    for row in authorities:
+        notes = set()
+        for src in council["sources"]:
+            mine = src.get("authority") in row["lanes"] or \
+                set(src.get("authorities") or ()) & set(row["lanes"])
+            if not mine:
+                continue
+            if src.get("supplied"):
+                notes.add("%s: %s" % (src["id"], src["supplied"]))
+            for lane in row["lanes"]:
+                for note in (src.get("provenance") or {}).get(lane) or ():
+                    notes.add("%s: %s" % (src["id"], note))
+        if notes:
+            row["provenance"] = sorted(notes)
     publishing = [a for a in authorities if a["records"]]
     listed = set(a["swa"] for a in authorities)
     elsewhere = sorted(((n, tra) for tra, n in tally.records.items()
@@ -1462,7 +1479,10 @@ def main():
         # of its orders carries `source` (this id), `source_name` and `url`.
         "sources": [dict((k, src.get(k)) for k in
                          ("id", "name", "authority", "kind", "licence",
-                          "endpoint")) for src in council["sources"]],
+                          "endpoint", "supplied", "provenance")
+                         if k in src or k in ("id", "name", "authority",
+                                              "kind", "licence", "endpoint"))
+                    for src in council["sources"]],
         # THE RESOLUTION TABLE TRAVELS WITH THE PACK.
         #
         # Every feature carries `otype`, and this says what each one means for
