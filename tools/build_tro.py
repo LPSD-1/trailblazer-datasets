@@ -213,6 +213,23 @@ ORDER_TYPES = {
         "bike": "no", "bike_note": "no",
         "x4": "no", "x4_note": "no",
     },
+    # A VOLUNTARY CLOSURE IS A REQUEST, NOT AN ORDER (owner's decision, 7
+    # October 2026). A council asks riders to keep off a lane - Wiltshire's
+    # winter requests, 1 October to 30 April - and nothing makes it unlawful
+    # to ride. So it binds no vehicle: it never shuts, never hides, and
+    # way_access leaves the lane usable to both, noting the request in its
+    # reason. The app (OrderType.voluntary, build 118 on) draws it in a style
+    # of its own and words it as the council's request. An app built before
+    # this row reads the otype as `other` and draws it in the closure family,
+    # which is why tools/wiltshire_closures.py publishes none until build 118
+    # is with testers (PUBLISH_VOLUNTARY).
+    "voluntary": {
+        "label": "Voluntary closure (a request, not an order)",
+        "effect": "The council asks riders to keep off; nothing is closed "
+                  "in law",
+        "bike": "no", "bike_note": "no - a request, not an order",
+        "x4": "no", "x4_note": "no - a request, not an order",
+    },
     # THE FAIL-SAFE, and it fails towards telling the rider. Anything
     # reaching here has already passed tro.INTERESTING, whose whole test is
     # "can it stop a vehicle, turn it round, or catch it by its size" — so an
@@ -342,6 +359,10 @@ def vehicles_for(otype, oform="permanent"):
 HIDES_FOURXFOUR = ("weight", "width", "motors_except_motorcycles")
 ADVISES_FOURXFOUR = ("height", "length")
 SHUTS_TO_MOTORS = ("prohibition",)
+# A council's request to keep off. Said in the reason, and never a hiding or
+# evidence: `access_evidence` is what makes hiding a lane lawful, and a
+# request is no reason to hide one.
+ASKS_ONLY = ("voluntary",)
 
 
 def way_access(orders):
@@ -385,6 +406,10 @@ def way_access(orders):
         elif otype in ADVISES_FOURXFOUR:
             reasons.append("%s (%s)" % (row["label"], row["x4_note"]))
             evidence = "order"
+        elif otype in ASKS_ONLY:
+            # Usable to both, whatever its form, and the evidence left as it
+            # was: the reason says what the council asks, and nothing else.
+            reasons.append(row["label"])
     return {
         "motorbike_ok": motorbike_ok,
         "fourxfour_ok": fourxfour_ok,
@@ -1143,6 +1168,7 @@ def check_order_types(mutate=False):
         "height": (1, 1, "order"),      # §5.3 says "maybe" - advice, not a hide
         "prohibition": (0, 0, "order"),
         "oneway": (1, 1, "none"),       # direction, not access
+        "voluntary": (1, 1, "none"),    # a request: binds nobody
     }
     for otype, (want_bike_ok, want_x4_ok, want_ev) in sorted(
             expected_access.items()):
@@ -1174,6 +1200,36 @@ def check_order_types(mutate=False):
             print("way_access(seasonal %s) -> fourxfour_ok=1 "
                   "evidence=order  ok  [%s]"
                   % (otype, seasonal["access_reason"]))
+
+    # A VOLUNTARY CLOSURE BINDS NOBODY IN ANY FORM. It is a council's request,
+    # and the app (OrderType.voluntary) reads it so: no shut, no hide, for a
+    # motorbike or a 4x4, seasonal or not - but the reason still says what is
+    # asked, so a rider reading the way is told.
+    for oform in ORDER_FORMS:
+        verdict = vehicles_for("voluntary", oform)
+        got = way_access([("voluntary", oform)])
+        if (verdict["bike"], verdict["x4"]) != ("no", "no") or \
+                (got["motorbike_ok"], got["fourxfour_ok"],
+                 got["access_evidence"]) != (1, 1, "none") or \
+                "request" not in got["access_reason"]:
+            failures.append("a %s voluntary closure binds a vehicle: %r %r"
+                            % (oform, verdict, got))
+        else:
+            print("way_access(%s voluntary) -> usable to both, evidence=none"
+                  "  ok  [%s]" % (oform, got["access_reason"]))
+
+    # EVERY TYPE A COUNCIL ITEM CAN BECOME HAS A ROW HERE. council_orders.py
+    # picks a council item's otype from its own VEHICLES table; one naming a
+    # type this table lacks would be read by vehicles_for as `other` - a
+    # restriction that "sometimes" bites - which for a request would be the
+    # wrong direction entirely.
+    import council_orders
+    stray = sorted(otype for _code, otype, _label in
+                   council_orders.VEHICLES.values()
+                   if otype not in ORDER_TYPES)
+    if stray:
+        failures.append("council_orders.VEHICLES names types with no row: %s"
+                        % ", ".join(stray))
 
     # WAYS-SCHEMA.md: access_evidence must never be 'none' where
     # fourxfour_ok = 0. Asserted over every type and form this build can emit,

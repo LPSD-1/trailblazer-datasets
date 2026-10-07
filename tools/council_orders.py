@@ -36,6 +36,11 @@ so the app's existing table decides who it binds:
                                built before it reads it as `other`, which
                                bites "sometimes" and never hides or shuts)
     vehicles_over_width        dimensionMaximumWidth / width
+    voluntary                  councilVoluntaryClosure / voluntary - NOT AN
+                               ORDER: the council asks riders to keep off,
+                               and the type binds nobody. Carries `asked_by`,
+                               the council doing the asking, for the app's
+                               "X asks riders not to use this lane" line.
     other                      councilRestriction / other
 
 `form` maps onto the pack's existing forms: a temporary closure is
@@ -72,6 +77,11 @@ VEHICLES = {
                      "Height limit"),
     "weight_limit": ("dimensionMaximumWeightStructural", "weight",
                      "Weight limit"),
+    # A request, not an order (build_tro.ORDER_TYPES["voluntary"]). Its own
+    # code, so a reader that only has the code - the orders container keeps
+    # no otype - still knows it from a closure.
+    "voluntary": ("councilVoluntaryClosure", "voluntary",
+                  "Voluntary closure - a request, not a legal order"),
     "other": ("councilRestriction", "other", "Restriction"),
 }
 
@@ -211,6 +221,11 @@ def feature_of(item, source, day, tra_of=None, horizon_days=HORIZON_DAYS):
         props["url"] = item["url"]
     if item.get("ways"):
         props["ways"] = sorted(item["ways"])
+    # WHO IS ASKING, on a request: "Wiltshire Council asks riders not to use
+    # this lane". Only on a voluntary closure - every other item is an order,
+    # and an order is made, not asked.
+    if otype == "voluntary" and item.get("asked_by"):
+        props["asked_by"] = item["asked_by"]
     geometry = _round_geometry(geometry)
     seed = "|".join([source["id"], str(item.get("id")), str(code),
                      str(start), str(end), geometry["type"],

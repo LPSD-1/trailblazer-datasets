@@ -38,12 +38,13 @@ THE FIVE TYPES THE REGISTER USES, and what each becomes (council_orders.py):
                   drawn shut indefinitely.
     Voluntary     NOT AN ORDER. The council asks users to keep off (Wiltshire's
                   winter restraints, 1 October to 30 April); nothing makes it
-                  unlawful to ride. The order pack has no type for advice that
-                  shuts nothing - the app draws an unrecognised type in the
-                  closure family and calls it a limit the order sets - so these
-                  are HELD FOR REVIEW, with words that say what they are, until
-                  the owner decides how the app should show one
-                  (`PUBLISH_VOLUNTARY`).
+                  unlawful to ride. Published under the pack's `voluntary`
+                  type, which binds nobody and which app build 118 draws as a
+                  request (owner's decision, 7 October 2026), dated by the
+                  register's own start and end, with `asked_by` naming the
+                  council. HELD FOR REVIEW while `PUBLISH_VOLUNTARY` is off,
+                  which it stays until build 118 is with testers: older
+                  builds draw an unknown type as a closure.
 
 Who it binds comes from the detail page's "Affecting" line (`vehicles_of`).
 
@@ -68,8 +69,16 @@ PUBLIC = FORM_PAGE
 COUNCIL = "Wiltshire Council"
 AUTHORITY = "Wiltshire"
 
-#: Voluntary closures are requests, not orders: held for review until the
-#: owner decides how the app shows one. See the module docstring.
+#: Voluntary closures are requests, not orders. With this on they are
+#: published under the pack's `voluntary` type (binds nobody); with it off
+#: they are held for review.
+#:
+#: OFF UNTIL APP BUILD 118 IS WITH TESTERS. Build 118 is the first that knows
+#: the `voluntary` type and draws it as a request (owner's decision, 7 October
+#: 2026). Every older build reads a type it does not know as `other` and draws
+#: it in the closure family - a heavy red barred line, and "an order in force
+#: may apply to you" on the lane sheet - which is exactly what a request is
+#: not. Switch it on only once 118 is what testers are running.
 PUBLISH_VOLUNTARY = False
 
 #: An end date this far out is "never" (the register writes 1 January 2099).
@@ -314,16 +323,26 @@ def candidate(entry, detail, parse_date, parse_season, clean):
                                "it binds or whether it is seasonal")
         return item
     if lowered == "voluntary":
-        item["form"] = "temporary"
-        item["vehicles"] = "other"
+        # The pack's own type for a request (build_tro.ORDER_TYPES
+        # "voluntary"): binds nobody, drawn by the app as a request, and
+        # named by the council doing the asking. Dated by the register's own
+        # start and end - or by a season its words state - and nothing else:
+        # a request is published for the dates the council gave it.
+        item["vehicles"] = "voluntary"
+        item["asked_by"] = COUNCIL
+        if season:
+            item.update({"form": "seasonal", "season": season})
+        else:
+            item["form"] = "temporary"
         item["label"] = "Voluntary closure - a request, not a legal order"
         titled("voluntary closure (the council asks users to keep off; it "
                "is not an order and does not close the byway in law)")
         if not PUBLISH_VOLUNTARY:
             item["review_only"] = (
                 "a voluntary closure is the council's request, not a legal "
-                "order; the pack has no type for advice that shuts nothing, "
-                "so it is held until the owner decides how the app shows one")
+                "order; held until app build 118, which draws the "
+                "`voluntary` type as a request, is with testers "
+                "(PUBLISH_VOLUNTARY)")
         return item
     if _GONE.search(words):
         titled("%s closure" % lowered)
