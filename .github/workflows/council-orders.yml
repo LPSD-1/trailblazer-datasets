@@ -1,0 +1,164 @@
+name: Council orders
+
+# THE COUNCILS' OWN BYWAY CLOSURES AND ORDERS, read where each council
+# publishes them (tools/council_sources.py) and committed as tro/council/.
+#
+# D-TRO barely carries byway orders - 81 of 146,202 records in the 6 September
+# 2026 extract name a byway - and it is not mandatory, so the closures and the
+# long-standing motor-vehicle bans riders most need are published, if at all,
+# by councils themselves. traffic-orders.yml lays what this job commits into
+# the order pack the app already reads (tools/council_orders.py), dropping
+# anything D-TRO already holds.
+#
+# THIRTY MINUTES BEFORE EACH ORDER BUILD (traffic-orders.yml runs at :23 past
+# 2, 8, 14 and 20), so a closure a council posts this morning reaches the
+# next pack. Each run asks each council's server for a handful of pages,
+# paced, with robots.txt obeyed (tools/polite_http.py).
+#
+# A FAILED SOURCE NEVER BLANKS WHAT IS PUBLISHED. A source that cannot be
+# read, or comes back empty or collapsed against its last good read, leaves
+# its committed file untouched; the run says so in an issue labelled
+# council-orders and keeps going with the others.
+on:
+  schedule:
+    - cron: '53 1,7,13,19 * * *'
+  workflow_dispatch:
+    inputs:
+      only:
+        description: 'Comma-separated source ids (blank for all)'
+        type: string
+        default: ''
+
+permissions:
+  contents: write   # the committed tro/council/ files
+  issues: write     # to raise one when a source or the run fails
+
+concurrency:
+  group: council-orders
+  cancel-in-progress: false
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09  # v5
+
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1  # v6
+        with:
+          python-version: '3.12'
+
+      # Standard library only: nothing to install. The tests need no network,
+      # no key and no app checkout, so none of them can exit 2 (BLIND).
+      - name: Run the tests before trusting the fetch
+        run: |
+          python tools/test_polite_http.py
+          python tools/test_byway_match.py
+          python tools/test_council_sources.py
+          python tools/test_council_orders.py
+
+      - name: Read the councils' sources
+        run: |
+          python tools/council_sources.py fetch \
+            --only "${{ inputs.only }}" \
+            --report /tmp/council-failures.txt
+
+      - name: Commit what changed
+        run: |
+          git config user.name  "trailblazer-data"
+          git config user.email "data@trailblazer.invalid"
+
+          commit_it() {
+            git add -A tro/council
+            if git diff --cached --quiet; then
+              echo "nothing changed"
+              return 1
+            fi
+            git commit -m "Council orders: $(date -u +%Y-%m-%d)" \
+              -m "Read by .github/workflows/council-orders.yml"
+            return 0
+          }
+
+          commit_it || exit 0
+
+          # tro/council/ is written by this job and no other, so on a lost
+          # race the newest main is taken and our files put back over it.
+          # Never a rebase: see traffic-orders.yml.
+          mkdir -p dist
+          rm -rf dist/council-built
+          cp -r tro/council dist/council-built
+          for attempt in 1 2 3; do
+            if git push; then
+              exit 0
+            fi
+            echo "push rejected; putting our files back on top of origin/main"
+            git fetch origin main
+            git reset --hard origin/main
+            rm -rf tro/council
+            cp -r dist/council-built tro/council
+            commit_it || exit 0
+            sleep $((attempt * 5))
+          done
+          echo "::error::could not push after three attempts"
+          exit 1
+
+      # ONE SOURCE DOWN IS NOT A FAILED RUN - the others still publish - but
+      # it is somebody's job to look. Kept current while sources fail, closed
+      # by the first run in which every source read cleanly. Its own label, so
+      # the failed-run alarm below and this one do not close each other.
+      - name: Say which sources could not be read
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          OPEN=$(gh issue list --label council-sources --state open \
+                   --json number --jq '.[0].number' 2>/dev/null || true)
+          if [ -s /tmp/council-failures.txt ]; then
+            BODY="These council sources could not be read on $RUN_URL. What each published last time is still in tro/council/ and still in the order pack; nothing was blanked.
+
+          $(sed 's/^/- /' /tmp/council-failures.txt)
+
+          A 403 or a robots.txt refusal is the council's decision and is never worked around: ask the council for a feed instead. A 'bad read' is the guard in tools/council_sources.py refusing a source that suddenly returned nothing or under a third of what it held."
+            if [ -n "$OPEN" ]; then
+              gh issue edit "$OPEN" --body "$BODY" || true
+            else
+              gh label create council-sources --color FBCA04 \
+                --description "A council closure source could not be read" 2>/dev/null || true
+              gh issue create --label council-sources \
+                --title "Council orders: a source could not be read" \
+                --body "$BODY" || true
+            fi
+          elif [ -f /tmp/council-failures.txt ] && [ -n "$OPEN" ]; then
+            gh issue close "$OPEN" --comment "Every source read cleanly: $RUN_URL" || true
+          fi
+
+      - name: Raise an issue if this failed
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          EXISTING=$(gh issue list --label council-orders --state open \
+                       --json number --jq '.[0].number' 2>/dev/null || true)
+          if [ -n "$EXISTING" ]; then
+            gh issue comment "$EXISTING" --body "Failed again: $RUN_URL"
+          else
+            gh label create council-orders --color D93F0B \
+              --description "Automated council-order fetch problems" 2>/dev/null || true
+            gh issue create --label council-orders \
+              --title "Council orders fetch failed" \
+              --body "$RUN_URL failed. The councils' orders already committed in tro/council/ stay in the order pack, so nothing riders see was blanked - but nothing new from any council reaches them until this is fixed. Every source failing at once, a failed test, or a lost push are the usual causes."
+          fi
+
+      - name: Stand the alarm down if this worked
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          for n in $(gh issue list --label council-orders --state open \
+                       --json number --jq '.[].number' 2>/dev/null || true); do
+            gh issue close "$n" --comment "Fixed: $RUN_URL succeeded." || true
+          done

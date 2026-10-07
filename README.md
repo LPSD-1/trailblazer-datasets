@@ -111,6 +111,43 @@ the published ones, publishes nothing, and costs riders no download at all —
 and the date shown against a package is the date that data was really cut,
 not the date a build last ran over it.
 
+## Traffic orders and closures: where they come from
+
+The traffic-order pack (`tro/index.json`, rebuilt four times a day by
+`traffic-orders.yml`) carries orders from the Department for Transport's
+D-TRO service and, beside them, the byway closures and orders councils
+publish themselves. D-TRO is not mandatory and carries almost no byway orders
+(81 of 146,202 records in the 6 September 2026 extract name a byway), so these
+run alongside it indefinitely. An order D-TRO already holds is not repeated:
+the council's copy is folded into it and listed under `also`.
+
+Read by `council-orders.yml` (`tools/council_sources.py`), committed to
+`tro/council/`, each order carrying its `source`, `source_name` and the
+council's own `url` for it:
+
+| Source | Publisher | Licence as published |
+|---|---|---|
+| `dorset-closures` | Dorset Council - rights of way closures (WFS) | Open Government Licence v3.0 |
+| `devon-closures` | Devon County Council - temporary path closures | Open Government Licence v3.0 |
+| `somerset-closures` | Somerset Council - rights of way closures and traffic orders | Open Government Licence v3.0 |
+| `suffolk-prow-tros` | Suffolk County Council - PROW traffic regulation orders | Terms equivalent to the OS OpenData Licence |
+| `suffolk-ttros` | Suffolk County Council - live temporary PROW closures | Published by the council |
+| `lancashire-closures` | Lancashire County Council - public rights of way (temporary closures) | Open Government Licence v3.0 |
+| `essex-prow-tros` | Essex County Council - PRoW traffic regulation orders | Published by the council |
+| `northumberland-closures` | Northumberland County Council - rights of way closures and TTROs | Published by the council |
+| `bracknell-prow-tros` | Bracknell Forest Council - public rights of way TROs | Published by the council |
+
+The pack's own `attribution` and `sources` name every one of these, and each
+council's row in its `authorities` block lists which sources cover it.
+
+How they are read: an honest User-Agent naming this repository, robots.txt
+obeyed (RFC 9309), a gap between requests, read-only calls only, and nothing
+behind a bot challenge (`tools/polite_http.py`). West Berkshire's closures
+layer is listed and not read: its GIS host's robots.txt disallows all
+automated access. No personal data is stored: contact names, phone numbers,
+e-mail addresses and applicants are dropped before anything is written. A
+source that fails, or suddenly returns nothing, keeps its last good copy.
+
 ## Licence
 
 Data: Open Government Licence v3.0 — attribution required, no share-alike.

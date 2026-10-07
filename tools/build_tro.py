@@ -190,6 +190,19 @@ ORDER_TYPES = {
         "bike": "no", "bike_note": "no",
         "x4": "no", "x4_note": "no",
     },
+    # THE COMMONEST BYWAY ORDER THAT IS NOT A WIDTH LIMIT: "motor vehicles
+    # prohibited, solo motorcycles exempt" (Essex's seasonal orders, Suffolk's
+    # PTRO024 and PTRO033). It shuts the lane to a 4x4 and leaves it open to
+    # a motorbike, and no D-TRO kind says that. A council order of this kind
+    # is published under its own code and this row; an app built before the
+    # row existed reads an otype it does not know as `other`, which bites
+    # "sometimes" and neither shuts nor hides - never the wrong direction.
+    "motors_except_motorcycles": {
+        "label": "Motor vehicles prohibited, motorcycles exempt",
+        "effect": "Way shut to cars and 4x4s",
+        "bike": "no", "bike_note": "no - solo motorcycles are exempt",
+        "x4": "yes", "x4_note": "yes",
+    },
     # A SUSPENSION LIFTS A RESTRICTION. It is carried because a rider who has
     # been told about a weight limit needs to know when it stops applying —
     # but drawing it as a restriction in its own right would shut a road the
@@ -890,6 +903,77 @@ def corpus_date(path):
 
 
 # ---------------------------------------------------------------------------
+# THE COUNCILS' OWN ORDERS
+# ---------------------------------------------------------------------------
+
+COUNCIL_DIR = os.path.join(ROOT, "tro", "council")
+
+DTRO_ATTRIBUTION = ("Contains public sector information licensed under the "
+                    "Open Government Licence v3.0. Source: Department for "
+                    "Transport D-TRO service.")
+
+
+def attribution(sources):
+    """The pack's attribution: D-TRO, then every council source by name."""
+    if not sources:
+        return DTRO_ATTRIBUTION
+    names = "; ".join("%s (%s)" % (s["name"], s.get("licence") or
+                                   "published by the council")
+                      for s in sorted(sources, key=lambda s: s["id"]))
+    return DTRO_ATTRIBUTION + " Also: " + names + "."
+
+
+def read_council_dir(path):
+    """[(source, items)] from every tro/council/<source>.json.
+
+    A file that exists and cannot be read raises ValueError: it was written
+    by our own job, so it is a broken checkout, never a quiet day.
+    """
+    out = []
+    if not os.path.isdir(path):
+        return out
+    for name in sorted(os.listdir(path)):
+        if not name.endswith(".json") or name in ("status.json",
+                                                  "coverage.json"):
+            continue
+        full = os.path.join(path, name)
+        try:
+            with open(full, encoding="utf-8") as handle:
+                data = json.load(handle)
+            source = data["source"]
+            items = data["items"]
+            if not isinstance(items, list) or not source.get("id"):
+                raise ValueError("no items list or no source id")
+        except (ValueError, KeyError, TypeError, AttributeError) as e:
+            raise ValueError("%s is unreadable: %s" % (full, e))
+        out.append((source, items))
+    return out
+
+
+def council_layer(built, path, day, table):
+    """The councils' orders for `day`, minus those D-TRO already holds."""
+    import council_orders
+
+    tra_by_lane = {}
+    for entry in table:
+        for lane in entry["lanes"]:
+            tra_by_lane.setdefault(lane, entry["swa"])
+    sources, candidates = [], []
+    for source, items in read_council_dir(path):
+        sources.append(source)
+        for item in items:
+            feature = council_orders.feature_of(
+                item, source, day, tra_of=tra_by_lane.get)
+            if feature is not None:
+                candidates.append((feature, source.get("kind")))
+    added, folded = council_orders.merge_council(
+        built, candidates,
+        lambda kind: council_orders.PRECEDENCE.get(kind, 9))
+    return {"sources": sources, "features": added, "added": len(added),
+            "folded": folded}
+
+
+# ---------------------------------------------------------------------------
 # THE CHECK: one order of each §5.3 type, through the real build
 # ---------------------------------------------------------------------------
 #
@@ -1129,6 +1213,13 @@ def main():
     ap.add_argument("--now", metavar="ISO",
                     help="the moment to read the feed up to (tests); default "
                          "a few minutes before now")
+    ap.add_argument("--council", metavar="DIR",
+                    help="lay the councils' own orders (tro/council/*.json, "
+                         "written by tools/council_sources.py) over D-TRO's. "
+                         "On by default when the extract was fetched; off "
+                         "for an offline --csv build unless given")
+    ap.add_argument("--no-council", action="store_true",
+                    help="build from D-TRO alone")
     ap.add_argument("--authorities", default=AUTHORITY_TABLE,
                     help="the council table (tools/tro_authorities.csv)")
     ap.add_argument("--allow-shrink", action="store_true",
@@ -1279,11 +1370,43 @@ def main():
                  "The extract's shape has probably changed."
                  % (skipped, records))
 
+    # THE COUNCILS' OWN ORDERS, laid over D-TRO's (tools/council_orders.py).
+    #
+    # AFTER the floor above, which is a check on the D-TRO read and must not
+    # be propped up by orders from somewhere else. On by default when the
+    # extract was fetched - the publishing job - and off for an offline --csv
+    # build unless asked for, exactly as the feed is.
+    council_dir = args.council
+    if council_dir is None and not args.csv:
+        council_dir = COUNCIL_DIR
+    council = {"sources": [], "features": [], "added": 0, "folded": 0}
+    if council_dir and not args.no_council:
+        try:
+            council = council_layer(built, council_dir, day, table)
+        except (IOError, OSError, ValueError) as e:
+            # A committed source file that cannot be read is a broken
+            # checkout, not a quiet day: every rider keeps yesterday's pack.
+            sys.exit("REFUSING TO PUBLISH: the councils' orders could not be "
+                     "read (%s)." % e)
+        built.extend(council["features"])
+        print("council %d order(s) from %d source(s) added; %d already "
+              "published to D-TRO or by a better source, folded into it"
+              % (council["added"], len(council["sources"]),
+                 council["folded"]))
+
     # Sorted, so the file is a function of its contents and not of the order
     # the service happened to return them in.
     built.sort(key=lambda f: f["properties"]["tro_uid"])
 
     authorities = authority_rows(table, tally)
+    # WHICH SOURCES SPEAK FOR EACH COUNCIL. "dtro" when it has published
+    # there at all; then every council source read for its ground, whether
+    # or not anything of it is in force today - so "Dorset: D-TRO and its
+    # closures layer" is said even on a day with nothing closed.
+    for row in authorities:
+        row["sources"] = (["dtro"] if row["records"] else []) + sorted(
+            src["id"] for src in council["sources"]
+            if src.get("authority") in row["lanes"])
     publishing = [a for a in authorities if a["records"]]
     listed = set(a["swa"] for a in authorities)
     elsewhere = sorted(((n, tra) for tra, n in tally.records.items()
@@ -1321,13 +1444,17 @@ def main():
         "cut": cut,
         "package": "tro",
         "label": "Traffic regulation orders - Great Britain",
-        "note": "Orders published to the DfT D-TRO service. Not every "
+        "note": "Orders published to the DfT D-TRO service, and byway "
+                "orders and closures councils publish themselves. Not every "
                 "authority publishes, so blank ground means nothing has been "
                 "published there - not that nothing is in force. Follow the "
                 "signs on the road.",
-        "attribution": "Contains public sector information licensed under the "
-                       "Open Government Licence v3.0. Source: Department for "
-                       "Transport D-TRO service.",
+        "attribution": attribution(council["sources"]),
+        # Every source beyond D-TRO, credited by name, with its licence. Each
+        # of its orders carries `source` (this id), `source_name` and `url`.
+        "sources": [dict((k, src.get(k)) for k in
+                         ("id", "name", "authority", "kind", "licence",
+                          "endpoint")) for src in council["sources"]],
         # THE RESOLUTION TABLE TRAVELS WITH THE PACK.
         #
         # Every feature carries `otype`, and this says what each one means for
@@ -1388,6 +1515,8 @@ def main():
             # What the next run's floor check compares against. Not read by
             # the app; the catalogue builder ignores fields it does not know.
             "features": len(built),
+            # Of which, from the councils' own sources (council_orders.py).
+            "council_features": council["added"],
             # What check_build.py's council-coverage gate reads, for the same
             # reason: every job has the index and only this one has the pack.
             # Named apart from the pack's `authorities` list on purpose: these

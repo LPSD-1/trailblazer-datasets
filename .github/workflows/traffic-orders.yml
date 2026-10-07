@@ -142,6 +142,12 @@ jobs:
           python tools/test_tro_events_move_the_pack.py
           python tools/test_build_tro.py
           python tools/test_dtro_fetch.py
+          # THE COUNCILS' OWN ORDERS (council-orders.yml commits them to
+          # tro/council/; this build lays them over D-TRO's). The matcher,
+          # the conversion and dedupe, and the build reading them.
+          python tools/test_byway_match.py
+          python tools/test_council_orders.py
+          python tools/test_build_tro_council.py
           # THE COUNCIL TABLE. build_tro.py reads tools/tro_authorities.csv and
           # refuses to publish without it, and the lane sheet names the
           # council from the `authorities` block it writes. These three are
