@@ -117,6 +117,24 @@ def main():
     check("gb-midlands-satellite" in sp.existing_satellite(old),
           "an untiered pack published earlier stopped counting")
 
+    # An untiered pack left beside its area's tiers does not age the area,
+    # and an area with nothing at z14 is due before any merely old one.
+    mixed = {"continents": [{"countries": [{"areas": [{"packs": [
+        {"kind": "basemap", "id": "gb-east-anglia-satellite", "maxZoom": 13,
+         "generated": "2026-09-11T22:40:02Z"},
+        {"kind": "basemap", "id": "gb-east-anglia-satellite-high",
+         "maxZoom": 14, "generated": "2026-10-07T09:59:31Z"},
+        {"kind": "basemap", "id": "gb-east-anglia-satellite-standard",
+         "maxZoom": 13, "generated": "2026-10-07T09:59:31Z"},
+        {"kind": "basemap", "id": "gb-midlands-satellite", "maxZoom": 13,
+         "generated": "2026-09-30T19:06:35Z"}]}]}]}]}
+    seen = sp.existing_satellite(mixed)
+    check(seen.get("gb-east-anglia-satellite") == "2026-10-07T09:59:31Z",
+          "a superseded untiered pack still ages its area: %s" % seen)
+    check(sp.below_zoom(mixed, 14) == {"gb-midlands-satellite"},
+          "the area with nothing at z14 is not due: %s"
+          % sp.below_zoom(mixed, 14))
+
     check_root_limit()
 
     if failures:

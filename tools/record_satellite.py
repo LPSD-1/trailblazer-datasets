@@ -72,6 +72,13 @@ def main():
     fresh = {e["id"] for e in entries}
     packs = [p for p in index.get("packs", []) if p.get("id") not in fresh]
     packs.extend(entries)
+    # An area's untiered pack (`<area>-satellite`, from before the two tiers)
+    # is superseded once that area has tiered packs: left in, a rider was
+    # offered East Anglia three times, the oldest at z13.
+    tiered = set(p["id"].rsplit("-", 1)[0] for p in packs
+                 if p["id"].endswith(("-satellite-standard",
+                                      "-satellite-high")))
+    packs = [p for p in packs if p["id"] not in tiered]
     packs.sort(key=lambda p: p["id"])
     index["packs"] = packs
 

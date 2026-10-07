@@ -70,24 +70,49 @@ def existing_satellite(catalogue):
     newest - so `min` would be the safer choice if they ever diverge. They
     cannot: record_satellite.py stamps every entry of a run with one value.
     """
-    out = {}
+    out, tiered = {}, set()
+    for key, pid, pack in _satellite_packs(catalogue):
+        if pid != key:
+            tiered.add(key)
+    for key, pid, pack in _satellite_packs(catalogue):
+        # AN UNTIERED PACK LEFT BESIDE ITS AREA'S TIERS DOES NOT AGE IT.
+        # East Anglia kept its September z13 pack after its z14 tiers were
+        # published on 7 October 2026; taking the oldest of the three made
+        # the area look 25 days old for ever, so it would have been rebuilt
+        # every run while the Midlands waited behind it indefinitely.
+        if key in tiered and pid == key:
+            continue
+        was = out.get(key)
+        now = pack.get("generated")
+        if was is None or (now is not None and now < was):
+            out[key] = now
+    return out
+
+
+def _satellite_packs(catalogue):
+    """(area key, pack id, pack) for every basemap pack: `<area>-satellite-
+    <tier>` and the older untiered `<area>-satellite` share the key."""
     for continent in catalogue.get("continents", []):
         for country in continent.get("countries", []):
             for area in country.get("areas", []):
                 for pack in area.get("packs", []):
                     if pack.get("kind") != "basemap":
                         continue
-                    # `<area>-satellite-<tier>` and the older untiered
-                    # `<area>-satellite` both belong to the same area.
                     pid = pack.get("id", "")
                     marker = "-satellite"
                     at = pid.find(marker)
                     key = pid[: at + len(marker)] if at >= 0 else pid
-                    was = out.get(key)
-                    now = pack.get("generated")
-                    if was is None or (now is not None and now < was):
-                        out[key] = now
-    return out
+                    yield key, pid, pack
+
+
+def below_zoom(catalogue, max_zoom):
+    """Areas with imagery but none at `max_zoom`: built before the z14
+    decision, so due now, however recently they were built."""
+    best = {}
+    for key, _pid, pack in _satellite_packs(catalogue):
+        z = pack.get("maxZoom") or 0
+        best[key] = max(best.get(key, 0), z)
+    return set(k for k, z in best.items() if z < max_zoom)
 
 
 def age_days(stamp, now):
@@ -132,14 +157,15 @@ def main():
 
     now = dt.datetime.now(dt.timezone.utc)
     published = existing_satellite(catalogue)
+    short = below_zoom(catalogue, args.max_zoom)
     candidates = []
     for area in areas_with_lanes(catalogue):
         age = age_days(published.get(area["id"]), now)
-        # Never built comes first, then oldest. `None` sorts ahead of any
-        # number, which is what we want and is worth being explicit about.
-        candidates.append((0 if age is None else 1,
-                           -(age or 0),
-                           area, age))
+        # Never built comes first, then built below the agreed zoom, then
+        # oldest. `None` sorts ahead of any number, which is what we want
+        # and is worth being explicit about.
+        rank = 0 if age is None else 1 if area["id"] in short else 2
+        candidates.append((rank, -(age or 0), area, age))
 
     if not candidates:
         print(json.dumps({"work": False, "why": "no areas publish lanes"}))
@@ -148,7 +174,7 @@ def main():
     candidates.sort(key=lambda c: (c[0], c[1]))
     rank, _, area, age = candidates[0]
 
-    if rank == 1 and age is not None and age < args.refresh_after_days:
+    if rank == 2 and age is not None and age < args.refresh_after_days:
         print(json.dumps({
             "work": False,
             "why": "everything was rebuilt within %d days (oldest is %.1f)"
