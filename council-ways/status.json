@@ -1,6 +1,6 @@
 {
  "BC": {
-  "changed": true,
+  "changed": false,
   "council": "Bracknell Forest Council",
   "failing_since": null,
   "last_ok": "2026-10-07",
@@ -18,7 +18,7 @@
   "ways": 20
  },
  "BK": {
-  "changed": true,
+  "changed": false,
   "council": "Central Bedfordshire Council",
   "failing_since": null,
   "last_ok": "2026-10-07",
@@ -36,7 +36,7 @@
   "ways": 81
  },
  "CB": {
-  "changed": true,
+  "changed": false,
   "council": "Cambridgeshire County Council",
   "failing_since": null,
   "last_ok": "2026-10-07",
@@ -54,7 +54,7 @@
   "ways": 401
  },
  "CC": {
-  "changed": true,
+  "changed": false,
   "council": "Cheshire West and Chester Council",
   "failing_since": null,
   "last_ok": "2026-10-07",
@@ -72,7 +72,7 @@
   "ways": 36
  },
  "CH": {
-  "changed": true,
+  "changed": false,
   "council": "Cheshire East Council",
   "failing_since": null,
   "last_ok": "2026-10-07",
@@ -90,7 +90,7 @@
   "ways": 28
  },
  "DN": {
-  "changed": true,
+  "changed": false,
   "council": "Devon County Council",
   "failing_since": null,
   "last_ok": "2026-10-07",
@@ -108,7 +108,7 @@
   "ways": 178
  },
  "ES": {
-  "changed": true,
+  "changed": false,
   "council": "East Sussex County Council",
   "failing_since": null,
   "last_ok": "2026-10-07",
@@ -126,7 +126,7 @@
   "ways": 189
  },
  "EX": {
-  "changed": true,
+  "changed": false,
   "council": "Essex County Council",
   "failing_since": null,
   "last_ok": "2026-10-07",
@@ -143,8 +143,67 @@
   "records": 297,
   "ways": 297
  },
- "HD": {
+ "HA": {
   "changed": true,
+  "council": "Hampshire County Council",
+  "failing_since": null,
+  "last_ok": "2026-10-07",
+  "merge": {
+   "added": [
+    "HA|Abbotts Ann|001/13/1",
+    "HA|Abbotts Ann|001/15/1",
+    "HA|Abbotts Ann|001/KS101-HST01/1",
+    "HA|Amport|004/28/1",
+    "HA|Amport|004/28/2",
+    "HA|Amport|004/29/1",
+    "HA|Amport|004/29/2",
+    "HA|Amport|004/29/3",
+    "HA|Amport|004/30/1",
+    "HA|Amport|004/31/1",
+    "HA|Amport|004/503/1",
+    "HA|Amport|004/711/1",
+    "HA|Amport|004/711/3",
+    "HA|Appleshaw|006/714/1",
+    "HA|Appleshaw|006/8/1",
+    "HA|Appleshaw|006/8/2",
+    "HA|Ashford Hill with Headley|007/735/1",
+    "HA|Ashley|008/6/1",
+    "HA|Ashley|008/6/1",
+    "HA|Ashley|008/8/1",
+    "HA|Ashley|008/8/2",
+    "HA|Ashley|008/9/1",
+    "HA|Ashmansworth|009/18/1",
+    "HA|Ashmansworth|009/18/1",
+    "HA|Ashmansworth|009/18/2",
+    "HA|Ashmansworth|009/18/3",
+    "HA|Ashmansworth|009/19a/1",
+    "HA|Bentley|017/5/1",
+    "HA|Bentworth|018/23/1",
+    "HA|Bentworth|018/23/1",
+    "HA|Bentworth|018/23/3",
+    "HA|Bentworth|018/23/4",
+    "HA|Bentworth|018/24/1",
+    "HA|Bentworth|018/24/2",
+    "HA|Bentworth|018/24/4",
+    "HA|Bentworth|018/24/4",
+    "HA|Bentworth|018/24/5",
+    "HA|Bentworth|018/24/5",
+    "HA|Bentworth|018/25/1",
+    "HA|Bentworth|018/25/2"
+   ],
+   "dropped": [],
+   "kept": 0,
+   "new_share": 0.998,
+   "rowmaps": 0,
+   "used": true,
+   "why_not": null
+  },
+  "ok": true,
+  "records": 664,
+  "ways": 664
+ },
+ "HD": {
+  "changed": false,
   "council": "Hertfordshire County Council",
   "failing_since": null,
   "last_ok": "2026-10-07",
@@ -161,8 +220,48 @@
   "records": 217,
   "ways": 217
  },
- "LA": {
+ "IW": {
   "changed": true,
+  "council": "Isle of Wight Council",
+  "failing_since": null,
+  "last_ok": "2026-10-07",
+  "merge": {
+   "added": [],
+   "dropped": [
+    "IW|BS|10",
+    "IW|BS|4",
+    "IW|BS|4",
+    "IW|BS|4",
+    "IW|BS|4",
+    "IW|BS|44",
+    "IW|BS|44",
+    "IW|BS|44",
+    "IW|BS|53",
+    "IW|BS|53",
+    "IW|F|33",
+    "IW|F|33",
+    "IW|N|123",
+    "IW|N|128",
+    "IW|N|136a",
+    "IW|N|136a",
+    "IW|N|136a",
+    "IW|N|136a",
+    "IW|N|136a",
+    "IW|N|139",
+    "IW|S|26"
+   ],
+   "kept": 95,
+   "new_share": 0.0,
+   "rowmaps": 116,
+   "used": true,
+   "why_not": null
+  },
+  "ok": true,
+  "records": 95,
+  "ways": 95
+ },
+ "LA": {
+  "changed": false,
   "council": "Lancashire County Council",
   "failing_since": null,
   "last_ok": "2026-10-07",
@@ -183,7 +282,7 @@
   "ways": 69
  },
  "ND": {
-  "changed": true,
+  "changed": false,
   "council": "Northumberland County Council",
   "failing_since": null,
   "last_ok": "2026-10-07",
@@ -211,7 +310,7 @@
   "ways": 429
  },
  "ON": {
-  "changed": true,
+  "changed": false,
   "council": "Oxfordshire County Council",
   "failing_since": null,
   "last_ok": "2026-10-07",
@@ -228,8 +327,26 @@
   "records": 223,
   "ways": 223
  },
- "WJ": {
+ "WB": {
   "changed": true,
+  "council": "West Berkshire Council",
+  "failing_since": null,
+  "last_ok": "2026-10-07",
+  "merge": {
+   "added": [],
+   "dropped": [],
+   "kept": 484,
+   "new_share": 0.0,
+   "rowmaps": 484,
+   "used": true,
+   "why_not": null
+  },
+  "ok": true,
+  "records": 484,
+  "ways": 484
+ },
+ "WJ": {
+  "changed": false,
   "council": "Wokingham Borough Council",
   "failing_since": null,
   "last_ok": "2026-10-07",
@@ -247,7 +364,7 @@
   "ways": 115
  },
  "WT": {
-  "changed": true,
+  "changed": false,
   "council": "Wiltshire Council",
   "failing_since": null,
   "last_ok": "2026-10-07",
