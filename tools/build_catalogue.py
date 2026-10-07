@@ -1025,12 +1025,15 @@ def build(lanes_manifest, base_url, stamp, satellite_index=None,
         "conditions": conditions,
         # How often the app should CHECK each kind, published here so it can
         # be changed without shipping an app. They move on different clocks:
-        # councils amend a definitive map every few weeks and the road network
-        # is rebuilt about as often, while ready-made routes are published by
-        # people, continuously - a month is a long time to miss those. The
+        # the road network is rebuilt monthly, while ready-made routes are
+        # published by people, continuously - a month is a long time to miss
+        # those. Lanes four times a day since 7 Oct 2026 (the owner's call:
+        # riders want lanes and closures as fresh as they can be), which is
+        # how often refresh-data.yml rebuilds them; the check is a few
+        # kilobytes and a lane download still waits for wifi by default. The
         # rider can still override any of it; they pay for the connection.
         "updates": {
-            "lanes": "weekly",
+            "lanes": "sixHourly",
             "routing": "monthly",
             "basemap": "monthly",
             "gpx": "weekly",
