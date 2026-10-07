@@ -161,6 +161,26 @@
   "records": 217,
   "ways": 217
  },
+ "HP": {
+  "changed": true,
+  "council": "Hampshire County Council",
+  "failing_since": null,
+  "last_ok": "2026-10-07",
+  "merge": {
+   "added": [
+    "HP|Abbotts Ann|001/KS101-HST01/1"
+   ],
+   "dropped": [],
+   "kept": 666,
+   "new_share": 0.003,
+   "rowmaps": 666,
+   "used": true,
+   "why_not": null
+  },
+  "ok": true,
+  "records": 664,
+  "ways": 664
+ },
  "IW": {
   "changed": true,
   "council": "Isle of Wight Council",
@@ -269,7 +289,7 @@
   "ways": 223
  },
  "WB": {
-  "changed": true,
+  "changed": false,
   "council": "West Berkshire Council",
   "failing_since": null,
   "last_ok": "2026-10-07",
