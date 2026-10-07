@@ -28,6 +28,10 @@ on:
         description: 'Comma-separated source ids (blank for all)'
         type: string
         default: ''
+      accept_shrink:
+        description: 'Source ids whose shrunken read you have checked (a temporary closures layer whose closures were lifted): taken this run despite the keep-last-good guard'
+        type: string
+        default: ''
 
 permissions:
   contents: write   # the committed tro/council/ files
@@ -62,9 +66,15 @@ jobs:
           python tools/test_home_collector.py
 
       - name: Read the councils' sources
+        # Inputs reach the shell through env, quoted: never pasted into
+        # the script, where a quote in one would run as code.
+        env:
+          ONLY: ${{ inputs.only }}
+          ACCEPT_SHRINK: ${{ inputs.accept_shrink }}
         run: |
           python tools/council_sources.py fetch \
-            --only "${{ inputs.only }}" \
+            --only "$ONLY" \
+            --accept-shrink "$ACCEPT_SHRINK" \
             --report /tmp/council-failures.txt
 
       # THE REGISTER OF PERMANENT AND SEASONAL ORDERS: no network, only the
@@ -130,7 +140,7 @@ jobs:
 
           $(sed 's/^/- /' /tmp/council-failures.txt)
 
-          A 403 or a robots.txt refusal is the council's decision and is never worked around: ask the council for a feed instead. A 'bad read' is the guard in tools/council_sources.py refusing a source that suddenly returned nothing or under a third of what it held."
+          A 403 or a robots.txt refusal is the council's decision and is never worked around (no proxies, no other addresses, no borrowed User-Agent): ask the council for a feed instead. The one exception, by the owner's policy, is a council that refuses only GitHub's runners: it may be read from the one fixed collector server (HOME-COLLECTOR.md), and if it refuses that too, it is not asked from anywhere else. A 'bad read' is the guard in tools/council_sources.py refusing a source that suddenly returned nothing or under a third of what it held. If you have checked the council's own page and the source really did shrink (a temporary closures layer whose closures were lifted), run this workflow by hand with accept_shrink set to that source's id: that one run takes the new read."
             if [ -n "$OPEN" ]; then
               gh issue edit "$OPEN" --body "$BODY" || true
             else
@@ -144,11 +154,12 @@ jobs:
             gh issue close "$OPEN" --comment "Every source read cleanly: $RUN_URL" || true
           fi
 
-      # THE HOME COLLECTOR (tools/home_collector.py) reads the councils that
-      # refuse GitHub's runners, from a machine at home, into home-collected/.
-      # A machine switched off looks exactly like a quiet week, so it writes
-      # a heartbeat once a day; three days without one is said here.
-      - name: Say if the home collector has gone quiet
+      # THE COLLECTOR (tools/home_collector.py) reads the councils that
+      # refuse GitHub's runners, from one fixed server, into home-collected/
+      # (HOME-COLLECTOR.md). A stopped server looks exactly like a quiet
+      # week, so it writes a heartbeat once a day; three days without one is
+      # said here, and so is any one source that has failed for three days.
+      - name: Say if the collector has gone quiet
         if: always()
         env:
           GH_TOKEN: ${{ github.token }}
@@ -159,15 +170,15 @@ jobs:
           if [ -s /tmp/home-stale.txt ]; then
             BODY="$(cat /tmp/home-stale.txt) (checked on $RUN_URL).
 
-          Dorset, Norfolk, Wiltshire and Powys refuse GitHub's servers, so what the builds use for them is what the home collector last committed to home-collected/; it is not blanked, but it is getting old. Check the machine (HOME-COLLECTOR.md: the scheduled task, its collector.log, its network)."
+          Dorset and Powys refuse GitHub's servers, so what the builds use for them is what the collector server last committed to home-collected/; it is not blanked, but it is getting old. Check the server (HOME-COLLECTOR.md: its cron line, ~/trailblazer-collector/collector.log, its deploy key), and for a single source, whether the council now refuses the server too: if it does, it is not asked from anywhere else."
             if [ -n "$OPEN" ]; then
               gh issue edit "$OPEN" --body "$BODY" || true
             else
-              gh label create home-collector --color FBCA04                 --description "The home collector has not reported for days" 2>/dev/null || true
-              gh issue create --label home-collector                 --title "Home collector: no report for over three days"                 --body "$BODY" || true
+              gh label create home-collector --color FBCA04                 --description "The collector has not read a source for days" 2>/dev/null || true
+              gh issue create --label home-collector                 --title "Collector: a source not read for over three days"                 --body "$BODY" || true
             fi
           elif [ -n "$OPEN" ]; then
-            gh issue close "$OPEN" --comment "The home collector is reporting again: $RUN_URL" || true
+            gh issue close "$OPEN" --comment "The collector is reading every source again: $RUN_URL" || true
           fi
 
       - name: Raise an issue if this failed

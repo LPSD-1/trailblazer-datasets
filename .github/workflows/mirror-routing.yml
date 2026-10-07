@@ -64,13 +64,17 @@ jobs:
 
       - name: Take our own copy
         id: mirror
+        # Inputs reach the shell through env, quoted: never pasted into
+        # the script, where a quote in one would run as code.
+        env:
+          BUDGET: ${{ inputs.budget || '6' }}
         run: |
           mkdir -p dist/routing
           python tools/mirror_routing.py \
             --catalogue catalogue.json \
             --out dist/routing \
             --index routing/index.json \
-            --budget "${{ inputs.budget || '6' }}" | tee /tmp/mirror.log
+            --budget "$BUDGET" | tee /tmp/mirror.log
 
           # Nothing new is an ordinary outcome, not a failure.
           if grep -q '^nothing due' /tmp/mirror.log; then

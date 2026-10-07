@@ -64,6 +64,10 @@ jobs:
 
       - name: What is due?
         id: plan
+        # Inputs reach the shell through env, quoted: never pasted into
+        # the script, where a quote in one would run as code.
+        env:
+          REFRESH_AFTER_DAYS: ${{ inputs.refresh_after_days }}
         run: |
           # THE DEFAULT MATTERS. `inputs` exist only on a manual dispatch, so
           # on the nightly SCHEDULE these expand to empty strings - and an
@@ -71,7 +75,7 @@ jobs:
           # an invalid int. That exact mistake killed every scheduled run of
           # the imagery job nine seconds in, for weeks, while the workflow
           # raised an issue each time saying the build had failed.
-          REFRESH="${{ inputs.refresh_after_days }}"
+          REFRESH="$REFRESH_AFTER_DAYS"
           ARGS=(--catalogue catalogue.json)
           if [ -n "$REFRESH" ]; then
             ARGS+=(--refresh-after-days "$REFRESH")
@@ -105,12 +109,16 @@ jobs:
 
       - name: Fetch and package
         if: steps.plan.outputs.work == 'true'
+        # Inputs reach the shell through env, quoted: never pasted into
+        # the script, where a quote in one would run as code.
+        env:
+          VERTICAL_STEP: ${{ inputs.vertical_step }}
         run: |
           PLAN='${{ steps.plan.outputs.plan }}'
           BBOX=$(echo "$PLAN" | python -c 'import json,sys;print(" ".join(str(v) for v in json.load(sys.stdin)["bbox"]))')
           LABEL=$(echo "$PLAN" | python -c 'import json,sys;print(json.load(sys.stdin)["label"])')
           MAXZ=$(echo "$PLAN" | python -c 'import json,sys;print(json.load(sys.stdin)["max_zoom"])')
-          STEP="${{ inputs.vertical_step }}"
+          STEP="$VERTICAL_STEP"
           STEP="${STEP:-0.5}"
 
           mkdir -p dist/height

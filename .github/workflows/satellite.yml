@@ -94,12 +94,17 @@ jobs:
       # list to keep in step.
       - name: What is due?
         id: plan
+        # Inputs reach the shell through env, quoted: never pasted into
+        # the script, where a quote in one would run as code.
+        env:
+          AREA: ${{ inputs.area }}
+          MAX_ZOOM: ${{ inputs.max_zoom || '14' }}
         run: |
-          if [ -n "${{ inputs.area }}" ]; then
+          if [ -n "$AREA" ]; then
             PLAN=$(python tools/satellite_plan.py --catalogue catalogue.json \
                      --refresh-after-days 0 \
-                     --max-zoom "${{ inputs.max_zoom || '14' }}")
-            PLAN=$(python - "$PLAN" "${{ inputs.area }}" <<'PY'
+                     --max-zoom "$MAX_ZOOM")
+            PLAN=$(python - "$PLAN" "$AREA" <<'PY'
           import json, sys
           plan = json.loads(sys.argv[1])
           # A forced run still goes through the planner, so the bounds and the
@@ -123,7 +128,7 @@ jobs:
             # far were built by hand, and this workflow's own header promising
             # a full pass "in under a week" had never once been true.
             PLAN=$(python tools/satellite_plan.py --catalogue catalogue.json \
-                     --max-zoom "${{ inputs.max_zoom || '14' }}")
+                     --max-zoom "$MAX_ZOOM")
           fi
           echo "$PLAN"
           echo "plan=$PLAN" >> "$GITHUB_OUTPUT"
