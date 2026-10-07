@@ -81,6 +81,41 @@ class Robots(unittest.TestCase):
             stand.client().get("https://x.example/data")
         self.assertEqual(len(stand.asked), 1)
 
+    def test_only_a_200_or_a_4xx_robots_file_lets_anything_through(self):
+        # RFC 9309 2.3.1: a 5xx is a complete disallow; a 304, a 3xx left
+        # unfollowed or a 204 is not a robots file either, and its empty
+        # body must not read as "no rules".
+        for status in (304, 301, 204, 500, 503, None):
+            self.assertEqual(polite_http.robots_verdict(status, ""),
+                             "disallow-all", status)
+        self.assertEqual(polite_http.robots_verdict(404, ""), "allow-all")
+        self.assertIsInstance(polite_http.robots_verdict(200, ""),
+                              polite_http.Robots)
+
+    def test_robots_is_asked_for_without_a_documents_validators(self):
+        # A conditional GET for a document must not send its
+        # If-Modified-Since to robots.txt: a server answers that 304 with
+        # no body, which used to read as an empty file - allow everything.
+        sent = {}
+
+        def opener(url, timeout):
+            headers = dict(client._extra_headers)
+            sent.setdefault(url, []).append(headers)
+            if url.endswith("/robots.txt"):
+                if "If-Modified-Since" in headers:
+                    return 304, {}, b""
+                return 200, {}, b"User-agent: *\nDisallow: /private/\n"
+            return 200, {}, b"secret"
+
+        client = PoliteClient(opener=opener, sleep=lambda s: None,
+                              log=lambda *a: None)
+        with self.assertRaises(Refused):
+            client.get_if_changed("https://h.example/private/a.json",
+                                  last_modified="Tue, 28 Apr 2026 "
+                                                "07:35:24 GMT")
+        self.assertEqual(sent["https://h.example/robots.txt"], [{}])
+        self.assertNotIn("https://h.example/private/a.json", sent)
+
     def test_robots_is_read_once_per_host(self):
         stand = Stand({"/robots.txt": ROBOTS_OK, "/a": (200, {}, b"1"),
                        "/b": (200, {}, b"2")})
@@ -137,6 +172,20 @@ class Rfc9309(unittest.TestCase):
     def test_disallow_all_disallows_all(self):
         r = polite_http.Robots("User-agent: *\nDisallow: /\n")
         self.assertFalse(r.can_fetch("https://gis.example/arcgis/rest/x"))
+
+    def test_only_our_own_product_token_is_our_group(self):
+        # RFC 9309 2.2.1: the group whose user-agent IS our product token,
+        # any case. "data" is a substring of it and names someone else.
+        r = polite_http.Robots("User-agent: data\nDisallow: /\n\n"
+                               "User-agent: *\nAllow: /\n")
+        self.assertTrue(r.can_fetch("https://h.example/x"))
+        r = polite_http.Robots("User-agent: trailblazer\nDisallow: /\n\n"
+                               "User-agent: *\nAllow: /\n")
+        self.assertTrue(r.can_fetch("https://h.example/x"))
+        r = polite_http.Robots("User-agent: *\nAllow: /\n\n"
+                               "User-agent: TRAILBLAZER-DATASETS/1.0\n"
+                               "Disallow: /\n")
+        self.assertFalse(r.can_fetch("https://h.example/x"))
 
 
 class Blocks(unittest.TestCase):
@@ -383,6 +432,107 @@ class Gentle(unittest.TestCase):
             stand.client().get_json("https://h.example/q")
 
 
+class Transport(urllib.request.HTTPSHandler):
+    """A stand-in for the network under the REAL opener: answers https by
+    URL with (status, headers, body), so urllib's own redirect machinery
+    runs exactly as it would against a server."""
+
+    def __init__(self, answers):
+        urllib.request.HTTPSHandler.__init__(self)
+        self.answers, self.asked, self.methods = answers, [], []
+
+    def https_open(self, req):
+        import email.message
+        import io
+        import urllib.response
+        url = req.full_url
+        self.asked.append((url, dict(req.header_items())))
+        self.methods.append(req.get_method())
+        status, headers, body = self.answers.get(url, (404, {}, b""))
+        msg = email.message.Message()
+        for key, value in headers.items():
+            msg[key] = value
+        resp = urllib.response.addinfourl(io.BytesIO(body), msg, url,
+                                          status)
+        resp.msg = "stand-in"
+        return resp
+
+
+def real_client(answers, **kw):
+    transport = Transport(answers)
+    client = PoliteClient(sleep=lambda s: None, log=lambda *a: None, **kw)
+    client._handlers = (transport,)
+    return client, transport
+
+
+class Redirects(unittest.TestCase):
+    """urllib follows a redirect by itself, so every Location must pass the
+    same checks as the URL asked for, or a council (or anyone between) could
+    walk us to http, to a blocked host or to a path robots.txt forbids."""
+
+    ROBOTS = (200, {}, b"User-agent: *\nDisallow: /private/\n")
+
+    def go(self, location, extra=None):
+        answers = {"https://h.example/robots.txt": self.ROBOTS,
+                   "https://h.example/a": (302, {"Location": location}, b""),
+                   "https://h.example/ok": (200, {}, b"followed")}
+        answers.update(extra or {})
+        return real_client(answers)
+
+    def asked(self, transport):
+        return [u for u, _h in transport.asked]
+
+    def test_an_allowed_redirect_is_followed(self):
+        client, transport = self.go("https://h.example/ok")
+        self.assertEqual(client.get("https://h.example/a"), b"followed")
+        self.assertIn("https://h.example/ok", self.asked(transport))
+
+    def test_never_to_http(self):
+        client, transport = self.go("http://h.example/ok")
+        with self.assertRaises(Refused):
+            client.get("https://h.example/a")
+        self.assertNotIn("http://h.example/ok", self.asked(transport))
+        self.assertEqual(self.asked(transport).count("https://h.example/a"),
+                         1, "a refused redirect was retried")
+
+    def test_never_to_a_blocked_host(self):
+        client, transport = self.go("https://www.kent.gov.uk/x")
+        with self.assertRaises(Refused):
+            client.get("https://h.example/a")
+        self.assertFalse([u for u in self.asked(transport)
+                          if "kent.gov.uk" in u])
+
+    def test_never_to_a_path_robots_disallows(self):
+        client, transport = self.go("https://h.example/private/x",
+                                    {"https://h.example/private/x":
+                                     (200, {}, b"secret")})
+        with self.assertRaises(Refused):
+            client.get("https://h.example/a")
+        self.assertNotIn("https://h.example/private/x",
+                         self.asked(transport))
+
+    def test_another_hosts_robots_is_read_before_following_to_it(self):
+        client, transport = self.go(
+            "https://other.example/private/y",
+            {"https://other.example/robots.txt": self.ROBOTS,
+             "https://other.example/private/y": (200, {}, b"secret")})
+        with self.assertRaises(Refused):
+            client.get("https://h.example/a")
+        self.assertIn("https://other.example/robots.txt",
+                      self.asked(transport))
+        self.assertNotIn("https://other.example/private/y",
+                         self.asked(transport))
+
+    def test_never_to_an_edit_operation(self):
+        client, transport = self.go(
+            "https://h.example/arcgis/rest/services/x/FeatureServer/0/"
+            "applyEdits")
+        with self.assertRaises(Refused):
+            client.get("https://h.example/a")
+        self.assertFalse([u for u in self.asked(transport)
+                          if "applyEdits" in u])
+
+
 class Honest(unittest.TestCase):
     def test_the_user_agent_names_this_repository(self):
         self.assertIn("github.com/LPSD-1/trailblazer-datasets",
@@ -390,34 +540,12 @@ class Honest(unittest.TestCase):
         self.assertNotIn("Mozilla", polite_http.USER_AGENT)
 
     def test_the_real_opener_sends_it(self):
-        seen = {}
-
-        class Resp(object):
-            status = 200
-            headers = {}
-
-            def read(self):
-                return b"x"
-
-            def __enter__(self):
-                return self
-
-            def __exit__(self, *a):
-                return False
-
-        def fake(request, timeout):
-            seen["ua"] = request.get_header("User-agent")
-            seen["method"] = request.get_method()
-            return Resp()
-
-        real = urllib.request.urlopen
-        urllib.request.urlopen = fake
-        try:
-            PoliteClient()._urlopen("https://h.example/x", 5)
-        finally:
-            urllib.request.urlopen = real
-        self.assertEqual(seen["ua"], polite_http.USER_AGENT)
-        self.assertEqual(seen["method"], "GET")
+        client, transport = real_client({"https://h.example/x":
+                                         (200, {}, b"x")})
+        self.assertEqual(client._urlopen("https://h.example/x", 5)[2], b"x")
+        (_url, headers), = transport.asked
+        self.assertEqual(headers.get("User-agent"), polite_http.USER_AGENT)
+        self.assertEqual(transport.methods, ["GET"])
 
 
 if __name__ == "__main__":
