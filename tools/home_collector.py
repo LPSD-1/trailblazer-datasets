@@ -69,15 +69,15 @@ INDEX = "index.json"
 HEARTBEAT = "heartbeat.json"
 PROVENANCE = "collected directly from the council"
 
-# WHICH MACHINE READS WHICH COUNCIL. Measured 7 October 2026 from an Oracle
-# Cloud server in London: Dorset and Powys answer a data centre, Norfolk and
+# WHICH MACHINE READS WHICH COUNCIL. Measured 7 October 2026 from the
+# collector server in London: Dorset and Powys answer it. Norfolk and
 # Wiltshire (both behind Cloudflare's bot challenge) refuse it with a 403, as
-# they refuse GitHub's runners, and answer only a home connection. A source
-# says `"machine": "server"` to be read by the always-on server; anything
-# else stays with the machine at home. Each machine reads only its own,
-# writes only its own snapshots and heartbeat, and touches only its own
-# entries in the shared index.json; their runs are three hours apart. A
-# switched-off PC is still noticed while the server carries on.
+# they refuse GitHub's runners; they were retired rather than read from
+# anywhere else. Every source now says `"machine": "server"`. The code still
+# allows more than one machine (a source without one belongs to "home"):
+# each reads only its own sources, writes only its own snapshots and
+# heartbeat, and touches only its own entries in the shared index.json, and
+# a stopped one is noticed while another carries on.
 MACHINES = ("home", "server")
 
 

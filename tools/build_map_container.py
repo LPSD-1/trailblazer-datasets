@@ -1085,10 +1085,10 @@ def main():
     group.add_argument("--orders", action="store_true")
     ap.add_argument("out")
     ap.add_argument("packs", nargs="+")
-    ap.add_argument("--key", default=os.environ.get(
-        "DATASET_KEY_FILE",
-        r"C:\Users\lucas\Desktop\greenroadmap-keys\dataset-encryption-key-256.b64"))
+    ap.add_argument("--key", default=os.environ.get("DATASET_KEY_FILE"))
     args = ap.parse_args()
+    if not args.key:
+        raise SystemExit("Set --key or DATASET_KEY_FILE to the pack key file.")
 
     key = base64.b64decode(open(args.key).read().strip())
     if args.orders:

@@ -152,8 +152,15 @@ The pack's own `attribution` and `sources` name every one of these, and each
 council's row in its `authorities` block lists which sources cover it.
 
 How they are read: an honest User-Agent naming this repository, robots.txt
-obeyed (RFC 9309), a gap between requests, read-only calls only, and nothing
-behind a bot challenge (`tools/polite_http.py`). West Berkshire's closures
+obeyed (RFC 9309), a gap between requests, read-only calls only, redirects
+followed only where the same rules allow, and nothing behind a bot challenge
+(`tools/polite_http.py`). By the owner's policy of 7 October 2026, a council
+that refuses GitHub's shared runners (Dorset, Powys) is read from one fixed,
+honestly named collector server instead, with the same client and rules
+(`HOME-COLLECTOR.md`). That is not a disguise or a rotation of addresses: a
+council that refuses the server too is not asked from anywhere else, and a
+real block is never worked around (no proxies, no other addresses, no
+borrowed User-Agent, no headless browser). West Berkshire's closures
 layer is listed and not read: its GIS host's robots.txt disallows all
 automated access. No personal data is stored: contact names, phone numbers,
 e-mail addresses and applicants are dropped before anything is written. A
@@ -172,7 +179,7 @@ changes; it never edits the register itself.
 
 ### Documents robots.txt keeps us from, and documents saved by hand
 
-By the owner's decision of 8 October 2026, a few council order documents
+By the owner's decision of 7 October 2026, a few council order documents
 that robots.txt alone disallows are read anyway: Cambridgeshire's and
 Hertfordshire's byway order PDFs, Powys's `/media/` order documents and
 Derbyshire's path closure register (`tools/robots_override.json`). Only
@@ -180,9 +187,9 @@ those paths are affected. They are read only by the order register's check,
 at most once a week, with the same honest User-Agent and pacing, and every
 read is logged in `tro/register/override-reads.json`. The order pack's
 coverage table says "robots.txt overridden by owner decision" against
-anything published from them. A 403, a bot challenge or a refusal of
-GitHub's servers is never got past. Documents behind those are saved by
-hand, or sent by the council, into `manual/<CODE>/` (see
+anything published from them. Powys's documents are read by the collector
+server, which keeps only each one's digest, not the PDF. A 403 or a bot
+challenge is never got past. Documents behind those are saved by hand, or sent by the council, into `manual/<CODE>/` (see
 `manual/README.md`). They are read from disk like any page, and the
 coverage table credits them "saved by hand" or "supplied by the council"
 with the date.
@@ -203,7 +210,8 @@ definitive map that concern byways, from the registers Devon, Northumberland
 `status/dmmo-applications.geojson` draws the ones still open. Applicants'
 and landowners' names and addresses, case officers' names and scanned
 applications are never requested, so they never reach this repository.
-Dorset's register refuses GitHub's runners and is not read.
+Dorset's register refuses GitHub's runners and is read by the collector
+server (`HOME-COLLECTOR.md`).
 
 `status/mod-ranges.json` carries the MoD's current firing notice for every
 range in England and Wales from GOV.UK (`tools/mod_ranges.py`): the month,
@@ -262,7 +270,7 @@ and neither is one whose last good read is 30 days old or more
 (`council_ways.MAX_AGE_DAYS`), since rowmaps may have added byways since.
 West Berkshire's older GIS host (robots.txt) and its website (a bot
 challenge) are not read; its newer GIS host has no robots.txt and is. Dorset
-refuses GitHub's runners and is read by the home collector
+refuses GitHub's runners and is read by the collector server
 (HOME-COLLECTOR.md). Kent's, Dartmoor's and Exmoor's own layers carry
 licences that restrict their use and are not read.
 

@@ -344,7 +344,7 @@ SOURCES = [
      "fields": ["LegalCode", "Stage", "Effect", "Parish", "PathStatus",
                 "PathNum"]},
     # Dorset's GeoServer refuses GitHub's runners (403, 7 October 2026):
-    # this is read from the home collector's snapshot (home-collected/),
+    # this is read from the collector server's snapshot (home-collected/),
     # never from the runner.
     {"id": "dorset-dmmo", "council": "Dorset Council",
      "authority": "Dorset", "read": _wfs_dorset, "url": DORSET_DMMO,

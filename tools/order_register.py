@@ -24,9 +24,12 @@ file as `needs-review` (with why), and orders known only by their title as
 robots.txt kept us out of their PDFs. Since the owner's decision of
 7 October 2026 those PDFs are read (tools/robots_override.json): `check`
 follows them from their council's page (`follow` in pages.json) and flags
-each for a person to transcribe. Documents no request may reach (a bot
-challenge, a refusal of GitHub's runners) are saved by hand or sent by the
-council into manual/<CODE>/ and are checked from disk the same way.
+each for a person to transcribe. A council that refuses GitHub's runners
+is read from the one fixed collector server instead (HOME-COLLECTOR.md) and
+served here from home-collected/ - for an order PDF, by its digest alone.
+Documents no request may reach (a bot challenge, a refusal of that server
+too) are saved by hand or sent by the council into manual/<CODE>/ and are
+checked from disk the same way.
 
 `check` is the schedule (quarterly, order-register.yml). It re-reads each
 council page listed in `tro/register/pages.json`, reduces it to its text,
