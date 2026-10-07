@@ -1,10 +1,26 @@
 {
  "schema": 1,
  "schemaVersion": 1,
- "generated": "2026-10-03T09:19:00Z",
- "attribution": "Contains public sector information licensed under the Open Government Licence v3.0. Source: local highway authority definitive maps, via rowmaps.com.",
+ "generated": "2026-10-07T10:27:45Z",
+ "attribution": "Contains public sector information licensed under the Open Government Licence v3.0. Source: local highway authority definitive maps, via rowmaps.com. Byways for Bracknell Forest, Cambridgeshire, Central Bedfordshire, Cheshire East, Cheshire West and Chester, Devon, East Sussex, Essex, Hertfordshire, Lancashire, Northumberland, Oxfordshire, Wiltshire, Wokingham read from the councils' own live layers.",
  "licence": "OGL-3.0",
- "source": "Local highway authority definitive maps via rowmaps.com",
+ "source": "Local highway authority definitive maps via rowmaps.com; byways for 14 authorities from the council's own live layer",
+ "councilLayers": [
+  "Bracknell Forest",
+  "Cambridgeshire",
+  "Central Bedfordshire",
+  "Cheshire East",
+  "Cheshire West and Chester",
+  "Devon",
+  "East Sussex",
+  "Essex",
+  "Hertfordshire",
+  "Lancashire",
+  "Northumberland",
+  "Oxfordshire",
+  "Wiltshire",
+  "Wokingham"
+ ],
  "authorities": 149,
  "maxPlainBytes": 12582912,
  "dataset": "ways",
@@ -12,7 +28,7 @@
  "contextRadiusKm": null,
  "contextNote": "Bridleways and restricted byways are not on this map: it carries only the ways a motor vehicle may use. Where none is shown, this map has not looked - it does not mean there is none on the ground.",
  "wayClassCounts": {
-  "boat": 8353
+  "boat": 8363
  },
  "notCarried": {
   "footpath": 435299
@@ -90,12 +106,12 @@
    "note": "Byways open to all traffic - the lanes you may legally ride. Bridleways and restricted byways are not on this map: it carries only the ways a motor vehicle may use. Where none is shown, this map has not looked - it does not mean there is none on the ground.",
    "contextScope": "none",
    "file": "packages/ways-south-west.tbpack",
-   "sha256": "8859be5e6259af42f05c60c44407c42839f7296e9f6d10852bfce4c538d98089",
-   "bytes": 321183,
-   "plainBytes": 2385878,
+   "sha256": "295d3dd5b26f67da1411c6e948f126b3007476ef59b291d3bb3cb7c5a660f716",
+   "bytes": 321472,
+   "plainBytes": 2388309,
    "laneCount": 1712,
    "lengthKm": 912.49,
-   "generated": "2026-10-03T09:19:00Z"
+   "generated": "2026-10-07T10:27:45Z"
   },
   {
    "package": "ways",
@@ -107,12 +123,12 @@
    "note": "Byways open to all traffic - the lanes you may legally ride. Bridleways and restricted byways are not on this map: it carries only the ways a motor vehicle may use. Where none is shown, this map has not looked - it does not mean there is none on the ground.",
    "contextScope": "none",
    "file": "packages/ways-south-east.tbpack",
-   "sha256": "7e2e56157ed9a39c3f5bc799b99bab45f11f9bd7eae9d9ee22469ee4c084ed9d",
-   "bytes": 546437,
-   "plainBytes": 4119412,
+   "sha256": "01b34938cf2b75d98352a3f694e38007444dd24f5f8cff8231b900d2628b5da1",
+   "bytes": 547070,
+   "plainBytes": 4135450,
    "laneCount": 2899,
    "lengthKm": 1813.127,
-   "generated": "2026-10-03T05:15:56Z"
+   "generated": "2026-10-07T10:27:45Z"
   },
   {
    "package": "ways",
@@ -124,12 +140,12 @@
    "note": "Byways open to all traffic - the lanes you may legally ride. Bridleways and restricted byways are not on this map: it carries only the ways a motor vehicle may use. Where none is shown, this map has not looked - it does not mean there is none on the ground.",
    "contextScope": "none",
    "file": "packages/ways-east-anglia.tbpack",
-   "sha256": "51a45a21271ea258969160c80e7102d70c6db57eae1a3aac04321ab04ac1d738",
-   "bytes": 338876,
-   "plainBytes": 2134353,
+   "sha256": "cc5f62fe47940e97d1910f702f1ce8f7d96fd113a45ae0a209402c2ccf376d15",
+   "bytes": 339105,
+   "plainBytes": 2143477,
    "laneCount": 1280,
    "lengthKm": 1077.506,
-   "generated": "2026-10-03T05:15:56Z"
+   "generated": "2026-10-07T10:27:45Z"
   },
   {
    "package": "ways",
@@ -141,12 +157,12 @@
    "note": "Byways open to all traffic - the lanes you may legally ride. Bridleways and restricted byways are not on this map: it carries only the ways a motor vehicle may use. Where none is shown, this map has not looked - it does not mean there is none on the ground.",
    "contextScope": "none",
    "file": "packages/ways-midlands.tbpack",
-   "sha256": "e90a9bb4ecac592b35ea83765ccf6e2d564d60694570a19b13f0fde889437a43",
-   "bytes": 302631,
-   "plainBytes": 2380118,
+   "sha256": "b3d361ebcc3a0b8ba0cc40a687358ef35c868b3237be56bb0ef1616384c232ee",
+   "bytes": 303183,
+   "plainBytes": 2387449,
    "laneCount": 1771,
    "lengthKm": 1077.369,
-   "generated": "2026-10-03T09:19:00Z"
+   "generated": "2026-10-07T10:27:45Z"
   },
   {
    "package": "ways",
@@ -158,12 +174,12 @@
    "note": "Byways open to all traffic - the lanes you may legally ride. Bridleways and restricted byways are not on this map: it carries only the ways a motor vehicle may use. Where none is shown, this map has not looked - it does not mean there is none on the ground.",
    "contextScope": "none",
    "file": "packages/ways-wales.tbpack",
-   "sha256": "844bf3b4d63cb70a6d57ab6c575d88a1f654836702e30ab092e17050b04d3574",
-   "bytes": 208588,
-   "plainBytes": 1652679,
+   "sha256": "a294459e6e212cf07c740881a4c109a639ae3548c794e633109d262088d7b73a",
+   "bytes": 208702,
+   "plainBytes": 1653578,
    "laneCount": 1266,
    "lengthKm": 633.951,
-   "generated": "2026-10-03T09:19:00Z"
+   "generated": "2026-10-07T10:27:45Z"
   },
   {
    "package": "ways",
@@ -175,12 +191,12 @@
    "note": "Byways open to all traffic - the lanes you may legally ride. Bridleways and restricted byways are not on this map: it carries only the ways a motor vehicle may use. Where none is shown, this map has not looked - it does not mean there is none on the ground.",
    "contextScope": "none",
    "file": "packages/ways-north.tbpack",
-   "sha256": "342fc53aa1963cf56b40915bd10459c552005ede3b8ce6fabc5548097349bea8",
-   "bytes": 283236,
-   "plainBytes": 2075705,
-   "laneCount": 1447,
-   "lengthKm": 1127.698,
-   "generated": "2026-10-03T09:19:00Z"
+   "sha256": "26287b8e421ac4baed53e1467959c7916b052f27d74e5fbf78d1e3311c9ea0ea",
+   "bytes": 285288,
+   "plainBytes": 2100996,
+   "laneCount": 1457,
+   "lengthKm": 1137.05,
+   "generated": "2026-10-07T10:27:45Z"
   }
  ]
 }
