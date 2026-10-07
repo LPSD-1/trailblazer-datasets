@@ -22,9 +22,11 @@ rather than re-stated (and eventually forgotten) in each fetcher:
     blocked, read only, allowed by robots.txt).
   * ONE FIXED, NAMED COLLECTOR SERVER (the owner's policy, 7 October 2026).
     Dorset and Powys refuse GitHub's shared runners but answer an ordinary
-    server, so tools/home_collector.py reads them from one fixed server in
-    London, through this same client and these same rules, and commits what
-    it read for the builds (HOME-COLLECTOR.md). That is not a disguise and
+    server, and Wiltshire's closures register answers that server (whether
+    it answers the runners is unknown), so tools/home_collector.py reads
+    them from one fixed server in London, through this same client and
+    these same rules, and commits what it read for the builds
+    (HOME-COLLECTOR.md). That is not a disguise and
     not a rotation of addresses: the User-Agent is the same, the address
     never changes, and a council that refuses that server too is not asked
     from anywhere else.
@@ -40,11 +42,29 @@ rather than re-stated (and eventually forgotten) in each fetcher:
     Type and GetFeature: some council FeatureServers and GeoServers advertise
     editing to anonymous users, and nothing in this repository ever calls an
     edit operation.
+  * THE ONE POST: THE OWNER'S DECISION OF 7 OCTOBER 2026. Wiltshire Council's
+    register of rights of way closures is a public search form and nothing
+    else (a GET with the same fields answers "no closures"). The owner
+    approved reading it by submitting that form, read only, exactly as a
+    person pressing Search does: a narrowly scoped exception to "GET only",
+    and the only one. `post_form` is the sole way a POST is ever sent: only
+    to an action listed in FORM_POSTS (one host and one path, the register's
+    Result address), only after GETting the listed page that holds the form
+    and only if that page's form still posts there, and only with that
+    form's own fields - its hidden fields and anti-forgery token as the page
+    gave them, and the search fields FORM_POSTS names, each set to a value
+    the form itself offers where it offers a choice. Anything else is refused
+    before any request is made. Every other rule here applies to both
+    requests: the honest User-Agent, robots.txt, the pacing, https only,
+    checked redirects, the block list. Nothing here writes to any council
+    service.
 
 Pure standard library, so every CI job can import it without installing
 anything.
 """
 import datetime
+import html.parser
+import http.cookiejar
 import json
 import os
 import re
@@ -99,6 +119,107 @@ _OGC_READS = ("getcapabilities", "describefeaturetype", "getfeature",
 _CHALLENGE = re.compile(
     rb"(cf-browser-verification|challenge-platform|__cf_chl_|"
     rb"Attention Required! \| Cloudflare|Just a moment\.\.\.)", re.I)
+
+
+# THE ONE POST (the owner's decision, 7 October 2026; see the docstring).
+# Keyed by the exact action URL - scheme, host and path, no query. `page` is
+# the page holding the form, GET first for its token and cookie; `search` the
+# only fields a caller may set. The form's other fields (hidden ones, the
+# anti-forgery token) are sent exactly as the page gave them.
+FORM_POSTS = {
+    "https://apps.wiltshire.gov.uk/RightsOfWay/Closure/Result": {
+        "page": "https://apps.wiltshire.gov.uk/RightsOfWay/Closure",
+        "search": ("AppID", "RowID", "Day", "Month", "Year", "Parish",
+                   "GridReference", "PostCode", "ClosureType", "RowType",
+                   "Act"),
+        "decided": "7 October 2026, by the owner: Wiltshire Council's "
+                   "rights of way closures register, read by its public "
+                   "search form",
+    },
+}
+
+
+def form_key(url, fields):
+    """How a form search's answer is filed (home-collected/index.json): the
+    action URL with the search in a fragment, which no request ever sends,
+    so it can never be mistaken for a URL to GET."""
+    return "%s#post:%s" % (url, urllib.parse.urlencode(sorted(
+        fields.items())))
+
+
+class _Forms(html.parser.HTMLParser):
+    """Every <form> on a page: its method, action, and fields - the value of
+    each input, the options of each select, the values of each named
+    button. Enough to submit a form as its page offers it, nothing more."""
+
+    def __init__(self):
+        html.parser.HTMLParser.__init__(self, convert_charrefs=True)
+        self.forms, self._form, self._select = [], None, None
+
+    def handle_starttag(self, tag, attrs):
+        a = dict((k, v if v is not None else "") for k, v in attrs)
+        if tag == "form":
+            self._form = {"method": (a.get("method") or "get").lower(),
+                          "action": a.get("action") or "", "fields": {},
+                          "choices": {}}
+            self.forms.append(self._form)
+            return
+        form = self._form
+        if form is None:
+            return
+        if tag == "option" and self._select:
+            value = a.get("value", "")
+            form["choices"][self._select].append(value)
+            # The selected option, or else the first, as a browser sends.
+            if "selected" in a or form["fields"][self._select] is None:
+                form["fields"][self._select] = value
+            return
+        name = a.get("name")
+        if not name:
+            return
+        if tag == "input":
+            kind = (a.get("type") or "text").lower()
+            if kind in ("submit", "button", "image", "reset", "file",
+                        "checkbox", "radio"):
+                # Pressed or ticked by a person, never sent unasked.
+                form["choices"].setdefault(name, []).append(
+                    a.get("value") or "")
+            else:
+                form["fields"][name] = a.get("value") or ""
+        elif tag == "button":
+            form["choices"].setdefault(name, []).append(a.get("value") or "")
+        elif tag == "select":
+            self._select = name
+            form["choices"][name] = []
+            form["fields"][name] = None
+        elif tag == "textarea":
+            form["fields"][name] = ""
+
+    def handle_startendtag(self, tag, attrs):
+        self.handle_starttag(tag, attrs)
+
+    def handle_endtag(self, tag):
+        if tag == "form":
+            self._form = None
+            self._select = None
+        elif tag == "select" and self._form is not None and self._select:
+            if self._form["fields"].get(self._select) is None:
+                self._form["fields"][self._select] = ""
+            self._select = None
+
+
+def page_forms(body, base):
+    """The forms on a page, each action resolved against `base`."""
+    parser = _Forms()
+    parser.feed(body.decode("utf-8", "replace") if isinstance(body, bytes)
+                else body)
+    parser.close()
+    for form in parser.forms:
+        if form["action"]:
+            form["action"] = urllib.parse.urljoin(base, form["action"])
+        else:
+            form["action"] = base
+    return parser.forms
 
 
 class Refused(Exception):
@@ -338,6 +459,9 @@ class PoliteClient(object):
         # Conditional-request headers for the request in flight only
         # (get_if_changed); never anything that changes who we say we are.
         self._extra_headers = {}
+        # Cookies, only for the length of one post_form; None otherwise, so
+        # no other request ever carries or keeps one.
+        self._cookies = None
         # The owner's robots.txt decisions, and the file keeping the date
         # each overridden URL was last read. Without that file a client
         # never uses an override.
@@ -349,16 +473,26 @@ class PoliteClient(object):
 
     # -- plumbing ---------------------------------------------------------
 
-    def _urlopen(self, url, timeout):
-        """(status, headers, body). HTTP errors come back as a status."""
+    def _urlopen(self, url, timeout, data=None):
+        """(status, headers, body). HTTP errors come back as a status.
+
+        A GET, always - unless `data` is given, which only `post_form`
+        does, for an action it has checked against FORM_POSTS."""
         # HTML first: Durham's site answers 404 to an Accept that leads
         # with JSON (measured 7 October 2026); a JSON API ignores it.
         headers = {"User-Agent": USER_AGENT,
                    "Accept": "text/html, application/json;q=0.9, */*;q=0.8"}
         headers.update(self._extra_headers)
-        request = urllib.request.Request(url, headers=headers)
-        opener = urllib.request.build_opener(_CheckedRedirects(self._check),
-                                             *self._handlers)
+        request = urllib.request.Request(
+            url, data=data, headers=headers,
+            method="GET" if data is None else "POST")
+        handlers = [_CheckedRedirects(self._check)] + list(self._handlers)
+        if self._cookies is not None:
+            # Only inside post_form: the form's anti-forgery cookie, kept
+            # for its one GET and one POST and then dropped.
+            handlers.append(urllib.request.HTTPCookieProcessor(
+                self._cookies))
+        opener = urllib.request.build_opener(*handlers)
         try:
             with opener.open(request, timeout=timeout) as resp:
                 return resp.status, dict(resp.headers), resp.read()
@@ -377,12 +511,14 @@ class PoliteClient(object):
                 self._sleep(wait)
         self._last[host] = self._clock()
 
-    def _raw(self, url):
+    def _raw(self, url, data=None):
         host = host_of(url)
         self._pace(host)
         self.requests += 1
         try:
-            return self._open(url, self.timeout)
+            if data is None:
+                return self._open(url, self.timeout)
+            return self._open(url, self.timeout, data=data)
         except Refused:
             raise   # a refused redirect: a refusal, never a retry
         except Exception as e:  # noqa: BLE001 - network faults are data here
@@ -470,14 +606,15 @@ class PoliteClient(object):
             return False, None, headers
         return True, body, headers
 
-    def _get(self, url, allow_304=False):
-        """(status, body, headers) for a 200 (or a 304 when asked)."""
+    def _get(self, url, allow_304=False, data=None):
+        """(status, body, headers) for a 200 (or a 304 when asked). With
+        `data`, the one POST post_form has already checked."""
         host = host_of(url)
         self._check(url)
 
         attempt = 0
         while True:
-            status, headers, body = self._raw(url)
+            status, headers, body = self._raw(url, data)
             if status == 304 and allow_304:
                 return status, None, headers or {}
             if status == 200:
@@ -497,6 +634,59 @@ class PoliteClient(object):
             self._log("  %s answered %s; waiting %.0f s (attempt %d of %d)"
                       % (host, status, wait, attempt, self.retries))
             self._sleep(wait)
+
+    def post_form(self, page_url, action_url, search):
+        """The body a search form answers with: the one POST ever sent.
+
+        Only for an action listed in FORM_POSTS, from the page listed with
+        it, with `search` naming only the fields listed there. The page is
+        fetched first (a GET, under every rule here) for its form, hidden
+        fields, anti-forgery token and cookie; the form must still post to
+        `action_url`; each search field must be one the form has, set to a
+        value it offers where it offers a choice. Then that form, and
+        nothing else, is submitted. Refused before any request otherwise.
+        """
+        rule = FORM_POSTS.get(action_url)
+        if rule is None:
+            raise Refused("a POST is sent only to a search form the owner "
+                          "approved (FORM_POSTS); not to %s" % action_url)
+        if page_url != rule["page"]:
+            raise Refused("the form for %s is read from %s, not %s"
+                          % (action_url, rule["page"], page_url))
+        outside = sorted(set(search) - set(rule["search"]))
+        if outside:
+            raise Refused("only the form's search fields are set; not %s"
+                          % ", ".join(outside))
+        for name, value in search.items():
+            if not isinstance(value, str) or len(value) > 40 or \
+                    re.search(r"[\x00-\x1f]", value):
+                raise Refused("%s=%r is not a search value" % (name, value))
+        self._check(page_url)
+        self._check(action_url)
+        self._cookies = http.cookiejar.CookieJar()
+        try:
+            _status, page, _headers = self._get(page_url)
+            forms = [f for f in page_forms(page, page_url)
+                     if f["method"] == "post" and f["action"] == action_url]
+            if len(forms) != 1:
+                raise FetchFailed("%s no longer holds one form posting to %s;"
+                                  " nothing was sent" % (page_url, action_url))
+            form = forms[0]
+            fields = dict((k, v) for k, v in form["fields"].items()
+                          if v is not None)
+            for name, value in sorted(search.items()):
+                if name in form["choices"]:
+                    if value not in form["choices"][name]:
+                        raise Refused("%s=%r is not one of the form's own "
+                                      "choices" % (name, value))
+                elif name not in fields:
+                    raise Refused("the form at %s has no field %s"
+                                  % (page_url, name))
+                fields[name] = value
+            data = urllib.parse.urlencode(fields).encode("ascii")
+            return self._get(action_url, data=data)[1]
+        finally:
+            self._cookies = None
 
     def _check(self, url):
         """Refused unless `url` may be requested: https, not blocked, read

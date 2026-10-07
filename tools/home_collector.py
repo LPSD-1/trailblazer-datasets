@@ -8,11 +8,22 @@
 A few councils refuse GitHub's shared runners (403, measured 7 October
 2026) and answer an ordinary server: Dorset's GeoServer (its rights of way
 closures and its register of definitive map applications) and Powys's
-order pages and the order documents they link to. This runs on one fixed
-server in London, reads only those sources, and commits what it read to
-home-collected/; the Actions builds then read those snapshots instead of
-asking the councils themselves (HomeClient, below). The name is historical:
-the sources were first read from a machine at home.
+order pages and the order documents they link to. Wiltshire's register of
+rights of way closures answered the server too (7 October 2026); whether it
+answers GitHub's runners is unknown, so it is read here rather than risk a
+refusal in CI. This runs on one fixed server in London, reads only those
+sources, and commits what it read to home-collected/; the Actions builds
+then read those snapshots instead of asking the councils themselves
+(HomeClient, below). The name is historical: the sources were first read
+from a machine at home.
+
+WILTSHIRE'S REGISTER IS A SEARCH FORM (`"kind": "form"`): its BOAT
+closures are had by submitting the form's own search, the one POST the
+owner approved (7 October 2026; tools/polite_http.py, FORM_POSTS), filed in
+the index under polite_http.form_key. The detail page of each closure it
+lists is then a plain GET (`"details"`), re-read at most every
+`details_every_days` unless the list itself changed, and only the page's
+<main> is kept (`"keep": "main"`), its line endings made LF.
 
 THE OWNER'S POLICY (7 October 2026). Reading a council from this one fixed,
 honestly named server after it refuses GitHub's shared runners is allowed:
@@ -198,6 +209,32 @@ def canonical(kind, body):
 _VOLATILE_ID = re.compile(r"\.fid--[0-9a-f]+_[0-9a-f]+_-?[0-9a-f]+$")
 
 
+def main_only(body):
+    """A page's <main> element and nothing else, with LF line endings: all
+    a reader of the snapshot needs (`"keep": "main"`), without the council's
+    header, footer and scripts."""
+    start = body.find(b"<main")
+    end = body.find(b"</main>", start)
+    if start >= 0 and end > start:
+        body = body[start:end + len(b"</main>")]
+    return body.replace(b"\r\n", b"\n")
+
+
+def _wiltshire_details(body):
+    import wiltshire_closures
+    return wiltshire_closures.detail_urls(body)
+
+
+#: What a search's answer leads to (`"details"`): the pages to read next,
+#: or None when the answer cannot be read (then nothing is pruned).
+DETAILS = {"wiltshire-closures": _wiltshire_details}
+
+
+def _age_days(day, today):
+    return (datetime.date.fromisoformat(today)
+            - datetime.date.fromisoformat(day)).days
+
+
 # --------------------------------------------------------------- collect
 
 def collect(client, home=HOME, today=None, config=None, machine=None):
@@ -213,14 +250,28 @@ def collect(client, home=HOME, today=None, config=None, machine=None):
     while queue:
         src = queue.pop(0)
         url = src["url"]
-        if url in seen:
+        form = src.get("kind") == "form"
+        # A search's answer is filed under its search (polite_http.form_key);
+        # everything else under its URL.
+        key = polite_http.form_key(url, src["form"]) if form else url
+        if key in seen:
             continue
-        seen.add(url)
-        entry = dict(index.get(url) or {})
+        seen.add(key)
+        entry = dict(index.get(key) or {})
+        every = src.get("every_days")
+        if every and not src.get("parent_changed") and entry.get("file") \
+                and entry.get("checked") and \
+                _age_days(entry["checked"], today) < every:
+            continue    # read lately, and the list it is on has not changed
         try:
-            fresh, body, headers = client.get_if_changed(
-                url, last_modified=entry.get("last_modified"),
-                etag=entry.get("etag"))
+            if form:
+                # The owner's one approved POST: the form's own search.
+                fresh, headers = True, {}
+                body = client.post_form(src["form_page"], url, src["form"])
+            else:
+                fresh, body, headers = client.get_if_changed(
+                    url, last_modified=entry.get("last_modified"),
+                    etag=entry.get("etag"))
         except NotDue:
             fresh, body = False, None
         except (Refused, FetchFailed) as e:
@@ -228,20 +279,23 @@ def collect(client, home=HOME, today=None, config=None, machine=None):
             failures.append("%s: %s" % (src["id"], e))
             entry.setdefault("failing_since", today)
             entry["error"] = str(e)[:200]
-            index[url] = dict(entry, id=src["id"])
+            index[key] = dict(entry, id=src["id"])
             continue
         if fresh:
             try:
-                stored, digest = canonical(src.get("kind", "page"), body)
+                stored, digest = canonical(
+                    "page" if form else src.get("kind", "page"), body)
             except FetchFailed as e:
                 failures.append("%s: %s" % (src["id"], e))
                 continue
-            for key, header in (("last_modified", "last-modified"),
-                                ("etag", "etag")):
+            if src.get("keep") == "main":
+                stored = main_only(stored)
+            for field, header in (("last_modified", "last-modified"),
+                                  ("etag", "etag")):
                 value = next((v for k, v in (headers or {}).items()
                               if k.lower() == header), None)
                 if value:
-                    entry[key] = value
+                    entry[field] = value
             keep_bytes = not (src.get("kind") == "document"
                               and is_pdf(url, body))
             if digest != entry.get("digest"):
@@ -267,6 +321,8 @@ def collect(client, home=HOME, today=None, config=None, machine=None):
                          else "digest recorded")
             if getattr(client, "overridden", {}).get(url):
                 entry["override"] = client.overridden[url]
+            if every:
+                entry["checked"] = today
         if src.get("kind") == "document" and (entry.get("file") or "") \
                 .lower().endswith(".pdf"):
             forget_document_bytes(home, entry)
@@ -275,7 +331,29 @@ def collect(client, home=HOME, today=None, config=None, machine=None):
         entry.update({"id": src["id"], "kind": src.get("kind", "page"),
                       "council": src.get("council"),
                       "authority": src.get("authority")})
-        index[url] = entry
+        index[key] = entry
+        # The pages a search's answer lists (each Wiltshire closure's
+        # detail page), from the stored snapshot, so an unchanged list still
+        # yields them. A page no longer listed is no longer kept.
+        if src.get("details") and entry.get("file"):
+            with open(os.path.join(home, "snapshots", entry["file"]),
+                      "rb") as fh:
+                urls = DETAILS[src["details"]](fh.read())
+            if urls is not None:
+                prefix = "%s/detail/" % src["id"]
+                for gone in [k for k, e in index.items()
+                             if str((e or {}).get("id") or "")
+                             .startswith(prefix) and k not in set(urls)]:
+                    forget_document_bytes(home, index.pop(gone))
+                    changed.append("%s (no longer listed)" % gone)
+                for detail in urls:
+                    queue.append({
+                        "id": prefix + detail.rsplit("=", 1)[-1],
+                        "url": detail, "kind": "page", "keep": "main",
+                        "every_days": src.get("details_every_days") or 1,
+                        "parent_changed": src["id"] in changed,
+                        "council": src.get("council"),
+                        "authority": src.get("authority")})
         # Documents a page links to (Powys's order PDFs), from the stored
         # snapshot, so an unchanged page still yields its links.
         if src.get("follow") and entry.get("file"):
@@ -481,6 +559,16 @@ class HomeClient(object):
     def get(self, url):
         body = self._home(url)
         return body if body is not None else self.client.get(url)
+
+    def post_form(self, page_url, action_url, search):
+        """A search form's answer, from the collector's snapshot of that
+        very search. Defined here, not left to __getattr__: a council the
+        collector reads is never sent a POST from GitHub's runners, and
+        without a snapshot this is a refusal, not a request."""
+        body = self._home(polite_http.form_key(action_url, search))
+        if body is not None:
+            return body
+        return self.client.post_form(page_url, action_url, search)
 
     def get_json(self, url):
         body = self._home(url)

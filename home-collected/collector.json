@@ -1,5 +1,5 @@
 {
- "about": "The councils that refuse GitHub's runners (403, measured 7 October 2026) and answer the always-on collector server. Read by tools/home_collector.py --machine server; see HOME-COLLECTOR.md. URLs must be exactly those the pipeline asks for, so the CI builds find them here instead of asking the council. Norfolk's and Wiltshire's pages were retired on 7 October 2026: they refuse every data centre (Cloudflare) and none of them fed a published order.",
+ "about": "The councils read by the always-on collector server rather than by GitHub's runners: those that refuse the runners (403, measured 7 October 2026), and Wiltshire's closures register, which answers the server and has not been tried from the runners. Read by tools/home_collector.py --machine server; see HOME-COLLECTOR.md. URLs must be exactly those the pipeline asks for, so the CI builds find them here instead of asking the council. A \"form\" source is read by submitting the council's own search form - the one POST the owner approved, 7 October 2026 (tools/polite_http.py, FORM_POSTS). Norfolk's pages and Wiltshire's www guide page were retired on 7 October 2026: they refuse every data centre (Cloudflare) and none of them fed a published order.",
  "log": "collector.log",
  "min_gap_s": 4.0,
  "sources": [
@@ -39,6 +39,24 @@
    "authority": "Powys",
    "feeds": "order register page powys-county-council/2446",
    "follow": "^https://en\\.powys\\.gov\\.uk/media/\\d+/",
+   "machine": "server"
+  },
+  {
+   "id": "wiltshire-closures",
+   "url": "https://apps.wiltshire.gov.uk/RightsOfWay/Closure/Result",
+   "kind": "form",
+   "form_page": "https://apps.wiltshire.gov.uk/RightsOfWay/Closure",
+   "form": {
+    "Act": "Search",
+    "ClosureType": "0",
+    "RowType": "1"
+   },
+   "keep": "main",
+   "details": "wiltshire-closures",
+   "details_every_days": 1,
+   "council": "Wiltshire Council",
+   "authority": "Wiltshire",
+   "feeds": "council source wiltshire-closures",
    "machine": "server"
   }
  ]

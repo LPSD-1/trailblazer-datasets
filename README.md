@@ -146,6 +146,7 @@ council's own `url` for it:
 | `northumberland-closures` | Northumberland County Council - rights of way closures and TTROs | Published by the council |
 | `bracknell-prow-tros` | Bracknell Forest Council - public rights of way TROs | Published by the council |
 | `hertfordshire-ptros` | Hertfordshire County Council - rights of way layer (permanent traffic regulation orders) | Open Government Licence v3.0 |
+| `wiltshire-closures` | Wiltshire Council - rights of way closures register (BOATs; collected directly from the council by the collector server) | Published by the council (no licence stated) |
 | `order-register` | Published lists of permanent and seasonal byway orders: East Sussex, Surrey, West and North Northamptonshire, Central Bedfordshire, Derbyshire, Lake District NPA (and others as reviewed) | Published by each council; transcribed and reviewed |
 
 The pack's own `attribution` and `sources` name every one of these, and each
@@ -157,10 +158,18 @@ followed only where the same rules allow, and nothing behind a bot challenge
 (`tools/polite_http.py`). By the owner's policy of 7 October 2026, a council
 that refuses GitHub's shared runners (Dorset, Powys) is read from one fixed,
 honestly named collector server instead, with the same client and rules
-(`HOME-COLLECTOR.md`). That is not a disguise or a rotation of addresses: a
-council that refuses the server too is not asked from anywhere else, and a
-real block is never worked around (no proxies, no other addresses, no
-borrowed User-Agent, no headless browser). West Berkshire's closures
+(`HOME-COLLECTOR.md`), and so is Wiltshire's closures register, which
+answers that server and has not been tried from the runners. The coverage
+table credits each "collected directly from the council" with the date.
+That is not a disguise or a rotation of addresses: a council that refuses
+the server too is not asked from anywhere else, and a real block is never
+worked around (no proxies, no other addresses, no borrowed User-Agent, no
+headless browser). Every council read is a GET but one: Wiltshire's
+register is a search form, read by submitting its own search, read only,
+as a person pressing Search does. The owner approved that on 7 October
+2026, and `tools/polite_http.py` allows a POST to that one form and no
+other (`FORM_POSTS`). Its voluntary closures are requests, not orders, and
+are held for review rather than drawn as closures. West Berkshire's closures
 layer is listed and not read: its GIS host's robots.txt disallows all
 automated access. No personal data is stored: contact names, phone numbers,
 e-mail addresses and applicants are dropped before anything is written. A

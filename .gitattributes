@@ -42,3 +42,8 @@
 # byte-for-byte by tools that compare builds, so pin them to LF rather than
 # leaving it to whatever each contributor's autocrlf happens to be.
 *.json     text eol=lf
+
+# Council pages saved as test fixtures (tools/fixtures/): bytes as captured,
+# never rewritten by autocrlf, so a test reads on every machine exactly what
+# it read when it was written.
+tools/fixtures/** -text

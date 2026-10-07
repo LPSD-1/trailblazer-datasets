@@ -1,0 +1,520 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<!--renderers and meta-->
+	<meta charset="utf-8" />
+	<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+	<meta http-equiv="X-UA-Compatible" content="IE=edge">
+
+	<meta http-equiv="Content-Security-Policy" content="style-src 'self' *.wiltshire.gov.uk fonts.googleapis.com;font-src 'self' *.wiltshire.gov.uk fonts.gstatic.com;script-src 'self' *.wiltshire.gov.uk;connect-src http://localhost:* ws://localhost:*;object-src 'none';" />
+	<meta http-equiv="X-Content-Type-Options" content="nosniff" />
+	<meta http-equiv="X-XSS-Protection" content="0; mode=block" />
+	<meta http-equiv="Cache-Control" content="no-cache" /> <!-- use no-store for no caching whatsoever -->
+
+	<!--title-->
+	<title>Rights of way applications</title>
+	
+	<link href="https://fonts.googleapis.com/css?family=Cabin&display=swap">
+	
+	<script src="/RightsOfWay/lib/font-awesome/js/all.min.js" data-auto-add-css="false"></script>
+	<link rel="stylesheet" href="/RightsOfWay/lib/font-awesome/css/solid.min.css" />
+	<link rel="stylesheet" href="/RightsOfWay/lib/font-awesome/css/svg-with-js.min.css" />
+
+	<script src="/RightsOfWay/lib/govuk_v4/govuk-frontend-4.6.0.min.js"></script>
+	<link rel="stylesheet" href="/RightsOfWay/lib/govuk_v4/govuk-frontend-4.6.0.min.css" />
+
+	<script src="/RightsOfWay/lib/bootstrap/js/bootstrap.bundle.js"></script>
+	<link rel="stylesheet" href="/RightsOfWay/lib/bootstrap/css/bootstrap.min.css" />
+
+
+	<link rel="stylesheet" href="/RightsOfWay/css/overrides.css" rel="stylesheet" />
+	<link rel="stylesheet" href="/RightsOfWay/css/Site.css" rel="stylesheet" />
+	<link rel="stylesheet" href="/RightsOfWay/css/styles.css" rel="stylesheet" />
+	
+	<link rel="icon" href="/RightsOfWay/favicon.ico" type="image/x-icon" />
+</head>
+
+<body>
+	
+	<div class="govuk-body">
+		
+		
+		<!--header-->
+<header class="topnav">
+	<div class="govuk-width-container">
+		<nav class="navbar navbar-expand-lg background-color-006750 navbar-custom">
+			<div class="nav-div-bar">
+				<div>
+					<a class="link-pointer" href="/RightsOfWay">
+						<img src="/RightsOfWay/images/logo.png" alt="Wiltshire Council Logo" class="logo-img" title="Wiltshire Council" />
+					</a>
+				</div>
+
+				<div class="top-nav-right">
+				</div>
+			</div>
+		</nav>
+	</div>
+</header>
+
+<!--impose optional banner-->    
+
+
+
+
+		<div class="govuk-width-container">
+			<main class="govuk-main-wrapper">
+				<div class="govuk-grid-row">
+					<div class="govuk-grid-column-full">
+						
+	<div class="govuk-breadcrumbs">
+		<ol class="govuk-breadcrumbs__list">
+			<li class="govuk-breadcrumbs__list-item"><a href="/RightsOfWay">Home</a></li>
+			<li class="govuk-breadcrumbs__list-item">Closure Orders</li>
+		</ol>
+	</div>
+
+					</div>
+				</div>
+				
+				<h1 class="govuk-heading-xl">Closure Search</h1>
+				
+				<div class="govuk-grid-row">
+
+					<div class="govuk-grid-column-three-quarters">
+						
+
+
+<div class="markdig"><h3 id="search-the-register-of-public-rights-of-way-permanent-and-voluntary-closures" class="govuk-heading-m">Search the register of public rights of way permanent and voluntary closures</h3>
+<p>For temporary closures please visit <a href="https://one.network/uk" target="_blank">https://one.network/uk</a> (opens in a new tab)</p></div>
+
+
+
+<form method="post" action="/RightsOfWay/Closure/Result">
+	<fieldset>
+
+		<div class="govuk-form-group mb-0">
+			<label class="govuk-label" for="AppID">Application Reference</label>
+			<hint class="govuk-hint govuk-hint-small">Search for a specific application (format ABCD/12/123)</hint>
+			<br />
+			<input class="govuk-input govuk-input--width-10" type="text" id="AppID" name="AppID" value="" />
+			<span class="govuk-error-message"></span>
+		</div>
+
+		<div class="govuk-form-group mb-0">
+			<label class="govuk-label" for="RowID">Right of Way</label>
+			<hint class="govuk-hint govuk-hint-small">Search for a specific right of way (format ABCD12)</hint>
+			<br />
+			<input class="govuk-input govuk-input--width-5" type="text" id="RowID" name="RowID" value="" />
+			<span class="govuk-error-message"></span>
+		</div>
+
+		<div class="govuk-form-group mb-0">
+			<label class="govuk-label" for="Day">Date of closure</label>
+			<hint class="govuk-hint govuk-hint-small">Search for closures active on a given date (for example 7 10 2026)</hint>
+			<div class="govuk-date-input">
+				<div class="govuk-date-input__item">
+					<div class="govuk-form-group">
+						<label class="govuk-label govuk-date-input__label" for="Day">Day</label>
+						<input class="govuk-input govuk-date-input__input govuk-input--width-2" inputmode="numeric" type="text" id="Day" name="Day" value="">
+					</div>
+				</div>
+				<div class="govuk-date-input__item">
+					<div class="govuk-form-group">
+						<label class="govuk-label govuk-date-input__label" for="Month">Month</label>
+						<input class="govuk-input govuk-date-input__input govuk-input--width-2" inputmode="numeric" type="text" id="Month" name="Month" value="">
+					</div>
+				</div>
+				<div class="govuk-date-input__item">
+					<div class="govuk-form-group">
+						<label class="govuk-label govuk-date-input__label" for="Year">Year</label>
+						<input class="govuk-input govuk-date-input__input govuk-input--width-4" inputmode="numeric" type="text" id="Year" name="Year" value="">
+					</div>
+				</div>
+			</div>
+			<span class="govuk-error-message"></span>
+			<span class="govuk-error-message"></span>
+			<span class="govuk-error-message"></span>
+		</div>
+
+
+		<div class="govuk-form-group mb-0">
+			<label class="govuk-label" for="Parish">Parish</label>
+			<hint class="govuk-hint govuk-hint-small">Select the parish to search from the following list</hint>
+			<br />
+			<select class="govuk-select" id="Parish" name="Parish">
+				<option value="">Any Parish</option>
+			<option value="ALDB">Aldbourne</option>
+<option value="ALDE">Alderbury</option>
+<option value="ACAN">All Cannings</option>
+<option value="ALLI">Allington</option>
+<option value="ALTO">Alton Barnes</option>
+<option value="ALVE">Alvediston</option>
+<option value="AMES">Amesbury</option>
+<option value="ANST">Ansty </option>
+<option value="AKEY">Ashton Keynes</option>
+<option value="ATWO">Atworth</option>
+<option value="AVEB">Avebury</option>
+<option value="BSTM">Barford St Martin</option>
+<option value="BAYD">Baydon</option>
+<option value="BEEC">Beechingstoke</option>
+<option value="BBAS">Berwick Bassett</option>
+<option value="BSJA">Berwick St James</option>
+<option value="BSJO">Berwick St John</option>
+<option value="BIDD">Biddestone</option>
+<option value="BCAN">Bishops Cannings</option>
+<option value="BSTO">Bishopstone</option>
+<option value="BISH">Bishopstrow</option>
+<option value="BOWE">Bowerchalke</option>
+<option value="BOX">Box</option>
+<option value="BOYT">Boyton</option>
+<option value="BRAD">Bradford on Avon</option>
+<option value="BRAT">Bratton</option>
+<option value="BREM">Bremhill</option>
+<option value="BRIN">Brinkworth</option>
+<option value="BRIT">Britford</option>
+<option value="BDEV">Brixton Deverill</option>
+<option value="BHIN">Broad Hinton</option>
+<option value="BTOW">Broad Town</option>
+<option value="BROA">Broadchalke</option>
+<option value="BROK">Brokenborough</option>
+<option value="BROM">Bromham</option>
+<option value="BGIF">Broughton Gifford</option>
+<option value="BULF">Bulford</option>
+<option value="BULK">Bulkington</option>
+<option value="BURB">Burbage</option>
+<option value="BURC">Burcombe</option>
+<option value="BUTT">Buttermere</option>
+<option value="CALN">Calne</option>
+<option value="CALW">Calne Without</option>
+<option value="CCOM">Castle Combe</option>
+<option value="CHAP">Chapmanslade</option>
+<option value="CHAR">Charlton</option>
+<option value="CSTP">Charlton St Peter</option>
+<option value="CHER">Cherhill</option>
+<option value="CHEM">Cheverell Magna</option>
+<option value="CHIC">Chicklade</option>
+<option value="CHIL">Chilmark</option>
+<option value="CFOL">Chilton Foliat</option>
+<option value="CHIP">Chippenham</option>
+<option value="CHIW">Chippenham Without</option>
+<option value="CHIR">Chirton</option>
+<option value="CHIT">Chitterne</option>
+<option value="CMAL">Christian Malford</option>
+<option value="CHUT">Chute</option>
+<option value="CFOR">Chute Forest</option>
+<option value="CPYP">Clyffe Pypard</option>
+<option value="CODF">Codford</option>
+<option value="COLE">Colerne</option>
+<option value="CKIN">Colingbourne Kingston</option>
+<option value="CDUC">Collingbourne Ducis</option>
+<option value="CBAS">Compton Bassett</option>
+<option value="CCHA">Compton Chamberlayne</option>
+<option value="CBIS">Coombe Bissett</option>
+<option value="CORM">Corsham</option>
+<option value="CORY">Corsley</option>
+<option value="ECOU">Coulston</option>
+<option value="CRIC">Cricklade</option>
+<option value="CRUD">Crudwell</option>
+<option value="DAUN">Dauntsey</option>
+<option value="DHST">Derry Hill and Studley</option>
+<option value="DEVI">Devizes</option>
+<option value="DMAR">Dilton Marsh</option>
+<option value="DINT">Dinton</option>
+<option value="DSTA">Donhead St Andrew</option>
+<option value="DSTM">Donhead St Mary</option>
+<option value="DOWN">Downton</option>
+<option value="DURN">Durnford</option>
+<option value="DURR">Durrington</option>
+<option value="EKEN">East Kennet and Alton</option>
+<option value="EKNO">East Knoyle</option>
+<option value="EAST">Easterton</option>
+<option value="EGRE">Easton Grey</option>
+<option value="EROY">Easton Royal</option>
+<option value="EWAK">Ebbesbourne Wake</option>
+<option value="EDIN">Edington</option>
+<option value="ENFO">Enford</option>
+<option value="ERLE">Erlestoke</option>
+<option value="ETCH">Etchilhampton</option>
+<option value="EVER">Everleigh</option>
+<option value="FIGH">Figheldean</option>
+<option value="FITT">Fittleton</option>
+<option value="FBIS">Fonthill Bishop</option>
+<option value="FGIF">Fonthill Gifford</option>
+<option value="FOVA">Fovant</option>
+<option value="FROX">Froxfield</option>
+<option value="FYFD">Fyfield</option>
+<option value="GRAF">Grafton</option>
+<option value="GBED">Great Bedwyn</option>
+<option value="GHIN">Great Hinton</option>
+<option value="GSOM">Great Somerford</option>
+<option value="GWIS">Great Wishford</option>
+<option value="GRIM">Grimstead</option>
+<option value="GRIT">Grittleton</option>
+<option value="HAM">Ham</option>
+<option value="HANK">Hankerton</option>
+<option value="HEDD">Heddington</option>
+<option value="HEYT">Heytesbury</option>
+<option value="HEYW">Heywood</option>
+<option value="HILM">Hilmarton</option>
+<option value="HILP">Hilperton</option>
+<option value="HIND">Hindon</option>
+<option value="HOLT">Holt</option>
+<option value="HORN">Horningsham</option>
+<option value="HUSH">Huish</option>
+<option value="HULL">Hullavington</option>
+<option value="IDMI">Idmiston</option>
+<option value="KEEV">Keevil</option>
+<option value="KENV">Kennet Valley</option>
+<option value="KILM">Kilmington</option>
+<option value="KDEV">Kingston Deverill</option>
+<option value="KLAN">Kington Langley</option>
+<option value="KSTM">Kington St Michael</option>
+<option value="KNOO">Knook</option>
+<option value="LACO">Lacock</option>
+<option value="LAND">Landford</option>
+<option value="LBUR">Langley Burrell</option>
+<option value="LATT">Latton</option>
+<option value="LAFO">Laverstock and Ford</option>
+<option value="LECL">Lea and Cleverton</option>
+<option value="LEIG">Leigh</option>
+<option value="LSTO">Limpley Stoke</option>
+<option value="LBED">Little Bedwyn</option>
+<option value="LSOM">Little Somerford</option>
+<option value="LDEV">Longbridge Deverill</option>
+<option value="LUCK">Luckington</option>
+<option value="LUDG">Ludgershall</option>
+<option value="LMIL">Lydiard Millicent</option>
+<option value="LTRE">Lydiard Tregoze</option>
+<option value="LYNE">Lyneham</option>
+<option value="MBRA">Maiden Bradley</option>
+<option value="MALM">Malmesbury</option>
+<option value="MALW">Malmesbury Without</option>
+<option value="MANN">Manningford</option>
+<option value="MARD">Marden</option>
+<option value="MLAV">Market Lavington</option>
+<option value="MARL">Marlborough</option>
+<option value="MARS">Marston</option>
+<option value="MMEY">Marston Meysey</option>
+<option value="MELK">Melksham</option>
+<option value="MELW">Melksham Without</option>
+<option value="MERE">Mere</option>
+<option value="MILD">Mildenhall</option>
+<option value="MILS">Milston</option>
+<option value="MLIL">Milton Lilbourne</option>
+<option value="MINE">Minety</option>
+<option value="MFAR">Monkton Farleigh</option>
+<option value="NAVO">Netheravon</option>
+<option value="NHAM">Netherhampton</option>
+<option value="NETT">Nettleton</option>
+<option value="NTON">Newton Tony</option>
+<option value="NBRA">North Bradley</option>
+<option value="NNEW">North Newnton</option>
+<option value="NTID">North Tidworth</option>
+<option value="NWRA">North Wraxall</option>
+<option value="NBAV">Norton Bavant</option>
+<option value="OAKS">Oaksey</option>
+<option value="ODST">Odstock</option>
+<option value="OSTA">Ogbourne St Andrew</option>
+<option value="OSTG">Ogbourne St George</option>
+<option value="ORCH">Orcheston</option>
+<option value="PATN">Patney</option>
+<option value="PEWS">Pewsey</option>
+<option value="PIFA">Pitton and Farley</option>
+<option value="POTT">Potterne</option>
+<option value="POUL">Poulshot</option>
+<option value="PRES">Preshute</option>
+<option value="PURT">Purton</option>
+<option value="QUID">Quidhampton</option>
+<option value="RAMS">Ramsbury</option>
+<option value="REDL">Redlynch</option>
+<option value="ROUN">Roundway</option>
+<option value="ROWD">Rowde</option>
+<option value="WBAS">Royal Wootton Bassett</option>
+<option value="RUSH">Rushall</option>
+<option value="SALS">Salisbury</option>
+<option value="SPTA">Salisbury Plain Training Area</option>
+<option value="SAVE">Savernake</option>
+<option value="SEAG">Seagry</option>
+<option value="SESE">Sedgehill &amp; Semley</option>
+<option value="SEEN">Seend</option>
+<option value="SEMI">Semington</option>
+<option value="SHAL">Shalbourne</option>
+<option value="SHRR">Sherrington</option>
+<option value="SHER">Sherston</option>
+<option value="SHRE">Shrewton</option>
+<option value="SOPW">Sopworth</option>
+<option value="SNEW">South Newton</option>
+<option value="STID">South Tidworth</option>
+<option value="SWRA">South Wraxall</option>
+<option value="SWCK">Southwick</option>
+<option value="SSTB">Stanton St Bernard</option>
+<option value="SSTQ">Stanton St Quintin</option>
+<option value="STAP">Stapleford</option>
+<option value="STAV">Staverton</option>
+<option value="SASH">Steeple Ashton</option>
+<option value="SLAN">Steeple Langford</option>
+<option value="STER">Stert</option>
+<option value="STOC">Stockton</option>
+<option value="STGA">Stourton with Gasper</option>
+<option value="BSTO">Stratford Tony</option>
+<option value="SBEN">Sutton Benger</option>
+<option value="SMAN">Sutton Mandeville</option>
+<option value="SVEN">Sutton Veny</option>
+<option value="SWAL">Swallowcliffe</option>
+<option value="TEFF">Teffont</option>
+<option value="TIFO">Tidcombe &amp; Fosbury</option>
+<option value="TIDW">Tidworth</option>
+<option value="TILS">Tilshead</option>
+<option value="TISB">Tisbury</option>
+<option value="TOCK">Tockenham</option>
+<option value="TROY">Tollard Royal</option>
+<option value="TROW">Trowbridge</option>
+<option value="UPAV">Upavon</option>
+<option value="ULOV">Upton Lovell</option>
+<option value="USCU">Upton Scudamore</option>
+<option value="URCH">Urchfont</option>
+<option value="WARM">Warminster</option>
+<option value="WASH">West Ashton</option>
+<option value="WDEA">West Dean</option>
+<option value="WKNO">West Knoyle</option>
+<option value="WLAV">West Lavington</option>
+<option value="WOVE">West Overton</option>
+<option value="WTIS">West Tisbury</option>
+<option value="WEST">Westbury</option>
+<option value="WWOO">Westwood</option>
+<option value="WHIT">Whiteparish</option>
+<option value="WILC">Wilcot</option>
+<option value="WIHU">Wilcot Huish and Oare</option>
+<option value="WILS">Wilsford</option>
+<option value="WCLA">Wilsford Cum Lake</option>
+<option value="WILT">Wilton</option>
+<option value="WING">Wingfield</option>
+<option value="WINS">Winsley</option>
+<option value="WINT">Winterbourne</option>
+<option value="WIBA">Winterbourne Bassett</option>
+<option value="WINT">Winterbourne Earls</option>
+<option value="WMON">Winterbourne Monkton</option>
+<option value="WSTO">Winterbourne Stoke</option>
+<option value="WSLO">Winterslow</option>
+<option value="WBOR">Woodborough</option>
+<option value="WFOR">Woodford</option>
+<option value="WBAS">Wootton Bassett</option>
+<option value="WRIV">Wootton Rivers</option>
+<option value="WORT">Worton</option>
+<option value="WYLY">Wylye</option>
+<option value="YKEY">Yatton Keynell</option>
+<option value="ZEAL">Zeals</option>
+</select>
+			<span class="govuk-error-message"></span>
+		</div>
+
+		<div class="govuk-form-group mb-0">
+			<label class="govuk-label" for="GridReference">Grid Reference</label>
+			<hint class="govuk-hint govuk-hint-small">Search for applications relating to paths within a mile of this location</hint>
+			<br />
+			<input class="govuk-input govuk-input--width-10" type="text" id="GridReference" name="GridReference" value="" />
+			<span class="govuk-error-message"></span>
+		</div>
+
+		<div class="govuk-form-group mb-0">
+			<label class="govuk-label" for="PostCode">Post Code</label>
+			<hint class="govuk-hint govuk-hint-small">Search for applications relating to paths within a mile of this location</hint>
+			<br />
+			<input class="govuk-input govuk-input--width-5" type="text" id="PostCode" name="PostCode" value="" />
+			<span class="govuk-error-message"></span>
+		</div>
+
+		<div class="govuk-form-group mb-0">
+			<label class="govuk-label" for="ClosureType">Closure Type</label>
+			<hint class="govuk-hint govuk-hint-small">Select one of the following</hint>
+			<br />
+			<select class="govuk-select" id="ClosureType" name="ClosureType"><option selected="selected" value="0">Any type</option>
+<option value="1">Special</option>
+<option value="2">Permanent</option>
+<option value="3">Seasonal</option>
+<option value="4">Voluntary</option>
+<option value="5">Experimental</option>
+</select>
+			<span class="govuk-error-message"></span>
+		</div>
+
+		<div class="govuk-form-group mb-0">
+			<label class="govuk-label" for="RowType">Public right of way Type</label>
+			<hint class="govuk-hint govuk-hint-small">Select one of the following</hint>
+			<br />
+			<select class="govuk-select" id="RowType" name="RowType"><option selected="selected" value="0">Any right of way</option>
+<option value="1">Byway Open To All Traffic</option>
+<option value="2">Restricted Byway</option>
+<option value="3">Bridleway</option>
+<option value="4">Footpath</option>
+</select>
+			<span class="govuk-error-message"></span>
+		</div>
+
+		<div class="govuk-form-group">
+			<input type="hidden" value="woTdiaJy" id="UserID" name="UserID" />
+			<input type="hidden" value="ActiveOnly" id="Archived" name="Archived" />
+			<button type="submit" name="Act" value="Search" class="govuk-button">
+				<span class="fa fa-search mr-1" aria-hidden="true"></span>
+				Search
+			</button>
+			<button type="Submit" name="Act" value="All" title="View All" class="govuk-button">View All</button>
+		</div>
+	</fieldset>
+<input name="__RequestVerificationToken" type="hidden" value="FIXTURE-TOKEN" /></form>
+
+					</div>
+						
+					<div class="govuk-grid-column-one-quarter">
+						<h2 class="govuk-heading-m">Application type</h2><br />
+<a class="govuk-link" href="/RightsOfWay/Map">Definitive Map Modification Orders</a>
+<br />
+<a class="govuk-link" href="/RightsOfWay/Path">Public Path Orders</a>
+<br />
+<a class="govuk-link" href="/RightsOfWay/Deposit">Land deposits</a>
+<br />
+<a class="govuk-link" href="/RightsOfWay/Closure">Closure Orders</a>
+<br />
+<a class="govuk-link" href="/RightsOfWay/Green">Town or Village Green</a>
+
+					</div>
+				</div>
+			</main>
+		</div>
+		<div class="footer">
+    <app-footer>
+        <footer class="govuk-footer govuk-!-font-size-19" role="contentinfo">
+            <div class="govuk-width-container ">
+                <div class="govuk-footer__meta footer-group">
+                    <div class="govuk-footer__meta-item govuk-footer__meta-item--grow footer-meta-item footer-meta-item-grow">
+                        <ul class="govuk-footer__inline-list footer-inline-list">
+                            <li class="govuk-footer__inline-list-item footer-inline-list-item">
+                                <a class="govuk-footer__link footer-link-url">
+                                    <a class="govuk-footer__link footer-link-url" href="/RightsOfWay/Home/Contact" target="_blank">Contact Us</a>
+                                </a>
+                            </li>
+                        </ul>
+                    </div>
+                    <div class="govuk-footer__meta-item footer-meta-item footer-inline-list-item footer-copyright-logo">
+                        <a class="govuk-footer__link footer-link-url govuk-footer__copyright-logo footer-logo" (click)="footerLogoHome()" href="">
+                            <div class="govuk-grid-row">
+                                <div class="govuk-grid-column-full">
+                                    <img _ngcontent-c2="" alt="Logo" src="/RightsOfWay/images/logo_footer.svg">
+                                </div>
+                            </div>
+                            <div class="govuk-grid-row">
+                                <div class="govuk-grid-column-full margin-top-15">
+                                    <span>© Wiltshire Council</span>
+                                </div>
+                            </div>
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </footer>
+    </app-footer>
+</div>
+	</div>
+</body>
+</html>

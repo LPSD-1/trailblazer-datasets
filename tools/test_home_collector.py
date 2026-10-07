@@ -379,20 +379,38 @@ class TheRealConfig(unittest.TestCase):
         urls = dict((s["id"], s["url"]) for s in config["sources"])
         self.assertEqual(urls["dorset-closures"], council_sources.DORSET_WFS)
         self.assertEqual(urls["dorset-dmmo"], dmmo_applications.DORSET_DMMO)
+        # Wiltshire's search: the action, the page and the search exactly as
+        # council_sources submits them, or the builds would find no snapshot.
+        import wiltshire_closures as w
+        wilts = next(s for s in config["sources"]
+                     if s["id"] == "wiltshire-closures")
+        self.assertEqual((wilts["url"], wilts["form_page"], wilts["form"]),
+                         (w.RESULT, w.FORM_PAGE, w.SEARCH))
         with open(os.path.join(ROOT, "tro", "register",
                                "pages.json")) as fh:
             page_urls = set(p["url"] for p in json.load(fh))
         for sid, url in urls.items():
-            if not sid.startswith("dorset"):
+            if not sid.startswith(("dorset", "wiltshire")):
                 self.assertIn(url, page_urls, sid)
 
-    def test_the_collector_reads_only_councils_that_refuse_the_runners(self):
+    def test_the_collector_reads_only_the_councils_named_for_it(self):
         with open(os.path.join(ROOT, "home-collected",
                                "collector.json")) as fh:
             hosts = set(hc.polite_http.host_of(s["url"])
                         for s in json.load(fh)["sources"])
         self.assertEqual(hosts, {"gi.dorsetcouncil.gov.uk",
-                                 "en.powys.gov.uk"})
+                                 "en.powys.gov.uk", "apps.wiltshire.gov.uk"})
+
+    def test_a_form_source_is_one_the_owner_approved(self):
+        with open(os.path.join(ROOT, "home-collected",
+                               "collector.json")) as fh:
+            forms = [s for s in json.load(fh)["sources"]
+                     if s.get("kind") == "form"]
+        self.assertEqual([s["id"] for s in forms], ["wiltshire-closures"])
+        for s in forms:
+            rule = hc.polite_http.FORM_POSTS[s["url"]]
+            self.assertEqual(rule["page"], s["form_page"])
+            self.assertLessEqual(set(s["form"]), set(rule["search"]))
 
 
 class AClashNeverJamsTheClone(unittest.TestCase):
@@ -504,8 +522,9 @@ class AClashNeverJamsTheClone(unittest.TestCase):
 
 
 class WhichMachineReadsWhat(unittest.TestCase):
-    """Measured 7 Oct 2026 from the Oracle server in London: Dorset and
-    Powys answer it. Norfolk's and Wiltshire's pages (Cloudflare) refuse
+    """Measured 7 Oct 2026 from the Oracle server in London: Dorset, Powys
+    and Wiltshire's closures register (apps.wiltshire.gov.uk) answer it.
+    Norfolk's pages and Wiltshire's www guide page (Cloudflare) refuse
     every data centre and fed no published order, so they were retired
     rather than kept on the owner's PC. Nothing may depend on a machine at
     home: a source left without "machine": "server" would go unread."""
@@ -522,6 +541,196 @@ class WhichMachineReadsWhat(unittest.TestCase):
                         today="2099-01-01")
         self.assertIn("the server collector", said)
         self.assertNotIn("the home collector", said)
+
+
+# ------------------------------------------ Wiltshire's search form (POST)
+
+WILTS = os.path.join(HERE, "fixtures", "wiltshire")
+
+
+def wilts_fixture(name):
+    with open(os.path.join(WILTS, name), "rb") as fh:
+        return fh.read()
+
+
+def wilts_source():
+    with open(os.path.join(ROOT, "home-collected", "collector.json")) as fh:
+        return next(s for s in json.load(fh)["sources"]
+                    if s["id"] == "wiltshire-closures")
+
+
+def shorter_list(body):
+    """The result page with its first closure gone, its count to match."""
+    text = body.decode("utf-8")
+    cut = text.index('<div class="govuk-summary-card mb-3">')
+    cut2 = text.index('<div class="govuk-summary-card mb-3">', cut + 10)
+    return (text[:cut] + text[cut2:]).replace(
+        "Showing all 49 items", "Showing all 48 items").encode()
+
+
+class Register(object):
+    """The register as the server meets it: the search answers with the
+    result page (CRLF, the whole page, as served); each detail page with
+    its saved copy, or a minimal page of the same shape."""
+
+    def __init__(self, result=None, fail=None):
+        self.result = result or wilts_fixture("result-boat.html").replace(
+            b"\r\n", b"\n").replace(b"\n", b"\r\n")
+        self.fail = fail
+        self.posts, self.gets, self.overridden = [], [], {}
+
+    def post_form(self, page, action, search):
+        self.posts.append((page, action, dict(search)))
+        if self.fail:
+            raise self.fail
+        return self.result
+
+    def get_if_changed(self, url, last_modified=None, etag=None):
+        self.gets.append(url)
+        row = url.rsplit("=", 1)[-1]
+        path = os.path.join(WILTS, "detail-%s.html" % row.replace("$", "_"))
+        if os.path.exists(path):
+            with open(path, "rb") as fh:
+                return True, fh.read(), {}
+        return True, ("<html><main><dl class=\"detail-list\"><dt>Reference"
+                      "</dt><dd>%s</dd></dl></main></html>" % row).encode(), {}
+
+
+class WiltshireSearch(unittest.TestCase):
+    """The register is read by submitting its own search - the one POST the
+    owner approved - and each closure's detail page by GET. The builds read
+    both from the snapshots and never post to the council themselves."""
+
+    def setUp(self):
+        self.home = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.home)
+        self.config = {"sources": [wilts_source()]}
+        with open(os.path.join(self.home, "collector.json"), "w") as fh:
+            json.dump(self.config, fh)
+        self.key = hc.polite_http.form_key(
+            "https://apps.wiltshire.gov.uk/RightsOfWay/Closure/Result",
+            {"RowType": "1", "ClosureType": "0", "Act": "Search"})
+
+    def collect(self, register, today="2026-10-07"):
+        return hc.collect(register, self.home, today=today,
+                          config=self.config, machine="server")
+
+    def index(self):
+        with open(os.path.join(self.home, hc.INDEX)) as fh:
+            return json.load(fh)
+
+    def details(self):
+        return dict((k, e) for k, e in self.index().items()
+                    if "/detail/" in str(e.get("id")))
+
+    def test_the_search_is_submitted_and_only_main_is_kept(self):
+        register = Register()
+        changed, failures = self.collect(register)
+        self.assertEqual(failures, [])
+        self.assertEqual(register.posts, [(
+            "https://apps.wiltshire.gov.uk/RightsOfWay/Closure",
+            "https://apps.wiltshire.gov.uk/RightsOfWay/Closure/Result",
+            {"Act": "Search", "ClosureType": "0", "RowType": "1"})])
+        entry = self.index()[self.key]
+        self.assertEqual(entry["kind"], "form")
+        with open(os.path.join(self.home, "snapshots", entry["file"]),
+                  "rb") as fh:
+            kept = fh.read()
+        self.assertTrue(kept.startswith(b"<main"), kept[:40])
+        self.assertTrue(kept.endswith(b"</main>"))
+        self.assertNotIn(b"\r\n", kept)
+        self.assertIn(b"Showing all 49 items", kept)
+        self.assertEqual(len(register.gets), 49)
+        self.assertEqual(len(self.details()), 49)
+        self.assertIn("wiltshire-closures", changed)
+
+    def test_the_builds_read_the_search_from_the_snapshot(self):
+        self.collect(Register())
+
+        class Never(object):
+            def post_form(self, *a):
+                raise AssertionError("CI posted to the council")
+
+            def get(self, url):
+                raise AssertionError("CI asked the council for %s" % url)
+
+        import wiltshire_closures as w
+        client = hc.HomeClient(Never(), self.home)
+        body = client.post_form(w.FORM_PAGE, w.RESULT, w.SEARCH)
+        self.assertEqual(len(w.parse_results(body)), 49)
+        page = client.get(w.detail_url("CHIP108$001"))
+        self.assertEqual(w.parse_detail(page)["reference"], "CHIP/108/001")
+        self.assertEqual(hc.provenance_of(client.take_served()),
+                         "collected directly from the council 2026-10-07")
+
+    def test_without_a_snapshot_the_builds_never_post(self):
+        posted = []
+
+        class Inner(object):
+            def post_form(self, *a):
+                posted.append(a)
+                return b""
+
+        import wiltshire_closures as w
+        client = hc.HomeClient(Inner(), self.home)
+        with self.assertRaises(Refused):
+            client.post_form(w.FORM_PAGE, w.RESULT, w.SEARCH)
+        self.assertEqual(posted, [])
+
+    def test_details_are_read_at_most_daily_unless_the_list_changes(self):
+        self.collect(Register(), today="2026-10-07")
+        again = Register()
+        self.collect(again, today="2026-10-07")
+        self.assertEqual(len(again.posts), 1)
+        self.assertEqual(again.gets, [], "unchanged list, same day")
+        tomorrow = Register()
+        self.collect(tomorrow, today="2026-10-08")
+        self.assertEqual(len(tomorrow.gets), 49)
+        changed = Register(result=shorter_list(wilts_fixture(
+            "result-boat.html")))
+        self.collect(changed, today="2026-10-08")
+        self.assertEqual(len(changed.gets), 48, "a changed list, re-read")
+
+    def test_a_closure_gone_from_the_list_is_no_longer_kept(self):
+        self.collect(Register())
+        gone = next(e for e in self.details().values()
+                    if e["id"].endswith("CHIP108$001"))
+        path = os.path.join(self.home, "snapshots", gone["file"])
+        self.assertTrue(os.path.exists(path))
+        self.collect(Register(result=shorter_list(wilts_fixture(
+            "result-boat.html"))))
+        self.assertEqual(len(self.details()), 48)
+        self.assertFalse(os.path.exists(path))
+
+    def test_a_failed_search_keeps_the_last_snapshot(self):
+        self.collect(Register())
+        before = self.index()[self.key]
+        with open(os.path.join(self.home, "snapshots", before["file"]),
+                  "rb") as fh:
+            kept = fh.read()
+        _changed, failures = self.collect(
+            Register(fail=FetchFailed("HTTP 503")), today="2026-10-08")
+        self.assertEqual(len(failures), 1)
+        after = self.index()[self.key]
+        self.assertEqual((after["file"], after["digest"]),
+                         (before["file"], before["digest"]))
+        self.assertEqual(after["failing_since"], "2026-10-08")
+        with open(os.path.join(self.home, "snapshots", after["file"]),
+                  "rb") as fh:
+            self.assertEqual(fh.read(), kept)
+        self.assertEqual(len(self.details()), 49)
+
+    def test_a_page_of_a_new_shape_prunes_no_detail_page(self):
+        self.collect(Register())
+        # A new layout: no count, and new words (the count sits in a <nav>,
+        # which the snapshot's digest does not read).
+        odd = wilts_fixture("result-boat.html").replace(
+            b"Showing all 49 items", b"Results").replace(
+            b"Type of closure:", b"Kind:")
+        changed, _f = self.collect(Register(result=odd), today="2026-10-08")
+        self.assertIn("wiltshire-closures", changed,
+                      "PREMISE: the new page was stored")
+        self.assertEqual(len(self.details()), 49)
 
 
 if __name__ == "__main__":
