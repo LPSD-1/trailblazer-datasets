@@ -33,6 +33,10 @@ jobs:
         with:
           python-version: '3.12'
 
+      # build_tro (for the authority table) imports the sealing code.
+      - name: Install the one dependency
+        run: pip install --quiet cryptography
+
       - name: Run the tests before trusting the read
         run: |
           python tools/test_polite_http.py
