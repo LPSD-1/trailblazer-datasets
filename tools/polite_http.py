@@ -95,7 +95,9 @@ def blocked(host):
 def check_read_only(url):
     """Refuse any ArcGIS URL that is not metadata or a query."""
     path = urllib.parse.urlsplit(url).path
-    if _ARCGIS_WRITES.search(path):
+    # Only ArcGIS REST paths: "/uploads/" is also every WordPress site's
+    # media folder (the Yorkshire Dales' order PDFs live there).
+    if _ARCGIS_PATH.search(path) and _ARCGIS_WRITES.search(path):
         raise Refused("refusing an ArcGIS edit operation: %s" % url)
     if _ARCGIS_PATH.search(path) and not (
             _ARCGIS_READS.search(path) or path.rstrip("/").endswith(

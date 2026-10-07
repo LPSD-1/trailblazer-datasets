@@ -188,6 +188,13 @@ class ReadOnly(unittest.TestCase):
         client.get(self.LAYER + "?f=json")
         client.get(self.LAYER + "/query?where=1%3D1&f=json")
 
+    def test_a_wordpress_uploads_folder_is_not_an_edit(self):
+        stand = Stand({"/robots.txt": (404, {}, b""),
+                       "/wp-content/uploads/": (200, {}, b"%PDF-1.4")})
+        self.assertEqual(stand.client().get(
+            "https://www.yorkshiredales.example/wp-content/uploads/sites/13/"
+            "2019/08/CURRENT-TROS.pdf"), b"%PDF-1.4")
+
     def test_any_other_arcgis_path_is_refused(self):
         with self.assertRaises(Refused):
             Stand({}).client().get(self.LAYER + "/0/attachments/1")
