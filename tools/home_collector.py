@@ -140,7 +140,7 @@ def canonical(kind, body):
     return body, hashlib.sha256(body).hexdigest()
 
 
-_VOLATILE_ID = re.compile(r"\.fid--[0-9a-f]+_[0-9a-f]+_[0-9a-f]+$")
+_VOLATILE_ID = re.compile(r"\.fid--[0-9a-f]+_[0-9a-f]+_-?[0-9a-f]+$")
 
 
 # --------------------------------------------------------------- collect

@@ -32,7 +32,9 @@ def layer(stamp, ids=("a", "b")):
     """A GeoServer view: its feature ids are renumbered on every request."""
     return json.dumps({"type": "FeatureCollection", "timeStamp": stamp,
                        "features": [{"id": "route_closed.fid--28fd165a_"
-                                           "1a115fe11b7_%x" % (stamp * 4000 + n),
+                                           "1a115fe11b7_%x" % (
+                                               (stamp * 4000 + n) *
+                                               (-1 if stamp % 2 else 1)),
                                      "properties": {"code": i}}
                                     for n, i in enumerate(reversed(ids))]}
                       ).encode()
