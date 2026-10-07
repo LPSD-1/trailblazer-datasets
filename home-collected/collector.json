@@ -1,0 +1,65 @@
+{
+ "about": "The councils that refuse GitHub's runners (403, measured 7 October 2026) and answer an ordinary connection. Read by tools/home_collector.py on a machine at home; see HOME-COLLECTOR.md. URLs must be exactly those the pipeline asks for, so the CI builds find them here instead of asking the council.",
+ "log": "collector.log",
+ "min_gap_s": 4.0,
+ "sources": [
+  {
+   "id": "dorset-closures",
+   "url": "https://gi.dorsetcouncil.gov.uk/geoserver/countryside/wfs?service=WFS&version=2.0.0&request=GetFeature&typeNames=countryside:route_closed&outputFormat=application/json",
+   "kind": "json",
+   "council": "Dorset Council",
+   "authority": "Dorset",
+   "feeds": "council source dorset-closures"
+  },
+  {
+   "id": "dorset-dmmo",
+   "url": "https://gi.dorsetcouncil.gov.uk/geoserver/countryside/wfs?service=WFS&version=2.0.0&request=GetFeature&typeNames=countryside:v_dmmo_public&outputFormat=application/json&propertyName=dmmo_ref_no,application_details,case_status,website_url,claimed_statuses,application_types,geom",
+   "kind": "json",
+   "council": "Dorset Council",
+   "authority": "Dorset",
+   "feeds": "DMMO register dorset-dmmo"
+  },
+  {
+   "id": "norfolk-notices",
+   "url": "https://www.norfolk.gov.uk/article/42887/Notices-closures-and-temporary-route-changes",
+   "kind": "page",
+   "council": "Norfolk County Council",
+   "authority": "Norfolk",
+   "feeds": "order register page norfolk-county-council/notices-closures-and-temporary-route-changes"
+  },
+  {
+   "id": "norfolk-tros",
+   "url": "https://www.norfolk.gov.uk/article/39748/Traffic-Regulation-Orders",
+   "kind": "page",
+   "council": "Norfolk County Council",
+   "authority": "Norfolk",
+   "feeds": "order register page norfolk-county-council/traffic-regulation-orders"
+  },
+  {
+   "id": "wiltshire-rights-of-way",
+   "url": "https://www.wiltshire.gov.uk/recreation-rights-of-way",
+   "kind": "page",
+   "council": "Wiltshire Council",
+   "authority": "Wiltshire",
+   "feeds": "order register page wiltshire-council/recreation-rights-of-way"
+  },
+  {
+   "id": "powys-2444",
+   "url": "https://en.powys.gov.uk/article/2444",
+   "kind": "page",
+   "council": "Powys County Council",
+   "authority": "Powys",
+   "feeds": "order register page powys-county-council/2444",
+   "follow": "^https://en\\.powys\\.gov\\.uk/media/\\d+/"
+  },
+  {
+   "id": "powys-2446",
+   "url": "https://en.powys.gov.uk/article/2446",
+   "kind": "page",
+   "council": "Powys County Council",
+   "authority": "Powys",
+   "feeds": "order register page powys-county-council/2446",
+   "follow": "^https://en\\.powys\\.gov\\.uk/media/\\d+/"
+  }
+ ]
+}

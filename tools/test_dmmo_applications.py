@@ -134,7 +134,9 @@ class Run(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.mkdtemp()
         self.saved = dm.SOURCES
-        dm.SOURCES = only("devon-dmmo") + only("dorset-dmmo")
+        dm.SOURCES = only("devon-dmmo") + [{
+            "id": "elsewhere-dmmo", "council": "Elsewhere Council",
+            "authority": "Elsewhere", "blocked": "a bot challenge"}]
 
     def tearDown(self):
         dm.SOURCES = self.saved
@@ -193,8 +195,38 @@ class Run(unittest.TestCase):
     def test_a_blocked_register_is_never_asked(self):
         client = Client([])
         state, _f = self.run_with(client)
-        self.assertIn("blocked", state["dorset-dmmo"])
-        self.assertFalse(any("dorset" in u for u in client.asked))
+        self.assertIn("blocked", state["elsewhere-dmmo"])
+        self.assertEqual(len(client.asked), 1, client.asked)
+
+
+class DorsetFromHome(unittest.TestCase):
+    """Dorset's register refuses GitHub's runners; it is read from the home
+    collector's snapshot, and only its byway claims are kept."""
+
+    def test_byway_claims_and_never_restricted_byways(self):
+        feats = [{"properties": {"dmmo_ref_no": ref,
+                                 "claimed_statuses": claimed,
+                                 "case_status": status,
+                                 "application_types": "Add",
+                                 "application_details": "Lane at X",
+                                 "website_url": "https://d.example/" + ref},
+                  "geometry": {"type": "MultiLineString", "coordinates": [
+                      [[385818.0, 109557.0], [385299.0, 109689.0]]]}}
+                 for ref, claimed, status in (
+                     ("T1", "Byway", "Awaiting determination"),
+                     ("T2", "Bridleway, Byway, Footpath", "Closed"),
+                     ("T3", "Restricted Byway", "Awaiting determination"),
+                     ("T4", "Footpath", "Awaiting determination"))]
+
+        class Home(object):
+            def get_json(self, url):
+                return {"features": feats}
+
+        n, apps = dm._wfs_dorset(Home(), only("dorset-dmmo")[0])
+        self.assertEqual(n, 4)
+        self.assertEqual([(a["ref"], a["state"]) for a in apps],
+                         [("T1", "open"), ("T2", "determined")])
+        self.assertNotIn("blocked", only("dorset-dmmo")[0])
 
 
 if __name__ == "__main__":

@@ -59,6 +59,7 @@ jobs:
           python tools/test_council_orders.py
           python tools/test_order_register.py
           python tools/test_manual_inbox.py
+          python tools/test_home_collector.py
 
       - name: Read the councils' sources
         run: |
@@ -141,6 +142,32 @@ jobs:
             fi
           elif [ -f /tmp/council-failures.txt ] && [ -n "$OPEN" ]; then
             gh issue close "$OPEN" --comment "Every source read cleanly: $RUN_URL" || true
+          fi
+
+      # THE HOME COLLECTOR (tools/home_collector.py) reads the councils that
+      # refuse GitHub's runners, from a machine at home, into home-collected/.
+      # A machine switched off looks exactly like a quiet week, so it writes
+      # a heartbeat once a day; three days without one is said here.
+      - name: Say if the home collector has gone quiet
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          python tools/home_collector.py --check-stale 3 --report /tmp/home-stale.txt
+          OPEN=$(gh issue list --label home-collector --state open                    --json number --jq '.[0].number' 2>/dev/null || true)
+          if [ -s /tmp/home-stale.txt ]; then
+            BODY="$(cat /tmp/home-stale.txt) (checked on $RUN_URL).
+
+          Dorset, Norfolk, Wiltshire and Powys refuse GitHub's servers, so what the builds use for them is what the home collector last committed to home-collected/; it is not blanked, but it is getting old. Check the machine (HOME-COLLECTOR.md: the scheduled task, its collector.log, its network)."
+            if [ -n "$OPEN" ]; then
+              gh issue edit "$OPEN" --body "$BODY" || true
+            else
+              gh label create home-collector --color FBCA04                 --description "The home collector has not reported for days" 2>/dev/null || true
+              gh issue create --label home-collector                 --title "Home collector: no report for over three days"                 --body "$BODY" || true
+            fi
+          elif [ -n "$OPEN" ]; then
+            gh issue close "$OPEN" --comment "The home collector is reporting again: $RUN_URL" || true
           fi
 
       - name: Raise an issue if this failed

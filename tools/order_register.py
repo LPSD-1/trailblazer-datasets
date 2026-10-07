@@ -269,7 +269,7 @@ def item_of(order, byways, ways, how):
     return item
 
 
-def provenance_of(items, overrides=None, manual=None):
+def provenance_of(items, overrides=None, manual=None, home_index=None):
     """{authority: [how its published orders were obtained]} for the
     coverage table: a document saved by hand or supplied by the council
     (manual/), or read under the owner's robots.txt decision."""
@@ -281,6 +281,10 @@ def provenance_of(items, overrides=None, manual=None):
         except ValueError:
             overrides = []
     docs = manual_inbox.documents_by_id() if manual is None else manual
+    if home_index is None:
+        import home_collector
+        home_index = home_collector.read_json(os.path.join(
+            home_collector.HOME, home_collector.INDEX), {}) or {}
     out = {}
     for item in items:
         url = item.get("url") or ""
@@ -294,6 +298,10 @@ def provenance_of(items, overrides=None, manual=None):
         if entry:
             notes.add("robots.txt overridden by owner decision (%s)"
                       % entry.get("id"))
+        home = (home_index or {}).get(url)
+        if home and home.get("collected"):
+            notes.add("collected from a home connection %s"
+                      % home["collected"])
     return dict((a, sorted(n)) for a, n in sorted(out.items()) if n)
 
 
@@ -411,8 +419,11 @@ def linked_documents(page, body):
         if url in seen or not re.search(page["follow"], url):
             continue
         seen.add(url)
+        # Named by its path alone: Powys adds "?m=<version>" to each link,
+        # and a new version is a change to one document, not a new one.
+        path = urllib.parse.urlsplit(url).path
         name = re.sub(r"[^A-Za-z0-9._-]+", "-",
-                      urllib.parse.unquote(url.rstrip("/").rsplit("/", 1)[-1]))
+                      urllib.parse.unquote(path.rstrip("/").rsplit("/", 1)[-1]))
         out.append({"id": "%s/doc/%s" % (page["id"], name.lower()[:120]),
                     "url": url, "council": page.get("council"),
                     "authorities": page.get("authorities"),
@@ -488,6 +499,11 @@ def check(client, register=REGISTER, today=None, manual_root=None,
             unreachable.append({"page": page["id"], "url": page["url"],
                                 "why": str(e)[:300]})
             continue
+        served = client.take_served() if hasattr(client, "take_served") \
+            else {}
+        if served and not page.get("provenance"):
+            from home_collector import provenance_of
+            page = dict(page, provenance=provenance_of(served))
         queue.extend(linked_documents(page, body))
         digest, lines = fingerprint(page, body)
         try:
@@ -599,9 +615,10 @@ def main(argv=None):
         # The register's check is the one reader of the paths the owner
         # chose to read despite robots.txt (tools/robots_override.json); it
         # logs every such read, which also holds each to once a week.
-        client = polite_http.PoliteClient(
+        from home_collector import HomeClient
+        client = HomeClient(polite_http.PoliteClient(
             min_gap=4.0, today=today,
-            override_log=os.path.join(REGISTER, "override-reads.json"))
+            override_log=os.path.join(REGISTER, "override-reads.json")))
         if args.cmd == "accept":
             accept(args.pages, client)
             return 0

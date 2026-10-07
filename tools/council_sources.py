@@ -1081,6 +1081,11 @@ def fetch_one(source, client, byways, out_dir, today):
     except (Refused, FetchFailed) as e:
         entry.update({"ok": False, "error": str(e)[:300]})
         return entry
+    served = client.take_served() if hasattr(client, "take_served") \
+        else {}
+    if served:
+        from home_collector import provenance_of
+        source = dict(source, supplied=provenance_of(served))
     refusal = guard(previous.get("records"), records)
     if refusal:
         entry.update({"ok": False, "error": "kept the last good read: %s"
@@ -1126,7 +1131,8 @@ def main(argv=None):
               "to match against a broken checkout" % len(byways))
         return 1
     wanted = set((args.only or "").split(",")) - {""}
-    client = polite_http.PoliteClient()
+    from home_collector import HomeClient
+    client = HomeClient(polite_http.PoliteClient())
     import manual_inbox
     by_hand = manual_inbox.automated_off()
     sources = [dict(src, blocked="the council's documents come from "

@@ -54,3 +54,6 @@ staging/
 
 # GeoPlace SWA list: fetched by traffic-orders.yml at run time, never committed
 tools/geoplace_swa_org_active_*.csv
+
+# The home collector's own log (tools/home_collector.py), kept beside the clone.
+collector.log*

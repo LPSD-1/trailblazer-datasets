@@ -237,6 +237,42 @@ def group(apps):
     return out
 
 
+DORSET_DMMO = ("https://gi.dorsetcouncil.gov.uk/geoserver/countryside/wfs?"
+               "service=WFS&version=2.0.0&request=GetFeature&"
+               "typeNames=countryside:v_dmmo_public&"
+               "outputFormat=application/json&"
+               "propertyName=dmmo_ref_no,application_details,case_status,"
+               "website_url,claimed_statuses,application_types,geom")
+
+#: Dorset's claimed statuses: "Byway" there is a BOAT; never "Restricted".
+_DORSET_BOAT = re.compile(r"(?i)(^|,\s*)byway\b")
+
+
+def _wfs_dorset(client, source):
+    data = client.get_json(source["url"])
+    feats = data.get("features") if isinstance(data, dict) else None
+    if not isinstance(feats, list):
+        raise FetchFailed("no features list from Dorset's register")
+    out = []
+    for f in feats:
+        a = dict((k, v) for k, v in (f.get("properties") or {}).items()
+                 if k.lower() not in PERSONAL)
+        if not _DORSET_BOAT.search(a.get("claimed_statuses") or ""):
+            continue
+        status = (a.get("case_status") or "").strip()
+        out.append(_app(source, a.get("dmmo_ref_no"), None,
+                        "%s: %s" % (a.get("application_types") or
+                                    "Application", a.get("claimed_statuses")),
+                        None, "determined" if re.search(
+                            r"(?i)closed|determined|confirmed|refused|"
+                            r"withdrawn", status) else "open",
+                        geojson_lines(f.get("geometry")),
+                        {"details": _clean(a.get("application_details")),
+                         "status": _clean(status),
+                         "register": _clean(a.get("website_url"))}))
+    return len(feats), out
+
+
 SOURCES = [
     {"id": "devon-dmmo", "council": "Devon County Council",
      "authority": "Devon", "read": _arcgis, "shape": _devon,
@@ -288,10 +324,13 @@ SOURCES = [
      "url": "https://wms.derbyshire.gov.uk/geoserver/DCC/wfs",
      "fields": ["LegalCode", "Stage", "Effect", "Parish", "PathStatus",
                 "PathNum"]},
+    # Dorset's GeoServer refuses GitHub's runners (403, 7 October 2026):
+    # this is read from the home collector's snapshot (home-collected/),
+    # never from the runner.
     {"id": "dorset-dmmo", "council": "Dorset Council",
-     "authority": "Dorset",
-     "blocked": "gi.dorsetcouncil.gov.uk refuses GitHub's runners (403, "
-                "7 October 2026); not worked around"},
+     "authority": "Dorset", "read": _wfs_dorset, "url": DORSET_DMMO,
+     "fields": ["dmmo_ref_no", "application_details", "case_status",
+                "website_url", "claimed_statuses", "application_types"]},
 ]
 
 #: Kept-last-good: a source under this share of what it held is refused.
@@ -353,6 +392,8 @@ def run(client, byways, out_dir=OUT, today=None, log=print):
             continue
         try:
             records, apps = source["read"](client, source)
+            served = client.take_served() if hasattr(
+                client, "take_served") else {}
         except (Refused, FetchFailed) as e:
             failed.append("%s: %s" % (source["id"], e))
             state[source["id"]] = dict(old, council=source["council"],
@@ -376,6 +417,9 @@ def run(client, byways, out_dir=OUT, today=None, log=print):
                                "records": records, "last_ok": today,
                                "url": source["url"],
                                "applications": apps}
+        if served:
+            from home_collector import provenance_of
+            state[source["id"]]["supplied"] = provenance_of(served)
         log("%-28s %4d records, %3d byway applications, %3d open, %3d on "
             "a published byway" % (source["id"], records, len(apps),
                                    sum(1 for a in apps if a["state"] ==
@@ -398,8 +442,9 @@ def main(argv=None):
               % len(byways))
         return 1
     import polite_http
-    state, failed = run(polite_http.PoliteClient(min_gap=2.0), byways,
-                        args.out)
+    from home_collector import HomeClient
+    state, failed = run(HomeClient(polite_http.PoliteClient(min_gap=2.0)),
+                        byways, args.out)
     for line in failed:
         print("::warning::DMMO register %s" % line)
     readable = [s for s in SOURCES if not s.get("blocked")]
