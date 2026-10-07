@@ -216,15 +216,19 @@ class PoliteClient(object):
         self._log = log
         self._last = {}
         self._robots = {}
+        # Conditional-request headers for the request in flight only
+        # (get_if_changed); never anything that changes who we say we are.
+        self._extra_headers = {}
         self.requests = 0
 
     # -- plumbing ---------------------------------------------------------
 
     def _urlopen(self, url, timeout):
         """(status, headers, body). HTTP errors come back as a status."""
-        request = urllib.request.Request(
-            url, headers={"User-Agent": USER_AGENT,
-                          "Accept": "application/json, text/html, */*"})
+        headers = {"User-Agent": USER_AGENT,
+                   "Accept": "application/json, text/html, */*"}
+        headers.update(self._extra_headers)
+        request = urllib.request.Request(url, headers=headers)
         try:
             with urllib.request.urlopen(request, timeout=timeout) as resp:
                 return resp.status, dict(resp.headers), resp.read()
@@ -273,6 +277,31 @@ class PoliteClient(object):
 
     def get(self, url):
         """The body of `url`, or Refused / FetchFailed. GET only."""
+        return self._get(url)[1]
+
+    def get_if_changed(self, url, last_modified=None, etag=None):
+        """(changed, body, headers) - a conditional GET.
+
+        With the validators a server gave last time, an unchanged file
+        answers 304 with no body: re-checking costs the server almost
+        nothing, which is what makes a weekly re-check of every file polite.
+        """
+        extra = {}
+        if last_modified:
+            extra["If-Modified-Since"] = last_modified
+        if etag:
+            extra["If-None-Match"] = etag
+        self._extra_headers = extra
+        try:
+            status, body, headers = self._get(url, allow_304=True)
+        finally:
+            self._extra_headers = {}
+        if status == 304:
+            return False, None, headers
+        return True, body, headers
+
+    def _get(self, url, allow_304=False):
+        """(status, body, headers) for a 200 (or a 304 when asked)."""
         host = host_of(url)
         if not url.lower().startswith("https://"):
             raise Refused("only https is fetched: %s" % url)
@@ -285,10 +314,12 @@ class PoliteClient(object):
         attempt = 0
         while True:
             status, headers, body = self._raw(url)
+            if status == 304 and allow_304:
+                return status, None, headers or {}
             if status == 200:
                 if body and _CHALLENGE.search(body[:20000]):
                     raise Refused("%s answered with a bot challenge" % host)
-                return body
+                return status, body, headers or {}
             if status in (401, 403, 451):
                 raise Refused("%s refused %s (HTTP %s)" % (host, url, status))
             if status == 404:

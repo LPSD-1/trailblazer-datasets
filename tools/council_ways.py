@@ -541,6 +541,66 @@ def merge(code, rowmaps_features, council):
     return out, report
 
 
+def merge_features(old_features, new_features):
+    """-> (features, report): a newer copy of the same rowmaps file, taken
+    with every unchanged record's id kept.
+
+    An old record the new file still draws (KEEP_SHARE of it within
+    SAME_WAY_M) is kept byte for byte, so its lane id - which hashes its
+    coordinates - does not move when only the file's precision or vertex
+    order changed. A new record not already drawn by what was kept is added
+    whole, and the kept records it covers give way to it: an extended or
+    re-aligned byway becomes the new record, not the old one plus a copy.
+    An old record the new file no longer draws is dropped.
+    """
+    new_index = _Index([tuple(p) for p in l] for f in new_features
+                       for l in _feature_lines(f) if len(l) >= 2)
+    kept, dropped = [], []
+    for f in old_features:
+        lines = [l for l in _feature_lines(f) if len(l) >= 2]
+        if not lines:
+            continue
+        total = sum(_length(l) for l in lines) or 1.0
+        share = sum(covered_share(l, new_index) * _length(l)
+                    for l in lines) / total
+        (kept if share >= KEEP_SHARE else dropped).append(f)
+
+    kept_index = _Index([tuple(p) for p in l] for f in kept
+                        for l in _feature_lines(f))
+    added, new_len, all_len = [], 0.0, 0.0
+    for f in new_features:
+        lines = [l for l in _feature_lines(f) if len(l) >= 2]
+        if not lines:
+            continue
+        total = sum(_length(l) for l in lines) or 1.0
+        all_len += total
+        share = sum(covered_share(l, kept_index) * _length(l)
+                    for l in lines) / total
+        if share < KEEP_SHARE:
+            added.append(f)
+            new_len += total * (1.0 - share)
+
+    if added:
+        # Kept records a new one now draws give way to it.
+        added_index = _Index([tuple(p) for p in l] for f in added
+                             for l in _feature_lines(f) if len(l) >= 2)
+        still = []
+        for f in kept:
+            lines = [l for l in _feature_lines(f) if len(l) >= 2]
+            total = sum(_length(l) for l in lines) or 1.0
+            share = sum(covered_share(l, added_index) * _length(l)
+                        for l in lines) / total
+            (dropped if share >= KEEP_SHARE else still).append(f)
+        kept = still
+
+    report = {"rowmaps": len(old_features), "kept": len(kept),
+              "dropped": sorted(_name(f) for f in dropped),
+              "added": sorted(_name(f) for f in added),
+              "council_ways": len(new_features),
+              "new_share": round(new_len / all_len, 3) if all_len else 0.0}
+    return kept + added, report
+
+
 def agrees(report):
     """None if the council file may replace rowmaps' byways, else why not."""
     if not report["council_ways"]:

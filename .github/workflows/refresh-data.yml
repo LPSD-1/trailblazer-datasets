@@ -169,6 +169,20 @@ jobs:
         if: ${{ !inputs.skip_fetch }}
         run: python tools/fetch_rights_of_way.py
 
+      # THE FETCH ABOVE ONLY FILLS GAPS: a file already in the cache was
+      # never read again, so every council's data stayed as it was on the
+      # day it was first fetched. This re-checks each carried file about
+      # weekly with a conditional GET (rowmaps answers 304 when nothing
+      # changed) and takes a newer one keeping every unchanged lane's id
+      # (tools/rowmaps_refresh.py). A file it cannot read, or will not take,
+      # stays exactly as cached; even a crash here leaves the cache whole
+      # (atomic writes), so it never stops the lane refresh - it is said
+      # in an issue instead, by the step after the build.
+      - name: Re-check rowmaps for newer files
+        if: ${{ !inputs.skip_fetch }}
+        run: |
+          python tools/rowmaps_refresh.py --report /tmp/rowmaps-refresh.txt             || echo "the re-check itself failed - see this step's log; the cached files are unchanged" >> /tmp/rowmaps-refresh.txt
+
       # Immediately after the fetch, and unconditionally. Everything that can
       # fail from here on has nothing to do with whether the council data is
       # worth keeping.
@@ -1141,6 +1155,29 @@ jobs:
 
       # An email is easy to miss and impossible to reply to. An issue is
       # visible, has the log linked, and can be closed when it is dealt with.
+      - name: Say which rowmaps files were not taken
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          OPEN=$(gh issue list --label rowmaps-refresh --state open                    --json number --jq '.[0].number' 2>/dev/null || true)
+          if [ -s /tmp/rowmaps-refresh.txt ]; then
+            BODY="The weekly re-check of rowmaps' files could not read, or would not take, these on $RUN_URL. Each keeps the copy already cached, so the lanes built from it are unchanged; nothing was blanked.
+
+          $(sed 's/^/- /' /tmp/rowmaps-refresh.txt)
+
+          'kept the cached file' means the newer file read but looked like a bad publish or a different network (tools/rowmaps_refresh.py take): look at it before relaxing the guard. A 403 is rowmaps' decision and is never worked around."
+            if [ -n "$OPEN" ]; then
+              gh issue edit "$OPEN" --body "$BODY" || true
+            else
+              gh label create rowmaps-refresh --color FBCA04                 --description "A newer rowmaps file could not be read or taken" 2>/dev/null || true
+              gh issue create --label rowmaps-refresh                 --title "rowmaps re-check: files not taken"                 --body "$BODY" || true
+            fi
+          elif [ -f /tmp/rowmaps-refresh.txt ] && [ -n "$OPEN" ]; then
+            gh issue close "$OPEN" --comment "Every file re-checked this run was read and taken or unchanged: $RUN_URL" || true
+          fi
+
       - name: Raise an issue if this run failed
         if: failure()
         env:

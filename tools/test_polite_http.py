@@ -216,6 +216,42 @@ class ReadOnly(unittest.TestCase):
                            "request=GetFeature&typeNames=x")
 
 
+class Conditional(unittest.TestCase):
+    def test_an_unchanged_file_is_a_304_and_no_body(self):
+        sent = []
+
+        def opener(url, timeout):
+            if url.endswith("/robots.txt"):
+                return 404, {}, b""
+            sent.append(dict(client._extra_headers))
+            return 304, {}, b""
+
+        client = PoliteClient(opener=opener, sleep=lambda s: None,
+                              log=lambda *a: None)
+        changed, body, _h = client.get_if_changed(
+            "https://h.example/a.json", last_modified="Tue, 28 Apr 2026 "
+                                                      "07:35:24 GMT")
+        self.assertEqual((changed, body), (False, None))
+        self.assertEqual(sent, [{"If-Modified-Since": "Tue, 28 Apr 2026 "
+                                                      "07:35:24 GMT"}])
+        self.assertEqual(client._extra_headers, {},
+                         "a validator leaked into the next request")
+
+    def test_a_changed_file_comes_back_with_its_validator(self):
+        stand = Stand({"/robots.txt": (404, {}, b""),
+                       "/a.json": (200, {"Last-Modified": "x"}, b"{}")})
+        changed, body, headers = stand.client().get_if_changed(
+            "https://h.example/a.json", last_modified="old")
+        self.assertEqual((changed, body, headers["Last-Modified"]),
+                         (True, b"{}", "x"))
+
+    def test_a_304_to_a_plain_get_is_a_failure_not_an_empty_body(self):
+        stand = Stand({"/robots.txt": (404, {}, b""),
+                       "/a.json": (304, {}, b"")})
+        with self.assertRaises(FetchFailed):
+            stand.client().get("https://h.example/a.json")
+
+
 class Gentle(unittest.TestCase):
     def test_two_requests_to_one_host_are_spaced(self):
         stand = Stand({"/robots.txt": (404, {}, b""), "/a": (200, {}, b"1")})

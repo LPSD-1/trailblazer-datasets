@@ -96,8 +96,17 @@ Packages are produced by the toolkit in `trailblazer-data`:
 
 ```
 python fetch_rights_of_way.py            # 149 authorities, cached and resumable
+python rowmaps_refresh.py                # re-check cached files, take newer ones
 python build_packages.py --key <keyfile>
 ```
+
+The fetch only fills gaps in the cache. `rowmaps_refresh.py` (run by every
+lane refresh) re-checks each cached byway, restricted byway and bridleway
+file about once a week with a conditional request, and takes a changed file
+keeping every unchanged record byte for byte, so lane ids only move for
+ways that really changed. A newer file that is empty, collapsed or too
+different to be the same network is not taken; the cached copy stays, and
+an issue says so.
 
 Republishing replaces packages in place. Filenames carry no build date — here
 or on the device — so a new build supersedes the old copy rather than
