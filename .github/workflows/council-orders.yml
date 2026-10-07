@@ -57,12 +57,20 @@ jobs:
           python tools/test_byway_match.py
           python tools/test_council_sources.py
           python tools/test_council_orders.py
+          python tools/test_order_register.py
 
       - name: Read the councils' sources
         run: |
           python tools/council_sources.py fetch \
             --only "${{ inputs.only }}" \
             --report /tmp/council-failures.txt
+
+      # THE REGISTER OF PERMANENT AND SEASONAL ORDERS: no network, only the
+      # reviewed tro/register/orders.json matched to the byways riders have,
+      # so a lane refresh that renumbers or reshapes a byway reaches it here.
+      # The quarterly page check is order-register.yml.
+      - name: Match the order register to our byways
+        run: python tools/order_register.py build
 
       - name: Commit what changed
         run: |

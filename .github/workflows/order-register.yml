@@ -1,0 +1,147 @@
+name: Order register check
+
+# THE COUNCILS' LISTS OF PERMANENT AND SEASONAL BYWAY ORDERS, re-read every
+# quarter (tools/order_register.py check).
+#
+# These pages change rarely - most byway orders date from 1969 to 2010 - and
+# what they say is published only after a person has transcribed and
+# approved it in tro/register/orders.json. So this job never edits the
+# register: it reduces each page to its text, compares it with the snapshot
+# taken when the register was last reviewed, and when a page has changed it
+# opens an issue with the diff. The reviewer updates orders.json and runs
+# `python tools/order_register.py accept <page>`.
+#
+# Every request goes through tools/polite_http.py: an honest User-Agent,
+# robots.txt obeyed, four seconds between requests to one council.
+on:
+  schedule:
+    - cron: '41 5 3 1,4,7,10 *'   # 05:41 UTC on the 3rd of each quarter
+  workflow_dispatch:
+
+permissions:
+  contents: write   # snapshots of pages read for the first time, changes.json
+  issues: write     # to ask for a review, and when a run fails
+
+concurrency:
+  group: order-register
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09  # v5
+
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1  # v6
+        with:
+          python-version: '3.12'
+
+      - name: Run the tests before trusting the check
+        run: |
+          python tools/test_polite_http.py
+          python tools/test_order_register.py
+
+      - name: Re-read the councils' pages
+        run: python tools/order_register.py check --report /tmp/register-report.txt
+
+      - name: Commit snapshots and the change list
+        run: |
+          git config user.name  "trailblazer-data"
+          git config user.email "data@trailblazer.invalid"
+
+          commit_it() {
+            git add -A tro/register/snapshots tro/register/changes.json
+            if git diff --cached --quiet; then
+              echo "nothing changed"
+              return 1
+            fi
+            git commit -m "Order register: pages checked $(date -u +%Y-%m-%d)" \
+              -m "Read by .github/workflows/order-register.yml"
+            return 0
+          }
+
+          commit_it || exit 0
+
+          # Only this job writes these files: on a lost race, take the newest
+          # main and put ours back over it.
+          mkdir -p dist
+          rm -rf dist/register-built
+          mkdir -p dist/register-built
+          cp -r tro/register/snapshots dist/register-built/
+          cp tro/register/changes.json dist/register-built/
+          for attempt in 1 2 3; do
+            if git push; then
+              exit 0
+            fi
+            echo "push rejected; putting our files back on top of origin/main"
+            git fetch origin main
+            git reset --hard origin/main
+            rm -rf tro/register/snapshots
+            cp -r dist/register-built/snapshots tro/register/
+            cp dist/register-built/changes.json tro/register/
+            commit_it || exit 0
+            sleep $((attempt * 5))
+          done
+          echo "::error::could not push after three attempts"
+          exit 1
+
+      # A REVIEW REQUEST, NOT AN ALARM: a council editing its page is the
+      # ordinary case this job exists to catch. One issue at a time, kept
+      # current, closed by the first run with nothing left to review.
+      - name: Ask for a review of what changed
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          OPEN=$(gh issue list --label order-register --state open \
+                   --json number --jq '.[0].number' 2>/dev/null || true)
+          if [ -s /tmp/register-report.txt ]; then
+            BODY="The councils' pages behind the byway order register were re-read on $RUN_URL. These changed since the register was last reviewed, or could not be read:
+
+          $(sed 's/^/- /' /tmp/register-report.txt)
+
+          The diffs are in tro/register/changes.json. Nothing was published from them: update tro/register/orders.json by hand (approve, change or retire entries), then run \`python tools/order_register.py accept <page>\` for each page reviewed. A page that could not be read keeps its last snapshot; a 403 or a robots.txt refusal is never worked around."
+            if [ -n "$OPEN" ]; then
+              gh issue edit "$OPEN" --body "$BODY" || true
+            else
+              gh label create order-register --color 0E8A16 \
+                --description "A council's byway order page changed; review the register" 2>/dev/null || true
+              gh issue create --label order-register \
+                --title "Order register: council pages changed - review needed" \
+                --body "$BODY" || true
+            fi
+          elif [ -n "$OPEN" ]; then
+            gh issue close "$OPEN" --comment "Nothing left to review: $RUN_URL" || true
+          fi
+
+      - name: Raise an issue if this failed
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          EXISTING=$(gh issue list --label order-register-failed --state open \
+                       --json number --jq '.[0].number' 2>/dev/null || true)
+          if [ -n "$EXISTING" ]; then
+            gh issue comment "$EXISTING" --body "Failed again: $RUN_URL"
+          else
+            gh label create order-register-failed --color D93F0B \
+              --description "The quarterly order register check failed" 2>/dev/null || true
+            gh issue create --label order-register-failed \
+              --title "Order register check failed" \
+              --body "$RUN_URL failed. The register and what it publishes are unchanged, but changes on the councils' pages are not being caught until this is fixed."
+          fi
+
+      - name: Stand the alarm down if this worked
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          for n in $(gh issue list --label order-register-failed --state open \
+                       --json number --jq '.[].number' 2>/dev/null || true); do
+            gh issue close "$n" --comment "Fixed: $RUN_URL succeeded." || true
+          done

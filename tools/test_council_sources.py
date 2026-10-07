@@ -8,6 +8,8 @@ No network: each source is answered by a stand-in serving records shaped as
 the council's own service returned them on 7 October 2026 (trimmed). The
 byways are synthetic, laid where those records' geometry is.
 """
+import contextlib
+import io
 import json
 import os
 import shutil
@@ -334,10 +336,13 @@ class KeepLastGood(unittest.TestCase):
         real_load = byway_match.load_byways
         byway_match.load_byways = lambda: _Many(self.byways)
         try:
-            cs.SOURCES = [ok, bad]
-            self.assertEqual(cs.main(["fetch", "--out", self.tmp]), 0)
-            cs.SOURCES = [dict(bad), dict(bad, id="bad-2")]
-            self.assertEqual(cs.main(["fetch", "--out", self.tmp]), 1)
+            # Quietly: its ::warning:: lines would otherwise reach the
+            # Actions log as annotations about sources that do not exist.
+            with contextlib.redirect_stdout(io.StringIO()):
+                cs.SOURCES = [ok, bad]
+                self.assertEqual(cs.main(["fetch", "--out", self.tmp]), 0)
+                cs.SOURCES = [dict(bad), dict(bad, id="bad-2")]
+                self.assertEqual(cs.main(["fetch", "--out", self.tmp]), 1)
         finally:
             cs.SOURCES = saved[0]
             byway_match.load_byways = real_load

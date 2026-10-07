@@ -1406,7 +1406,8 @@ def main():
     for row in authorities:
         row["sources"] = (["dtro"] if row["records"] else []) + sorted(
             src["id"] for src in council["sources"]
-            if src.get("authority") in row["lanes"])
+            if src.get("authority") in row["lanes"]
+            or set(src.get("authorities") or ()) & set(row["lanes"]))
     publishing = [a for a in authorities if a["records"]]
     listed = set(a["swa"] for a in authorities)
     elsewhere = sorted(((n, tra) for tra, n in tally.records.items()

@@ -200,7 +200,8 @@ def feature_of(item, source, day, tra_of=None, horizon_days=HORIZON_DAYS):
     if tra:
         props["tra"] = tra
     props["source"] = source["id"]
-    props["source_name"] = source["name"]
+    # A register item names its own council; a layer's items share one.
+    props["source_name"] = item.get("source_name") or source["name"]
     if item.get("url"):
         props["url"] = item["url"]
     if item.get("ways"):

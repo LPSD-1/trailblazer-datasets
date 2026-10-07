@@ -1,0 +1,342 @@
+[
+ {
+  "id": "cambridgeshire-county-council/rights-of-way-restrictions",
+  "council": "Cambridgeshire County Council",
+  "authorities": [
+   "Cambridgeshire"
+  ],
+  "url": "https://www.cambridgeshire.gov.uk/residents/libraries-leisure-culture/countryside-access/rights-of-way/rights-of-way-restrictions",
+  "layout": "HTML \"Permanent and seasonal restrictions\" section: a list of 38 download items (title - year, size) linking to /asset-library/*.pdf, oldest 1969 to newest 2019; also a \"Voluntary restraints\" paragraph (Glatton Byway 6)",
+  "region": "the downloads list under the \"Permanent and seasonal restrictions\" heading (div.dItem items inside the main markup block)"
+ },
+ {
+  "id": "central-bedfordshire-council/byways-open-all-traffic",
+  "council": "Central Bedfordshire Council",
+  "authorities": [
+   "Central Bedfordshire"
+  ],
+  "url": "https://www.centralbedfordshire.gov.uk/leisure-and-countryside/countryside/rights-way/byways-open-all-traffic",
+  "layout": "HTML prose list grouped by area (North 1, North 2, South 1, South 2): one paragraph per byway with restriction, postcode, grid refs and length; two items link to SharePoint PDFs",
+  "region": "article.lgd-guides div.lgd-guides__content div.field--name-body"
+ },
+ {
+  "id": "cumberland-council/current-temporary-closures-public-right-way",
+  "council": "Cumberland Council",
+  "authorities": [
+   "Cumberland",
+   "Cumbria"
+  ],
+  "url": "https://www.cumberland.gov.uk/parks-culture-and-leisure/countryside-access/current-temporary-closures-public-right-way",
+  "layout": "LocalGov Drupal accordion: one pane per temporary closure (path number, location, dates, PDF/DOC links)",
+  "region": "div.field--name-localgov-body-text div.accordion-pane"
+ },
+ {
+  "id": "denbighshire-county-council/notices",
+  "council": "Denbighshire County Council",
+  "authorities": [
+   "Denbighshire"
+  ],
+  "url": "https://www.denbighshire.gov.uk/en/parking-roads-and-travel/public-rights-of-way/notices/",
+  "layout": "list of notice pages (one temporary footpath order at time of reading)",
+  "region": "main#main-content"
+ },
+ {
+  "id": "denbighshire-county-council/traffic-regulation-orders-aspx",
+  "council": "Denbighshire County Council",
+  "authorities": [
+   "Denbighshire"
+  ],
+  "url": "https://www.denbighshire.gov.uk/en/parking-roads-and-travel/parking-and-permits/traffic-regulation-orders.aspx",
+  "layout": "short prose; no order list",
+  "region": "main#main-content"
+ },
+ {
+  "id": "derbyshire-county-council/permanent-traffic-regulation-orders-affecting-public-rights-",
+  "council": "Derbyshire County Council",
+  "authorities": [
+   "Derbyshire"
+  ],
+  "url": "https://www.derbyshire.gov.uk/leisure/countryside/access/rights-of-way/traffic-regulation-orders/permanent-traffic-regulation-orders-affecting-public-rights-of-way.aspx",
+  "layout": "HTML prose list of affected routes (DCC orders, then PDNPA orders) followed by a \"Related documents\" list of 6 PDF links under /site-elements/documents/pdf/...",
+  "region": "div.row.content div.column.large-9 (route list paragraphs/ul) + div.related-docs"
+ },
+ {
+  "id": "durham-county-council/public-rights-of-way-latest-updates-and-projects",
+  "council": "Durham County Council",
+  "authorities": [
+   "Durham"
+  ],
+  "url": "https://www.durham.gov.uk/article/33605/Public-Rights-of-Way-latest-updates-and-projects",
+  "layout": "article page; no TRO list",
+  "region": "main article body"
+ },
+ {
+  "id": "durham-county-council/sitemap-xml",
+  "council": "Durham County Council",
+  "authorities": [
+   "Durham"
+  ],
+  "url": "https://www.durham.gov.uk/sitemap.xml",
+  "layout": "sitemap; only the <loc> lines naming a byway are compared (each temporary closure order is its own article)",
+  "region": "n/a (diff the <loc> list for new \"Byway\" titles)",
+  "only": "(?i)byway"
+ },
+ {
+  "id": "east-sussex-county-council/seasonal-byway-restrictions",
+  "council": "East Sussex County Council",
+  "authorities": [
+   "East Sussex"
+  ],
+  "url": "https://www.eastsussex.gov.uk/leisure-tourism/discover-east-sussex/rights-of-way/east-sussex/seasonal-byway-restrictions",
+  "layout": "HTML bullet lists under two headings (closed to vehicles excl. motor/pedal cycles; closed to all four-wheeled vehicles); each item gives parish+byway numbers and OS grid refs, followed by a link to a map PDF under /media/",
+  "region": "div.govuk-grid-column-two-thirds div.umb-block-list (ul.govuk-list.govuk-list--bullet)"
+ },
+ {
+  "id": "hertfordshire-county-council/permanent-traffic-regulation-orders-ptros-aspx",
+  "council": "Hertfordshire County Council",
+  "authorities": [
+   "Hertfordshire"
+  ],
+  "url": "https://www.hertfordshire.gov.uk/services/recycling-waste-and-environment/countryside-access/rights-of-way/current-rights-of-way/permanent-traffic-regulation-orders-ptros.aspx",
+  "layout": "HTML \"Current orders\" list of 20 PDF links (one per order, titled by parish + path numbers); later sections describe order types and the 10-year review",
+  "region": "article.altStandardArticle[role=main] div#lfoldercontent ul.liblist"
+ },
+ {
+  "id": "isle-of-wight-council/2998",
+  "council": "Isle of Wight Council",
+  "authorities": [
+   "Isle of Wight"
+  ],
+  "url": "https://www.iow.gov.uk/article/2998",
+  "layout": "not read",
+  "region": null,
+  "blocked": "bot challenge (HTTP 403) on 7 Oct 2026; not read"
+ },
+ {
+  "id": "lake-district-national-park-authority/current-traffic-regulation-orders-and-notices",
+  "council": "Lake District National Park Authority",
+  "authorities": [
+   "Lake District National Park"
+  ],
+  "url": "https://lakedistrict.gov.uk/explore/plan-your-visit/rights-of-way-access/temporary-closures-of-rights-of-way/current-traffic-regulation-orders-and-notices/",
+  "layout": "WordPress page: prose blocks per temporary order/notice (all footpaths/bridleways at time of reading), each with PDF link and expiry",
+  "region": "div.f-intro-text__content-item div.c-wysiwyg"
+ },
+ {
+  "id": "lake-district-national-park-authority/gatescarth-pass",
+  "council": "Lake District National Park Authority",
+  "authorities": [
+   "Lake District National Park"
+  ],
+  "url": "https://lakedistrict.gov.uk/explore/plan-your-visit/rights-of-way-access/unsealed-roads/gatescarth-pass/",
+  "layout": "WordPress page: prose about the permit-day TRO, links to order PDF and map",
+  "region": "div.c-wysiwyg"
+ },
+ {
+  "id": "lake-district-national-park-authority/permanent-restrictions",
+  "council": "Lake District National Park Authority",
+  "authorities": [
+   "Lake District National Park"
+  ],
+  "url": "https://lakedistrict.gov.uk/explore/plan-your-visit/rights-of-way-access/temporary-closures-of-rights-of-way/permanent-restrictions/",
+  "layout": "WordPress page: prose per permanent order with PDF link; refers to unsealed-roads page for vehicular TROs",
+  "region": "div.f-intro-text__content-item div.c-wysiwyg"
+ },
+ {
+  "id": "lake-district-national-park-authority/unsealed-roads",
+  "council": "Lake District National Park Authority",
+  "authorities": [
+   "Lake District National Park"
+  ],
+  "url": "https://lakedistrict.gov.uk/explore/plan-your-visit/rights-of-way-access/unsealed-roads/",
+  "layout": "WordPress page: bullet list under \"Routes closed by Traffic Regulation Orders\"",
+  "region": "div.c-wysiwyg (ul after heading \"Routes closed by Traffic Regulation Orders\")"
+ },
+ {
+  "id": "norfolk-county-council/notices-closures-and-temporary-route-changes",
+  "council": "Norfolk County Council",
+  "authorities": [
+   "Norfolk"
+  ],
+  "url": "https://www.norfolk.gov.uk/article/42887/Notices-closures-and-temporary-route-changes",
+  "layout": "list of trail closures (temporary)",
+  "region": "main article body"
+ },
+ {
+  "id": "norfolk-county-council/traffic-regulation-orders",
+  "council": "Norfolk County Council",
+  "authorities": [
+   "Norfolk"
+  ],
+  "url": "https://www.norfolk.gov.uk/article/39748/Traffic-Regulation-Orders",
+  "layout": "prose about the TRO process; no order list",
+  "region": "main article body"
+ },
+ {
+  "id": "north-northamptonshire-council/permanent-traffic-regulation-orders",
+  "council": "North Northamptonshire Council",
+  "authorities": [
+   "North Northamptonshire"
+  ],
+  "url": "https://www.northnorthants.gov.uk/permanent-traffic-regulation-orders",
+  "layout": "HTML tables: \"Permanent footpath restrictions\" (none) and \"Permanent byway restrictions\": Parish and reference | Description and start date | Map",
+  "region": "main#main div.table-container table"
+ },
+ {
+  "id": "north-northamptonshire-council/seasonal-byway-restrictions",
+  "council": "North Northamptonshire Council",
+  "authorities": [
+   "North Northamptonshire"
+  ],
+  "url": "https://www.northnorthants.gov.uk/rights-way-and-searches/seasonal-byway-restrictions",
+  "layout": "HTML table: Parish/Town | Reference and local route name | Effective date | Map (PDF link to cms host)",
+  "region": "main#main div.table-container table"
+ },
+ {
+  "id": "north-yorkshire-council/rights-way-public-notices",
+  "council": "North Yorkshire Council",
+  "authorities": [
+   "North Yorkshire"
+  ],
+  "url": "https://www.northyorks.gov.uk/roads-parking-and-travel/public-rights-way/rights-way-public-notices",
+  "layout": "Drupal page; HTML table of current notices (PPOs/DMMOs/S31) then long list of PDF links to temporary closures and permanent TROs on unsurfaced unclassified roads under /sites/default/files/",
+  "region": "main content region: the \"Current rights of way notices\" table and the TRO link list below it"
+ },
+ {
+  "id": "powys-county-council/2444",
+  "council": "Powys County Council",
+  "authorities": [
+   "Powys"
+  ],
+  "url": "https://en.powys.gov.uk/article/2444",
+  "layout": "HTML prose blocks per temporary closure: Detail of Route / Closure commenced / Order Expires / Reason / PDF links",
+  "region": "main#maincontent div.a-body div.a-body__inner"
+ },
+ {
+  "id": "powys-county-council/2446",
+  "council": "Powys County Council",
+  "authorities": [
+   "Powys"
+  ],
+  "url": "https://en.powys.gov.uk/article/2446",
+  "layout": "HTML prose blocks: \"Detail of Byway/Bridleway Closure:\" paragraph, PDF link, \"Commenced:\" line per order",
+  "region": "main#maincontent div.a-body div.a-body__inner"
+ },
+ {
+  "id": "surrey-county-council/list-of-boats-and-tros-april-2023-pdf",
+  "council": "Surrey County Council",
+  "authorities": [
+   "Surrey"
+  ],
+  "url": "https://www.surreycc.gov.uk/__data/assets/pdf_file/0019/225037/List-of-BOATs-and-TROs-April-2023.pdf",
+  "layout": "15-page text PDF: per-borough tables of BOATs (ROW No / parish and name / grid refs / Explorer map, flagged \"- TRO\" or \"- Seasonal TRO\"), then per-borough order titles with operative wording",
+  "region": "whole document; a new edition gets a new /__data/assets/ path, so watch the link on the vehicles page"
+ },
+ {
+  "id": "surrey-county-council/rights-of-way-public-notices",
+  "council": "Surrey County Council",
+  "authorities": [
+   "Surrey"
+  ],
+  "url": "https://www.surreycc.gov.uk/culture-and-leisure/countryside/management/footpaths-byways-and-bridleways/rights-of-way-public-notices",
+  "layout": "HTML list of ~57 links to per-notice pages (footpaths/bridleways only at time of reading; no byway TROs)",
+  "region": "section#content div.col-lg-9"
+ },
+ {
+  "id": "surrey-county-council/vehicles",
+  "council": "Surrey County Council",
+  "authorities": [
+   "Surrey"
+  ],
+  "url": "https://www.surreycc.gov.uk/culture-and-leisure/countryside/management/footpaths-byways-and-bridleways/rights-of-way/vehicles",
+  "layout": "HTML guidance page; \"Files available to download\" links the List of BOATs and TROs PDF (amended April 2023) and the TRO policy PDF",
+  "region": "section#content div.col-lg-9 (files list at end of the article)"
+ },
+ {
+  "id": "west-berkshire-council/prowrestrictions",
+  "council": "West Berkshire Council",
+  "authorities": [
+   "West Berkshire"
+  ],
+  "url": "https://www.westberks.gov.uk/prowrestrictions",
+  "layout": "not read",
+  "region": null,
+  "blocked": "bot challenge (HTTP None) on 7 Oct 2026; not read"
+ },
+ {
+  "id": "west-northamptonshire-council/permanent-traffic-regulation-orders",
+  "council": "West Northamptonshire Council",
+  "authorities": [
+   "West Northamptonshire"
+  ],
+  "url": "https://www.westnorthants.gov.uk/rights-way-and-searches/permanent-traffic-regulation-orders",
+  "layout": "HTML table \"Permanent byway restrictions\": Parish and reference | Description and start date | Map",
+  "region": "main#main div.table-container table"
+ },
+ {
+  "id": "west-northamptonshire-council/seasonal-byway-restrictions",
+  "council": "West Northamptonshire Council",
+  "authorities": [
+   "West Northamptonshire"
+  ],
+  "url": "https://www.westnorthants.gov.uk/seasonal-byway-restrictions",
+  "layout": "HTML table: Parish/Town | Reference and local route name | Effective date | Map (PDF link on cms host)",
+  "region": "main#main div.table-container table"
+ },
+ {
+  "id": "west-sussex-county-council/permanent-closures",
+  "council": "West Sussex County Council",
+  "authorities": [
+   "West Sussex"
+  ],
+  "url": "https://www.westsussex.gov.uk/land-waste-and-housing/public-paths-and-the-countryside/public-rights-of-way/unavailable-public-rights-of-way-routes/permanent-closures/",
+  "layout": "tabbed guide page; tab 4 \"Permanent closures\" is prose blocks (parish / affected route / date closed / note)",
+  "region": "div#permanent-closures.tab.editor-content"
+ },
+ {
+  "id": "wiltshire-council/recreation-rights-of-way",
+  "council": "Wiltshire Council",
+  "authorities": [
+   "Wiltshire"
+  ],
+  "url": "https://www.wiltshire.gov.uk/recreation-rights-of-way",
+  "layout": "long accordion guide page; TRO paragraph only links out to the closure register and map",
+  "region": "div.maincontent__left div.a-body"
+ },
+ {
+  "id": "yorkshire-dales-national-park-authority/byways-open-to-all-traffic-4-5-17-pdf",
+  "council": "Yorkshire Dales National Park Authority",
+  "authorities": [
+   "North Yorkshire",
+   "Westmorland and Furness",
+   "Cumbria"
+  ],
+  "url": "https://www.yorkshiredales.org.uk/wp-content/uploads/sites/13/2019/08/Byways-open-to-all-traffic-4.5.17.pdf",
+  "layout": "2-page text PDF list of BOATs in the park with grid refs and comments (updated 4.5.17); used only to confirm BOAT status",
+  "region": "whole document"
+ },
+ {
+  "id": "yorkshire-dales-national-park-authority/current-traffic-regulation-orders-in-the-yorkshire-dales-12-",
+  "council": "Yorkshire Dales National Park Authority",
+  "authorities": [
+   "North Yorkshire",
+   "Westmorland and Furness",
+   "Cumbria"
+  ],
+  "url": "https://www.yorkshiredales.org.uk/wp-content/uploads/sites/13/2019/08/CURRENT-TRAFFIC-REGULATION-ORDERS-IN-THE-YORKSHIRE-DALES-12.10.18.pdf",
+  "layout": "2-page text PDF table: Name of route | Grid reference | Type of restriction | Start date | Comments (last updated 12/10/18)",
+  "region": "whole document"
+ },
+ {
+  "id": "yorkshire-dales-national-park-authority/green-lanes",
+  "council": "Yorkshire Dales National Park Authority",
+  "authorities": [
+   "North Yorkshire",
+   "Westmorland and Furness",
+   "Cumbria"
+  ],
+  "url": "https://www.yorkshiredales.org.uk/things-to-do/get-outdoors/where-can-i-go/green-lanes/",
+  "layout": "WordPress page; \"Traffic Regulation Orders (TROs)\" paragraph links the Current TROs PDF; also links the BOAT list PDF",
+  "region": "article#post-25691 (section.page-content-wrapper div.col-sm-8)"
+ }
+]
