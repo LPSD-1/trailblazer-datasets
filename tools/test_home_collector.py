@@ -29,9 +29,13 @@ PDF = "https://en.powys.example/media/10190/Gap-Road/pdf/gap.pdf?m=1"
 
 
 def layer(stamp, ids=("a", "b")):
+    """A GeoServer view: its feature ids are renumbered on every request."""
     return json.dumps({"type": "FeatureCollection", "timeStamp": stamp,
-                       "features": [{"id": i, "properties": {}} for i in
-                                    reversed(ids)]}).encode()
+                       "features": [{"id": "route_closed.fid--28fd165a_"
+                                           "1a115fe11b7_%x" % (stamp * 4000 + n),
+                                     "properties": {"code": i}}
+                                    for n, i in enumerate(reversed(ids))]}
+                      ).encode()
 
 
 def page(footer):
@@ -111,7 +115,7 @@ class Collect(unittest.TestCase):
             {WFS: layer(1, ids=("a", "b", "c")), PAGE: None, PDF: None})
         self.assertEqual(changed, ["dorset-closures", "index"])
         self.assertIn((PAGE, "Wed, 07 Oct 2026"), client.asked)
-        self.assertIn(b'"c"', self.snapshot(WFS))
+        self.assertIn(b'"code":"c"', self.snapshot(WFS))
 
     def test_a_failure_keeps_the_last_good_snapshot_and_says_so(self):
         self.run_with({WFS: layer(1), PAGE: page("a"), PDF: b"%PDF"})

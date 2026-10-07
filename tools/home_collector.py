@@ -122,7 +122,14 @@ def canonical(kind, body):
             data.pop("timeStamp", None)        # GeoServer's own clock
             feats = data.get("features")
             if isinstance(feats, list):
-                feats.sort(key=lambda f: str(f.get("id")))
+                for f in feats:
+                    # A GeoServer view numbers its features afresh on every
+                    # request ("view.fid--28fd165a_1a115fe11b7_6715"): not
+                    # an identity, and not a change.
+                    if isinstance(f, dict) and _VOLATILE_ID.search(
+                            str(f.get("id") or "")):
+                        f.pop("id", None)
+                feats.sort(key=lambda f: json.dumps(f, sort_keys=True))
         stored = json.dumps(data, sort_keys=True, separators=(",", ":"),
                             ensure_ascii=False).encode("utf-8")
         return stored, hashlib.sha256(stored).hexdigest()
@@ -131,6 +138,9 @@ def canonical(kind, body):
         text = "\n".join(page_text(body)).encode("utf-8")
         return body, hashlib.sha256(text).hexdigest()
     return body, hashlib.sha256(body).hexdigest()
+
+
+_VOLATILE_ID = re.compile(r"\.fid--[0-9a-f]+_[0-9a-f]+_[0-9a-f]+$")
 
 
 # --------------------------------------------------------------- collect
