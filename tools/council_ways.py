@@ -371,8 +371,15 @@ LAYERS = [
      "where": "StatusDescr='BOAT'",
      "fields": "OBJECTID,RouteCode,ParishDescr,RouteNo,StatusDescr"},
     # The layer holds byways only (its other layers are the other classes).
+    # A CROSS-CHECK FOR NOW: on its first read (7 October 2026) it drew 95
+    # of rowmaps' 116 Isle of Wight byway records, and the 21 it did not
+    # included S26, which the same layer marks "closed" - a sign of drawing
+    # differences, not 21 stopped-up byways. It sits in a folder called
+    # "EsriTesting". Compared and reported; it replaces nothing until a
+    # person has looked at those 21.
     {"code": "IW", "council": "Isle of Wight Council",
      "licence": None, "read": read_arcgis, "ref": _ref_isle_of_wight,
+     "role": "cross-check",
      "url": "https://arcgis.iow.gov.uk/arcgis/rest/services/EsriTesting/"
             "PublicRightsOfWay/MapServer/0",
      "where": "1=1", "fields": "OBJECTID,P_NUMBER"},
@@ -381,7 +388,7 @@ LAYERS = [
     # read and compared (status.json says how far the two agree) and used
     # only if rowmaps ever has no Hampshire file at all. EMAIL_ADDR and the
     # other office fields are never requested.
-    {"code": "HA", "council": "Hampshire County Council",
+    {"code": "HP", "council": "Hampshire County Council",
      "licence": None, "read": read_arcgis, "ref": _ref_hampshire,
      "role": "cross-check",
      "url": "https://services-eu1.arcgis.com/JZryykSnmiY7YI6X/arcgis/rest/"

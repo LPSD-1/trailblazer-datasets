@@ -355,7 +355,20 @@ class Layers(unittest.TestCase):
         for layer in cw.LAYERS:
             fields = (layer.get("fields") or "*").upper()
             self.assertNotIn("EMAIL", fields, layer["code"])
-        self.assertEqual(cw.by_code()["HA"]["role"], "cross-check")
+        self.assertEqual(cw.by_code()["HP"]["role"], "cross-check")
+        self.assertEqual(cw.by_code()["IW"]["role"], "cross-check")
+
+    def test_every_code_is_the_authority_rowmaps_files_it_under(self):
+        # HA is Halton: Hampshire under it would have been published as
+        # Halton's byways.
+        with open(os.path.join(os.path.dirname(os.path.dirname(
+                os.path.abspath(__file__))), "manual",
+                "authorities.json")) as fh:
+            table = json.load(fh)
+        for layer in cw.LAYERS:
+            name = table[layer["code"]]["authority"]
+            self.assertIn(name.split()[0].lower(),
+                          layer["council"].lower(), layer["code"])
 
     def test_no_restricted_byway_filter_and_no_blocked_host(self):
         from polite_http import blocked, host_of
