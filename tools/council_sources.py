@@ -1115,6 +1115,10 @@ def match(candidates, byways, authority):
         refs = c.pop("refs", None) or []
         claims = c.pop("claims_byway", True)
         review_only = c.pop("review_only", None)
+        # Drawn along our own byway, never the council's line: for a source
+        # whose map terms forbid copying its drawing, only the facts of the
+        # closure (which way, when, why) are taken.
+        draw_ours = c.pop("draw_ours", False)
         ways, how = [], None
         if lines:
             got = byways.match_geometry(lines, authorities={authority})
@@ -1142,7 +1146,8 @@ def match(candidates, byways, authority):
                            "where": c.get("where"), "ways": ways,
                            "why": "a seasonal order with no season stated"})
             continue
-        geometry = as_geometry(lines) if (lines and how == "geometry") \
+        geometry = as_geometry(lines) if (lines and how == "geometry"
+                                          and not draw_ours) \
             else as_geometry(byways.geometry(ways))
         item = dict((k, v) for k, v in c.items() if v not in (None, ""))
         item["authority"] = authority

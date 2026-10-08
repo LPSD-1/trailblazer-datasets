@@ -112,6 +112,24 @@ class Dates(unittest.TestCase):
             dict(items[0]), source, "2026-10-31"))
 
 
+    def test_the_council_line_finds_the_byway_and_ours_is_drawn(self):
+        data = fixture()
+        theirs = under(by_id(data, 281))
+        # Our byway runs on past the council's line, so the two differ.
+        lines = [list(l) for l in theirs.lines]
+        lines[-1] = lines[-1] + [[lines[-1][-1][0] + 0.001,
+                                  lines[-1][-1][1]]]
+        byways = Byways([Way(theirs.uid, theirs.authority, theirs.name,
+                             lines)])
+        _n, got = read(data)
+        items, _u, _r = cs.match([c for c in got if c["id"] == "66/25|281"],
+                                 byways, "Ceredigion")
+        self.assertEqual(len(items), 1)
+        self.assertEqual(items[0]["geometry"],
+                         cs.as_geometry(byways.geometry(items[0]["ways"])))
+        self.assertNotIn("draw_ours", items[0])
+
+
 # -------------------------------------------------------------- categories
 
 

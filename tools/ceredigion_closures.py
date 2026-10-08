@@ -184,6 +184,12 @@ def candidate(feature, parse_date, geojson_lines, clean):
         # A road closures layer: nearly every closure is on a road we do
         # not carry, so one that misses our byways is not "unmatched".
         "claims_byway": False,
+        # The council's map terms give a licence "solely to view" and
+        # forbid copying (ceredigion.gov.uk/resident/maps/terms-and-
+        # conditions): its line finds the byway, and our own byway's
+        # geometry is what is published. A closure is then drawn along the
+        # whole byway it touches - the cautious side.
+        "draw_ours": True,
     }
     if kind == ACCESS_ONLY:
         item["vehicles"] = "other"
