@@ -749,11 +749,16 @@ class PoliteClient(object):
 
 
 def arcgis_query(client, layer_url, where="1=1", out_fields="*",
-                 geometry=True, out_sr=27700, page=1000, limit=20000):
+                 geometry=True, out_sr=27700, page=1000, limit=20000,
+                 order_by=""):
     """Every feature a layer's /query returns, paged, as an esri JSON list.
 
     Asks for the geometry in British National Grid (`out_sr`), so every
     source reaches the matcher in the same frame whatever it stores in.
+
+    `order_by` (a field, normally the object id) asks the server for one
+    fixed order: paging by resultOffset over an unordered result may repeat
+    one record on two pages and skip another.
     """
     out = []
     offset = 0
@@ -762,7 +767,7 @@ def arcgis_query(client, layer_url, where="1=1", out_fields="*",
             "where": where, "outFields": out_fields, "f": "json",
             "returnGeometry": "true" if geometry else "false",
             "outSR": str(out_sr), "resultOffset": str(offset),
-            "resultRecordCount": str(page), "orderByFields": "",
+            "resultRecordCount": str(page), "orderByFields": order_by,
         }
         url = layer_url.rstrip("/") + "/query?" + urllib.parse.urlencode(
             dict((k, v) for k, v in params.items() if v != ""))

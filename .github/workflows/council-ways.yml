@@ -12,8 +12,10 @@ name: Council byway layers
 # public roads that are green lanes, on no definitive map, read from the
 # council's own highway records into council-ucrs/<CODE>.json. Their own
 # files, status and keep-last-good floor; never the byway merge (rowmaps has
-# no UCRs to merge with). Devon first, by the owner's decision of 8 October
-# 2026.
+# no UCRs to merge with). Devon, North Yorkshire, Norfolk, Lincolnshire,
+# Northumberland, East Riding of Yorkshire, Oxfordshire and Surrey, by the
+# owner's decision of 8 October 2026 (README.md, "Unsurfaced unclassified
+# roads"); every request at least 4.5 s apart per host.
 #
 # A layer that cannot be read, or reads as a collapse, leaves its last good
 # file exactly as it was; the build falls back to rowmaps for any council

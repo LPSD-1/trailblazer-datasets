@@ -11,9 +11,10 @@ the legal record of public rights of way in England and Wales — obtained via
 > v3.0. Source: local highway authority definitive maps, via rowmaps.com.
 
 Since 8 October 2026 the lanes also include **unsurfaced unclassified roads**
-read from the councils' own highway records - so far Devon's, credited to
-Devon County Council. That layer is not published under the Open Government
-Licence; see [Unsurfaced unclassified roads](#unsurfaced-unclassified-roads-ucrs).
+read from the councils' own highway records - Devon, North Yorkshire, Norfolk,
+Lincolnshire, Northumberland, East Riding of Yorkshire, Oxfordshire and Surrey,
+each credited to its council. Those layers are not published under the Open
+Government Licence; see [Unsurfaced unclassified roads](#unsurfaced-unclassified-roads-ucrs).
 
 ## What this is not
 
@@ -301,34 +302,85 @@ lane is to be shown, so `council-ways.yml` also reads the councils that publish
 their unsurfaced roads, every day, into `council-ucrs/<CODE>.json`
 (`tools/council_ucrs.py`; its own status in `council-ucrs/status.json`).
 
-Coverage in England and Wales:
+Coverage in England and Wales. "Roads" is what the build publishes from the
+read of 8 October 2026, against rowmaps' definitive maps of 10 September:
 
-| Authority | Source | Read since | Roads (8 Oct 2026) | Licence |
-|---|---|---|---|---|
-| Devon | Devon County Council: ArcGIS `Environment_Intranet/Public_Access_Intranet/MapServer/5`, "PROW CAT 12" - its unsurfaced unclassified county roads, maintenance category 12 | 8 Oct 2026 | 959 routes (1,143 sections, 589 km) | not stated - see below |
-| every other authority | not yet read: a survey of every council's highway records is under way, and each council found is one entry in `UCR_LAYERS` | - | - | - |
+| Authority | Source (the council's own layer) | Read since | Read (8 Oct 2026) | Published roads | Not drawn: on a footpath, bridleway or restricted byway (NERC) | Licence |
+|---|---|---|---|---|---|---|
+| Devon | Devon County Council: `Environment_Intranet/Public_Access_Intranet/MapServer/5`, "PROW CAT 12" - unsurfaced unclassified county roads, maintenance category 12 | 8 Oct 2026 | 1,143 sections, 959 routes | 949 (582 km) | 29 sections | not stated - see below |
+| North Yorkshire | North Yorkshire Council: `highways/Highways_Network/FeatureServer/3` "U_Roads" (through the ArcGIS utility proxy its public rights of way map uses), HIERARCHY 6 | 8 Oct 2026 | 1,005 sections, 663 roads | 610 (670 km) | 73 sections | not stated - see below |
+| Norfolk | Norfolk County Council: `layers_ext/crm/MapServer/16`, "Norfolk County Council Maintained Unsurfaced Roads" | 8 Oct 2026 | 711 sections, 586 roads | 541 (480 km) | 46 sections | not stated - see below |
+| Lincolnshire | Lincolnshire County Council: `Highways_Assets_Carriageway_2_view/FeatureServer/3`, Road_Class 'Green Lane' | 8 Oct 2026 | 536 sections, 475 roads | 364 (254 km) | 139 sections | not stated - see below |
+| Northumberland | Northumberland County Council: `adopted_highway_master_view/FeatureServer/4` (its List of Streets), maintenance category '8 - Unsurfaced Roads', all-purpose sections | 8 Oct 2026 | 305 sections, 233 roads | 72 (80 km); 154 more lie on a BOAT and are left to it | 9 sections | not stated - see below |
+| East Riding of Yorkshire | East Riding of Yorkshire Council: `LSG_ESU_Dedications/FeatureServer/9` (street gazetteer, last edited Sept 2022), 'GREEN LANE' or '6 Unmetalled', dedicated to all vehicles, council maintained | 8 Oct 2026 | 192 sections, 112 roads | 100 (89 km) | 19 sections | not stated - see below |
+| Oxfordshire | Oxfordshire County Council: `WMS/Highways_Centreline/MapServer/1` (its List of Streets), STREET_SURF 'Unmetalled' (not 'Mixed') | 8 Oct 2026 | 106 streets | 38 (21 km) | 98 sections (64 streets wholly: most are restricted byways) | not stated - see below |
+| Surrey | Surrey County Council: `Surrey_Interactive_Map/RoadsTransport_Roads_Publicly_Maintained/MapServer/33`, surface 'UM', road_type 'Unclassified' | 8 Oct 2026 | 167 sections, 92 roads | 34 (15 km); 49 more lie on a BOAT | 19 sections | not stated - see below |
+| Worcestershire | not read: its 'Keep Safe Only' maintenance tier (193 sections) is not tied to unsurfaced roads by any council publication found (tools/council_ucrs.py says which were read) | - | - | - | - | - |
+| Suffolk, Herefordshire | not read: their terms forbid copying | - | - | - | - | - |
+| every other authority | not yet read; each council found is one entry in `UCR_LAYERS` | - | - | - | - | - |
 
 Where a council's roads are not read, the app says so: an absence of UCRs on
 the map is never an absence on the ground.
 
-**Devon's layer states no licence. It is published on the owner's decision of
-8 October 2026** that it is public highway information - a council's highway
-records must be open to public inspection - credited to Devon County Council
-on every road, pack and container that carries it, and it will be taken down if
-the council objects. Every road says, in its `attribution`: "Source: Devon
-County Council's unsurfaced unclassified county roads (maintenance category
-12), read from the council." followed by that decision.
+**None of these layers states a licence. Each is published on the owner's
+decision of 8 October 2026** that it is public highway information - a
+council's highway records must be open to public inspection - credited to the
+council by name (Devon County Council, North Yorkshire Council, Norfolk County
+Council, Lincolnshire County Council, Northumberland County Council, East
+Riding of Yorkshire Council, Oxfordshire County Council, Surrey County
+Council) on every road, pack and container that carries it, and each will be
+taken down if its council objects. Every road says, in its `attribution`,
+"Source: <the council's layer>, read from the council." followed by that
+decision (`council_ucrs.owner_decision_note`). The decision named
+Worcestershire too; it is held out on the evidence above, not the licence.
 
-Each route (a parish and number, every section of it) is one lane of class
-`ucr`, with `legal_tier` and `access_evidence` `highway_record` - the council's
-highway record, a different kind of evidence from a definitive-map BOAT -
-named from the council's road name and reference ("Rocky Lane (Abbotsham UCR
-301)"), and open to motorbikes and 4x4s unless an order says otherwise. A road
-that lies along a published byway is left to the byway. The closures pipeline
-matches orders to UCRs as it does to byways (Devon's own closure notices name
-three today). UCRs travel in their own table and tile layer so that app builds
-before 119, which would draw them as lanes you may not ride, never see them:
-docs/WAYS-SCHEMA.md, "Unsurfaced unclassified roads".
+**THE NERC TEST.** The Natural Environment and Rural Communities Act 2006 s67
+took the motor vehicle rights off every way recorded on the definitive map as
+a footpath, bridleway or restricted byway; s67(2)(b) saves a List of Streets
+road only where it was NOT on the definitive map. Lincolnshire says so itself:
+"Legislation has extinguished the rights of motorists if these are also shown
+as a: public footpath, public bridleway, restricted byway". So the build
+(`build_packages.ucr_lanes`) tests every council's roads section by section
+against rowmaps' footpaths, bridleways and restricted byways of every
+authority (read from the cache though none is carried): a section with 75% of
+its length within 20 m of them is not drawn, and the rest of the road is.
+Measured 8 Oct 2026 over 4,415 sections, the share is two humps - 1,101
+sections under 0.1, 362 at 0.9 or more - so the test is not sensitive to the
+exact figure; a path merely crossing a road covers 40 m of it and never drops
+a section over ~53 m. Sections partly along a path (30-75% of 100 m or more)
+are kept and listed in the build log for the owner to look at. A council whose
+own definitive map is not in the build cannot be tested and its roads are not
+published at all, never drawn unchecked.
+
+Each route is one lane of class `ucr` - a parish and number where the council
+numbers within parishes (Devon), otherwise the council's own road number
+(North Yorkshire's "U2686", Surrey's "D262", Oxfordshire's USRN) - with
+`legal_tier` and `access_evidence` `highway_record` (the council's highway
+record, a different kind of evidence from a definitive-map BOAT). Its id is
+that reference and nothing else (`DN-UCR-abbotsham-301`, `NY-UCR-u2686`), so a
+rider's star survives the council re-drawing a section; two routes that really
+collide get a disambiguator. It is named from the council's road name and
+reference ("Rocky Lane (Abbotsham UCR 301)"); a placeholder ("Unknown",
+"Track"), a bare number or a reference in the name field is no name, and the
+lane is then "Unsurfaced unclassified road (UCR) Abbotsham 301". It is open to
+motorbikes and 4x4s unless an order says otherwise. A road that lies along a
+published byway is left to the byway. The closures pipeline matches orders to
+UCRs as it does to byways, and every matcher (council sources, the order
+register, Street Manager, the MoD ranges) says "Road closed" where all it
+matched is roads. UCRs travel in their own table and tile layer so that app
+builds before 119, which would draw them as lanes you may not ride, never see
+them: docs/WAYS-SCHEMA.md, "Unsurfaced unclassified roads".
+
+READ FROM GITHUB'S RUNNERS. Every layer above is read by `council-ways.yml`
+through `tools/polite_http.py`, at least 4.5 s apart per host. The runners
+already read Devon's and Oxfordshire's map servers and Northumberland's
+ArcGIS Online host (`services2.arcgis.com`) for byways; Lincolnshire's and
+East Riding's are ArcGIS Online too, and North Yorkshire's is Esri's own
+proxy (`utility.arcgis.com`). Norfolk's map server answered an ordinary
+address without a challenge (its www site refuses data centres; this host is
+untried from the runners). Surrey's map server sets an Imperva cookie: if it
+refuses the runners, the collector server (HOME-COLLECTOR.md) is the honest
+route, and nothing is worked round.
 
 ## Local rules
 
@@ -346,7 +398,11 @@ site `tools/polite_http.py` blocks.
 
 Data: Open Government Licence v3.0 — attribution required, no share-alike -
 except the unsurfaced unclassified roads above, which are credited to the
-council that publishes them under the terms stated there.
+council that publishes them under the terms stated there. The manifest says
+the same: its `licence` is "OGL-3.0" only while no council's roads are in the
+build, and otherwise names what each part is published under, and its
+`attribution` labels the rights-of-way credit and each council's
+(`build_packages.dataset_licence`, `dataset_attribution`).
 The attribution string above travels on the collection *and* on every single
 feature, because losing it silently would put users in breach while everything
 still appeared to work.

@@ -1,0 +1,410 @@
+{
+"about": "A real subset of East Riding of Yorkshire Council's layer as its /query answered on 8 October 2026 (British National Grid), for tools/test_council_ucrs.py. ",
+"url": "https://services6.arcgis.com/Qptn479QktK11k72/arcgis/rest/services/LSG_ESU_Dedications/FeatureServer/9",
+"features": [
+{
+"attributes": {
+"FID": 823,
+"SITE_CODE": "45907415",
+"site_name": "GREEN LANE TRACK OFF SPRING LANE",
+"area_name": "BEMPTON",
+"customer_n": "HW: ERYC Highway Maintained",
+"category_n": "6 Unmetalled",
+"netwok_pri": "GREEN LANE",
+"dedication": "All Vehicles"
+},
+"geometry": {
+"paths": [
+[
+[
+519275.6263,
+472216.6886
+],
+[
+519317.0001,
+472212.999700001
+],
+[
+519323.3817,
+472213.6395
+]
+]
+]
+}
+},
+{
+"attributes": {
+"FID": 826,
+"SITE_CODE": "45907415",
+"site_name": "GREEN LANE TRACK OFF SPRING LANE",
+"area_name": "BEMPTON",
+"customer_n": "HW: ERYC Highway Maintained",
+"category_n": "6 Unmetalled",
+"netwok_pri": "GREEN LANE",
+"dedication": "All Vehicles"
+},
+"geometry": {
+"paths": [
+[
+[
+519323.3817,
+472213.6395
+],
+[
+519328.9966,
+472213.999399999
+],
+[
+519338.0002,
+472231.0045
+],
+[
+519366.0417,
+472357.998199999
+]
+]
+]
+}
+},
+{
+"attributes": {
+"FID": 879,
+"SITE_CODE": "45907548",
+"site_name": "EAST CARR ROAD",
+"area_name": "BURSTWICK",
+"customer_n": "HW: ERYC Part Maintained",
+"category_n": "6 Unmetalled",
+"netwok_pri": "UNCLASSIFIED ROAD",
+"dedication": "Neither 2, 4, 6, 8, 9, 10 nor 11"
+},
+"geometry": {
+"paths": [
+[
+[
+524195.9985,
+426960.0032
+],
+[
+524215.0033,
+426950.9958
+],
+[
+524508.2637,
+426903.6194
+]
+]
+]
+}
+},
+{
+"attributes": {
+"FID": 899,
+"SITE_CODE": "45907591",
+"site_name": "INGS LANE TRACK",
+"area_name": "PATRINGTON",
+"customer_n": "HW: ERYC Part Maintained",
+"category_n": "6 Unmetalled",
+"netwok_pri": "Public Right Of Way",
+"dedication": "Neither 2, 4, 6, 8, 9, 10 nor 11"
+},
+"geometry": {
+"paths": [
+[
+[
+529943.7625,
+422612.797599999
+],
+[
+528995.0033,
+422644.998400001
+],
+[
+528936.0017,
+422283.002
+],
+[
+528583.2202,
+422314.333000001
+]
+]
+]
+}
+},
+{
+"attributes": {
+"FID": 2887,
+"SITE_CODE": "45902315",
+"site_name": "OLD LANE",
+"area_name": "BLACKTOFT",
+"customer_n": "HW: ERYC Part Maintained",
+"category_n": "6 Unmetalled",
+"netwok_pri": "UNCLASSIFIED ROAD",
+"dedication": "Neither 2, 4, 6, 8, 9, 10 nor 11"
+},
+"geometry": {
+"paths": [
+[
+[
+482407.646,
+425004.503
+],
+[
+482401.9981,
+425084.0002
+],
+[
+482415.9982,
+425098.9959
+],
+[
+482422.9983,
+425101.995100001
+],
+[
+482523.0026,
+425112.0022
+],
+[
+482527.9992,
+425114.001599999
+],
+[
+482535.9969,
+425124.998500001
+],
+[
+482537.0028,
+425139.0045
+],
+[
+482489.1237,
+425318.1632
+]
+]
+]
+}
+},
+{
+"attributes": {
+"FID": 4072,
+"SITE_CODE": "45900346",
+"site_name": "BOW ROAD",
+"area_name": "MELTON",
+"customer_n": "HW: ERYC Highway Maintained",
+"category_n": "6 Unmetalled",
+"netwok_pri": "GREEN LANE",
+"dedication": "All Vehicles"
+},
+"geometry": {
+"paths": [
+[
+[
+497147.3335,
+427511.9452
+],
+[
+497088.002,
+427536.9981
+],
+[
+496962.001,
+427577.996300001
+],
+[
+496786.9996,
+427624.0032
+],
+[
+496702.9989,
+427643.997400001
+],
+[
+496656.002,
+427651.995100001
+],
+[
+496562.0001,
+427662.0023
+],
+[
+496498.0019,
+427661.002599999
+],
+[
+496427.0037,
+427655.0043
+]
+]
+]
+}
+},
+{
+"attributes": {
+"FID": 4295,
+"SITE_CODE": "45906416",
+"site_name": "COTTAM GRANGE ACCESS ROAD",
+"area_name": "COTTAM",
+"customer_n": "HW: ERYC Part Maintained",
+"category_n": "5 Back Lane",
+"netwok_pri": "GREEN LANE",
+"dedication": "All Vehicles"
+},
+"geometry": {
+"paths": [
+[
+[
+498836.697,
+465621.466499999
+],
+[
+499013.0012,
+465420.0042
+],
+[
+499151.9964,
+465221.0011
+],
+[
+499264.1787,
+465023.987500001
+]
+]
+]
+}
+},
+{
+"attributes": {
+"FID": 20157,
+"SITE_CODE": "45900213",
+"site_name": "BEALEYS LANE",
+"area_name": "LOCKINGTON",
+"customer_n": "HW: ERYC Highway Maintained",
+"category_n": "4b Local Access Road",
+"netwok_pri": "GREEN LANE",
+"dedication": "All Vehicles"
+},
+"geometry": {
+"paths": [
+[
+[
+499319.0001,
+446738.001800001
+],
+[
+499337.9967,
+446669.001599999
+],
+[
+499358.9969,
+446601.001
+],
+[
+499407.9973,
+446465.999700001
+]
+]
+]
+}
+},
+{
+"attributes": {
+"FID": 20231,
+"SITE_CODE": "45900213",
+"site_name": "BEALEYS LANE",
+"area_name": "LOCKINGTON",
+"customer_n": "HW: ERYC Highway Maintained",
+"category_n": "4b Local Access Road",
+"netwok_pri": "GREEN LANE",
+"dedication": "All Vehicles"
+},
+"geometry": {
+"paths": [
+[
+[
+499407.9973,
+446465.999700001
+],
+[
+499481.9967,
+446267.996400001
+],
+[
+499638.8013,
+445969.751700001
+]
+]
+]
+}
+},
+{
+"attributes": {
+"FID": 20274,
+"SITE_CODE": "45900213",
+"site_name": "BEALEYS LANE",
+"area_name": "LOCKINGTON",
+"customer_n": "HW: ERYC Highway Maintained",
+"category_n": "4b Local Access Road",
+"netwok_pri": "GREEN LANE",
+"dedication": "All Vehicles"
+},
+"geometry": {
+"paths": [
+[
+[
+499638.8013,
+445969.751700001
+],
+[
+499635.0003,
+445881.9969
+],
+[
+499604.9966,
+445709.996099999
+],
+[
+499593,
+445550.0019
+],
+[
+499634.0027,
+445445.0019
+],
+[
+499677.9983,
+445348.999399999
+],
+[
+499718.7289,
+445275.1906
+],
+[
+499737.2391,
+445218.5768
+],
+[
+499738.3274,
+445175.019200001
+],
+[
+499744.8575,
+445119.485099999
+],
+[
+499759.0061,
+445046.526000001
+],
+[
+499776.4361,
+444979.0153
+],
+[
+499823.8287,
+444884.952299999
+]
+]
+]
+}
+}
+]
+}

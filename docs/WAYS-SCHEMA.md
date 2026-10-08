@@ -70,7 +70,7 @@ CREATE VIRTUAL TABLE ways_bbox USING rtree(id, min_lon, max_lon, min_lat, max_la
 | `boat` | Byway open to all traffic | **rideable** |
 | `restricted_byway` | No mechanically propelled vehicles | greyed, never green |
 | `bridleway` | Horse, foot, cycle | greyed, never green |
-| `ucr` | Unsurfaced unclassified road — a **public road** in the council's highway records | **rideable**, in a style of its own; its own table and tile layer (see "Unsurfaced unclassified roads"). Devon since 8 Oct 2026 |
+| `ucr` | Unsurfaced unclassified road — a **public road** in the council's highway records | **rideable**, in a style of its own; its own table and tile layer (see "Unsurfaced unclassified roads"). Devon, North Yorkshire, Norfolk, Lincolnshire, Northumberland, East Riding of Yorkshire, Oxfordshire and Surrey since 8 Oct 2026 |
 | `osm_track` | Outside England and Wales; OSM-derived | amber, "verify locally" |
 
 **Footpaths are not carried.** 627 MB, no bearing on a motor vehicle.
@@ -105,7 +105,18 @@ List of Streets (Highways Act 1980 s36(6)). The Natural Environment and Rural
 Communities Act 2006 s67(2)(b) kept the motor vehicle rights over ways in that
 list. They are on no definitive map, so rowmaps has none. Devon's maintenance
 category 12 ("Often, they are 'green lanes'", its Highway Asset Management
-Plan, Annex 10) is the first council read.
+Plan, Annex 10) was the first council read; README.md lists every council
+read since, each by its own field and value.
+
+**Not where the definitive map says path (NERC).** s67 of that Act took the
+motor rights off every way the definitive map records as a footpath,
+bridleway or restricted byway; (2)(b) saves a List of Streets road only where
+it was not on the definitive map. So `build_packages.ucr_lanes` drops each
+UCR *section* with 75% of its length within 20 m of a definitive-map
+footpath, bridleway or restricted byway of any authority (rowmaps, read from
+the cache though none is carried), keeps the road's other sections, and holds
+back every road of a council whose own definitive map is not in the build
+(it cannot be tested, so it is not drawn).
 
 **Where they come from.** `tools/council_ucrs.py` reads each council's own
 layer through `tools/polite_http.py` into `council-ucrs/<CODE>.json`, with its
@@ -117,11 +128,15 @@ entry in `UCR_LAYERS`. They NEVER go through `council_ways.py`'s byway merge:
 rowmaps has no UCRs to merge with, and every one would read as "new".
 
 **One route, one way.** A council draws a road in sections; every section of
-one parish and number is one `ucr` way (several lines in one geometry). The
-id is `<code>-UCR-<parish>-<number>-<hash of every line>`; the name is the
-council's name for the road with its reference - "Rocky Lane (Abbotsham UCR
-301)" - or, where it names none, "Unsurfaced unclassified road (UCR)
-Abbotsham 301". A UCR lying along a published byway (90% of it within 20 m)
+one parish and number (or one county-wide road number, where the council
+numbers its roads that way) is one `ucr` way (several lines in one
+geometry). The id is `<code>-UCR-<parish>-<number>` (`NY-UCR-u2686` where
+there is no parish): the council's reference alone, so it survives a section
+re-drawn, added or dropped; only two routes that collide get a disambiguator
+(six hex of their own lines). The name is the council's name for the road with
+its reference - "Rocky Lane (Abbotsham UCR 301)" - or, where it names none (a
+placeholder such as "Unknown" or "Track", a bare number or a reference is
+none), "Unsurfaced unclassified road (UCR) Abbotsham 301". A UCR lying along a published byway (90% of it within 20 m)
 is the same way recorded twice, and the byway's definitive-map record wins.
 
 **Provenance, per way.** `legal_tier = 'highway_record'` and
