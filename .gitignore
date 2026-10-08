@@ -57,3 +57,6 @@ tools/geoplace_swa_org_active_*.csv
 
 # The home collector's own log (tools/home_collector.py), kept beside the clone.
 collector.log*
+
+# tools/run_workflow_locally.py: its logs and lock
+.tb-local/
