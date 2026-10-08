@@ -149,13 +149,13 @@
       "kind": "basemap",
       "label": "Satellite - South East",
       "file": "https://github.com/LPSD-1/trailblazer-datasets/releases/download/satellite/gb-south-east-satellite-high.pmtiles",
-      "sha256": "46ae3e06daaee28b2d26cc6da2c50062f12e07fc6e0383be9ab07a61df8befb1",
-      "bytes": 173734712,
+      "sha256": "b3e15da5c3b50ad997bad5c77e643d76cdbee9f835818098a515159c1a225b54",
+      "bytes": 198910535,
       "bounds": {
         "west": -1.85,
         "south": 50.5,
         "east": 1.45,
-        "north": 51.8
+        "north": 51.95
       },
       "note": "Sentinel-2 cloudless 2024 by EOX IT Services GmbH, CC BY 4.0. Contains modified Copernicus Sentinel data 2024.",
       "maxZoom": 14,
@@ -166,20 +166,20 @@
         "groundMetresPerPixel": 4.8
       },
       "area": "gb-south-east",
-      "generated": "2026-09-12T21:21:00Z"
+      "generated": "2026-10-08T10:28:31Z"
     },
     {
       "id": "gb-south-east-satellite-standard",
       "kind": "basemap",
       "label": "Satellite - South East",
       "file": "https://github.com/LPSD-1/trailblazer-datasets/releases/download/satellite/gb-south-east-satellite-standard.pmtiles",
-      "sha256": "cb5a13a7fc0f3097bad72401f170106d0465bd475d7a560b07ebfbbb9d08100c",
-      "bytes": 60989455,
+      "sha256": "64757e2a949d59529d9f1f8fdf76462cbba190112b07a47ac6aa934ee683860f",
+      "bytes": 70552150,
       "bounds": {
         "west": -1.85,
         "south": 50.5,
         "east": 1.45,
-        "north": 51.8
+        "north": 51.95
       },
       "note": "Sentinel-2 cloudless 2024 by EOX IT Services GmbH, CC BY 4.0. Contains modified Copernicus Sentinel data 2024.",
       "maxZoom": 13,
@@ -190,7 +190,7 @@
         "groundMetresPerPixel": 9.6
       },
       "area": "gb-south-east",
-      "generated": "2026-09-12T21:21:00Z"
+      "generated": "2026-10-08T10:28:31Z"
     },
     {
       "id": "gb-south-west-satellite-high",
