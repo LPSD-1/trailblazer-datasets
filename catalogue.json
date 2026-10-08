@@ -1,6 +1,6 @@
 {
  "schema": 2,
- "generated": "2026-10-08T20:56:24Z",
+ "generated": "2026-10-08T21:51:13Z",
  "attribution": "Map and routing data (c) OpenStreetMap contributors, ODbL. United Kingdom rights of way contain public sector information licensed under the Open Government Licence v3.0, via rowmaps.com. Unsurfaced unclassified roads from the highway records of Devon County Council, North Yorkshire Council, Norfolk County Council, Lincolnshire County Council, Northumberland County Council, East Riding of Yorkshire Council, Oxfordshire County Council and Surrey County Council.",
  "baseUrl": "https://lpsd-1.github.io/trailblazer-datasets/",
  "overviews": [
@@ -2974,13 +2974,13 @@
          "kind": "basemap",
          "label": "Satellite - South West",
          "file": "https://github.com/LPSD-1/trailblazer-datasets/releases/download/satellite/gb-south-west-satellite-high.pmtiles",
-         "sha256": "d39f7a855710ef36f3e1d926431335de340e1911f131e00ab80fb31f26f7d08a",
-         "bytes": 166646526,
+         "sha256": "8d6022e3379d603521666d108899ca1e2cfa723179ebc26d0981c0c5ed28ccf3",
+         "bytes": 233507654,
          "bounds": {
           "west": -6.45,
           "south": 49.85,
-          "east": -1.95,
-          "north": 51.55
+          "east": -1.85,
+          "north": 51.95
          },
          "note": "Sentinel-2 cloudless 2024 by EOX IT Services GmbH, CC BY 4.0. Contains modified Copernicus Sentinel data 2024.",
          "maxZoom": 14,
@@ -2990,20 +2990,20 @@
           "description": "Twice the pixels when you zoom right in. The same 10 m satellite behind it - what improves is how it is drawn, not what it can show.",
           "groundMetresPerPixel": 4.8
          },
-         "generated": "2026-09-12T23:06:35Z"
+         "generated": "2026-10-08T21:51:13Z"
         },
         {
          "id": "gb-south-west-satellite-standard",
          "kind": "basemap",
          "label": "Satellite - South West",
          "file": "https://github.com/LPSD-1/trailblazer-datasets/releases/download/satellite/gb-south-west-satellite-standard.pmtiles",
-         "sha256": "5a248419130c8828fef95b4d8477b9d0f54c65534ee2dd1ecfd6bb4a10a666fc",
-         "bytes": 53800416,
+         "sha256": "f7e9f30d078f54b64651ce4fb31c04a1611ea6a2dfeb1ec1bee6ab4851408d3c",
+         "bytes": 77190951,
          "bounds": {
           "west": -6.45,
           "south": 49.85,
-          "east": -1.95,
-          "north": 51.55
+          "east": -1.85,
+          "north": 51.95
          },
          "note": "Sentinel-2 cloudless 2024 by EOX IT Services GmbH, CC BY 4.0. Contains modified Copernicus Sentinel data 2024.",
          "maxZoom": 13,
@@ -3013,7 +3013,7 @@
           "description": "The whole area at the source's own resolution. A quarter of the size.",
           "groundMetresPerPixel": 9.6
          },
-         "generated": "2026-09-12T23:06:35Z"
+         "generated": "2026-10-08T21:51:13Z"
         },
         {
          "id": "gb-south-west-height",
