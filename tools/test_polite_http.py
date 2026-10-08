@@ -488,6 +488,31 @@ class Redirects(unittest.TestCase):
         self.assertEqual(client.get("https://h.example/a"), b"followed")
         self.assertIn("https://h.example/ok", self.asked(transport))
 
+    def test_robots_txt_redirecting_on_its_own_host_is_read_once(self):
+        # Derbyshire's wms. host answers robots.txt with a 302 to its WMS
+        # GetCapabilities (measured 8 October 2026). Checking that redirect
+        # against the robots.txt still being read asked for robots.txt
+        # again, and again, about a thousand times, then refused the host.
+        cap = "https://h.example/geoserver/ows?request=GetCapabilities"
+        client, transport = real_client({
+            "https://h.example/robots.txt": (302, {"Location": cap}, b""),
+            cap: (200, {}, b"<WMS_Capabilities/>"),
+            "https://h.example/wfs": (200, {}, b"features")})
+        self.assertEqual(client.get("https://h.example/wfs"), b"features")
+        self.assertEqual(self.asked(transport).count(
+            "https://h.example/robots.txt"), 1)
+
+    def test_robots_txt_redirected_to_a_file_obeys_that_file(self):
+        client, transport = real_client({
+            "https://h.example/robots.txt": (
+                301, {"Location": "https://h.example/r.txt"}, b""),
+            "https://h.example/r.txt": self.ROBOTS,
+            "https://h.example/private/x": (200, {}, b"secret")})
+        with self.assertRaises(Refused):
+            client.get("https://h.example/private/x")
+        self.assertNotIn("https://h.example/private/x",
+                         self.asked(transport))
+
     def test_never_to_http(self):
         client, transport = self.go("http://h.example/ok")
         with self.assertRaises(Refused):

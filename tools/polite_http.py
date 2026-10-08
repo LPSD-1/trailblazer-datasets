@@ -416,6 +416,10 @@ def robots_verdict(status, text):
     return "disallow-all"
 
 
+# A host whose robots.txt is being read right now (PoliteClient.allowed).
+_READING = object()
+
+
 class _CheckedRedirects(urllib.request.HTTPRedirectHandler):
     """Follow a redirect only to a URL that passes every check the URL
     asked for passed: https, not on the block list, read only, allowed by
@@ -563,6 +567,13 @@ class PoliteClient(object):
             # Never with the validators of the request that brought us here
             # (get_if_changed): robots.txt would answer 304 with no body.
             saved, self._extra_headers = self._extra_headers, {}
+            # While robots.txt itself is being read, a redirect it answers
+            # with on its own host is followed to the file (RFC 9309
+            # 2.3.1.2) rather than checked against the robots.txt still
+            # being read: that check read robots.txt again, which redirected
+            # again, about a thousand times over (Derbyshire's wms. host
+            # answers robots.txt with a 302 to its GetCapabilities).
+            self._robots[host] = _READING
             try:
                 status, _headers, body = self._raw(robots_url)
             except Refused:
@@ -573,6 +584,8 @@ class PoliteClient(object):
             self._robots[host] = robots_verdict(
                 status, body.decode("utf-8", "replace") if body else "")
         verdict = self._robots[host]
+        if verdict is _READING:
+            return True   # where this host's own robots.txt redirects
         if verdict == "allow-all":
             return True
         if verdict == "disallow-all":
