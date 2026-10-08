@@ -364,10 +364,34 @@ jobs:
       # produces a byte-identical pack and the same hash. Publishing it anyway
       # would make every rider re-download four megabytes to be told nothing
       # had happened.
+      #
+      # NOR IS A PACK OLDER THAN THE ONE RIDERS HAVE. A run that stops at its
+      # time budget dates its pack by how far the events feed got, and the
+      # next run carries on from its cache. With no cache - the first run on
+      # a new machine (tools/run_workflow_locally.py, 8 October 2026), or a
+      # cache Actions has evicted - that is weeks behind: the run published
+      # orders as of 9 September over 8 October's, and riders lost a month
+      # of orders until the next run. The delta it fetched is kept, so the
+      # following run gets further; nothing is published until it catches up.
       - name: Has anything changed?
         id: changed
         run: |
-          if git diff --quiet -- tro/index.json && [ "${{ inputs.force }}" != "true" ]; then
+          OLDER=$(python - <<'PY'
+          import json
+          try:
+              with open("/tmp/tro-previous.json", encoding="utf-8") as fh:
+                  was = json.load(fh).get("generated") or ""
+          except (OSError, ValueError):
+              was = ""
+          with open("tro/index.json", encoding="utf-8") as fh:
+              now = json.load(fh).get("generated") or ""
+          print("%s %s" % (now, was) if was and now < was else "")
+          PY
+          )
+          if [ -n "$OLDER" ]; then
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::Not published: this pack reaches ${OLDER% *}, and riders already have ${OLDER#* }. The events fetched are kept; the next run continues from them."
+          elif git diff --quiet -- tro/index.json && [ "${{ inputs.force }}" != "true" ]; then
             echo "publish=false" >> "$GITHUB_OUTPUT"
             echo "The pack is identical to the one already published."
           else
