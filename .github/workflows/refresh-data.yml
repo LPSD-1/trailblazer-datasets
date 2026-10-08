@@ -111,7 +111,7 @@ jobs:
         # which loads build_height.py, which reads PNG height tiles. It was
         # never installed and the step died on it - after the fetch, twenty-five
         # minutes in.
-        run: pip install --quiet cryptography Pillow
+        run: pip install --quiet cryptography Pillow pyyaml
 
       # BEFORE THE FETCH, NOT AFTER IT.
       #
