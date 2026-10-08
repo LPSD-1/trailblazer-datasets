@@ -380,8 +380,11 @@ def find_bash():
 
 
 def load_workflow(name):
-    path = name if os.path.exists(name) else os.path.join(
-        WORKFLOWS, name if name.endswith(".yml") else name + ".yml")
+    # A name is a workflow; only a .yml file is taken as a path. The repo
+    # has folders named like workflows (council-ways/), so "council-ways"
+    # must never be opened as one.
+    path = name if name.endswith(".yml") and os.path.isfile(name) else         os.path.join(WORKFLOWS, name if name.endswith(".yml")
+                     else name + ".yml")
     with open(path, encoding="utf-8") as fh:
         wf = yaml.safe_load(fh)
     # PyYAML reads the bare key `on` as True.
@@ -472,6 +475,22 @@ class Logger(object):
         self.fh.flush()
 
 
+def _linux_newlines(tmp):
+    """A folder whose sitecustomize makes every Python a step starts print
+    plain newlines, as on a Linux runner, not Windows' CR LF."""
+    folder = os.path.join(tmp, "site")
+    os.makedirs(folder, exist_ok=True)
+    with open(os.path.join(folder, "sitecustomize.py"), "w",
+              encoding="utf-8", newline="\n") as fh:
+        fh.write("import sys\n"
+                 "for _s in (sys.stdout, sys.stderr):\n"
+                 "    try:\n"
+                 "        _s.reconfigure(newline='\\n')\n"
+                 "    except (AttributeError, ValueError):\n"
+                 "        pass\n")
+    return folder
+
+
 def run_step(bash, script, env, cwd, timeout, log):
     fd, path = tempfile.mkstemp(suffix=".sh", dir=env["RUNNER_TEMP"])
     with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as fh:
@@ -528,6 +547,11 @@ def run_job(wf_path, wf, job_name, inputs, secrets, args, bash, log,
         "GITHUB_RUN_ID": run_id, "GITHUB_SERVER_URL": "https://github.com",
         "RUNNER_TEMP": tmp, "TMPDIR": tmp,
         "PYTHONUTF8": "1", "PYTHONIOENCODING": "utf-8",
+        # Python on Windows ends printed lines with CR LF; a step that pipes
+        # a list into `while read` then opens "x.tbmap<CR>" and fails.
+        "PYTHONPATH": os.pathsep.join(
+            [_linux_newlines(tmp)] +
+            [p for p in [os.environ.get("PYTHONPATH")] if p]),
     })
     for k in KEY_FILES:      # never leak a key into a step that did not ask
         base_env.pop(k, None)

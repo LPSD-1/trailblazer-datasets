@@ -153,6 +153,20 @@ class Steps(unittest.TestCase):
         self.assertEqual(result, "success", log)
         self.assertIn("shared", log)
 
+    def test_python_prints_plain_newlines_as_on_linux(self):
+        # refresh-data's conditions job pipes a printed list of containers
+        # into `while read`; a carriage return on each line made every path
+        # unopenable.
+        script = ("python -c \"print('a.tbmap'); print('b.tbmap')\" "
+                  "> /tmp/list.txt\n"
+                  "while read -r f; do\n"
+                  "  case \"$f\" in *$'\\r'*) echo CR-IN-LIST; exit 1;; esac\n"
+                  "  echo got-$f\n"
+                  "done < /tmp/list.txt\n")
+        result, log = self.run_job([{"run": script}])
+        self.assertEqual(result, "success", log)
+        self.assertIn("got-b.tbmap", log)
+
     def test_a_secret_a_step_prints_is_masked(self):
         result, log = self.run_job(
             [{"env": {"S": "${{ secrets.DTRO_CLIENT_SECRET }}"},
@@ -173,6 +187,17 @@ class Steps(unittest.TestCase):
 
 
 class TheRealWorkflows(unittest.TestCase):
+
+    def test_a_workflow_name_is_never_a_folder_of_the_same_name(self):
+        here = os.getcwd()
+        os.chdir(rl.ROOT)    # where council-ways/ is a folder
+        try:
+            path, wf = rl.load_workflow("council-ways")
+        finally:
+            os.chdir(here)
+        self.assertTrue(path.endswith(os.path.join("workflows",
+                                                   "council-ways.yml")))
+
     """Every expression in the lane and closure workflows can be read, so a
     local run never meets one it cannot evaluate half-way through."""
 
