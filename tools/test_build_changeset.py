@@ -245,7 +245,9 @@ def test_same_size_different_bytes_is_caught():
 # since step 1.10 is `ways` + `ways_bbox` + `pois` + `pois_bbox` + `fords` +
 # `fords_bbox` + `ford_gauges` + `way_wetness` + `wet_gauges` + `tiles` +
 # `meta`, with `evidence_dates`, `context_note`, `context_scope` and
-# `schema_version` in the meta. A changeset that carried only the first two
+# `schema_version` in the meta - and since 8 Oct 2026 `ucr_ways` +
+# `ucr_ways_bbox` (the councils' unsurfaced roads, drawn in tile layer `ucr`)
+# with `ucr_count`, `ucr_sources` and `local_rules`. A changeset that carried only the first two
 # was refused by the app every time, so every region update was a whole
 # download; applied, it would have left last build's pois, fords and wetness
 # under this build's stamp.
@@ -265,13 +267,16 @@ import build_map_container as B  # noqa: E402
 import build_pois as PO  # noqa: E402
 import build_wet as W  # noqa: E402
 import evidence_age as EA  # noqa: E402
+import local_rules as LR  # noqa: E402
 
 #: Every table a published region container holds, bar tiles, meta and the
 #: r-trees' shadow tables. Read off containers/ways-east-anglia.tbmap
-#: (2026-09-24); test_make_changeset_fixture.py says when the published set
+#: (2026-09-24), and the unsurfaced roads' two off every region with roads
+#: (2026-10-08); test_make_changeset_fixture.py says when the published set
 #: stops being exactly these, and gates its own fixture on the file itself.
 LIVE_TABLES = {
     "ways": "rowid", "ways_bbox": "id",
+    "ucr_ways": "rowid", "ucr_ways_bbox": "id",
     "pois": "rowid", "pois_bbox": "id",
     "fords": "rowid", "fords_bbox": "id",
     "ford_gauges": "id", "way_wetness": "id", "wet_gauges": "id",
@@ -295,6 +300,47 @@ def _way(uid, lon, lat, name=None, surface=None, fourxfour=1):
     }
 
 
+def _ucr(uid, lon, lat, name=None):
+    """An unsurfaced road as build_packages.ucr_lanes publishes one: class
+    `ucr`, recorded in the council's highway records, not the definitive
+    map."""
+    return {
+        "type": "Feature",
+        "geometry": {"type": "LineString",
+                     "coordinates": [(lon, lat), (lon + 0.003, lat - 0.002)]},
+        "properties": {
+            "lane_uid": uid, "class": "ucr", "county": "Derbyshire",
+            "name": name or "Unsurfaced unclassified road (UCR) %s" % uid,
+            "designation": "Unsurfaced unclassified road (UCR)",
+            "authority": "Derbyshire", "authorityCode": "DE",
+            "legal_tier": "highway_record",
+            "source": "highway-records:derbyshire", "source_date": "2026-03-04",
+            "motorbike_ok": 1, "fourxfour_ok": 1,
+            "access_reason": "a public road the council maintains",
+            "access_evidence": "highway_record", "lengthKm": 0.3,
+        },
+    }
+
+
+#: The council the roads came from, as build_map_container.load_ucrs
+#: returns it (its `count` filled in by write_live_shape).
+_UCR_SOURCE = {"code": "DE", "authority": "Derbyshire",
+               "council": "Derbyshire County Council",
+               "what": "Derbyshire's unsurfaced unclassified roads",
+               "url": "https://example.invalid/derbyshire/ucr",
+               "licence": "OGL-UK-3.0", "since": "2026-10-08"}
+
+#: A local rule for the roads, as local_rules.py writes one.
+_UCR_RULE = {"id": "de-unsurfaced-roads", "kind": "guidance",
+             "effect": "info", "title": "Derbyshire's unsurfaced roads",
+             "summary": "Public roads with no sealed surface.",
+             "applies_to": {"authorities": ["Derbyshire"],
+                            "way_classes": ["ucr"]},
+             "source": {"publisher": "Derbyshire County Council",
+                        "url": "https://example.invalid/derbyshire/rules",
+                        "checked": "2026-10-08"}}
+
+
 def _poi(uid, lat, lon, category="fuel", name=None):
     return {"poi_uid": uid, "category": category, "name": name,
             "lat": lat, "lon": lon, "opening_hours": None,
@@ -312,8 +358,15 @@ def _station(sid, lat, lon):
 
 
 def write_live_shape(path, ways, pois, fords, rain, level, built_at, as_of,
-                     note="Only byways are on this map.", previous=None):
+                     note="Only byways are on this map.", previous=None,
+                     ucrs=None):
     """A region container, written the way refresh-data.yml writes one.
+
+    `ucrs` are the council's unsurfaced roads (None: _UCRS), written as
+    build_containers.build_all writes them - their own table, r-tree and
+    tile layer, `ucr_count`, `ucr_sources` counted as load_ucrs counts them,
+    and the `local_rules` that apply (local_rules.for_container, as
+    build_containers.rules_here asks it).
 
     `as_of` is the day of the run. It no longer reaches the file - the
     evidence is stored as dates (evidence_age.read_dates) - and is kept so
@@ -322,8 +375,16 @@ def write_live_shape(path, ways, pois, fords, rain, level, built_at, as_of,
     None numbers them as a first build, which is what `_live_pair` wants: a
     pair that re-keys rows, so the applier is proved to cope with it.
     """
+    ucrs = _UCRS if ucrs is None else ucrs
+    sources = [dict(_UCR_SOURCE, count=len(ucrs))] if ucrs else []
+    every = list(ways) + list(ucrs)
+    rules = LR.for_container(
+        [_UCR_RULE], B._bounds_of(every),
+        sorted({f["properties"]["authority"] for f in every}),
+        sorted({f["properties"]["class"] for f in every}))
     B.write_container(path, ways, "area", (11, 12), built_at,
-                      context_scope="none", context_note=note)
+                      context_scope="none", context_note=note,
+                      ucrs=ucrs, ucr_sources=sources, local_rules=rules)
     PO.write_pois(path, pois, previous=previous)
     db = sqlite3.connect(path)
     try:
@@ -362,6 +423,10 @@ _RAIN = [_station("R1", 52.50, -1.70), _station("R3", 52.51, -1.68),
          _station("R5", 52.80, -1.30)]
 _LEVEL = [_station("L1", 52.50, -1.699), _station("L3", 52.506, -1.675),
           _station("L5", 52.80, -1.29)]
+# Three of the council's unsurfaced roads among the byways. U3 is the one
+# the council's list later drops.
+_UCRS = [_ucr("DE-UCR-1", -1.695, 52.510), _ucr("DE-UCR-2", -1.685, 52.512),
+         _ucr("DE-UCR-3", -1.675, 52.514)]
 
 
 def _live_pair(tmp):
@@ -396,9 +461,14 @@ def _live_pair(tmp):
     rain = [dict(s) for s in _RAIN]
     rain[1]["label"] = "Station R3 (relocated)"
     level = _LEVEL + [_station("L0", 52.5056, -1.6781)]
+    # The council's list: DE-UCR-3 dropped, DE-UCR-2 named, two new roads -
+    # so a row and a box go, a row changes, rows and boxes arrive, and
+    # `ucr_count` and the council's count in `ucr_sources` move.
+    ucrs = [_UCRS[0], _ucr("DE-UCR-2", -1.685, 52.512, name="Ridge Lane"),
+            _ucr("DE-UCR-4", -1.665, 52.516), _ucr("DE-UCR-5", -1.655, 52.518)]
     write_live_shape(after, ways, pois, fords, rain, level,
                      "2026-10-01T00:00:00Z", datetime.date(2026, 10, 1),
-                     note="Only byways are on this map. Revised.")
+                     note="Only byways are on this map. Revised.", ucrs=ucrs)
     return before, after
 
 
@@ -524,7 +594,8 @@ def test_every_live_table_round_trips():
         db = sqlite3.connect(working)
         check("the result passes integrity_check",
               db.execute("PRAGMA integrity_check").fetchone()[0] == "ok")
-        for rtree in ("ways_bbox", "pois_bbox", "fords_bbox"):
+        for rtree in ("ways_bbox", "ucr_ways_bbox", "pois_bbox",
+                      "fords_bbox"):
             check("%s agrees with its shadow tables" % rtree,
                   db.execute("SELECT rtreecheck(?)", (rtree,)).fetchone()[0]
                   == "ok")
@@ -549,7 +620,8 @@ def test_the_new_builds_meta_is_restated():
         for key in ("evidence_dates", "context_note", "context_scope",
                     "schema_version", "way_count", "class_counts",
                     "legal_tier_counts", "authorities", "bounds",
-                    "min_zoom", "max_zoom", "lane_count"):
+                    "min_zoom", "max_zoom", "lane_count", "ucr_count",
+                    "ucr_sources", "local_rules"):
             check("%s is restated as the new build has it" % key,
                   key in new and carried.get(key) == new[key],
                   "%r vs %r" % (carried.get(key), new.get(key)))
@@ -557,6 +629,10 @@ def test_the_new_builds_meta_is_restated():
               old["evidence_dates"] != new["evidence_dates"])
         check("and so did context_note",
               old["context_note"] != new["context_note"])
+        check("and ucr_count and ucr_sources, with the roads",
+              old["ucr_count"] != new["ucr_count"]
+              and old["ucr_sources"] != new["ucr_sources"],
+              (old["ucr_count"], new["ucr_count"]))
         check("to_build is the new built_at",
               carried["to_build"] == new["built_at"])
         check("built_at itself is not restated", "built_at" not in carried)
@@ -682,7 +758,7 @@ def _refused(before, after, tmp):
 def test_a_column_set_mismatch_is_refused_either_way():
     print("a column in one build and not the other is refused, both ways")
     for side in ("old", "new"):
-        for table in ("pois", "fords", "way_wetness", "ways"):
+        for table in ("pois", "fords", "way_wetness", "ways", "ucr_ways"):
             with tempfile.TemporaryDirectory() as tmp:
                 before, after = _live_pair(tmp)
                 db = sqlite3.connect(before if side == "old" else after)

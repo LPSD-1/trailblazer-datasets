@@ -8,14 +8,16 @@ were "the live ways shape" and carried four tables, while every published
 region container carries eleven and four more meta keys. Both repositories'
 tests were green and no region update could ever be applied. A fixture is a
 CLAIM about the published data, so it is checked against the published data:
-`containers/ways-east-anglia.tbmap`, read on every run, not a schema copied
-into this file.
+the generator's DEFAULT_SOURCE (`containers/ways-south-east.tbmap` since the
+unsurfaced roads of 8 Oct 2026), read on every run, not a schema copied into
+this file.
 
 It checks the generator's output in a temporary directory, and - when the app
 repository is checked out beside this one - the fixture committed there too.
 """
 import json
 import os
+import re
 import shutil
 import sqlite3
 import sys
@@ -26,10 +28,14 @@ ROOT = os.path.dirname(HERE)
 sys.path.insert(0, HERE)
 
 import build_changeset as C          # noqa: E402
+import build_fords as F              # noqa: E402
+import build_map_container as B      # noqa: E402
 import evidence_age as EA            # noqa: E402
+import local_rules as LR             # noqa: E402
 import make_changeset_fixture as M   # noqa: E402
 import stamp_build as S              # noqa: E402
 import test_build_changeset as T     # noqa: E402
+from test_mvt import decode_tile     # noqa: E402
 
 PUBLISHED = os.path.join(ROOT, M.DEFAULT_SOURCE)
 APP_FIXTURE = os.path.join(os.path.dirname(ROOT), "greenroadmap-app", "test",
@@ -116,6 +122,183 @@ def _carried(path):
         return C.carried_tables(db)
     finally:
         db.close()
+
+
+#: Where the unsurfaced roads live (validate_container.UCR_TABLE).
+UCR = "ucr_ways"
+
+
+def _ro(path):
+    return sqlite3.connect("file:%s?mode=ro" % path.replace("\\", "/"),
+                           uri=True)
+
+
+def _features(path, table):
+    """`table`'s rows as the features write_container drew them from, read
+    here rather than by the generator's own features_of, so the two check
+    each other."""
+    db = _ro(path)
+    try:
+        if not db.execute("SELECT 1 FROM sqlite_master WHERE name = ?",
+                          (table,)).fetchone():
+            return []
+        return [{"type": "Feature",
+                 "geometry": {"type": "MultiLineString",
+                              "coordinates": F.unpack_geometry(blob)},
+                 "properties": {"lane_uid": uid, "class": klass,
+                                "county": county, "legal_tier": tier,
+                                "motorbike_ok": moto,
+                                "fourxfour_ok": fourxfour,
+                                "access_evidence": evidence,
+                                "sustained_pct": sustained, "climb_m": climb}}
+                for (uid, klass, county, tier, moto, fourxfour, evidence,
+                     sustained, climb, blob) in db.execute(
+                    "SELECT way_uid, way_class, county, legal_tier, "
+                    "motorbike_ok, fourxfour_ok, access_evidence, "
+                    "sustained_pct, climb_m, geometry FROM %s "
+                    "ORDER BY way_uid" % table)]
+    finally:
+        db.close()
+
+
+def _drawn(path):
+    """{(z, x, tms_row): bytes} as build_map_container.write_container would
+    draw `path`'s own ways and roads, at its own zooms."""
+    meta = C.snapshot(path)["meta"]
+    ways, roads = _features(path, "ways"), _features(path, UCR)
+    ids = B.assign_ids(ways + roads, "lane_uid")
+    tiles = {}
+
+    def on_tile(z, x, y, blob, _count):
+        tiles[(z, x, (1 << z) - 1 - y)] = blob
+
+    for zoom in range(int(meta["min_zoom"]), int(meta["max_zoom"]) + 1):
+        B.build_tiles(ways, zoom, False, on_tile, ids, ucrs=roads)
+    return tiles
+
+
+def _tiles(path):
+    db = _ro(path)
+    try:
+        return {(z, x, y): blob for z, x, y, blob in db.execute(
+            "SELECT zoom_level, tile_column, tile_row, tile_data FROM tiles")}
+    finally:
+        db.close()
+
+
+def _uids(path, table):
+    db = _ro(path)
+    try:
+        return {r[0] for r in db.execute("SELECT way_uid FROM %s" % table)}
+    finally:
+        db.close()
+
+
+def check_ucr_meta(path, label):
+    """The roads' meta for the roads `path` holds: what write_container
+    would write from load_ucrs for these rows, with the published file's
+    sources and rules as the only source of either."""
+    name = os.path.basename(path)
+    meta = C.snapshot(path)["meta"]
+    published = C.snapshot(PUBLISHED)["meta"]
+    db = _ro(path)
+    try:
+        held = dict(db.execute("SELECT authority, COUNT(*) FROM %s GROUP BY 1"
+                               % UCR))
+        authorities, classes = set(), set()
+        for table in ("ways", UCR):
+            for authority, klass in db.execute(
+                    "SELECT authority, way_class FROM %s" % table):
+                if authority and authority != B.UNKNOWN_AUTHORITY:
+                    authorities.add(authority)
+                classes.add(klass)
+    finally:
+        db.close()
+    count = sum(held.values())
+    check("%s: %s says ucr_count %s and holds %d roads"
+          % (label, name, meta.get("ucr_count"), count),
+          meta.get("ucr_count") == str(count) and count > 0)
+    want = [dict(src, count=held[src["authority"]])
+            for src in json.loads(published.get("ucr_sources") or "[]")
+            if held.get(src["authority"])]
+    got = json.loads(meta.get("ucr_sources") or "[]")
+    check("%s: %s credits the councils of its own roads, counted"
+          % (label, name), bool(got) and got == want,
+          ([(s.get("code"), s.get("count")) for s in got],
+           [(s.get("code"), s.get("count")) for s in want]))
+    bounds = B._bounds_of(_features(path, "ways") + _features(path, UCR))
+    check("%s: %s's bounds are over its ways and roads" % (label, name),
+          meta.get("bounds") == bounds, (meta.get("bounds"), bounds))
+    rules = json.loads(published.get("local_rules") or '{"rules": []}')
+    here = LR.for_container(rules["rules"], bounds, sorted(authorities),
+                            sorted(classes))
+    got = (json.loads(meta["local_rules"])["rules"]
+           if meta.get("local_rules") else [])
+    check("%s: %s carries the local rules that apply to it, and only those"
+          % (label, name), bool(got) and got == here,
+          ([r["id"] for r in got], [r["id"] for r in here]))
+
+
+def _box_of(readme):
+    """The box the README says `before` was cut to, or None."""
+    try:
+        with open(readme, encoding="utf-8") as fh:
+            got = re.search(r"outside the box \[([^\]]+)\]", fh.read())
+    except OSError:
+        return None
+    return tuple(float(v) for v in got.group(1).split(",")) if got else None
+
+
+def _published_roads_meeting(box):
+    """The uids of the published roads whose r-tree box meets `box`, as
+    make_before chooses them for the ways."""
+    w, s, e, n = box
+    db = _ro(PUBLISHED)
+    try:
+        return {r[0] for r in db.execute(
+            "SELECT u.way_uid FROM %s u JOIN %s_bbox b ON b.id = u.rowid "
+            "WHERE b.max_lon >= ? AND b.min_lon <= ? AND b.max_lat >= ? "
+            "AND b.min_lat <= ?" % (UCR, UCR), (w, e, s, n))}
+    finally:
+        db.close()
+
+
+def check_roads_and_tiles(before, after, change, label, readme):
+    """The roads' meta in both files, and the tiles that draw them."""
+    missing = [os.path.basename(p) for p in (before, after)
+               if UCR not in _carried(p)]
+    check("%s: both files hold `%s`" % (label, UCR), not missing, missing)
+    if missing:
+        return
+    # THE ROADS OF THE BOX, NOT THE REGION'S: a cut that kept every road
+    # passes every other check here, consistently, at a few times the size.
+    box = _box_of(readme)
+    want = _published_roads_meeting(box) if box else None
+    check("%s: before.tbmap holds the published roads that meet its box %s, "
+          "and no other" % (label, box),
+          bool(want) and _uids(before, UCR) == want,
+          (len(_uids(before, UCR)), len(want or ())))
+    for path in (before, after):
+        check_ucr_meta(path, label)
+        drawn = _drawn(path)
+        held = _tiles(path)
+        check("%s: %s holds exactly the tiles its ways and roads are drawn in"
+              % (label, os.path.basename(path)), set(held) == set(drawn),
+              (len(set(drawn) - set(held)), len(set(held) - set(drawn))))
+    drawn = _drawn(after)
+    recut = _tiles(change)
+    check("%s: every tile the changeset writes draws after's ways in "
+          "`lanes` and its roads in `%s`" % (label, B.UCR_LAYER),
+          bool(recut) and all(drawn.get(t) == b for t, b in recut.items()),
+          sorted(t for t, b in recut.items() if drawn.get(t) != b)[:3])
+    gone = ((_uids(before, UCR) - _uids(after, UCR))
+            | (_uids(before, "ways") - _uids(after, "ways")))
+    still = sorted({f["props"].get("lane_uid")
+                    for blob in _tiles(after).values()
+                    for layer in decode_tile(blob)
+                    for f in layer["features"]} & gone)
+    check("%s: no tile of after.tbmap draws a way or road it removed"
+          % label, bool(gone) and not still, (sorted(gone), still))
 
 
 def check_fixture(where, label):
@@ -218,10 +401,14 @@ def check_fixture(where, label):
           and EA.META_KEY in new_meta)
     check("%s: no fixture carries the legacy evidence_age" % label,
           EA.LEGACY_KEY not in old_meta and EA.LEGACY_KEY not in new_meta)
-    for table in ("ways", "pois", "fords", "way_wetness"):
+    for table in ("ways", "pois", "fords", "way_wetness", UCR):
         check("%s: a %s row written" % (label, table), written.get(table, 0))
         check("%s: a %s row removed" % (label, table), removed.get(table, 0))
+    check("%s: a %s_bbox row removed" % (label, UCR),
+          removed.get("%s_bbox" % UCR, 0))
     check("%s: tiles re-cut" % label, tiles > 0)
+    check_roads_and_tiles(before, after, change, label,
+                          os.path.join(where, "README.md"))
 
     # AND IT LANDS, applied by the test's own applier rather than the
     # generator's, so the two implementations check each other.
@@ -319,6 +506,25 @@ def test_the_generator_refuses_an_after_that_keeps_ways_cut():
                       "ways_cut" in str(e), str(e))
     finally:
         M.make_after = real
+
+
+def test_the_generator_refuses_a_box_without_two_roads():
+    print("the generator refuses a box that holds fewer than two roads")
+    # The old box around Haverhill: fords on two ways, and not one road of
+    # East Anglia's - so it fails on the roads alone. Until the roads were
+    # cut with `or [-1]`, a box with none deleted none (`NOT IN (NULL)` is
+    # never true) and the fixture carried the whole region's roads.
+    source = os.path.join(ROOT, "containers", "ways-east-anglia.tbmap")
+    if not os.path.isfile(source):
+        print("  BLIND %s is not there" % source)
+        return
+    with tempfile.TemporaryDirectory() as tmp:
+        try:
+            M.make(source, tmp, (0.298, 52.096, 0.458, 52.196))
+            check("a box with no road is refused", False, "it was written")
+        except SystemExit as e:
+            check("a box with no road is refused",
+                  "unsurfaced roads" in str(e), str(e))
 
 
 def test_keep_before_leaves_before_alone():

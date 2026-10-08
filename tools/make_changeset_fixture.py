@@ -2,7 +2,7 @@
 """A small container in the LIVE shape, a next build of it, and the changeset.
 
     python tools/make_changeset_fixture.py \
-        --source containers/ways-east-anglia.tbmap \
+        --source containers/ways-south-east.tbmap \
         --out ../greenroadmap-app/test/fixtures/changesets_live_shape
 
 WHY THIS EXISTS. The app's changeset tests were built on fixtures that called
@@ -13,19 +13,26 @@ themselves "the live ways shape" and carried `ways`, `ways_bbox`, `tiles` and
 `context_scope` and `schema_version`. The applier refuses a changeset that
 does not carry what the held container has, so against the real set every
 region update was a whole download, and nothing in either repository's tests
-could see it: both sides agreed on a shape nobody publishes.
+could see it: both sides agreed on a shape nobody publishes. It happened again
+on 8 Oct 2026, when the containers gained `ucr_ways`, `ucr_ways_bbox`, the
+meta keys `ucr_count`, `ucr_sources` and `local_rules` and a `ucr` tile layer,
+and the fixture had none of them.
 
 So the fixture is CUT FROM A PUBLISHED CONTAINER rather than written to a
 schema somebody remembered:
 
   before  a copy of --source with every row outside --box deleted: the ways
           whose r-tree box meets it, their wetness, their fords, the gauges
-          those reference, the POIs inside it, and the tiles over the kept
-          ways at every zoom. Same file, same sqlite_master, VACUUMed small.
+          those reference, the unsurfaced roads (`ucr_ways`) whose r-tree box
+          meets it, the POIs inside it, and the tiles over the kept ways and
+          roads at every zoom. Same file, same sqlite_master, VACUUMed small.
           Every row keeps the rowid it was published under. One thing is
-          rewritten: the meta counts, bounds and evidence_dates, recomputed
-          for the rows that are left with the formulas the builders use, so
-          the container describes itself and not East Anglia. (A source
+          rewritten: the meta counts, bounds (over ways and roads) and
+          evidence_dates, recomputed for the rows that are left with the
+          formulas the builders use, and `ucr_count`, `ucr_sources` and
+          `local_rules` cut to the roads, councils and rules that are left
+          (restate_ucr_meta, restate_local_rules), so the container describes
+          itself and not the region. (A source
           published before evidence_dates carries evidence_age instead; the
           fixture is the shape the NEXT build publishes, so it carries
           evidence_dates either way.) And `before` is always a build RULE 3
@@ -47,6 +54,10 @@ schema somebody remembered:
               kept POI keeps its rowid, the removed one leaves a gap, and
               the new one is numbered above the highest the region published;
             * the remaining ford re-tagged;
+            * one unsurfaced road REMOVED, its box with it and its tiles
+              re-cut, and another renamed by its council - so `ucr_count`
+              and the council's count in `ucr_sources` move, and a changeset
+              is proved to bring `ucr_ways` up to date like `ways`;
             * the edited rows dated the day `after` was built, so
               evidence_dates moves, and `pois_checked` with them: the refetch
               that found the new POI read the region that day
@@ -63,7 +74,8 @@ schema somebody remembered:
               copied over from `before`, and the app's tests were told lanes
               changed on the 26th were cut on the 24th.
           Re-cut tiles come from build_map_container.build_tiles over the
-          kept ways, so a re-cut tile draws the fixture's ways only.
+          kept ways and roads, so a re-cut tile draws the fixture's ways (in
+          `lanes`) and roads (in `ucr`) only.
   the .tbchange between them, built by tools/build_changeset.py - the real
           tool, not a copy of it - checked by validate_changeset.py, and
           applied back onto `before` by build_changeset.apply_changeset to
@@ -93,23 +105,32 @@ import build_changeset as C       # noqa: E402
 import build_fords as F           # noqa: E402
 import build_map_container as B   # noqa: E402
 import evidence_age as EA         # noqa: E402
+import local_rules as LR          # noqa: E402
 import stable_ids                 # noqa: E402
 import stamp_build as S           # noqa: E402
 import validate_changeset as V    # noqa: E402
 
-#: Two fords, 26 ways and ~50 POIs around Haverhill, in the smallest region.
+#: 19 ways in Surrey and Hampshire (five of them forded), five of Surrey's
+#: unsurfaced roads and ~210 POIs around Elstead and Hindhead.
 #:
-#: CHOSEN FOR ITS TILES, not only its rows. It was picked under the retired
-#: one-area rule, when a way straddling two regions was drawn only by the
-#: area earlier in the manifest, so a box could hold plenty of East Anglia's
-#: ways and hardly any of its tiles - the first box tried, east of Stevenage,
-#: had 34 ways and 6 of the 56 tiles they would need, because the South East
-#: drew them. Since 2 Oct 2026 every area draws every way it carries, so a
-#: rebuilt container holds every tile its ways need wherever the box sits;
-#: this box is kept because it holds them in a container built under either
-#: rule, including one published before the change.
-DEFAULT_BOX = (0.298, 52.096, 0.458, 52.196)
-DEFAULT_SOURCE = "containers/ways-east-anglia.tbmap"
+#: CHOSEN BY THE GENERATOR'S OWN RULES, searched over every region that
+#: carries roads, because from 8 Oct 2026 the fixture must hold a row in
+#: every table and the old box (around Haverhill, East Anglia) had no road.
+#: What make_after needs is stricter than "fords in the box": fords on at
+#: least TWO DIFFERENT kept ways (a box in Devon with four fords had all four
+#: on one way), two ways with none, a wet gauge left after the forded way
+#: goes, and two roads. No East Anglia or Midlands box of this size has the
+#: fords and the roads together. This one has margin on each, and it is cut
+#: by a rule the container carries (`su-driving-on-byways`) and from two of
+#: South East's councils one (Surrey), so restate_ucr_meta and
+#: restate_local_rules are seen to drop what does not apply.
+#:
+#: Its tiles are all there: since 2 Oct 2026 every area draws every way it
+#: carries, so a container holds every tile its ways and roads need wherever
+#: the box sits (the retired one-area rule left a box east of Stevenage with
+#: 6 of the 56 tiles its ways needed).
+DEFAULT_BOX = (-0.79, 51.117, -0.63, 51.217)
+DEFAULT_SOURCE = "containers/ways-south-east.tbmap"
 CHANGESET_NAME = "before_to_after.tbchange"
 MAX_BYTES = 1024 * 1024
 
@@ -118,6 +139,8 @@ NEW_POI = {"poi_uid": "osm:n99999999999", "category": "fuel",
            "opening_hours": "24/7"}
 CLOSED_REASON = ("A traffic regulation order closes this byway to motor "
                  "vehicles.")
+#: The name the council gives the unsurfaced road `after` renames.
+NAMED_ROAD = "Fixture Lane"
 
 
 def _ids(db, sql, args=()):
@@ -128,14 +151,18 @@ def _in(ids):
     return "(%s)" % ",".join(str(int(i)) for i in ids) if ids else "(NULL)"
 
 
-def features_of(db):
-    """The container's ways as the features build_map_container cut them
-    from - enough of them for the tile writer to cut them again."""
+def features_of(db, table="ways"):
+    """The container's ways (or, with `table` UCR_TABLE, its unsurfaced
+    roads) as the features build_map_container cut them from - enough of
+    them for the tile writer to cut them again. None of a table the file
+    does not hold: a source published before the roads has no UCR_TABLE."""
     out = []
+    if not _has_table(db, table):
+        return out
     for row in db.execute(
             "SELECT way_uid, way_class, county, legal_tier, motorbike_ok, "
             "fourxfour_ok, access_evidence, sustained_pct, climb_m, geometry "
-            "FROM ways ORDER BY way_uid"):
+            "FROM %s ORDER BY way_uid" % table):
         (uid, klass, county, tier, moto, fourxfour, evidence, sustained,
          climb, blob) = row
         out.append({
@@ -150,16 +177,19 @@ def features_of(db):
     return out
 
 
-def cut(features, zooms):
-    """{(z, x, tms_row): bytes}, exactly as write_container stores them."""
+def cut(features, zooms, ucrs=()):
+    """{(z, x, tms_row): bytes}, exactly as write_container stores them:
+    the ways in layer `lanes` and the unsurfaced roads in B.UCR_LAYER, in
+    one id space (write_container's assign_ids over the two together)."""
     tiles = {}
 
     def on_tile(z, x, y, blob, _count):
         tiles[(z, x, (1 << z) - 1 - y)] = blob
 
-    ids = B.assign_ids(features, "lane_uid")
+    ucrs = list(ucrs)
+    ids = B.assign_ids(list(features) + ucrs, "lane_uid")
     for zoom in range(zooms[0], zooms[1] + 1):
-        B.build_tiles(features, zoom, False, on_tile, ids)
+        B.build_tiles(features, zoom, False, on_tile, ids, ucrs=ucrs)
     return tiles
 
 
@@ -181,20 +211,104 @@ def restate_meta(db, path):
     authorities = sorted({r[0] for r in db.execute(
         "SELECT authority FROM ways") if r[0] and r[0] != B.UNKNOWN_AUTHORITY})
     count = db.execute("SELECT COUNT(*) FROM ways").fetchone()[0]
+    # OVER THE ROADS TOO, as write_container takes them (_bounds_of(features
+    # + ucrs)): a road beyond the last byway is still in the file, and bounds
+    # that left it out tell the app nothing is downloaded where something is.
+    bounds = B._bounds_of(features_of(db) + features_of(db, UCR_TABLE))
     rows = [("way_count", str(count)), ("lane_count", str(count)),
             ("class_counts", json.dumps(dict(sorted(klass.items())),
                                         sort_keys=True)),
             ("legal_tier_counts", json.dumps(dict(sorted(tier.items())),
                                              sort_keys=True)),
             ("authorities", json.dumps(authorities)),
-            ("bounds", B._bounds_of(features_of(db)))]
+            ("bounds", bounds)]
     db.executemany("UPDATE meta SET value = ? WHERE key = ?",
                    [(v, k) for k, v in rows])
+    restate_ucr_meta(db)
+    restate_local_rules(db, bounds)
     for key in PER_WAY_META:
         restate_per_way_meta(db, key)
     db.commit()
     # Dates, not ages, and the legacy evidence_age dropped: see evidence_age.py.
     EA.write_meta(path)
+
+
+#: Where a container keeps its unsurfaced unclassified roads (since 8 Oct
+#: 2026): their own table and r-tree, never `ways`, which an app before 119
+#: reads and would draw a road red in (validate_container.UCR_TABLE).
+UCR_TABLE = "ucr_ways"
+
+
+def _set_meta(db, key, value):
+    """`key` set to `value`, or gone when `value` is None - write_container
+    writes a key only where it has something to say."""
+    if value is None:
+        db.execute("DELETE FROM meta WHERE key = ?", (key,))
+    else:
+        db.execute("INSERT OR REPLACE INTO meta VALUES (?, ?)", (key, value))
+
+
+def _meta_json(db, key):
+    got = db.execute("SELECT value FROM meta WHERE key = ?", (key,)).fetchone()
+    return json.loads(got[0]) if got and got[0] else None
+
+
+def restate_ucr_meta(db):
+    """`ucr_count` and `ucr_sources` for the roads the file now holds, as
+    write_container writes them from build_map_container.load_ucrs: the
+    count of rows; each council's source with its `count` recounted, and a
+    council none of whose roads is left dropped (load_ucrs keeps only the
+    sources with a count); neither key where no road is left.
+
+    Copied through untouched, the cut of South East said it held 74 roads
+    and credited Oxfordshire with 33 of them, with five Surrey roads and no
+    Oxfordshire one in the file: validate_container refuses a `ucr_count`
+    that disagrees with the rows, and the app shows the count and the
+    credit.
+
+    Sources are matched to rows by `authority`. load_ucrs matches them by
+    the feature's `authorityCode`, which the table does not keep, and every
+    published source names its authority as the rows spell it.
+    """
+    if not _has_table(db, UCR_TABLE):
+        return
+    held = collections.Counter(r[0] for r in db.execute(
+        "SELECT authority FROM %s" % UCR_TABLE))
+    count = sum(held.values())
+    _set_meta(db, "ucr_count", str(count) if count else None)
+    sources = [dict(src, count=held[src.get("authority")])
+               for src in _meta_json(db, "ucr_sources") or []
+               if held.get(src.get("authority"))]
+    _set_meta(db, "ucr_sources",
+              json.dumps(sources, sort_keys=True, separators=(",", ":"))
+              if sources else None)
+
+
+def restate_local_rules(db, bounds):
+    """`local_rules` cut to the rules that could apply to what the file now
+    holds: local_rules.for_container over its bounds, authorities and
+    classes, ways and roads together, as build_containers.rules_here asks
+    it. Drawn from the rules the source carried, never from
+    local-rules/rules.json, so the fixture says nothing the published file
+    did not. No key where none applies, as write_container writes none."""
+    doc = _meta_json(db, "local_rules")
+    if doc is None:
+        return
+    authorities, classes = set(), set()
+    for table in ("ways", UCR_TABLE):
+        if not _has_table(db, table):
+            continue
+        for authority, klass in db.execute(
+                "SELECT authority, way_class FROM %s" % table):
+            if authority and authority != B.UNKNOWN_AUTHORITY:
+                authorities.add(authority)
+            if klass:
+                classes.add(klass)
+    here = LR.for_container(doc.get("rules") or [], bounds or None,
+                            sorted(authorities), sorted(classes))
+    _set_meta(db, "local_rules",
+              json.dumps(dict(doc, rules=here), sort_keys=True,
+                         separators=(",", ":")) if here else None)
 
 
 #: The meta keys build_map_container.write_container writes as a map keyed by
@@ -251,6 +365,11 @@ def _vacuum(path):
         db.close()
 
 
+def _has_table(db, name):
+    return db.execute("SELECT 1 FROM sqlite_master WHERE type = 'table' "
+                      "AND name = ?", (name,)).fetchone() is not None
+
+
 def make_before(source, path, box):
     shutil.copyfile(source, path)
     db = sqlite3.connect(path)
@@ -274,6 +393,19 @@ def make_before(source, path, box):
         db.execute("DELETE FROM ford_gauges WHERE id NOT IN (SELECT gauge "
                    "FROM fords WHERE gauge IS NOT NULL)")
 
+        # The unsurfaced roads (since 8 Oct 2026) whose r-tree box meets the
+        # box, as for the ways. Kept whole, South East's 74 made `before`
+        # 1.49 MB, over MAX_BYTES. `or [-1]`: `NOT IN (NULL)` is never true,
+        # so a box with no road deleted none and kept the region's.
+        if _has_table(db, UCR_TABLE):
+            roads = _ids(db, "SELECT id FROM %s_bbox WHERE max_lon >= ? AND "
+                             "min_lon <= ? AND max_lat >= ? AND min_lat <= ?"
+                         % UCR_TABLE, (w, e, s, n))
+            db.execute("DELETE FROM %s WHERE rowid NOT IN %s"
+                       % (UCR_TABLE, _in(roads or [-1])))
+            db.execute("DELETE FROM %s_bbox WHERE id NOT IN %s"
+                       % (UCR_TABLE, _in(roads or [-1])))
+
         # The POIs inside the box, with the rowids they were published under.
         db.execute("DELETE FROM pois WHERE NOT (lon BETWEEN ? AND ? AND "
                    "lat BETWEEN ? AND ?)", (w, e, s, n))
@@ -281,8 +413,12 @@ def make_before(source, path, box):
                    "(SELECT rowid FROM pois)")
         db.commit()
 
-        # The tiles over the ways that are left, at every zoom it carries.
-        wanted = set(cut(features_of(db), _zooms(db)))
+        # The tiles over the ways and roads that are left, at every zoom it
+        # carries. The roads' too: a tile only a road crosses is drawn by
+        # write_container, so a cut that dropped it showed a kept road on
+        # no tile at all.
+        wanted = set(cut(features_of(db), _zooms(db),
+                         features_of(db, UCR_TABLE)))
         held = [tuple(r) for r in db.execute(
             "SELECT zoom_level, tile_column, tile_row FROM tiles")]
         db.executemany("DELETE FROM tiles WHERE zoom_level = ? AND "
@@ -394,6 +530,28 @@ def make_after(before, path, as_of, source):
                    (refetched, ford[0]))
         edits["retagged_ford"] = ford[1]
 
+        # THE UNSURFACED ROADS MOVE TOO, or nothing proves a changeset brings
+        # `ucr_ways` up to date: one the council's list no longer has, with
+        # its box and its tiles, and one the council has since named. A
+        # source published before the roads has none to edit.
+        was_roads = {f["properties"]["lane_uid"]: f
+                     for f in features_of(db, UCR_TABLE)}
+        if _has_table(db, UCR_TABLE):
+            roads = db.execute("SELECT rowid, way_uid FROM %s ORDER BY rowid"
+                               % UCR_TABLE).fetchall()
+            if len(roads) < 2:
+                raise SystemExit("the box needs two unsurfaced roads (%s): "
+                                 "one to remove and one to rename"
+                                 % UCR_TABLE)
+            (gone_road_rowid, gone_road), (_, named_road) = roads[:2]
+            db.execute("DELETE FROM %s WHERE rowid = ?" % UCR_TABLE,
+                       (gone_road_rowid,))
+            db.execute("DELETE FROM %s_bbox WHERE id = ?" % UCR_TABLE,
+                       (gone_road_rowid,))
+            db.execute("UPDATE %s SET name = ? WHERE way_uid = ?" % UCR_TABLE,
+                       (NAMED_ROAD, named_road))
+            edits.update(removed_ucr=gone_road, renamed_ucr=named_road)
+
         # A POI gone and a POI new, as a refetch finds them - NUMBERED AS
         # build_pois.write_pois NUMBERS A REGION against its published
         # container (stable_ids.py): the kept POIs keep their rowids, the
@@ -426,10 +584,15 @@ def make_after(before, path, as_of, source):
         edits.update(removed_poi=gone_uid, added_poi=poi["poi_uid"],
                      renumbered_pois=renumbered)
 
-        # The tiles the edited ways are in, re-cut from what is left.
-        now = features_of(db)
-        touched = set(cut([was[closed], was[removed]], zooms))
-        fresh = cut(now, zooms)
+        # The tiles the edited ways and the removed road are in, re-cut from
+        # what is left - roads included, in their own layer, or a re-cut
+        # tile would drop every road it drew. (The renamed road's tiles do
+        # not move: a name is not on a tile.)
+        gone = ([was_roads[edits["removed_ucr"]]]
+                if "removed_ucr" in edits else [])
+        touched = (set(cut([was[closed], was[removed]], zooms))
+                   | set(cut([], zooms, gone)))
+        fresh = cut(features_of(db), zooms, features_of(db, UCR_TABLE))
         for tile in sorted(touched):
             if tile in fresh:
                 db.execute("INSERT OR REPLACE INTO tiles VALUES (?,?,?,?)",
@@ -633,9 +796,13 @@ def write_readme(out_dir, report):
         "outside the box %s (west, south, east, north) deleted and the file "
         "VACUUMed. Its sqlite_master is the published container's, table for "
         "table, index for index and view for view, and every row keeps the "
-        "rowid it was published under. Only the meta counts, `bounds` and "
-        "`evidence_dates` are rewritten, recomputed for the rows that are "
-        "left with the builders' own formulas - and the stamp, which is "
+        "rowid it was published under. The unsurfaced roads kept are those "
+        "whose `ucr_ways_bbox` box meets the box, and the tiles kept are those "
+        "the kept ways and roads are drawn in. Only the meta counts, `bounds` "
+        "(over ways and roads) and `evidence_dates` are rewritten, recomputed "
+        "for the rows that are left with the builders' own formulas, and "
+        "`ucr_count`, `ucr_sources` and `local_rules` cut to the roads, "
+        "councils and rules that are left - and the stamp, which is "
         "rule 3 of `stamp_build.py`'s: a region whose POIs, fords or gauges "
         "were refreshed under unchanged ways, carrying `ways_cut` %s (the "
         "lanes' pack stamp) under `built_at` %s."
@@ -650,7 +817,7 @@ def write_readme(out_dir, report):
         "its published container (`stable_ids.py`): kept POIs keep their "
         "rowids (%d moved), the removed one leaves a gap and the new one is "
         "numbered above the highest the region published; ford `%s` "
-        "re-tagged stepping_stones; the edited rows dated the day `after` "
+        "re-tagged stepping_stones;%s the edited rows dated the day `after` "
         "was built, so `evidence_dates` moves, and `pois_checked` with them "
         "(%s -> %s: the refetch that found the new POI read the region that "
         "day, and the pack was stamped hours later - no date in a build is "
@@ -659,15 +826,21 @@ def write_readme(out_dir, report):
         "so `stamp_build.py`'s rule 2 lets the builder's stamp stand and "
         "rule 3, the only writer of `ways_cut`, never runs: the app dates "
         "these lanes by `built_at`. The %d "
-        "tiles the closed and removed ways were in are re-cut by "
-        "`build_map_container.build_tiles` from the fixture's ways, and "
-        "dropped where none is left."
+        "tiles the closed and removed ways and the removed road were in are "
+        "re-cut by `build_map_container.build_tiles` from the fixture's ways "
+        "(layer `lanes`) and roads (layer `ucr`), and dropped where none is "
+        "left."
         % (report["edits"]["closed_way"], report["edits"]["removed_way"],
            ", ".join(report["edits"]["removed_fords"]),
            report["edits"]["mud_way"], report["edits"]["removed_poi"],
            report["edits"]["added_poi"],
            report["edits"]["renumbered_pois"],
            report["edits"]["retagged_ford"],
+           (" unsurfaced road `%s` removed from `ucr_ways` with its box and "
+            "`%s` renamed `%s` by its council, so `ucr_count` and the "
+            "council's count in `ucr_sources` move;"
+            % (report["edits"]["removed_ucr"], report["edits"]["renamed_ucr"],
+               NAMED_ROAD)) if "removed_ucr" in report["edits"] else "",
            report["pois_checked"][0], report["pois_checked"][1],
            report["built_at"][1],
            report["edits"]["tiles_recut"]),
