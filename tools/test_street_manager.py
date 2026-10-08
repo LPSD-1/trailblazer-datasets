@@ -8,6 +8,7 @@ No network. A tiny GeoPackage built in a temporary file in the shape of OS
 Open USRN; activity events in the shape of the Street Manager archive
 (September 2026), trimmed.
 """
+import contextlib
 import io
 import json
 import os
@@ -21,6 +22,7 @@ import zipfile
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+import council_orders as CO  # noqa: E402
 import street_manager as sm  # noqa: E402
 from byway_match import Byways, Way  # noqa: E402
 from osgb import grid_to_wgs84  # noqa: E402
@@ -247,6 +249,51 @@ class Fetch(unittest.TestCase):
         self.assertEqual(props["start"], "2026-11-05")
         self.assertEqual(council_orders.PRECEDENCE["street-manager"],
                          max(council_orders.PRECEDENCE.values()))
+
+
+
+class OnARoad(unittest.TestCase):
+    """A Street Manager closure on an unsurfaced unclassified road is a
+    "Road closed", never "Byway closed" (review, 8 Oct 2026: only
+    council_sources.match said what it had matched)."""
+
+    def test_a_closure_on_a_ucr_is_labelled_road_closed(self):
+        road = Way("DN-UCR-x-301", "Lancashire", "Rocky Lane (X UCR 301)",
+                   BYWAY.lines, way_class="ucr")
+        acts = sm.newest_activities([archive(event("ARN-9", "2026-09-01"))])
+        item = sm.items_for(acts, TABLE, {"LA-1": road}, "2026-10-07")[0]
+        self.assertEqual(item["on"], "ucr")
+        self.assertEqual(CO.label_for(item)[2], "Road closed")
+
+    def test_a_closure_on_a_byway_keeps_its_byway_label(self):
+        acts = sm.newest_activities([archive(event("ARN-9", "2026-09-01"))])
+        item = sm.items_for(acts, TABLE, WAYS, "2026-10-07")[0]
+        self.assertNotIn("on", item)
+        self.assertEqual(CO.label_for(item)[2], "Byway closed")
+
+
+
+def _roads_only(n=1200):
+    """A checkout holding unsurfaced roads and no byway at all."""
+    return Byways([Way("R-%d" % i, "Devon", "UCR %d" % i,
+                       [[(-4.0 + i * 1e-4, 51.0), (-4.0 + i * 1e-4, 51.001)]],
+                       way_class="ucr") for i in range(n)])
+
+
+class BrokenCheckoutFloor(unittest.TestCase):
+    """The "under 1,000 byways is a broken checkout" floor counts byways,
+    not byways and roads (review nit, 8 Oct 2026)."""
+
+    def test_roads_do_not_hold_the_floor_up(self):
+        import byway_match
+        real = byway_match.load_byways
+        byway_match.load_byways = lambda *a, **k: _roads_only()
+        try:
+            with contextlib.redirect_stdout(io.StringIO()) as out:
+                self.assertEqual(sm.main(["usrn", "--out", os.devnull]), 1)
+            self.assertIn("only 0 byways", out.getvalue())
+        finally:
+            byway_match.load_byways = real
 
 
 if __name__ == "__main__":

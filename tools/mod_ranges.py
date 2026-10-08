@@ -187,11 +187,12 @@ def main(argv=None):
     pins = read_json(os.path.join(args.out, "mod-ranges-ways.json"), {}) \
         or {}
     if pins:
-        from byway_match import load_byways
+        from byway_match import load_byways, mark_on
         known = load_byways().ways
         for r in ranges:
             uids = pins.get(r["label"]) or []
             r["ways"] = [u for u in uids if u in known]
+            mark_on(r, [known[u] for u in r["ways"]])
             gone = [u for u in uids if u not in known]
             if gone:
                 print("::warning::%s: reviewed byways no longer published: "

@@ -198,5 +198,57 @@ class Fetch(unittest.TestCase):
             pins.PAGES = saved
 
 
+
+def _fake_load_byways(seen):
+    """load_byways as it behaves: 1,000 byways, and an unsurfaced road unless
+    the caller asks for byways alone. `seen` gets what was handed back."""
+    def load(pattern=None, include_ucr=True):
+        ways = [Way("XX-%d" % i, "Devon", "Byway open to all traffic (BOAT) "
+                    "Abbotsham %d" % i, [[(-4.2 + i * 1e-4, 51.0),
+                                          (-4.2 + i * 1e-4, 51.001)]])
+                for i in range(1000)]
+        if include_ucr:
+            ways.append(Way("DN-UCR-abbotsham-301", "Devon",
+                            "Rocky Lane (Abbotsham UCR 301)",
+                            [[(-4.25, 51.02), (-4.25, 51.03)]],
+                            way_class="ucr"))
+        seen.append(Byways(ways))
+        return seen[-1]
+    return load
+
+
+class _Stop(Exception):
+    pass
+
+
+class DefinitiveMapOnly(unittest.TestCase):
+    """A Planning Inspectorate decision is about the definitive map, which no UCR is on: main() asks for
+    byways alone (review, 8 Oct 2026: reverting include_ucr=False there
+    left every test green)."""
+
+    def test_main_matches_against_byways_and_never_a_road(self):
+        import byway_match
+        seen = []
+        real = byway_match.load_byways
+        byway_match.load_byways = _fake_load_byways(seen)
+        try:
+            import build_tro
+            real_table = build_tro.load_authority_table
+
+            def stop():
+                raise _Stop()
+            build_tro.load_authority_table = stop
+            try:
+                with self.assertRaises(_Stop):
+                    pins.main(["--offline"])
+            finally:
+                build_tro.load_authority_table = real_table
+        finally:
+            byway_match.load_byways = real
+        self.assertEqual(len(seen), 1)
+        self.assertNotIn("DN-UCR-abbotsham-301", seen[0].ways)
+        self.assertEqual(seen[0].count("ucr"), 0)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=1)

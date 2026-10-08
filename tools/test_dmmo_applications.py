@@ -8,6 +8,8 @@ No network: a stand-in client answering in the shape of the councils' own
 layers (Devon's Schedule 14 register, 7 October 2026), with invented names in
 the personal fields so a leak would be visible.
 """
+import contextlib
+import io
 import json
 import os
 import shutil
@@ -227,6 +229,57 @@ class DorsetFromHome(unittest.TestCase):
         self.assertEqual([(a["ref"], a["state"]) for a in apps],
                          [("T1", "open"), ("T2", "determined")])
         self.assertNotIn("blocked", only("dorset-dmmo")[0])
+
+
+
+def _fake_load_byways(seen):
+    """load_byways as it behaves: 1,000 byways, and an unsurfaced road unless
+    the caller asks for byways alone. `seen` gets what was handed back."""
+    def load(pattern=None, include_ucr=True):
+        ways = [Way("XX-%d" % i, "Devon", "Byway open to all traffic (BOAT) "
+                    "Abbotsham %d" % i, [[(-4.2 + i * 1e-4, 51.0),
+                                          (-4.2 + i * 1e-4, 51.001)]])
+                for i in range(1000)]
+        if include_ucr:
+            ways.append(Way("DN-UCR-abbotsham-301", "Devon",
+                            "Rocky Lane (Abbotsham UCR 301)",
+                            [[(-4.25, 51.02), (-4.25, 51.03)]],
+                            way_class="ucr"))
+        seen.append(Byways(ways))
+        return seen[-1]
+    return load
+
+
+class _Stop(Exception):
+    pass
+
+
+class DefinitiveMapOnly(unittest.TestCase):
+    """A DMMO application is about the definitive map, which no UCR is on: main() asks for
+    byways alone (review, 8 Oct 2026: reverting include_ucr=False there
+    left every test green)."""
+
+    def test_main_matches_against_byways_and_never_a_road(self):
+        import byway_match
+        seen = []
+        real = byway_match.load_byways
+        byway_match.load_byways = _fake_load_byways(seen)
+        try:
+            captured = []
+            real_run = dm.run
+            dm.run = lambda client, byways, out: (captured.append(byways)
+                                                  or ({}, []))
+            try:
+                with contextlib.redirect_stdout(io.StringIO()):
+                    dm.main(["--out", tempfile.mkdtemp()])
+            finally:
+                dm.run = real_run
+            self.assertIs(captured[0], seen[0])
+        finally:
+            byway_match.load_byways = real
+        self.assertEqual(len(seen), 1)
+        self.assertNotIn("DN-UCR-abbotsham-301", seen[0].ways)
+        self.assertEqual(seen[0].count("ucr"), 0)
 
 
 if __name__ == "__main__":

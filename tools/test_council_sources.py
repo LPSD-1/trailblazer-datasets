@@ -472,6 +472,10 @@ class _Many(object):
     def __len__(self):
         return 10000
 
+    def count(self, way_class="boat"):
+        # main()'s floor counts byways alone (Byways.count).
+        return 10000 if way_class == "boat" else 0
+
     def __getattr__(self, name):
         return getattr(self.inner, name)
 
@@ -492,6 +496,30 @@ class Registry(unittest.TestCase):
             self.assertTrue(s["name"] and s["licence"] and s["authority"],
                             s["id"])
             self.assertTrue(s["endpoint"].startswith("https://"), s["id"])
+
+
+
+def _roads_only(n=1200):
+    """A checkout holding unsurfaced roads and no byway at all."""
+    return Byways([Way("R-%d" % i, "Devon", "UCR %d" % i,
+                       [[(-4.0 + i * 1e-4, 51.0), (-4.0 + i * 1e-4, 51.001)]],
+                       way_class="ucr") for i in range(n)])
+
+
+class BrokenCheckoutFloor(unittest.TestCase):
+    """The "under 1,000 byways is a broken checkout" floor counts byways,
+    not byways and roads (review nit, 8 Oct 2026)."""
+
+    def test_roads_do_not_hold_the_floor_up(self):
+        import byway_match
+        real = byway_match.load_byways
+        byway_match.load_byways = lambda *a, **k: _roads_only()
+        try:
+            with contextlib.redirect_stdout(io.StringIO()) as out:
+                self.assertEqual(cs.main(["fetch", "--out", tempfile.mkdtemp()]), 1)
+            self.assertIn("only 0 byways", out.getvalue())
+        finally:
+            byway_match.load_byways = real
 
 
 if __name__ == "__main__":

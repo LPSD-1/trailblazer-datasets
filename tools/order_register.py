@@ -186,8 +186,11 @@ def match_order(byways, order):
                     # Sections: Derbyshire's "15/1", "15/2" are BOAT 15.
                     want = norm_parish(parish)
                     n = norm_number(number)
+                    # Byways only, as match_ref is: a road's "15/1"
+                    # is not Byway 15.
                     found = [w.uid for w in byways.ways.values()
                              if w.authority == authority and
+                             w.way_class == "boat" and
                              w.parish == want and
                              w.number.startswith(n + "/")]
                 ways.update(found)
@@ -266,6 +269,9 @@ def item_of(order, byways, ways, how):
         "ways": ways, "match": how,
         "geometry": as_geometry(byways.geometry(ways)),
     }
+    # A reviewer may pin an order to unsurfaced roads: "Road closed" then.
+    from byway_match import mark_on
+    mark_on(item, [byways.ways.get(u) for u in ways])
     for key in ("width_m", "season", "start", "end", "label"):
         if order.get(key) not in (None, ""):
             item[key] = order[key]
@@ -602,9 +608,9 @@ def main(argv=None):
     if args.cmd == "build":
         from byway_match import load_byways
         byways = load_byways()
-        if len(byways) < 1000:
+        if byways.count() < 1000:
             print("::error::only %d byways in the published containers"
-                  % len(byways))
+                  % byways.count())
             return 1
         orders = read_json(os.path.join(REGISTER, "orders.json"))
         if not isinstance(orders, list):

@@ -285,6 +285,12 @@ class Byways(object):
     def __len__(self):
         return len(self.ways)
 
+    def count(self, way_class="boat"):
+        """How many ways of one class: the byways alone by default. The
+        "a broken checkout has under 1,000 byways" floors count these, not
+        len(), which counts the unsurfaced roads too."""
+        return sum(1 for w in self.ways.values() if w.way_class == way_class)
+
     @staticmethod
     def _cells(box, pad=0.0):
         w, s, e, n = box
@@ -372,6 +378,20 @@ class Byways(object):
 
     def authorities(self):
         return sorted(set(w.authority for w in self.ways.values()))
+
+
+def mark_on(item, ways):
+    """Say on `item` what it was matched to, where every way is an
+    unsurfaced road: item["on"] = "ucr", so council_orders.label_for says
+    "Road closed", not "Byway closed". Absent for a byway or a mix, so a
+    byway's item is unchanged. `ways` are Way objects (None, for a uid no
+    longer published, counts as a byway). Every matcher calls this wherever
+    it makes a match: council_sources, order_register, street_manager and
+    mod_ranges."""
+    ways = list(ways or [])
+    if ways and all(getattr(w, "way_class", "boat") == "ucr" for w in ways):
+        item["on"] = "ucr"
+    return item
 
 
 def load_byways(pattern=None, include_ucr=True):

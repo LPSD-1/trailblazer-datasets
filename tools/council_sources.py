@@ -1209,10 +1209,8 @@ def match(candidates, byways, authority):
         # WHAT IT WAS MATCHED TO, where every way is an unsurfaced road: the
         # label then says "Road closed", not "Byway closed" (council_orders
         # label_for). Absent for a byway, so a byway's item is unchanged.
-        classes = set(getattr(byways.ways.get(u), "way_class", "boat")
-                      for u in ways)
-        if classes == {"ucr"}:
-            item["on"] = "ucr"
+        from byway_match import mark_on
+        mark_on(item, [byways.ways.get(u) for u in ways])
         item["geometry"] = geometry
         items.append(item)
     items = merge_twins(items)
@@ -1364,9 +1362,11 @@ def main(argv=None):
 
     from byway_match import load_byways
     byways = load_byways()
-    if len(byways) < 1000:
+    # Byways, not byways and unsurfaced roads: a checkout with no byways
+    # and 4,000 roads is still broken.
+    if byways.count() < 1000:
         print("::error::only %d byways in the published containers; refusing "
-              "to match against a broken checkout" % len(byways))
+              "to match against a broken checkout" % byways.count())
         return 1
     wanted = set((args.only or "").split(",")) - {""}
     accept = set(x.strip() for x in (args.accept_shrink or "").split(",")

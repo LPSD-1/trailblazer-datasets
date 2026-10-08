@@ -7,6 +7,8 @@ the right byway, and flags a changed council page instead of acting on it.
 No network, no containers: synthetic byways, a stand-in client, and a
 temporary register directory.
 """
+import contextlib
+import io
 import json
 import os
 import shutil
@@ -17,6 +19,7 @@ import unittest
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 HERE = os.path.dirname(os.path.abspath(__file__))
 
+import council_orders as CO  # noqa: E402
 import order_register as reg  # noqa: E402
 from byway_match import Byways, Way  # noqa: E402
 from osgb import grid_to_wgs84  # noqa: E402
@@ -525,6 +528,57 @@ class ManualInbox(unittest.TestCase):
             "Cambridgeshire": ["robots.txt overridden by owner decision "
                                "(cambridgeshire-byway-orders)"],
             "Isle of Wight": ["saved by hand 2026-10-08"]})
+
+
+
+ROAD = Way("DY-UCR-stoney-middleton-15", "Derbyshire",
+           "Unsurfaced unclassified road (UCR) Stoney Middleton 15/3",
+           [[grid_to_wgs84(422600, 375100), grid_to_wgs84(422900, 375100)]],
+           way_class="ucr")
+WITH_ROAD = Byways(list(BYWAYS.ways.values()) + [ROAD])
+
+
+class OnARoad(unittest.TestCase):
+    """Review, 8 Oct 2026: a reviewer's pin to a UCR is a road's order, and
+    the sections fallback is for byways only."""
+
+    def test_an_order_pinned_to_a_road_is_labelled_road(self):
+        data, _ = reg.build(WITH_ROAD, [order(paths=[], ways=[ROAD.uid],
+                                              vehicles="all_users")])
+        item = data["items"][0]
+        self.assertEqual(item["on"], "ucr")
+        self.assertEqual(CO.label_for(item)[2], "Road closed")
+
+    def test_an_order_on_a_byway_keeps_its_byway_label(self):
+        data, _ = reg.build(WITH_ROAD, [order(vehicles="all_users")])
+        self.assertNotIn("on", data["items"][0])
+        self.assertEqual(CO.label_for(data["items"][0])[2], "Byway closed")
+
+    def test_the_sections_fallback_finds_byways_not_roads(self):
+        # "Stoney Middleton 15" is BOAT 15/1 and 15/2; the road numbered
+        # 15/3 is not Byway 15.
+        o = order(authorities=["Derbyshire"], parish="Stoney Middleton",
+                  paths=[["num", None, "15"]], grid_refs=[])
+        self.assertEqual(reg.match_order(WITH_ROAD, o)[0],
+                         ["DY-15/1", "DY-15/2"])
+
+    def test_the_broken_checkout_floor_counts_byways_alone(self):
+        many_roads = Byways([Way("R-%d" % i, "Devon", "UCR %d" % i,
+                                 [[(-4.0 + i * 1e-4, 51.0),
+                                   (-4.0 + i * 1e-4, 51.001)]],
+                                 way_class="ucr") for i in range(1200)])
+        self.assertEqual(len(many_roads), 1200)
+        self.assertEqual(many_roads.count(), 0)
+        import byway_match
+        real = byway_match.load_byways
+        byway_match.load_byways = lambda *a, **k: many_roads
+        try:
+            with contextlib.redirect_stdout(io.StringIO()) as out:
+                self.assertEqual(reg.main(["build", "--out",
+                                           os.devnull]), 1)
+            self.assertIn("only 0 byways", out.getvalue())
+        finally:
+            byway_match.load_byways = real
 
 
 if __name__ == "__main__":

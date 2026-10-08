@@ -111,5 +111,41 @@ class Fetch(unittest.TestCase):
             mr.fetch(Client(), "2026-10-07", log=lambda *_: None)
 
 
+
+class PinnedToARoad(unittest.TestCase):
+    """A range a reviewer pinned to unsurfaced roads says so, as every
+    matcher does (byway_match.mark_on; review, 8 Oct 2026)."""
+
+    def test_a_range_pinned_only_to_roads_is_on_ucr(self):
+        import json
+        import shutil
+        import tempfile
+        import byway_match
+        from byway_match import Byways, Way
+        out = tempfile.mkdtemp()
+        ways = Byways([
+            Way("ND-UCR-u8050", "Northumberland", "UCR U8050",
+                [[(-2.2, 55.3), (-2.2, 55.31)]], way_class="ucr"),
+            Way("ND-1-b", "Northumberland", "Byway open to all traffic "
+                "(BOAT) Alwinton 1", [[(-2.1, 55.3), (-2.1, 55.31)]])])
+        with open(os.path.join(out, "mod-ranges-ways.json"), "w") as fh:
+            json.dump({"Otterburn": ["ND-UCR-u8050"],
+                       "Redesdale": ["ND-UCR-u8050", "ND-1-b"]}, fh)
+        real_fetch, real_load = mr.fetch, byway_match.load_byways
+        mr.fetch = lambda client, today: [{"label": "Otterburn"},
+                                          {"label": "Redesdale"}]
+        byway_match.load_byways = lambda *a, **k: ways
+        try:
+            self.assertEqual(mr.main(["--out", out, "--today",
+                                      "2026-10-08"]), 0)
+            with open(os.path.join(out, "mod-ranges.json")) as fh:
+                got = dict((r["label"], r) for r in json.load(fh)["ranges"])
+            self.assertEqual(got["Otterburn"].get("on"), "ucr")
+            self.assertNotIn("on", got["Redesdale"])
+        finally:
+            mr.fetch, byway_match.load_byways = real_fetch, real_load
+            shutil.rmtree(out, ignore_errors=True)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=1)

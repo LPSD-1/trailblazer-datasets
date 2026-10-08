@@ -352,6 +352,7 @@ def newest_activities(zips):
 
 
 def items_for(activities, usrn_table, ways_by_uid, today):
+    from byway_match import mark_on
     items = []
     for arn, o in sorted(activities.items()):
         usrn = str(o.get("usrn") or "").strip()
@@ -376,7 +377,7 @@ def items_for(activities, usrn_table, ways_by_uid, today):
         street = (o.get("street_name") or "").strip()
         lines = [[[round(x, 5), round(y, 5)] for x, y in l]
                  for w in ways for l in w.lines]
-        items.append({
+        items.append(mark_on({
             "id": arn,
             "ref": arn,
             "authority": ways[0].authority,
@@ -396,7 +397,7 @@ def items_for(activities, usrn_table, ways_by_uid, today):
             "geometry": {"type": "MultiLineString", "coordinates": lines}
             if len(lines) > 1 else {"type": "LineString",
                                     "coordinates": lines[0]},
-        })
+        }, ways))
     return items
 
 
@@ -461,9 +462,9 @@ def main(argv=None):
     if args.cmd == "usrn":
         from byway_match import load_byways
         byways = load_byways()
-        if len(byways.ways) < 1000:
+        if byways.count() < 1000:
             print("::error::only %d byways in the published containers"
-                  % len(byways.ways))
+                  % byways.count())
             return 1
         gpkg, tmp = args.gpkg, None
         if not gpkg:
