@@ -126,6 +126,29 @@ ATTRIBUTION = (
 )
 
 
+def catalogue_attribution(lanes_manifest):
+    """ATTRIBUTION, and - where the lane build carries councils' unsurfaced
+    roads (the manifest's ucrSources) - a plain credit naming each council,
+    which the Open Government Licence sentence does not cover. Unchanged,
+    byte for byte, with none."""
+    try:
+        with open(lanes_manifest, encoding="utf8") as fh:
+            sources = json.load(fh).get("ucrSources") or []
+    except (OSError, ValueError, TypeError):
+        sources = []
+    names = []
+    for s in sources:
+        name = (s.get("council") or "").strip()
+        if s.get("count") and name and name not in names:
+            names.append(name)
+    if not names:
+        return ATTRIBUTION
+    said = (names[0] if len(names) == 1 else
+            ", ".join(names[:-1]) + " and " + names[-1])
+    return (ATTRIBUTION + " Unsurfaced unclassified roads from the highway "
+            "records of " + said + ".")
+
+
 def tile_name(lon, lat):
     """The 5x5-degree tile whose lower-left corner contains this point."""
     tl = int(math.floor(lon / 5.0) * 5)
@@ -1014,7 +1037,7 @@ def build(lanes_manifest, base_url, stamp, satellite_index=None,
     catalogue = {
         "schema": 2,
         "generated": stamp,
-        "attribution": ATTRIBUTION,
+        "attribution": catalogue_attribution(lanes_manifest),
         "baseUrl": base_url,
         "overviews": overviews,
         # THE LIVE HALF OF THE CONDITIONS PIPELINE, and the only part of this

@@ -240,6 +240,36 @@ ok(bc.report_default_uk(CAT, budget=total - 1) is False,
    "NEGATIVE PAIR: one byte less fails - the boundary is where it says")
 
 
+print("\nthe catalogue credits the councils whose roads it carries")
+_tmp = tempfile.mkdtemp()
+_none = os.path.join(_tmp, "none.json")
+_some = os.path.join(_tmp, "some.json")
+with open(_none, "w") as fh:
+    json.dump({"packages": []}, fh)
+with open(_some, "w") as fh:
+    json.dump({"packages": [], "ucrSources": [
+        {"council": "Devon County Council", "count": 949},
+        {"council": "North Yorkshire Council", "count": 633},
+        {"council": "Worcestershire County Council", "count": 0}]}, fh)
+ok(bc.catalogue_attribution(_none) == bc.ATTRIBUTION,
+   "no roads: the attribution as it always was")
+_said = bc.catalogue_attribution(_some)
+ok(_said.startswith(bc.ATTRIBUTION) and _said.endswith(
+    "Unsurfaced unclassified roads from the highway records of Devon County "
+    "Council and North Yorkshire Council."),
+   "roads: each council named in plain words (%s)" % _said)
+ok("Worcestershire" not in _said, "a council with no road published is not")
+
+# The catalogue build() writes uses it (offline: no routing index read).
+_real_index = bc.routing_index
+bc.routing_index = lambda: {}
+try:
+    _built = bc.build(_some, "https://example.invalid/", "2026-10-08T00:00:00Z")
+finally:
+    bc.routing_index = _real_index
+ok(_built["attribution"] == _said,
+   "the published catalogue carries that credit (%s)" % _built["attribution"])
+
 print("\n%d checks, %d failed" % (checks, len(failures)))
 for f in failures:
     print("  %s" % f)
