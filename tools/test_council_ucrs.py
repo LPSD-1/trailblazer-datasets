@@ -102,9 +102,17 @@ def path(uid, lines, row_type="footpath", code="DN", authority="Devon"):
     return f
 
 
-# A Devon footpath nowhere near any fixture road: Devon's definitive map is
-# in the build, so its roads can be tested (and none of them is on it).
-FAR_PATH = path("DN-1-0000000001", [[[-4.10, 50.90], [-4.09, 50.905]]])
+def far_paths(code="DN", authority="Devon"):
+    """A footpath, a bridleway and a restricted byway of the council's,
+    nowhere near any fixture road: its whole definitive map is in the build,
+    so its roads can be tested (and none of them is on it)."""
+    return [path("%s-%d-far" % (code, i), [[[-6.0 + i * 0.01, 49.9],
+                                           [-6.0 + i * 0.01, 49.905]]],
+                 row_type=t, code=code, authority=authority)
+            for i, t in enumerate(P.UCR_NERC_TYPES)]
+
+
+FAR_PATH = far_paths()
 
 
 class ReadingRules(unittest.TestCase):
@@ -367,21 +375,28 @@ class Build(unittest.TestCase):
         try:
             one, two = route("Abbotsham", "301"), route("Brixton", "303")
             # "Abbotsham" and "ABBOTSHAM." slug alike: one id, two roads.
-            two = dict(two, parish="ABBOTSHAM.", number="301")
+            two = dict(two, parish="ABBOTSHAM.", number="301",
+                       key=["ABBOTSHAM.", "301"])
             others = [r for r in routes() if r["number"] not in ("301",)
                       or r["parish"] != "Abbotsham"]
             others = [r for r in others if (r["parish"], r["number"]) !=
                       ("Brixton", "303")]
             self._hold(out, [one, two] + others)
             lanes, _s, _r = P.ucr_lanes(
-                {"DN": "Devon"}, [FAR_BOAT], [FAR_PATH], out_dir=out,
+                {"DN": "Devon"}, [FAR_BOAT], FAR_PATH, out_dir=out,
                 today="2026-10-08", log=lambda *a: None)
             ids = sorted(l["properties"]["lane_uid"] for l in lanes)
             self.assertEqual(len(ids), len(set(ids)))
             twins = [i for i in ids if i.startswith("DN-UCR-abbotsham-301")]
             self.assertEqual(len(twins), 2)
-            self.assertTrue(all(len(i) > len("DN-UCR-abbotsham-301")
-                                for i in twins))
+            # The longer keeps the plain id - the one it was published
+            # under before the collision appeared (review nit, 8 Oct).
+            longer = max((l for l in lanes if l["properties"]["lane_uid"]
+                          in twins), key=lambda l: l["properties"]["lengthKm"])
+            self.assertEqual(longer["properties"]["lane_uid"],
+                             "DN-UCR-abbotsham-301")
+            self.assertEqual(len([i for i in twins
+                                  if i != "DN-UCR-abbotsham-301"]), 1)
             self.assertIn("DN-UCR-dean-prior-304", ids)
         finally:
             shutil.rmtree(out, ignore_errors=True)
@@ -393,12 +408,14 @@ class Build(unittest.TestCase):
             on = boat("DN-9-0000000009",
                       route("Abbotsham", "301")["lines"])
             lanes, sources, report = P.ucr_lanes(
-                {"DN": "Devon"}, [on, FAR_BOAT], [FAR_PATH], out_dir=out,
+                {"DN": "Devon"}, [on, FAR_BOAT], FAR_PATH, out_dir=out,
                 today="2026-10-08", log=lambda *a: None)
             names = [l["properties"]["name"] for l in lanes]
             self.assertNotIn("Rocky Lane (Abbotsham UCR 301)", names)
-            self.assertEqual(report["on_byway"],
-                             ["Rocky Lane (Abbotsham UCR 301)"])
+            self.assertEqual(set(n for _c, n, *_x in report["on_byway"]),
+                             {"Rocky Lane (Abbotsham UCR 301)"})
+            self.assertEqual(report["per_council"]["DN"]
+                             ["on_byway_routes"], 1)
             self.assertEqual(len(lanes), 7)
             self.assertEqual(sources[0]["count"], 7)
             self.assertEqual(sources[0]["since"], "2026-10-08")
@@ -800,6 +817,21 @@ class LocalRules(unittest.TestCase):
         self.assertFalse(inside(-1.524, 54.137))     # Ripon
         self.assertFalse(inside(-0.92, 54.30))       # the North York Moors
 
+    def test_the_sewstern_order_names_its_own_roads_and_no_box(self):
+        # The second review: a box over the drove road also took in Peach
+        # Lane, 35G319, 35G320, 56G490 and 35G357.
+        rule = next(r for r in lr.load()
+                    if r["id"] == "ll-sewstern-lane-and-the-drift-order")
+        self.assertNotIn("areas", rule["applies_to"])
+        held = cu.held(codes={"LL"}, today="2026-10-08",
+                       log=lambda *a: None)[0]
+        by_uid = dict((P.normalise_ucr(r, held[0], "LL", "Lincolnshire")
+                       ["properties"]["lane_uid"], r["name"])
+                      for r in held[2])
+        for uid in rule["applies_to"]["way_uids"]:
+            self.assertIn(by_uid.get(uid), ("Sewstern Lane", "The Drift"),
+                          uid)
+
     def test_the_ridgeway_rule_names_roads_the_build_publishes(self):
         rule = next(r for r in lr.load()
                     if r["id"] == "on-roads-meeting-the-ridgeway")
@@ -956,8 +988,9 @@ def _nerc_paths():
     return out
 
 
-def _lanes_for(code, held_routes, paths, today="2026-10-08"):
-    """ucr_lanes over one council's routes, held as the build holds them."""
+def _lanes_for(code, held_routes, paths, today="2026-10-08", complete=True):
+    """ucr_lanes over one council's routes, held as the build holds them;
+    `complete`, the council's whole definitive map is in the build."""
     out = tempfile.mkdtemp()
     try:
         layer = cu.by_code()[code]
@@ -966,7 +999,9 @@ def _lanes_for(code, held_routes, paths, today="2026-10-08"):
                        "routes": held_routes}, fh)
         with open(os.path.join(out, "status.json"), "w") as fh:
             json.dump({code: {"last_ok": today}}, fh)
-        return P.ucr_lanes({code: layer["authority"]}, [], paths,
+        return P.ucr_lanes({code: layer["authority"]}, [],
+                           paths + (far_paths(code, layer["authority"])
+                                    if complete else []),
                            out_dir=out, today=today, log=lambda *a: None)
     finally:
         shutil.rmtree(out, ignore_errors=True)
@@ -1069,8 +1104,7 @@ class Nerc(unittest.TestCase):
         # Only another council's paths: Devon's roads cannot be tested, and
         # are not drawn unchecked.
         lanes, sources, report = _lanes_for(
-            "DN", routes(), [path("SM-1-x", [[[-3.0, 51.0], [-3.0, 51.01]]],
-                                  code="SM", authority="Somerset")])
+            "DN", routes(), far_paths("SM", "Somerset"), complete=False)
         self.assertEqual(lanes, [])
         self.assertEqual(report["unchecked"], ["DN"])
         self.assertEqual(sources, [])
@@ -1081,7 +1115,7 @@ class Nerc(unittest.TestCase):
         theirs = [dict(f, properties=dict(f["properties"],
                                           authorityCode="CO"))
                   for f in self.PATHS]
-        lanes, report, on, _bf = self._bere_ferrers(theirs + [FAR_PATH])
+        lanes, report, on, _bf = self._bere_ferrers(theirs)
         self.assertNotIn(on, P.lines_of(lanes[0]))
 
 
@@ -1092,31 +1126,46 @@ class Councils(unittest.TestCase):
     answer (tools/fixtures/council-ucrs/<code>.json, read 8 October 2026)."""
 
     def test_north_yorkshire_routes_are_u_roads_sections_joined(self):
-        got = dict((r["number"], r) for r in _council_routes("NY"))
+        got = dict((r["number"], r) for r in _council_routes("NY")
+                   if r["number"] == "U2686")
         self.assertEqual(got["U2686"]["objectids"], [2, 4])
         self.assertEqual(len(got["U2686"]["lines"]), 2)
-        self.assertTrue(all(re.match(r"^U\d+$", n) for n in got), got.keys())
-        self.assertTrue(all(r["parish"] == "" and r["name"] == ""
-                            for r in got.values()))
+        self.assertTrue(all(re.match(r"^U\d+$", r["number"])
+                            for r in _council_routes("NY")))
         lane = P.normalise_ucr(got["U2686"], cu.public(cu.by_code()["NY"]),
                                "NY", "North Yorkshire")
+        # No district on these two sections: the number stands alone.
         self.assertEqual(lane["properties"]["name"],
                          "Unsurfaced unclassified road (UCR) U2686")
         self.assertEqual(lane["properties"]["lane_uid"], "NY-UCR-u2686")
         self.assertEqual(lane["properties"]["source"],
                          "highway-records:north-yorkshire-council")
 
+    def test_north_yorkshire_numbers_are_unique_only_in_a_district(self):
+        # The second review: U1057 is a road near Leyburn (Richmondshire)
+        # AND another near Selby, 55 km apart - two roads, never one lane.
+        got = [r for r in _council_routes("NY") if r["number"] == "U1057"]
+        self.assertEqual(sorted((r["parish"], r["objectids"]) for r in got),
+                         [("Richmondshire", [7574]), ("Selby", [7572])])
+        ids = sorted(P.normalise_ucr(r, cu.public(cu.by_code()["NY"]), "NY",
+                                     "North Yorkshire")["properties"]
+                     ["lane_uid"] for r in got)
+        self.assertEqual(ids, ["NY-UCR-richmondshire-u1057",
+                               "NY-UCR-selby-u1057"])
+
     def test_norfolk_named_by_parish_and_road_number(self):
         got = _council_routes("NK")
-        k = next(r for r in got if r["objectids"] == [97])
-        self.assertEqual((k["parish"], k["number"], k["name"]),
-                         ("South Walsham", "59433", "Kingfisher Lane"))
+        k = next(r for r in got if 97 in r["objectids"])
+        self.assertEqual((k["parish"], k["number"], k["name"], k["key"]),
+                         ("South Walsham", "59433", "Kingfisher Lane",
+                          ["59433"]))
         multi = next(r for r in got if 25616 in r["objectids"])
         self.assertEqual(multi["objectids"], [25616, 25617, 25618])
 
     def test_lincolnshire_road_is_the_asset_id_before_the_section(self):
         got = _council_routes("LL")
         r = next(r for r in got if 1 in r["objectids"])
+        self.assertEqual(r["key"], ["01G200"])
         self.assertEqual((r["parish"], r["number"], r["objectids"]),
                          ("Scotton", "01G200", [1, 2]))
         self.assertEqual(r["name"], "Scotton Road")
@@ -1222,6 +1271,254 @@ class Licence(unittest.TestCase):
         self.assertIn("North Yorkshire Council", att)
         # No roads: the attribution an older build wrote, byte for byte.
         self.assertEqual(P.dataset_attribution("OGL.", []), "OGL.")
+
+
+
+# ---------------------------------------------------------- second review
+
+REVIEW_2 = _council_fixture("review-2.json")["cases"]
+
+
+def _case(name):
+    c = REVIEW_2[name]
+    ways = c["ways"]
+    paths = [w for w in ways if w["properties"]["rowType"]
+             in P.UCR_NERC_TYPES]
+    boats = [w for w in ways if w["properties"]["rowType"]
+             == "byway_open_to_all_traffic"]
+    return c["code"], c["route"], paths, boats
+
+
+class Along(unittest.TestCase):
+    """A section is dropped only for a way that runs ALONG it - beside it
+    and in its direction - never for one that crosses it or ends at it
+    (second review, 8 Oct 2026: 59 sections under 53 m were dropped, whole
+    roads among them)."""
+
+    def test_a_footpath_ending_at_a_road_does_not_take_it(self):
+        # Stokenham 315: 14 m; a footpath arrives from the north and ends at
+        # its first point.
+        code, r, paths, _b = _case("stokenham-315")
+        lanes, _s, report = _lanes_for(code, [r], paths)
+        self.assertEqual([l["properties"]["lane_uid"] for l in lanes],
+                         ["DN-UCR-stokenham-315"])
+        self.assertEqual(report["on_path"], [])
+
+    def test_a_footpath_crossing_a_short_road_does_not_take_it(self):
+        # Wainfleet St Mary 72G500: 25 m, footpaths across it at ~72 deg.
+        code, r, paths, _b = _case("wainfleet-st-mary-72g500")
+        lanes, _s, report = _lanes_for(code, [r], paths)
+        self.assertEqual(len(lanes), 1)
+        self.assertEqual(report["on_path"], [])
+
+    def test_a_short_section_crossed_square_on_is_kept(self):
+        # 30 m of road, a path across its middle at 80 degrees.
+        road = {"parish": "Abbotsham", "number": "399",
+                "key": ["Abbotsham", "399"], "name": "", "objectids": [1],
+                "lines": [[[-4.2500, 51.0200], [-4.2496, 51.0200]]]}
+        across = path("DN-1-x", [[[-4.24985, 51.0198], [-4.24975, 51.0202]]])
+        lanes, _s, report = _lanes_for("DN", [road], [across])
+        self.assertEqual(len(lanes), 1)
+        self.assertEqual(report["on_path"], [])
+
+    def test_a_path_alongside_at_ten_metres_does_take_it(self):
+        road = {"parish": "Abbotsham", "number": "399",
+                "key": ["Abbotsham", "399"], "name": "", "objectids": [1],
+                "lines": [[[-4.2500, 51.0200], [-4.2470, 51.0200]]]}
+        beside = path("DN-1-x", [[[-4.2502, 51.02009], [-4.2468, 51.02009]]],
+                      row_type="bridleway")
+        lanes, _s, report = _lanes_for("DN", [road], [beside])
+        self.assertEqual(lanes, [])
+        self.assertEqual([k for _c, _n, k, _s2, _m in report["on_path"]],
+                         ["bridleway"])
+
+    def test_beside_means_square_across_not_beyond_the_end(self):
+        a, b = (0.0, 0.0), (100.0, 0.0)
+        self.assertAlmostEqual(P._beside(50.0, 10.0, a, b), 10.0)
+        self.assertIsNone(P._beside(110.0, 0.0, a, b))
+        self.assertAlmostEqual(P._beside(101.0, 0.0, a, b), 1.0)
+
+
+class OnABoatBySection(unittest.TestCase):
+    """A UCR section lying along a BOAT is left to the byway, section by
+    section as the NERC test is (second review: 25 sections, ~20 km, were
+    drawn over BOATs because the test was per road at 90%)."""
+
+    def test_northumberland_u3059s_section_on_a_byway_is_not_drawn(self):
+        code, r, paths, boats = _case("nd-u3059")
+        idx = council_ways._Index([tuple(p) for p in l]
+                                  for f in boats for l in P.lines_of(f))
+        on = [l for l in r["lines"] if P.along_share(
+            [tuple(p) for p in l], {"b": idx})[0] >= P.UCR_ALONG_SHARE]
+        self.assertTrue(on, "the fixture must hold a section on a BOAT")
+        out = tempfile.mkdtemp()
+        try:
+            layer = cu.by_code()[code]
+            with open(os.path.join(out, "%s.json" % code), "w") as fh:
+                json.dump({"source": cu.public(layer), "since": "2026-10-08",
+                           "routes": [r]}, fh)
+            with open(os.path.join(out, "status.json"), "w") as fh:
+                json.dump({code: {"last_ok": "2026-10-08"}}, fh)
+            lanes, _s, report = P.ucr_lanes(
+                {code: layer["authority"]}, boats,
+                paths + far_paths(code, layer["authority"]), out_dir=out,
+                today="2026-10-08", log=lambda *a: None)
+        finally:
+            shutil.rmtree(out, ignore_errors=True)
+        drawn = [l for lane in lanes for l in P.lines_of(lane)]
+        for line in on:
+            self.assertNotIn(line, drawn)
+        self.assertEqual(len(report["on_byway"]), len(on))
+        if len(on) < len(r["lines"]):
+            self.assertEqual([l["properties"]["lane_uid"] for l in lanes],
+                             ["ND-UCR-u3059"])
+
+    def test_one_section_of_three_on_a_byway_leaves_the_other_two(self):
+        r = route("Brixton", "303")
+        boat_on = boat("DN-9-b", [r["lines"][1]])
+        out = tempfile.mkdtemp()
+        try:
+            Build._hold(out, [r])
+            lanes, _s, report = P.ucr_lanes(
+                {"DN": "Devon"}, [boat_on], FAR_PATH, out_dir=out,
+                today="2026-10-08", log=lambda *a: None)
+        finally:
+            shutil.rmtree(out, ignore_errors=True)
+        self.assertEqual(len(lanes), 1)
+        drawn = P.lines_of(lanes[0])
+        self.assertNotIn(r["lines"][1], drawn)
+        self.assertEqual(len(drawn), 2)
+        self.assertEqual(report["per_council"]["DN"]["on_byway_sections"], 1)
+
+
+class StableKeys(unittest.TestCase):
+    """An id is the council's unique key and nothing read order or an
+    optional field can move (second review)."""
+
+    def _ids(self, code, feats):
+        layer = cu.by_code()[code]
+        return sorted(P.normalise_ucr(r, cu.public(layer), code, "x")
+                      ["properties"]["lane_uid"]
+                      for r in cu.routes_of(feats, layer["rules"]))
+
+    def test_norfolk_id_survives_its_sections_read_in_another_order(self):
+        feats = _council_fixture("nk.json")["features"]
+        swapped = copy.deepcopy(feats)
+        for f in swapped:
+            if f["attributes"]["OBJECTID"] == 97:
+                f["attributes"]["PARNAME"] = "BEIGHTON"
+        self.assertEqual(self._ids("NK", feats), self._ids("NK", swapped))
+        self.assertIn("NK-UCR-59433", self._ids("NK", feats))
+
+    def test_surreys_id_survives_the_council_filling_in_a_village(self):
+        feats = _council_fixture("su.json")["features"]
+        filled = copy.deepcopy(feats)
+        for f in filled:
+            if f["attributes"]["class_number"] == "D262":
+                f["attributes"]["village"] = "CHOBHAM"
+        self.assertEqual(self._ids("SU", feats), self._ids("SU", filled))
+        self.assertIn("SU-UCR-d262", self._ids("SU", feats))
+
+    def test_the_parish_shown_is_the_one_most_sections_give(self):
+        feats = _council_fixture("ll.json")["features"]
+        got = next(r for r in cu.routes_of(feats, cu.by_code()["LL"]["rules"])
+                   if 9496 in r["objectids"])
+        self.assertEqual(got["parish"], "Fiskerton")
+
+    def test_pieces_far_apart_are_separate_lanes_the_longest_keeps_the_id(self):
+        # Lincolnshire 51G275: section /10 in Martin, /20 and /30 in
+        # Fiskerton, more than 1 km apart.
+        feats = _council_fixture("ll.json")["features"]
+        rs = [r for r in cu.routes_of(feats, cu.by_code()["LL"]["rules"])
+              if r["number"] == "51G275"]
+        self.assertEqual(sorted(r["objectids"] for r in rs),
+                         [[9494], [9496, 9498]])
+        lanes, _s, _r = _lanes_for("LL", rs, [])
+        ids = sorted(l["properties"]["lane_uid"] for l in lanes)
+        self.assertEqual(len(ids), 2)
+        longest = max(lanes, key=lambda l: l["properties"]["lengthKm"])
+        self.assertEqual(longest["properties"]["lane_uid"], "LL-UCR-51g275")
+        other = [i for i in ids if i != "LL-UCR-51g275"][0]
+        self.assertRegex(other, r"^LL-UCR-51g275-[0-9a-f]{6}$")
+        # Read again: the same ids.
+        again, _s, _r = _lanes_for("LL", list(reversed(rs)), [])
+        self.assertEqual(sorted(l["properties"]["lane_uid"] for l in again),
+                         ids)
+
+    def test_a_new_far_piece_does_not_move_a_published_id(self):
+        one = route("Abbotsham", "301")
+        lanes, _s, _r = _lanes_for("DN", [one], [])
+        self.assertEqual(lanes[0]["properties"]["lane_uid"],
+                         "DN-UCR-abbotsham-301")
+        far = dict(one, objectids=[9], lines=[[[-3.5, 50.5],
+                                               [-3.5001, 50.5001]]])
+        lanes, _s, _r = _lanes_for("DN", [one, far], [])
+        self.assertIn("DN-UCR-abbotsham-301",
+                      [l["properties"]["lane_uid"] for l in lanes])
+
+
+class CaseTidying(unittest.TestCase):
+    def test_the_reviews_list(self):
+        for raw, want in (
+                ("RSPB RESERVE", "RSPB Reserve"),
+                ("HENRY VIII LANE", "Henry VIII Lane"),
+                ("LEY-HILL LANE", "Ley-Hill Lane"),
+                ("WEST END", "West End"),
+                ("IVY HOUSE", "Ivy House"),
+                ("O'NEILLS DROVE", "O'Neills Drove"),
+                ("MCDONALD LANE", "McDonald Lane"),
+                ("D'ARCY ROAD", "D'Arcy Road"),
+                ("BITTAM'S LANE", "Bittam's Lane"),
+                ("Track to IVY HOUSE", "Track to Ivy House"),
+                ("Lane to WEST END", "Lane to West End"),
+                ("Track by RSPB Reserve", "Track by RSPB Reserve"),
+                ("Lane by RAF Chivenor", "Lane by RAF Chivenor"),
+                ("Track off A52 Donington Road",
+                 "Track off A52 Donington Road"),
+                ("PRoW Hook Norton Footpath 17",
+                 "PRoW Hook Norton Footpath 17")):
+            self.assertEqual(cu.road_name(raw), want, raw)
+
+
+class FullReport(unittest.TestCase):
+    def test_every_section_is_logged_and_written(self):
+        report = {"routes": 0, "unchecked": ["XX"], "per_council": {},
+                  "on_path": [("DN", "road %d" % i, "footpath", 1.0, 100)
+                              for i in range(120)],
+                  "on_byway": [("ND", "road %d" % i, 1.0, 100)
+                               for i in range(50)],
+                  "partly_on_path": [("NY", "road %d" % i, 0.5, 300)
+                                     for i in range(60)]}
+        tmp = tempfile.mkdtemp()
+        try:
+            lines = []
+            path_ = os.path.join(tmp, "dist", P.UCR_REPORT)
+            P.log_ucr_report(report, path_, log=lines.append)
+            with open(path_, encoding="utf-8") as fh:
+                held = json.load(fh)
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+        self.assertEqual(len(held["on_path"]), 120)
+        self.assertEqual(len(held["partly_on_path"]), 60)
+        self.assertEqual(sum(1 for l in lines if "along a footpath" in l),
+                         120)
+        self.assertEqual(sum(1 for l in lines if "partly along" in l), 60)
+        self.assertEqual(sum(1 for l in lines if "along a byway" in l), 50)
+
+
+class WholeDefinitiveMap(unittest.TestCase):
+    def test_a_council_with_footpaths_only_is_held_back(self):
+        # One of the three files missing is a definitive map the NERC test
+        # cannot be trusted against (second review).
+        fp_only = [p for p in far_paths() if p["properties"]["rowType"]
+                   == "footpath"]
+        lanes, _s, report = _lanes_for("DN", routes(), fp_only,
+                                       complete=False)
+        self.assertEqual(lanes, [])
+        self.assertEqual(report["unchecked"], ["DN"])
+        lanes, _s, report = _lanes_for("DN", routes(), far_paths(),
+                                       complete=False)
+        self.assertEqual(len(lanes), 8)
 
 
 if __name__ == "__main__":

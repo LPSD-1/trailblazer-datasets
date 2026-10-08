@@ -44,6 +44,7 @@ honest User-Agent, robots.txt obeyed, paced, ArcGIS /query only.
 """
 import argparse
 import datetime
+from collections import Counter
 import json
 import os
 import re
@@ -54,6 +55,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import polite_http  # noqa: E402
 from polite_http import FetchFailed, Refused, arcgis_query  # noqa: E402
 from council_sources import esri_lines, read_json, write_json  # noqa: E402
+from council_ways import _seg_dist, _xy  # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
@@ -124,11 +126,14 @@ PLACEHOLDER_WORDS = frozenset((
 #   name       optional field holding what the council calls the road
 #   no_name    the values of `name` that mean "no name" (PLACEHOLDER_WORDS,
 #              number-only and reference-like names are none everywhere)
-#   per_parish True (the default) where a number is only unique within its
-#              parish (Devon's "Abbotsham 301"): a route is a parish and
-#              number. False where the number is the council's own county-
-#              wide road number: a route is the number, named by the first
-#              parish its sections give.
+#   key        what makes a reference unique (key_kind): "parish" (Devon's
+#              "Abbotsham 301", the default), "area" (an `area` field and the
+#              number: North Yorkshire's district, named by `area_names`) or
+#              "number" (county-wide). `per_parish` False is "number". The
+#              lane's id is this key and nothing else.
+#   per_parish False where the number is the council's own county-wide road
+#              number: a route is the number, named by the parish most of
+#              its sections give.
 #
 # A ROUTE IS ONE ROAD. Councils draw a road in sections; every section of one
 # route becomes one lane, as a byway drawn in pieces does
@@ -189,11 +194,19 @@ UCR_LAYERS = [
             "2c059ce9bd2b43b99d8130ee23f3ddd5/rest/services/highways/"
             "Highways_Network/FeatureServer/3",
      "where": "HIERARCHY='6'",
-     "fields": "OBJECTID,NAME_SECTION,HIERARCHY",
+     "fields": "OBJECTID,NAME_SECTION,HIERARCHY,DIS_NAME",
+     # U NUMBERS ARE NOT UNIQUE ACROSS THE COUNTY: the pre-2023 districts
+     # each numbered their own (U1057 is a road near Leyburn and another
+     # near Selby, 55 km apart). A road is its district and number;
+     # DIS_NAME is blank on 13 sections, which then stand on their number.
      "rules": {"status": ("HIERARCHY", ("6",)),
                "parish": None, "number": "NAME_SECTION",
                "number_pattern": r"^\s*([A-Za-z]*\d+[A-Za-z]?)\s*(?:/|$)",
-               "per_parish": False},
+               "key": "area", "area": "DIS_NAME",
+               "area_names": {"CRV": "Craven", "HMB": "Hambleton",
+                              "HRG": "Harrogate", "RCH": "Richmondshire",
+                              "RYE": "Ryedale", "SCR": "Scarborough",
+                              "SEL": "Selby"}},
      "min_records": 500,
      "licence": None,
      "licence_note": owner_decision_note("North Yorkshire Council"),
@@ -408,12 +421,60 @@ def _number(value):
     return _text(value)
 
 
+#: Initialisms a council writes in capitals that stay in capitals when a name
+#: is put in title case ("RSPB Reserve", "Lane by RAF Chivenor").
+INITIALISMS = frozenset((
+    "RSPB", "RAF", "MOD", "NT", "YHA", "BT", "UK", "GPO", "FP", "BW", "PH",
+    "HGV", "NHS", "RNLI", "SSSI", "TV", "BBC", "MOT", "UCR", "BOAT", "RUPP",
+    "PROW", "USA", "WW", "WWI", "WWII"))
+
+#: Roman numerals of I, V and X only ("VIII", "XII"): the ones road names use
+#: ("Henry VIII Lane"), and none of them an English word.
+_ROMAN = re.compile(r"^(X{0,3})(IX|IV|V?I{0,3})$")
+
+
+def _title_part(part):
+    """One hyphen-free part of a word in title case: initialisms, Roman
+    numerals and anything with a digit ("A52") kept as written; Mc names
+    ("MCDONALD" -> "McDonald"); apostrophes ("BITTAM'S" -> "Bittam's",
+    "O'NEILLS" -> "O'Neills", "D'ARCY" -> "D'Arcy")."""
+    bare = re.sub(r"[^A-Za-z]", "", part)
+    if not bare or re.search(r"\d", part):
+        return part
+    if bare.upper() in INITIALISMS or (len(bare) >= 2 and
+                                       _ROMAN.match(bare.upper())):
+        return part.upper()
+    if len(bare) == 1:
+        return part.upper()
+    segments = re.split(r"(['’])", part)
+    out = []
+    for i, seg in enumerate(segments):
+        if i % 2:                       # the apostrophe itself
+            out.append(seg)
+            continue
+        if i == 0:
+            low = seg.lower()
+            m = re.match(r"^([^A-Za-z]*)mc([a-z])(.*)$", low)
+            if m and len(m.group(3)) >= 1:
+                out.append(m.group(1) + "Mc" + m.group(2).upper()
+                           + m.group(3))
+            else:
+                out.append(re.sub(r"[a-z]", lambda x: x.group(0).upper(),
+                                  low, count=1))
+            continue
+        first = re.sub(r"[^A-Za-z]", "", segments[0])
+        if seg.lower() in ("s", "") or len(first) != 1:
+            out.append(seg.lower())     # "Bittam's", "Wouldn't"
+        else:                           # "O'Neills", "D'Arcy"
+            out.append(seg[:1].upper() + seg[1:].lower())
+    return "".join(out)
+
+
 def _title_word(w):
-    """One word in title case, keeping an apostrophe's s small
-    ("BITTAM'S" -> "Bittam's", where str.title gives "Bittam'S")."""
-    return re.sub(r"[A-Za-z]+", lambda m: m.group(0).capitalize()
-                  if m.start() == 0 or w[m.start() - 1] not in "'’"
-                  else m.group(0).lower(), w.lower())
+    """A word in title case, each hyphen or slash part on its own
+    ("LEY-HILL" -> "Ley-Hill")."""
+    return "".join(_title_part(p) if i % 2 == 0 else p
+                   for i, p in enumerate(re.split(r"([-/])", w)))
 
 
 def _is_placeholder(text, no_name=()):
@@ -432,27 +493,49 @@ def _is_placeholder(text, no_name=()):
                for w in words) or not re.search(r"[A-Za-z]", text)
 
 
+def _caps(word):
+    letters = re.sub(r"[^A-Za-z]", "", word)
+    return len(letters) >= 2 and letters.isupper()
+
+
 def road_name(raw, no_name=()):
     """What the council calls the road, as a rider should read it, or ''.
 
-    Names in capitals ("ROCKY LANE") are put in title case a word at a time,
-    keeping an apostrophe's s small. A name already in mixed case is the
-    council's own and kept, except for the words in it that are in capitals
-    and four letters or more ("Track to IVEDON HOUSE" -> "Track to Ivedon
-    House"): three letters or fewer are kept as an abbreviation might be
-    ("RAF", "MOD"). Placeholders, bare numbers and references are no name
-    (_is_placeholder), so the lane falls back to its designation and
-    reference.
+    A name all in capitals ("ROCKY LANE", "HENRY VIII LANE", "O'NEILLS
+    DROVE") is put in title case word by word (_title_word: initialisms,
+    Roman numerals, Mc names, hyphen and apostrophe parts). A name in mixed
+    case is the council's own and kept, except where it holds capitals that
+    are plainly words shouted: two or more capital words in a row ("Track
+    to IVEDON HOUSE", "Lane to IVY HOUSE") or one of four letters or more
+    that is no initialism ("Track to WESTEND"); a lone short capital word is
+    kept ("Lane by RAF Chivenor"). Placeholders, bare numbers and references
+    are no name (_is_placeholder), so the lane falls back to its
+    designation and reference.
     """
     text = _text(raw)
     if _is_placeholder(text, no_name):
         return ""
     if not re.search(r"[A-Z]", text):
         return text
-    if text.upper() == text:
-        return " ".join(_title_word(w) for w in text.split(" "))
-    return re.sub(r"(?<![\w'’])[A-Z][A-Z'’]{3,}(?![\w])",
-                  lambda m: _title_word(m.group(0)), text)
+    words = text.split(" ")
+    if not re.search(r"[a-z]", text):
+        return " ".join(_title_word(w) for w in words)
+    out = list(words)
+    i = 0
+    while i < len(words):
+        if not _caps(words[i]):
+            i += 1
+            continue
+        j = i
+        while j < len(words) and _caps(words[j]):
+            j += 1
+        run = words[i:j]
+        lone = re.sub(r"[^A-Za-z]", "", run[0]).upper()
+        if len(run) >= 2 or (len(lone) >= 4 and lone not in INITIALISMS):
+            for k in range(i, j):
+                out[k] = _title_word(words[k])
+        i = j
+    return " ".join(out)
 
 
 def _holds(a, test):
@@ -483,6 +566,16 @@ def _parish(a, rules):
     return road_name(text) or text
 
 
+def _area(a, rules):
+    """The council's own area its numbers are unique within, by `area`
+    (North Yorkshire's pre-2023 district: "RCH" -> "Richmondshire")."""
+    field = rules.get("area")
+    if not field:
+        return ""
+    code = _text(a.get(field))
+    return (rules.get("area_names") or {}).get(code.upper(), code)
+
+
 def _road_number(a, rules):
     number = _number(a.get(rules["number"]))
     pattern = rules.get("number_pattern")
@@ -493,19 +586,83 @@ def _road_number(a, rules):
     return number + letter.upper()
 
 
+def key_kind(rules):
+    """What makes a road's reference unique in this council's records:
+    'parish' (a parish and number, Devon), 'area' (an area and number,
+    North Yorkshire's districts) or 'number' (the number, county-wide)."""
+    return rules.get("key") or ("parish" if rules.get("per_parish", True)
+                                else "number")
+
+
+#: Sections of one reference further apart than this are not one road: the
+#: council gave a number twice, or two stretches of a road are unsurfaced
+#: with a made road between. Each such piece is a route of its own (the
+#: build gives the longest the plain id, the rest a suffix). MEASURED 8 Oct
+#: 2026 over every route of eight councils: 2 routes (DN, ND) have pieces
+#: 1-2 km apart and 17 more than 2 km (NY 14, LL 3 - North Yorkshire's
+#: U1057 is in Leyburn and Selby, 55 km apart) - and none 100 m-1 km
+#: apart that a 1 km gap would wrongly split.
+MAX_GAP_M = 1000.0
+
+
+def _gap(a, b):
+    """Metres between two sections (each a list of lines), at their
+    nearest vertices and segments."""
+    pa = [_xy(tuple(p)) for l in a for p in l]
+    best = None
+    for line in b:
+        pb = [_xy(tuple(p)) for p in line]
+        segs = list(zip(pb, pb[1:])) or [(pb[0], pb[0])]
+        for x, y in pa:
+            for s, t in segs:
+                d = _seg_dist(x, y, s, t)
+                if best is None or d < best:
+                    best = d
+    return best if best is not None else float("inf")
+
+
+def _pieces(sections):
+    """[(oid, lines)] -> [[(oid, lines)]], one per cluster no section of
+    which is within MAX_GAP_M of any other cluster's."""
+    n = len(sections)
+    parent = list(range(n))
+
+    def find(i):
+        while parent[i] != i:
+            parent[i] = parent[parent[i]]
+            i = parent[i]
+        return i
+    for i in range(n):
+        for j in range(i + 1, n):
+            if find(i) != find(j) and min(
+                    _gap(sections[i][1], sections[j][1]),
+                    _gap(sections[j][1], sections[i][1])) <= MAX_GAP_M:
+                parent[find(i)] = find(j)
+    groups = {}
+    for i in range(n):
+        groups.setdefault(find(i), []).append(sections[i])
+    return list(groups.values())
+
+
 def routes_of(features, rules):
     """esri JSON features -> [route], one per road.
 
-    A route is {"parish", "number", "name", "objectids", "lines"}; its lines
-    are every section's, in (lon, lat). A road is a parish and number where
-    the council numbers within parishes (`per_parish`, Devon), and the
-    number alone where its numbers are county-wide; then its parish is the
-    first its sections give. Sections are taken in object id order, and a
-    record whose id was already read (paging can repeat one) is read once.
-    Sorted by parish then number.
+    A route is {"parish", "number", "key", "name", "objectids", "lines"};
+    its lines are every section's, in (lon, lat). `key` is the reference
+    that is unique in the council's records (key_kind): [parish, number],
+    [area, number] or [number] - never anything read order or an optional
+    field could move, so the lane's id (build_packages.ucr_uid) holds
+    while the council edits. `parish` is where the road is, for its name:
+    the key's parish or area, or where the council's numbers are
+    county-wide the parish most of its sections give (ties alphabetical).
+
+    Sections are taken in object id order, and a record whose id was
+    already read (paging can repeat one) is read once. Sections of one key
+    more than MAX_GAP_M apart are separate routes (_pieces). Sorted by
+    parish, number, then position.
     """
     oid = rules.get("oid") or "OBJECTID"
-    per_parish = rules.get("per_parish", True)
+    kind = key_kind(rules)
     groups = {}
     seen = set()
 
@@ -526,32 +683,42 @@ def routes_of(features, rules):
             continue
         parish = _parish(a, rules)
         number = _road_number(a, rules)
-        if not number or (per_parish and not parish):
+        if not number or (kind == "parish" and not parish):
             continue
-        key = (parish, number) if per_parish else (number,)
-        g = groups.setdefault(key, {"parish": parish, "number": number,
-                                    "names": [], "objectids": [],
-                                    "lines": []})
-        if not g["parish"] and parish:
-            g["parish"] = parish
+        key = ((parish, number) if kind == "parish" else
+               (_area(a, rules), number) if kind == "area" else (number,))
+        g = groups.setdefault(key, {"key": list(key), "number": number,
+                                    "parishes": Counter(), "names": [],
+                                    "sections": []})
+        if parish:
+            g["parishes"][parish] += 1
         name = road_name(a.get(rules.get("name")), rules.get("no_name", ())) \
             if rules.get("name") else ""
         if name and name not in g["names"]:
             g["names"].append(name)
-        g["objectids"].append(ident)
-        g["lines"].extend([[round(p[0], 5), round(p[1], 5)] for p in l]
-                          for l in lines)
+        g["sections"].append((ident, [[[round(p[0], 5), round(p[1], 5)]
+                                       for p in l] for l in lines]))
     out = []
-    for g in sorted(groups.values(),
-                    key=lambda g: (g["parish"].lower(),
-                                   _num_key(g["number"]))):
-        # Sections named differently are one route still; the first name the
-        # council gives (in object id order) is the one shown.
-        out.append({"parish": g["parish"], "number": g["number"],
-                    "name": g["names"][0] if g["names"] else "",
-                    "objectids": sorted(o for o in g["objectids"]
-                                        if o is not None),
-                    "lines": sorted(g["lines"])})
+    for g in groups.values():
+        if kind == "parish":
+            parish = g["key"][0]
+        elif kind == "area":
+            parish = g["key"][0]
+        else:
+            parish = sorted(g["parishes"].items(),
+                            key=lambda kv: (-kv[1], kv[0]))[0][0] \
+                if g["parishes"] else ""
+        for piece in _pieces(g["sections"]):
+            out.append({
+                "parish": parish, "number": g["number"], "key": g["key"],
+                # Sections named differently are one route still; the first
+                # name the council gives (in object id order) is the one
+                # shown.
+                "name": g["names"][0] if g["names"] else "",
+                "objectids": sorted(o for o, _l in piece if o is not None),
+                "lines": sorted(l for _o, ls in piece for l in ls)})
+    out.sort(key=lambda r: (r["parish"].lower(), _num_key(r["number"]),
+                            r["lines"][0][0]))
     return out
 
 

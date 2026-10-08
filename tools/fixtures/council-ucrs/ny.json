@@ -1,12 +1,13 @@
 {
-"about": "A real subset of North Yorkshire Council's layer as its /query answered on 8 October 2026 (British National Grid), for tools/test_council_ucrs.py. U2686 (two sections, 2 and 4); OBJECTID 767 lies on a definitive-map path (NERC); 196 partly along one.",
+"about": "A real subset of North Yorkshire Council's layer as its /query answered on 8 October 2026 (British National Grid), for tools/test_council_ucrs.py. U2686 (two sections, 2 and 4); U1057 is two roads, in Selby (7572) and Richmondshire (7574); OBJECTID 767 lies on a definitive-map path (NERC); 196 partly along one.",
 "url": "https://utility.arcgis.com/usrsvcs/servers/2c059ce9bd2b43b99d8130ee23f3ddd5/rest/services/highways/Highways_Network/FeatureServer/3",
 "features": [
 {
 "attributes": {
 "OBJECTID": 2,
 "NAME_SECTION": "U2686/9/60",
-"HIERARCHY": "6"
+"HIERARCHY": "6",
+"DIS_NAME": ""
 },
 "geometry": {
 "paths": [
@@ -63,7 +64,8 @@
 "attributes": {
 "OBJECTID": 4,
 "NAME_SECTION": "U2686/9/40",
-"HIERARCHY": "6"
+"HIERARCHY": "6",
+"DIS_NAME": ""
 },
 "geometry": {
 "paths": [
@@ -136,7 +138,8 @@
 "attributes": {
 "OBJECTID": 196,
 "NAME_SECTION": "U443/1/70",
-"HIERARCHY": "6"
+"HIERARCHY": "6",
+"DIS_NAME": "SCR"
 },
 "geometry": {
 "paths": [
@@ -213,7 +216,8 @@
 "attributes": {
 "OBJECTID": 767,
 "NAME_SECTION": "U3121/1/70",
-"HIERARCHY": "6"
+"HIERARCHY": "6",
+"DIS_NAME": "HMB"
 },
 "geometry": {
 "paths": [
@@ -372,7 +376,8 @@
 "attributes": {
 "OBJECTID": 7572,
 "NAME_SECTION": "U1057/2/50",
-"HIERARCHY": "6"
+"HIERARCHY": "6",
+"DIS_NAME": "SEL"
 },
 "geometry": {
 "paths": [
@@ -449,7 +454,8 @@
 "attributes": {
 "OBJECTID": 7574,
 "NAME_SECTION": "U1057/9/50",
-"HIERARCHY": "6"
+"HIERARCHY": "6",
+"DIS_NAME": "RCH"
 },
 "geometry": {
 "paths": [

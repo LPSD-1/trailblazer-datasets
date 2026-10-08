@@ -108,15 +108,20 @@ category 12 ("Often, they are 'green lanes'", its Highway Asset Management
 Plan, Annex 10) was the first council read; README.md lists every council
 read since, each by its own field and value.
 
-**Not where the definitive map says path (NERC).** s67 of that Act took the
-motor rights off every way the definitive map records as a footpath,
-bridleway or restricted byway; (2)(b) saves a List of Streets road only where
-it was not on the definitive map. So `build_packages.ucr_lanes` drops each
-UCR *section* with 75% of its length within 20 m of a definitive-map
-footpath, bridleway or restricted byway of any authority (rowmaps, read from
-the cache though none is carried), keeps the road's other sections, and holds
-back every road of a council whose own definitive map is not in the build
-(it cannot be tested, so it is not drawn).
+**Not where the definitive map says path (NERC), nor on a BOAT.** s67 of
+that Act took the motor rights off every way the definitive map records as a
+footpath, bridleway or restricted byway; (2)(b) saves a List of Streets road
+only where it was not on the definitive map. So `build_packages.ucr_lanes`
+drops each UCR *section* 75% of which runs ALONG such a way of any authority
+(rowmaps, read from the cache though none is carried): `along_share` counts a
+point every 5 m where a path segment is beside it, within 20 m and within 30
+degrees of the road's bearing, so a path crossing or ending at a road never
+counts. A section running along a published BOAT the same way is the same
+way recorded twice, and is left to the byway. The road's other sections are
+kept. Every road of a council without all three of its own footpaths,
+bridleways and restricted byways in the build is held back (it cannot be
+tested, so it is not drawn). Every section dropped or partly along a path is
+logged and written to `dist/ucr-report.json`.
 
 **Where they come from.** `tools/council_ucrs.py` reads each council's own
 layer through `tools/polite_http.py` into `council-ucrs/<CODE>.json`, with its
@@ -128,16 +133,20 @@ entry in `UCR_LAYERS`. They NEVER go through `council_ways.py`'s byway merge:
 rowmaps has no UCRs to merge with, and every one would read as "new".
 
 **One route, one way.** A council draws a road in sections; every section of
-one parish and number (or one county-wide road number, where the council
-numbers its roads that way) is one `ucr` way (several lines in one
-geometry). The id is `<code>-UCR-<parish>-<number>` (`NY-UCR-u2686` where
-there is no parish): the council's reference alone, so it survives a section
-re-drawn, added or dropped; only two routes that collide get a disambiguator
-(six hex of their own lines). The name is the council's name for the road with
-its reference - "Rocky Lane (Abbotsham UCR 301)" - or, where it names none (a
-placeholder such as "Unknown" or "Track", a bare number or a reference is
-none), "Unsurfaced unclassified road (UCR) Abbotsham 301". A UCR lying along a published byway (90% of it within 20 m)
-is the same way recorded twice, and the byway's definitive-map record wins.
+one reference is one `ucr` way (several lines in one geometry), the
+reference being what is unique in the council's records (`UCR_LAYERS`
+`key`): a parish and number (Devon), a pre-2023 district and number (North
+Yorkshire), or the number where it is county-wide. Sections of one reference
+more than 1 km apart (`MAX_GAP_M`) are separate ways. The id is
+`<code>-UCR-<the reference, slugged>` (`DN-UCR-abbotsham-301`,
+`NY-UCR-richmondshire-u1057`, `SU-UCR-d262`): never read order or an
+optional field, so it survives a section re-drawn, added or dropped and a
+road added elsewhere. Where one reference is several ways the longest keeps
+the plain id and each other takes six hex naming where it lies. The name is
+the council's name for the road with its reference - "Rocky Lane (Abbotsham
+UCR 301)" - or, where it names none (a placeholder such as "Unknown" or
+"Track", a bare number or a reference is none), "Unsurfaced unclassified road
+(UCR) Abbotsham 301".
 
 **Provenance, per way.** `legal_tier = 'highway_record'` and
 `access_evidence = 'highway_record'`: the council's highway record, a

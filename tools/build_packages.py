@@ -928,14 +928,6 @@ def load_all(authorities):
 #: The row type council_ucrs.py's roads are built as.
 UCR_TYPE = "unsurfaced_unclassified_road"
 
-#: A UCR lying this close to a byway, along UCR_ON_BYWAY_SHARE of its length,
-#: is the same way recorded twice - and the byway's definitive-map record is
-#: the stronger one, so the UCR is not published. 20 m: the test the 8 Oct
-#: 2026 read of Devon's layer was measured with (none of its 958 routes lay
-#: on any of Devon's 178 BOATs).
-UCR_ON_BYWAY_M = 20.0
-UCR_ON_BYWAY_SHARE = 0.9
-
 #: THE NERC TEST. The Natural Environment and Rural Communities Act 2006 s67
 #: extinguished the motor vehicle rights over a way recorded on the
 #: definitive map as a footpath, bridleway or restricted byway; s67(2)(b)
@@ -947,48 +939,67 @@ UCR_ON_BYWAY_SHARE = 0.9
 #: bridleway, restricted byway".
 UCR_NERC_TYPES = ("footpath", "bridleway", "restricted_byway")
 
-#: A section coincides with such a way when UCR_ON_PATH_SHARE of its length
-#: lies within UCR_ON_PATH_M of one: buffered overlap of most of it, never a
-#: touch. MEASURED 8 Oct 2026 over 4,415 sections of nine councils against
-#: rowmaps' footpaths, bridleways and restricted byways (cache of 10 Sep):
-#: the share within 20 m is two humps, 1,101 sections at under 0.1 and 362
-#: at 0.9 or more, with 94 between 0.5 and 0.9. A crossing path covers
-#: 40 m of a section at 20 m, so a section over ~53 m is never taken for one
-#: crossing it; 20 m is the byway test's distance (two councils' centre
-#: lines of one road sit that far apart).
-UCR_ON_PATH_M = 20.0
-UCR_ON_PATH_SHARE = 0.75
+#: A section lies ALONG a way when UCR_ALONG_SHARE of its length is within
+#: UCR_ALONG_M of that way AND RUNS WITH IT: the way's segment there within
+#: UCR_ALONG_DEG of the section's own bearing. Never a touch, and never a
+#: crossing: before the bearing test 59 sections under 53 m were dropped for
+#: a path that crossed them (the second review, 8 Oct 2026: Stokenham 315,
+#: 14 m at 75 degrees, a whole road lost). The same test, per section, takes
+#: a section lying on a BOAT out of the drawn roads (the byway's definitive
+#: record is the stronger one). 20 m: the distance two records of one road
+#: sit apart. MEASURED 8 Oct 2026 over 4,415 sections: the share within 20 m
+#: is two humps, 1,101 sections under 0.1 and 362 at 0.9 or more.
+UCR_ALONG_M = 20.0
+UCR_ALONG_SHARE = 0.75
+UCR_ALONG_DEG = 30.0
 
-#: Below the NERC share but along this much of a long section: listed for the
-#: owner to look at in the build log, never dropped (a path may run along
-#: part of a road and leave it; the road part keeps its rights).
+#: Below the share but along this much of a long section: listed for the
+#: owner to look at (the build's report), never dropped (a path may run
+#: along part of a road and leave it; the road part keeps its rights).
 UCR_PARTLY_ON_PATH = 0.3
 UCR_PARTLY_ON_PATH_MIN_M = 100.0
+
+#: Where the build writes every section the NERC and byway tests took out,
+#: and every one partly along a path: dist/, which the publish step never
+#: moves - a report for the owner, not data for riders. The log prints the
+#: counts and points here.
+UCR_REPORT = "ucr-report.json"
 
 #: Cells, in degrees, for picking the definitive-map ways near any UCR before
 #: indexing them: 435,299 footpaths are far too many to index for 4,000 roads.
 _NEAR_CELL_DEG = 0.02
 
 
-def ucr_uid(authority_code, parish, number):
-    """A UCR's id: the council's own reference, nothing else.
+def ucr_uid(authority_code, *key):
+    """A UCR's id: the council's own unique reference, nothing else.
 
-    'DN-UCR-abbotsham-301', 'NY-UCR-u2686'. STABLE across the council's
-    edits: a section re-drawn, added or dropped (by the council or by the
-    NERC test) keeps the road's id, so a rider's star stays on it. Only two
-    routes that really collide get a disambiguator (ucr_lanes)."""
-    return "-".join(x for x in (authority_code, "UCR",
-                                slugify(parish) if parish else "",
-                                slugify(number) if number else "") if x)
+    `key` is the route's key (council_ucrs.routes_of): [parish, number] in
+    Devon ('DN-UCR-abbotsham-301'), [district, number] in North Yorkshire
+    ('NY-UCR-richmondshire-u1057'), [number] where the council's numbers are
+    county-wide ('SU-UCR-d262', 'ON-UCR-41697255'). Never a field that read
+    order or an optional attribute could move, so a section re-drawn, added
+    or dropped, or a council filling in a village, keeps the road's id and a
+    rider's star stays on it. Pieces of one key far apart are told apart in
+    ucr_lanes, without moving the longest's id."""
+    return "-".join([authority_code, "UCR"] +
+                    [slugify(k) for k in key if k])
+
+
+def _route_key(route):
+    """The route's key; [parish, number] for a file written before keys."""
+    key = route.get("key")
+    if key:
+        return [clean_text(k) or "" for k in key]
+    return [clean_text(route.get("parish")) or "",
+            clean_text(route.get("number")) or ""]
 
 
 def normalise_ucr(route, source, authority_code, authority_name):
     """One council_ucrs route -> one lane, in the shape normalise() writes.
 
-    THE ROUTE IS ONE LANE. Councils draw a road in sections; a route is a
-    parish and number (or the council's county-wide road number), and every
-    section of it is a line of one lane - the shape join_pieces() gives a
-    byway drawn in pieces.
+    THE ROUTE IS ONE LANE. Councils draw a road in sections; a route is the
+    council's reference, and every section of it is a line of one lane - the
+    shape join_pieces() gives a byway drawn in pieces.
 
     THE ID is the council's reference (ucr_uid), so it does not move when the
     geometry does: 'DN-UCR-abbotsham-301'.
@@ -1005,7 +1016,7 @@ def normalise_ucr(route, source, authority_code, authority_name):
         return None
     parish = clean_text(route.get("parish")) or ""
     number = clean_text(route.get("number")) or ""
-    uid = ucr_uid(authority_code, parish, number)
+    uid = ucr_uid(authority_code, *_route_key(route))
     road = clean_text(route.get("name")) or ""
     ref = " ".join(x for x in (parish, "UCR", number) if x)
     name = "%s (%s)" % (road, ref) if road else " ".join(
@@ -1067,58 +1078,171 @@ def nerc_indexes(paths, near):
     return dict((t, council_ways._Index(ls)) for t, ls in by_type.items())
 
 
-def _share(lines, index, d):
-    total = sum(council_ways._length(l) for l in lines) or 1.0
-    return sum(council_ways.covered_share(l, index, d)
-               * council_ways._length(l) for l in lines) / total
+def _axis(a, b):
+    """A segment's bearing as an undirected axis, 0-180 degrees."""
+    return math.degrees(math.atan2(b[1] - a[1], b[0] - a[0])) % 180.0
 
 
-def nerc_sections(route, indexes):
+def _turn(a, b):
+    d = abs(a - b) % 180.0
+    return min(d, 180.0 - d)
+
+
+#: How far past a segment's end a point may fall and still be BESIDE it.
+_BESIDE_SLACK_M = 2.0
+
+
+def _beside(x, y, a, b):
+    """The distance from (x, y) square across to segment a-b, or None where
+    the point is not beside the segment but beyond one end of it. A path that
+    ends where a road begins, running on in the same line, is near the
+    road's first metres but never beside them (the review's Stokenham 315:
+    14 m, a footpath arriving from the north and ending at its start)."""
+    (x0, y0), (x1, y1) = a, b
+    dx, dy = x1 - x0, y1 - y0
+    length = math.hypot(dx, dy)
+    t = ((x - x0) * dx + (y - y0) * dy) / (length * length)
+    slack = _BESIDE_SLACK_M / length
+    if t < -slack or t > 1.0 + slack:
+        return None
+    t = max(0.0, min(1.0, t))
+    return math.hypot(x - (x0 + t * dx), y - (y0 + t * dy))
+
+
+def along_share(line, indexes, d=UCR_ALONG_M, max_deg=UCR_ALONG_DEG):
+    """-> (share, {index name: share}): how much of `line` lies within `d`
+    of a segment of one of `indexes` THAT RUNS WITH IT (within `max_deg` of
+    the line's own bearing there) AND IS BESIDE IT (_beside: square across
+    from it, not beyond its end). Sampled every council_ways.STEP_M; a
+    sample counts once, for the index whose aligned segment is nearest.
+
+    A path crossing a road is near it for 2d of its length but at a wide
+    angle, so it never counts: the review's Stokenham 315 (14 m, a path
+    across it at 75 degrees) and Wainfleet St Mary 72G500 (25 m at 72)."""
+    pts = [council_ways._xy(tuple(p)) for p in line]
+    if len(pts) < 2:
+        return 0.0, {}
+    samples = []
+    for i in range(1, len(pts)):
+        (x0, y0), (x1, y1) = pts[i - 1], pts[i]
+        seg = math.hypot(x1 - x0, y1 - y0)
+        if seg == 0:
+            continue
+        axis = _axis(pts[i - 1], pts[i])
+        n = max(1, int(seg // council_ways.STEP_M))
+        for k in range(n + (1 if i == len(pts) - 1 else 0)):
+            t = min(1.0, k * council_ways.STEP_M / seg)
+            samples.append((x0 + (x1 - x0) * t, y0 + (y1 - y0) * t, axis))
+    if not samples:
+        return 0.0, {}
+    hits = Counter()
+    for x, y, axis in samples:
+        best = None
+        for name, ix in (indexes or {}).items():
+            r = int(math.ceil(d / ix.cell))
+            gx, gy = int(math.floor(x / ix.cell)), int(math.floor(y / ix.cell))
+            for i in range(gx - r, gx + r + 1):
+                for j in range(gy - r, gy + r + 1):
+                    for a, b in ix.grid.get((i, j), ()):
+                        if a == b or _turn(axis, _axis(a, b)) > max_deg:
+                            continue
+                        dist = _beside(x, y, a, b)
+                        if dist is not None and dist <= d and                                 (best is None or dist < best[0]):
+                            best = (dist, name)
+        if best:
+            hits[best[1]] += 1
+    total = float(len(samples))
+    return (sum(hits.values()) / total,
+            dict((k, v / total) for k, v in hits.items()))
+
+
+def nerc_sections(route, indexes, byways=None):
     """-> (kept lines, [(line, row type, share, metres)] dropped,
     [(line, share, metres)] partly on a path).
 
     Section by section: a council draws a road in sections, and the NERC Act
     takes the motor rights off the section the definitive map records as a
-    path, not off the rest of the road."""
+    path, not off the rest of the road. A section lying along a BOAT
+    (`byways`, an index) is dropped the same way, its row type
+    'byway_open_to_all_traffic': the byway's definitive record wins."""
     kept, dropped, partly = [], [], []
     for line in route.get("lines") or []:
         pts = [tuple(p) for p in line]
         if len(pts) < 2:
             continue
         metres = council_ways._length(pts)
-        shares = dict((t, council_ways.covered_share(pts, ix, UCR_ON_PATH_M))
-                      for t, ix in (indexes or {}).items())
-        # Together: a path that is a bridleway for half its length and a
-        # footpath for the rest still covers the whole section.
-        both = council_ways.covered_share(pts, _Union(indexes),
-                                          UCR_ON_PATH_M) \
-            if indexes else 0.0
-        if both >= UCR_ON_PATH_SHARE:
+        both, shares = along_share(pts, indexes)
+        if both >= UCR_ALONG_SHARE:
             kind = max(shares, key=lambda t: shares[t])
             dropped.append((line, kind, round(both, 3), round(metres)))
             continue
+        if byways is not None:
+            on, _s = along_share(pts, {"byway_open_to_all_traffic": byways})
+            if on >= UCR_ALONG_SHARE:
+                dropped.append((line, "byway_open_to_all_traffic",
+                                round(on, 3), round(metres)))
+                continue
         if both >= UCR_PARTLY_ON_PATH and metres >= UCR_PARTLY_ON_PATH_MIN_M:
             partly.append((line, round(both, 3), round(metres)))
         kept.append(line)
     return kept, dropped, partly
 
 
-class _Union(object):
-    """council_ways._Index's `near`, over several indexes."""
+def _piece_tag(lane):
+    """Six hex naming a piece by where it is (its south-west corner to
+    0.01 degrees, about 1 km): moves only if the piece moves that far."""
+    xs = [p[0] for l in lines_of(lane) for p in l]
+    ys = [p[1] for l in lines_of(lane) for p in l]
+    return hashlib.sha1(("%.2f,%.2f" % (min(xs), min(ys))).encode()) \
+        .hexdigest()[:6]
 
-    def __init__(self, indexes):
-        self.indexes = list((indexes or {}).values())
 
-    def near(self, x, y, d):
-        return any(ix.near(x, y, d) for ix in self.indexes)
+def _settle_ids(lanes):
+    """Ids unique within one council's lanes, moving none that need not.
+
+    Two lanes share an id only when one reference is several pieces far
+    apart (council_ucrs.MAX_GAP_M) or the council gave a number twice. The
+    LONGEST keeps the plain id - the one a single-piece road was published
+    under, so a rider's star stays on it - and each other piece gets a
+    suffix from where it is (_piece_tag), never from read order."""
+    by_id = {}
+    for lane in lanes:
+        by_id.setdefault(lane["properties"]["lane_uid"], []).append(lane)
+    taken = set(by_id)
+    for uid, same in by_id.items():
+        if len(same) < 2:
+            continue
+        same.sort(key=lambda l: (-l["properties"]["lengthKm"],
+                                 _piece_tag(l)))
+        for lane in same[1:]:
+            new = "%s-%s" % (uid, _piece_tag(lane))
+            n = 2
+            while new in taken:
+                new = "%s-%s-%d" % (uid, _piece_tag(lane), n)
+                n += 1
+            taken.add(new)
+            lane["properties"]["lane_uid"] = new
+    return lanes
+
+
+def _has_definitive_map(paths):
+    """Authority codes with ALL THREE of footpaths, bridleways and
+    restricted byways in the build: one file missing (a fetch that failed)
+    is a definitive map the NERC test cannot be trusted against."""
+    held = {}
+    for f in paths:
+        p = f["properties"]
+        if p.get("rowType") in UCR_NERC_TYPES:
+            held.setdefault(p.get("authorityCode"), set()).add(p["rowType"])
+    return set(c for c, ts in held.items() if ts >= set(UCR_NERC_TYPES))
 
 
 def ucr_lanes(authorities, byways, paths, out_dir=None, today=None,
               log=print):
     """-> ([UCR lane], [source], report): every council's unsurfaced roads,
-    as lanes, less any section the definitive map records as a footpath,
-    bridleway or restricted byway (the NERC test, nerc_sections) and any
-    road lying on a published byway.
+    as lanes, less every section the definitive map records as a footpath,
+    bridleway or restricted byway (the NERC test) or as a BOAT - each
+    judged by along_share, section by section (nerc_sections).
 
     `authorities` is rowmaps' {code: name}, which names the authority as
     every byway of it is named ("Devon"), so the app's authority filter and
@@ -1129,93 +1253,107 @@ def ucr_lanes(authorities, byways, paths, out_dir=None, today=None,
     `paths` are the build's definitive-map ways (normalise()d rowmaps
     footpaths, bridleways and restricted byways of every authority: a road
     near a county or park boundary may lie on its neighbour's path). A
-    council none of whose own paths are in `paths` CANNOT be tested, and its
-    roads are held back, not drawn unchecked: report["unchecked"].
+    council without all three of its own (_has_definitive_map) CANNOT be
+    tested, and its roads are held
+    back, not drawn unchecked: report["unchecked"].
 
     Each source is the council file's `source` with `since` and `count`
     added - what a pack and a container say about where the roads came from.
 
-    report: routes (read), on_byway [name], on_path [(code, name, row type,
-    share, metres)], partly_on_path [(code, name, share, metres)],
-    unchecked [code], per_council {code: {...counts}}.
+    report: routes (read), on_path [(code, name, row type, share, metres)],
+    on_byway [(code, name, share, metres)], partly_on_path [(code, name,
+    share, metres)], unchecked [code], per_council {code: {...counts}}.
     """
-    index = council_ways._Index(
+    boats = council_ways._Index(
         [tuple(p) for p in l] for f in byways for l in lines_of(f))
     held = [(source, since, routes) for source, since, routes
             in council_ucrs.held(out_dir, today=today, log=log)
             if source["code"] in authorities]
-    has_paths = set(f["properties"].get("authorityCode") for f in paths
-                    if f["properties"].get("rowType") in UCR_NERC_TYPES)
+    has_paths = _has_definitive_map(paths)
     near = _near_cells([l for _s, _d, routes in held for r in routes
                         for l in r.get("lines") or []])
     indexes = nerc_indexes(paths, near) if near else {}
     lanes, sources = [], []
-    report = {"on_byway": [], "routes": 0, "on_path": [],
+    report = {"routes": 0, "on_path": [], "on_byway": [],
               "partly_on_path": [], "unchecked": [], "per_council": {}}
     for source, since, routes in held:
         code = source["code"]
         name = clean_text(authorities[code]) or source.get("authority") \
             or code
         counts = {"routes": len(routes), "lanes": 0, "on_path_sections": 0,
-                  "on_path_routes": 0, "on_byway": 0, "km": 0.0}
+                  "on_path_routes": 0, "on_byway_sections": 0,
+                  "on_byway_routes": 0, "km": 0.0}
         report["per_council"][code] = counts
         report["routes"] += len(routes)
         if code not in has_paths:
             report["unchecked"].append(code)
-            log("::warning::%s: no definitive-map footpath, bridleway or "
-                "restricted byway of %s in this build, so its unsurfaced "
-                "roads cannot be tested against them (NERC 2006 s67) and are "
-                "not published" % (code, name))
+            log("::warning::%s: the build lacks %s's definitive-map "
+                "footpaths, bridleways or restricted byways, so its "
+                "unsurfaced roads cannot be tested against them (NERC 2006 "
+                "s67) and are not published" % (code, name))
             continue
         mine = []
         for route in routes:
-            kept, dropped, partly = nerc_sections(route, indexes)
+            kept, dropped, partly = nerc_sections(route, indexes, boats)
             if dropped or partly:
                 whole = normalise_ucr(route, source, code, name)
                 label = whole["properties"]["name"] if whole else code
-            for _line, kind, share, metres in dropped:
+            on_path = [d for d in dropped if d[1] in UCR_NERC_TYPES]
+            on_boat = [d for d in dropped if d[1] not in UCR_NERC_TYPES]
+            for _line, kind, share, metres in on_path:
                 report["on_path"].append((code, label, kind, share, metres))
+            for _line, _kind, share, metres in on_boat:
+                report["on_byway"].append((code, label, share, metres))
             for _line, share, metres in partly:
                 report["partly_on_path"].append((code, label, share, metres))
-            counts["on_path_sections"] += len(dropped)
+            counts["on_path_sections"] += len(on_path)
+            counts["on_byway_sections"] += len(on_boat)
             if not kept:
-                counts["on_path_routes"] += 1
+                counts["on_byway_routes" if on_boat and not on_path
+                       else "on_path_routes"] += 1
                 continue
             lane = normalise_ucr(dict(route, lines=kept), source, code, name)
-            if lane is None:
-                continue
-            lines = [[tuple(p) for p in l] for l in lines_of(lane)]
-            if _share(lines, index, UCR_ON_BYWAY_M) >= UCR_ON_BYWAY_SHARE:
-                report["on_byway"].append(lane["properties"]["name"])
-                counts["on_byway"] += 1
-                continue
-            mine.append(lane)
-        # Two routes with one id (two parishes slugging alike, a number given
-        # twice): the only time an id carries more than the reference, and
-        # then from that road's own lines, so it is still stable while they
-        # are.
-        ids = Counter(l["properties"]["lane_uid"] for l in mine)
-        for lane in mine:
-            uid = lane["properties"]["lane_uid"]
-            if ids[uid] > 1:
-                lane["properties"]["lane_uid"] = "%s-%s" % (
-                    uid, hashlib.sha1(json.dumps(
-                        lane["geometry"]["coordinates"],
-                        separators=(",", ":")).encode()).hexdigest()[:6])
+            if lane is not None:
+                mine.append(lane)
+        _settle_ids(mine)
         counts["lanes"] = len(mine)
         counts["km"] = round(sum(l["properties"]["lengthKm"]
                                  for l in mine), 1)
         lanes.extend(mine)
         sources.append(dict(source, since=since, count=len(mine)))
-        log("  %s: %d unsurfaced roads (%.1f km) from %s; %d sections lie on "
-            "a footpath, bridleway or restricted byway and are not drawn "
-            "(NERC 2006 s67; %d roads wholly), %d roads lie on a byway and "
-            "are left to it" % (code, len(mine), counts["km"],
-                                source.get("council"),
-                                counts["on_path_sections"],
-                                counts["on_path_routes"],
-                                counts["on_byway"]))
+        log("  %s: %d unsurfaced roads (%.1f km) from %s; %d sections lie "
+            "along a footpath, bridleway or restricted byway and are not "
+            "drawn (NERC 2006 s67; %d roads wholly); %d along a byway, left "
+            "to it (%d roads wholly)" % (
+                code, len(mine), counts["km"], source.get("council"),
+                counts["on_path_sections"], counts["on_path_routes"],
+                counts["on_byway_sections"], counts["on_byway_routes"]))
     return lanes, sources, report
+
+
+def log_ucr_report(report, path, log=print):
+    """Every section the tests took out or flagged, in the log AND in
+    `path` (dist/ucr-report.json): none is left off a list. `path` None
+    (a --measure-only run, which writes nothing) logs them only."""
+    if path:
+        os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+        with open(path, "w", encoding="utf8", newline="\n") as fh:
+            json.dump(report, fh, indent=1, ensure_ascii=False)
+            fh.write("\n")
+    for code in report["unchecked"]:
+        log("  NOT PUBLISHED, no full definitive map to test them against: "
+            "%s" % code)
+    for code, n, kind, share, metres in report["on_path"]:
+        log("    along a %s (%.0f%% of %d m): %s %s"
+            % (kind.replace("_", " "), share * 100, metres, code, n))
+    for code, n, share, metres in report["on_byway"]:
+        log("    along a byway (%.0f%% of %d m): %s %s"
+            % (share * 100, metres, code, n))
+    for code, n, share, metres in report["partly_on_path"]:
+        log("    partly along a path, kept (%.0f%% of %d m): %s %s"
+            % (share * 100, metres, code, n))
+    if path:
+        log("  every one of these is in %s" % path)
 
 
 def attach_ucrs(parts, ucrs):
@@ -1868,22 +2006,15 @@ def main():
     nerc_paths = [f for t in UCR_NERC_TYPES for f in by_type.get(t, [])]
     ucr_pool, ucr_sources, ucr_report = ucr_lanes(authorities, pool,
                                                   nerc_paths)
-    print("  %d roads from %d council layers; %d sections lie on a footpath, "
-          "bridleway or restricted byway and are not drawn (NERC); %d roads "
-          "lie on a byway and are not published"
+    print("  %d roads from %d council layers; %d sections lie along a "
+          "footpath, bridleway or restricted byway and are not drawn (NERC); "
+          "%d along a byway, left to it; %d partly along a path, kept"
           % (len(ucr_pool), len(ucr_sources), len(ucr_report["on_path"]),
-             len(ucr_report["on_byway"])))
-    for code in ucr_report["unchecked"]:
-        print("  NOT PUBLISHED, no definitive map to test them against: %s"
-              % code)
-    for code, n, kind, share, metres in ucr_report["on_path"][:40]:
-        print("    on a %s (%.0f%% of %d m): %s %s"
-              % (kind.replace("_", " "), share * 100, metres, code, n))
-    for code, n, share, metres in ucr_report["partly_on_path"][:40]:
-        print("    partly along a path, kept (%.0f%% of %d m): %s %s"
-              % (share * 100, metres, code, n))
-    for n in ucr_report["on_byway"][:20]:
-        print("    on a byway: %s" % n)
+             len(ucr_report["on_byway"]), len(ucr_report["partly_on_path"])))
+    # EVERY ONE, here and in dist/ucr-report.json (the second review: the
+    # log listed 40 of 432 and 40 of 115).
+    log_ucr_report(ucr_report, None if args.measure_only
+                   else os.path.join(dist_dir(), UCR_REPORT))
 
     if args.measure_only:
         return
