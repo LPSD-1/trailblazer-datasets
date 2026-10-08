@@ -391,8 +391,15 @@ each with the official page it came from and the day it was checked. Every
 area container carries the rules that could apply to its lanes (meta
 `local_rules`), and the app shows the right one on a lane's sheet. Seeded on
 8 October 2026 with four rules read politely from Devon County Council's and
-the Lake District National Park Authority's own pages; nothing is taken from a
-site `tools/polite_http.py` blocks.
+the Lake District National Park Authority's own pages, and the same day six
+more from Lincolnshire County Council (its list-of-streets presumption and the
+Sewstern Lane and The Drift order), the Yorkshire Dales National Park
+Authority (its green lane code and its word on unsurfaced roads, inside the
+park's boundary from Natural England's layer), National Trails (Natural
+England and Natural Resources Wales: the roads meeting The Ridgeway) and
+Surrey County Council (driving on its byways). Every quote was checked against
+the page as read. Only public bodies' pages; nothing is taken from a site
+`tools/polite_http.py` blocks, or from any user group.
 
 ## Licence
 

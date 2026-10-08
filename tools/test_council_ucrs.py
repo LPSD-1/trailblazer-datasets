@@ -783,6 +783,35 @@ class LocalRules(unittest.TestCase):
         self._bad(season={"from": "10-01"})
         self._bad(applies_to={"areas": [[1, 2, 0, 3]]})
 
+    def test_the_dales_rules_cover_the_park_and_not_beyond(self):
+        rules = dict((r["id"], r) for r in lr.load())
+        ring = rules["ydnp-green-lane-driving-and-trail-riding"][
+            "applies_to"]["polygon"]
+
+        def inside(lon, lat):
+            hit = False
+            for i in range(len(ring)):
+                (x1, y1), (x2, y2) = ring[i - 1], ring[i]
+                if (y1 > lat) != (y2 > lat) and                         lon < (x2 - x1) * (lat - y1) / (y2 - y1) + x1:
+                    hit = not hit
+            return hit
+        self.assertTrue(inside(-2.149, 54.072))      # Malham
+        self.assertTrue(inside(-2.197, 54.304))      # Hawes
+        self.assertFalse(inside(-1.524, 54.137))     # Ripon
+        self.assertFalse(inside(-0.92, 54.30))       # the North York Moors
+
+    def test_the_ridgeway_rule_names_roads_the_build_publishes(self):
+        rule = next(r for r in lr.load()
+                    if r["id"] == "on-roads-meeting-the-ridgeway")
+        layer = cu.by_code()["ON"]
+        held = cu.held(codes={"ON"}, today="2026-10-08",
+                       log=lambda *a: None)[0]
+        ids = set(P.normalise_ucr(r, held[0], "ON", "Oxfordshire")
+                  ["properties"]["lane_uid"] for r in held[2])
+        self.assertEqual(layer["authority"], "Oxfordshire")
+        for uid in rule["applies_to"]["way_uids"]:
+            self.assertIn(uid, ids)
+
     def test_a_page_on_a_blocked_host_cannot_have_been_read(self):
         self._bad(source={"publisher": "Dartmoor National Park Authority",
                           "url": "https://www.dartmoor.gov.uk/x",
