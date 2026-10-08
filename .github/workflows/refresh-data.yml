@@ -416,7 +416,9 @@ jobs:
           areas = [c for c in manifest["containers"] if c.get("kind") == "area"]
           missing = []
           for region in sorted(PO.REGIONS):
-              hits = [os.path.join("dist", c["file"]) for c in areas
+              # "/" whatever the OS: these lines go through xargs, which
+              # reads a Windows "\\" as an escape (tools/run_workflow_locally).
+              hits = ["dist/" + c["file"] for c in areas
                       if c.get("area") == region]
               if not hits:
                   missing.append(region)
