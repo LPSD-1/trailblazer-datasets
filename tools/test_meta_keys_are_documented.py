@@ -78,9 +78,27 @@ def _poi(uid):
 def _build(path, pois, previous=None):
     """A region container as the pipeline writes one, up to the stamp, with
     every optional meta key the builder can write switched on."""
+    road = _way("DN-UCR-x-1-0", -1.69, 52.51)
+    road["properties"].update({"class": "ucr", "legal_tier": "highway_record",
+                               "access_evidence": "highway_record"})
+    for key in ("also_recorded_by", "joined_from"):
+        road["properties"].pop(key)
+    # With an unsurfaced road and a local rule, so the builder writes
+    # meta.ucr_count, meta.ucr_sources and meta.local_rules too.
     B.write_container(path, [_way("W1", -1.70, 52.50)], "area", (11, 11),
                       WAYS_STAMP, context_scope="none",
-                      context_note="Bridleways are not carried.")
+                      context_note="Bridleways are not carried.",
+                      ucrs=[road],
+                      ucr_sources=[{"code": "DN", "council": "Devon County "
+                                    "Council", "since": "2026-10-08",
+                                    "count": 1}],
+                      local_rules=[{"id": "dn-x", "kind": "guidance",
+                                    "effect": "info", "title": "t",
+                                    "summary": "s",
+                                    "applies_to": {"authorities": ["Devon"]},
+                                    "source": {"publisher": "p",
+                                               "url": "https://example.org/",
+                                               "checked": "2026-10-08"}}])
     PO.write_pois(path, pois, previous=previous)
     EA.write_meta(path)
     return path
@@ -135,7 +153,8 @@ def test_every_meta_key_is_named_in_the_meta_section():
     check("PREMISE: the writers left keys to check", len(keys) >= 10,
           sorted(keys))
     for key in ("pois_checked", "ways_cut", "built_at", "evidence_dates",
-                "also_recorded_by", "joined_from"):
+                "also_recorded_by", "joined_from", "ucr_count", "ucr_sources",
+                "local_rules"):
         check("PREMISE: the pipeline wrote %s" % key, key in keys,
               sorted(keys))
     meta = _section(_doc(), "Meta")

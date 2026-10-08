@@ -40,6 +40,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import build_map_container as B  # noqa: E402
+import local_rules  # noqa: E402
 
 try:
     import sign_release
@@ -114,8 +115,19 @@ def _add_pois(target, features, region, cache, log=print, previous=None):
     return len(pois)
 
 
+def rules_here(rules, features, ucrs):
+    """The local rules that could apply to a way in this area container."""
+    every = list(features) + list(ucrs)
+    return local_rules.for_container(
+        rules, B._bounds_of(every),
+        sorted({f["properties"].get("authority") for f in every
+                if f["properties"].get("authority")}),
+        sorted({f["properties"].get("class") for f in every
+                if f["properties"].get("class")}))
+
+
 def build_all(manifest_path, out_dir, key, signing_key=None, root=".",
-              poi_cache=None, previous_dir=None):
+              poi_cache=None, previous_dir=None, rules=None):
     with open(manifest_path, "r", encoding="utf-8") as fh:
         manifest = json.load(fh)
 
@@ -182,9 +194,15 @@ def build_all(manifest_path, out_dir, key, signing_key=None, root=".",
         name = "%s-%s.tbmap" % (dataset, pack["area"])
         target = os.path.join(out_dir, name)
         features = B.load_features([source], key)
+        # The council's unsurfaced roads, from the pack's own member, and the
+        # local rules that apply here. [rules] None (the golden, the tests)
+        # reads none, so those builds write the containers they always did.
+        ucrs, ucr_sources = B.load_ucrs([source], key)
         B.write_container(target, features, "area", B.AREA_ZOOMS, pack_stamp,
                           context_scope=context_scope,
-                          context_note=context_note)
+                          context_note=context_note,
+                          ucrs=ucrs, ucr_sources=ucr_sources,
+                          local_rules=rules_here(rules or [], features, ucrs))
         # POIs AFTER THE WAYS, into the same file. Same container, own tables -
         # WAYS-SCHEMA.md - so a rider who downloads an area gets the fuel and
         # the toilets with it and there is no second download to forget.
@@ -202,6 +220,8 @@ def build_all(manifest_path, out_dir, key, signing_key=None, root=".",
         # NULL, NOT ZERO, when nothing was fetched. The app shows "no POI data
         # for this area" rather than "no fuel in Wales".
         entry["poiCount"] = poi_count
+        if ucrs:
+            entry["ucrCount"] = len(ucrs)
         entries.append(entry)
         print("  %-42s %6d ways  %5.2f MB download"
               % (name, len(features), _download_bytes(target) / 1048576.0))
@@ -215,8 +235,11 @@ def build_all(manifest_path, out_dir, key, signing_key=None, root=".",
         name = "%s-overview.tbmap" % dataset
         target = os.path.join(out_dir, name)
         features = B.load_features(sources, key)
+        ucrs, ucr_sources = B.load_ucrs(sources, key)
+        # The roads are drawn here too, so they count towards how dense the
+        # lowest zoom would be.
         floor = B.lowest_zoom_that_fits(
-            features, B.OVERVIEW_ZOOMS[0], B.OVERVIEW_ZOOMS[1])
+            features + ucrs, B.OVERVIEW_ZOOMS[0], B.OVERVIEW_ZOOMS[1])
         if floor > B.OVERVIEW_ZOOMS[1]:
             print("  %-42s %6d ways  NO OVERVIEW - too dense to draw even at "
                   "z%d" % (name, len(features), B.OVERVIEW_ZOOMS[1]))
@@ -227,7 +250,8 @@ def build_all(manifest_path, out_dir, key, signing_key=None, root=".",
             B.write_container(target, features, "overview",
                               (floor, B.OVERVIEW_ZOOMS[1]), overview_stamp,
                               context_scope=context_scope,
-                              context_note=context_note)
+                              context_note=context_note,
+                              ucrs=ucrs, ucr_sources=ucr_sources)
             entry = _entry(target, None, kind="overview", dataset=dataset,
                            lane_count=len(features),
                            generated=overview_stamp)
@@ -312,6 +336,9 @@ def main():
     ap.add_argument("--poi-cache", default=os.environ.get("POI_CACHE"),
                     help="the build_pois.py cache directory; regions with a "
                          "cache get POI tables in their area container")
+    ap.add_argument("--rules", default=local_rules.RULES_FILE,
+                    help="the local rules file (local_rules.py); each area "
+                         "container carries the ones that apply to it")
     ap.add_argument("--previous", default=None,
                     help="the PUBLISHED container tree (containers/): POIs "
                          "keep the rowids riders already hold")
@@ -334,7 +361,8 @@ def main():
 
     print("Building containers")
     out = build_all(args.manifest, args.out, key, signing_key, args.root,
-                    poi_cache=args.poi_cache, previous_dir=args.previous)
+                    poi_cache=args.poi_cache, previous_dir=args.previous,
+                    rules=local_rules.load(args.rules))
     total = sum(e["downloadBytes"] for e in out["containers"])
     print("\n  %d containers, %.1f MB if a rider downloaded every one"
           % (len(out["containers"]), total / 1048576.0))

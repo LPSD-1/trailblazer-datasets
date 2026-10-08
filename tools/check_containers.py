@@ -32,6 +32,14 @@ went wrong while the format was being built:
      have to fetch is the number the owner actually cares about and it is
      currently printed nowhere.
 
+  7. AN UNSURFACED ROAD NEVER REACHES AN APP THAT WOULD DRAW IT RED. A
+     `ucr` is a public road; an app before 119 reads one as unknown and draws
+     it "you may not ride this". So a UCR lives only in `ucr_ways` and in
+     tile layer `ucr`, which those apps never read - and a `ucr` row in
+     `ways`, a `ucr` feature in layer `lanes`, or anything but a `ucr` in
+     layer `ucr` refuses the publish. A UCR record counts as a record for
+     (1), and must be drawn in its own container like any way.
+
   6. NO TEXT CARRIES AN HTML ENTITY. 2,012 published ways said their
      authority was `North&nbsp;Lincolnshire`, and the app showed it exactly
      so. Every text value in every table, meta included, and every string a
@@ -79,6 +87,10 @@ TABLE_KEYS = {"lanes": "lane_uid", "ways": "way_uid", "orders": "tro_uid"}
 #: a ways container stores `way_uid` and draws it as `lane_uid`, so the app's
 #: tap handler reads one property name whichever shape it mounted.
 TILE_KEYS = {"lanes": "lane_uid", "ways": "lane_uid", "orders": "tro_uid"}
+
+#: Where an unsurfaced unclassified road lives, and nowhere else (7).
+UCR_TABLE = "ucr_ways"
+UCR_LAYER = "ucr"
 
 
 class Problem(Exception):
@@ -151,22 +163,30 @@ def _record_table(db):
     return (found[0], TABLE_KEYS[found[0]]) if len(found) == 1 else (None, None)
 
 
-def _uids_in_tiles(db, table):
+def _uids_in_tiles(db, table, misplaced=None):
     """Every uid the tiles mention, by decoding them.
 
     Decoded rather than trusted: the whole point of this check is that the tile
     builder and the record writer might disagree, and asking the builder what it
     wrote would ask the wrong witness.
+
+    [misplaced], a list, gets a line for every feature in the wrong layer for
+    its class (7): a `ucr` in `lanes`, or anything but a `ucr` in `ucr`.
     """
     here = os.path.dirname(os.path.abspath(__file__))
     sys.path.insert(0, here)
     from test_mvt import decode_tile  # noqa: E402  (the decoder, reused)
 
-    key = TILE_KEYS[table]
+    key = TILE_KEYS[table] if table else "lane_uid"
     uids = set()
     for (blob,) in db.execute("SELECT tile_data FROM tiles"):
         for layer in decode_tile(blob):
             for feature in layer["features"]:
+                klass = feature["props"].get("class")
+                if misplaced is not None and (
+                        (layer["name"] == UCR_LAYER) != (klass == "ucr")):
+                    misplaced.append("a %r feature in tile layer %r"
+                                     % (klass, layer["name"]))
                 uid = feature["props"].get(key)
                 if uid:
                     uids.add(uid)
@@ -207,18 +227,53 @@ def check_container(path, problems, max_tile=MAX_TILE_BYTES):
                    worst[3] / 1024.0, max_tile / 1024.0))
 
         table, _ = _record_table(db)
+        misplaced = []
         if table is None:
             if kind != "overview":
                 problems.append("%s: no record table, and kind is %r not "
                                 "'overview'." % (name, kind))
+            if kind == "overview":
+                _uids_in_tiles(db, None, misplaced)
+                _refuse_misplaced(name, misplaced, problems)
             return meta, {"records": set(), "tiles": set(), "kind": kind}
 
         in_records = {r[0] for r in db.execute(
             "SELECT %s FROM %s" % (TABLE_KEYS[table], table))}
-        in_tiles = _uids_in_tiles(db, table)
+        names = {r[0] for r in db.execute(
+            "SELECT name FROM sqlite_master WHERE type='table'")}
+        if table == "ways":
+            # (7) Not one `ucr` in the table every app reads.
+            in_ways = db.execute("SELECT COUNT(*) FROM ways "
+                                 "WHERE way_class = 'ucr'").fetchone()[0]
+            if in_ways:
+                problems.append(
+                    "%s: %d unsurfaced road(s) in `ways`, which an app before "
+                    "119 reads and draws red. They belong in `%s`."
+                    % (name, in_ways, UCR_TABLE))
+        if table == "ways" and UCR_TABLE in names:
+            in_records |= {r[0] for r in db.execute(
+                "SELECT way_uid FROM %s" % UCR_TABLE)}
+            strays = db.execute("SELECT COUNT(*) FROM %s WHERE way_class "
+                                "<> 'ucr'" % UCR_TABLE).fetchone()[0]
+            if strays:
+                problems.append("%s: %d way(s) in `%s` are not unsurfaced "
+                                "roads; an app before 119 would never see "
+                                "them." % (name, strays, UCR_TABLE))
+        in_tiles = _uids_in_tiles(db, table,
+                                  misplaced if table == "ways" else None)
+        _refuse_misplaced(name, misplaced, problems)
         return meta, {"records": in_records, "tiles": in_tiles, "kind": kind}
     finally:
         db.close()
+
+
+def _refuse_misplaced(name, misplaced, problems):
+    """(7) A feature in the wrong tile layer for its class."""
+    if misplaced:
+        problems.append(
+            "%s: %d tile feature(s) in the wrong layer, e.g. %s. A `ucr` "
+            "drawn in `lanes` is drawn red by every app before 119."
+            % (name, len(misplaced), misplaced[0]))
 
 
 def check_agreement(containers, problems):

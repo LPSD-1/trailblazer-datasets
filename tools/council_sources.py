@@ -595,9 +595,34 @@ def _plain(rendered):
     return re.sub(r"\s+", " ", html.unescape(text)).strip()
 
 
+#: Devon's unsurfaced unclassified roads in its notices: "Bere Ferrers
+#: uUCR306 temporary closure", "Offwell uUCR301 and 303 temporary closure",
+#: and in the order's own title "(uUCR 301 & 303, OFFWELL)". Read 8 October
+#: 2026: three of the 44 notices were UCRs, none a byway.
+_DEVON_UCR_TITLE = re.compile(
+    r"([A-Z][A-Za-z.'’& -]+?)\s+u?UC[RT]\s*(\d+[A-Za-z]?)"
+    r"((?:\s*(?:,|and|&)\s*\d+[A-Za-z]?)*)")
+_DEVON_UCR_BODY = re.compile(
+    r"\(\s*u?UC[RT]\s*(\d+[A-Z]?)((?:\s*(?:,|AND|&)\s*\d+[A-Z]?)*)\s*,"
+    r"\s*([A-Z][A-Z.'’& -]+?)\s*\)")
+
+
+def _more_numbers(first, rest):
+    return [first] + re.findall(r"\d+[A-Za-z]?", rest or "")
+
+
 def devon_refs(title, body):
-    """[(parish, number)] for every byway a Devon notice names."""
+    """[(parish, number)] for every byway a Devon notice names, and
+    [(parish, number, "ucr")] for every unsurfaced unclassified road."""
     refs = []
+    for m in _DEVON_UCR_TITLE.finditer(title or ""):
+        for number in _more_numbers(m.group(2), m.group(3)):
+            refs.append((m.group(1).strip(), number, "ucr"))
+    # The order's own title only where the page's names none: it spells the
+    # parish short ("NEWTON POPPLEFORD" for Newton Poppleford & Harpford).
+    for m in (() if refs else _DEVON_UCR_BODY.finditer(body or "")):
+        for number in _more_numbers(m.group(1), m.group(2)):
+            refs.append((m.group(3).strip().title(), number, "ucr"))
     for m in re.finditer(
             r"([A-Z][A-Za-z.'’ -]+?)\s+(?:Byway Open to All Traffic|BOAT|"
             r"Byway)\s*(?:No\.?\s*)?(\d+[A-Za-z]?)", title or ""):
@@ -613,26 +638,51 @@ def devon_refs(title, body):
     return sorted(set(refs))
 
 
+def _devon_dates(body):
+    """(start, end) of a Devon notice: its "From: ... To: ..." lines, or
+    a section 14 order's own words - "came into force on Tuesday 13 January
+    2026" and "continue in force until 17 July 2027"."""
+    start = parse_date((re.search(r"From:\s*(.{0,40}?\d{4})", body)
+                        or [None, None])[1])
+    end = parse_date((re.search(r"\bTo:\s*(.{0,40}?\d{4})", body)
+                      or [None, None])[1])
+    if not start:
+        start = parse_date((re.search(
+            r"came into force on\s*(.{0,40}?\d{4})", body, re.I)
+            or [None, None])[1])
+    if not end:
+        found = re.findall(r"(?:continue in force|extended by the Secretary "
+                           r"of State)\s+until\s*(.{0,30}?\d{4})", body,
+                           re.I)
+        end = parse_date(found[-1]) if found else None
+    return start, end
+
+
+def _devon_where(refs):
+    return "; ".join(("%s UCR %s" % (r[0], r[1])) if len(r) > 2 and
+                     r[2] == "ucr" else "Byway %s, %s" % (r[1], r[0])
+                     for r in refs)
+
+
 def read_devon(client):
     pages = _wp_pages(client, DEVON)
     out = []
     for page in pages:
         title = _plain((page.get("title") or {}).get("rendered"))
         body = _plain((page.get("content") or {}).get("rendered"))
-        if not _BOAT_WORDS.search(title + " " + body):
+        if not (_BOAT_WORDS.search(title + " " + body)
+                or _DEVON_UCR_TITLE.search(title)
+                or _DEVON_UCR_BODY.search(body)):
             continue
         refs = devon_refs(title, body)
         if not refs:
             continue
-        start = parse_date((re.search(r"From:\s*(.{0,40}?\d{4})", body)
-                            or [None, None])[1])
-        end = parse_date((re.search(r"\bTo:\s*(.{0,40}?\d{4})", body)
-                          or [None, None])[1])
+        start, end = _devon_dates(body)
         out.append({
             "id": page.get("id"),
             "ref": page.get("slug"),
             "title": "Devon County Council: %s" % title,
-            "where": "; ".join("Byway %s, %s" % (n, p) for p, n in refs),
+            "where": _devon_where(refs),
             "vehicles": "all_users", "form": "temporary",
             "start": start, "end": end,
             "url": page.get("link"),
@@ -1125,8 +1175,11 @@ def match(candidates, byways, authority):
             ways = [uid for uid, _share, _m in got]
             how = "geometry" if ways else None
         if not ways and refs:
-            for parish, number in refs:
-                ways.extend(byways.match_ref(authority, parish, number))
+            # (parish, number), or (parish, number, way class) for a source
+            # that names an unsurfaced road ("uUCR 306") rather than a byway.
+            for ref in refs:
+                ways.extend(byways.match_ref(authority, ref[0], ref[1],
+                                             *ref[2:3]))
             ways = sorted(set(ways))
             how = "reference" if ways else None
         if not ways:
@@ -1153,6 +1206,13 @@ def match(candidates, byways, authority):
         item["authority"] = authority
         item["ways"] = ways
         item["match"] = how
+        # WHAT IT WAS MATCHED TO, where every way is an unsurfaced road: the
+        # label then says "Road closed", not "Byway closed" (council_orders
+        # label_for). Absent for a byway, so a byway's item is unchanged.
+        classes = set(getattr(byways.ways.get(u), "way_class", "boat")
+                      for u in ways)
+        if classes == {"ucr"}:
+            item["on"] = "ucr"
         item["geometry"] = geometry
         items.append(item)
     items = merge_twins(items)

@@ -28,9 +28,10 @@ CREATE TABLE ways (
 
   -- LEGAL PROVENANCE. Per way, never per pack: a region may hold statutory
   -- and OSM-derived ways side by side and the map colours them differently.
-  legal_tier   TEXT NOT NULL,      -- 'statutory' | 'osm'
+  legal_tier   TEXT NOT NULL,      -- 'statutory' | 'highway_record' | 'osm'
   source       TEXT NOT NULL,      -- e.g. 'rowmaps:derbyshire', or 'council:devon'
-                                   --   for a byway read from the council's own layer
+                                   --   for a byway read from the council's own layer,
+                                   --   or 'highway-records:devon-county-council' for a UCR
   source_date  TEXT NOT NULL,      -- ISO date of the record we read
 
   -- PHYSICAL, from OSM. NULL means unknown, and unknown is not 'no'.
@@ -53,7 +54,7 @@ CREATE TABLE ways (
   motorbike_ok    INTEGER NOT NULL,   -- 1 yes, 0 no
   fourxfour_ok    INTEGER NOT NULL,
   access_reason   TEXT NOT NULL,      -- why, in words, for the rider
-  access_evidence TEXT NOT NULL,      -- 'statutory' | 'order' | 'osm' | 'none'
+  access_evidence TEXT NOT NULL,      -- 'statutory' | 'highway_record' | 'order' | 'osm' | 'none'
 
   length_m     REAL NOT NULL,
   geometry     BLOB NOT NULL        -- as build_map_container.pack_geometry
@@ -69,7 +70,7 @@ CREATE VIRTUAL TABLE ways_bbox USING rtree(id, min_lon, max_lon, min_lat, max_la
 | `boat` | Byway open to all traffic | **rideable** |
 | `restricted_byway` | No mechanically propelled vehicles | greyed, never green |
 | `bridleway` | Horse, foot, cycle | greyed, never green |
-| `ucr` | Unclassified road — **publicly maintainable, rights NOT recorded** | distinct, never green. **Deferred**: F3 found only 2 of 10 authorities publish usable geometry |
+| `ucr` | Unsurfaced unclassified road — a **public road** in the council's highway records | **rideable**, in a style of its own; its own table and tile layer (see "Unsurfaced unclassified roads"). Devon since 8 Oct 2026 |
 | `osm_track` | Outside England and Wales; OSM-derived | amber, "verify locally" |
 
 **Footpaths are not carried.** 627 MB, no bearing on a motor vehicle.
@@ -87,7 +88,87 @@ verbatim so the absence is never read as absence on the ground.
 ## The rule the schema exists to enforce
 
 > A way is drawn rideable **only** when `way_class = 'boat'` and
-> `legal_tier = 'statutory'`. Everything else is shown and labelled.
+> `legal_tier = 'statutory'`, or `way_class = 'ucr'` and
+> `legal_tier = 'highway_record'`. Everything else is shown and labelled.
+
+The second half is the owner's decision of 8 October 2026 ("we need to ensure
+all green lanes are being shown"): an unsurfaced unclassified road is a public
+road, and the app draws it as a green lane in a style of its own. Until then
+this table said "distinct, never green" and deferred the class, and nothing
+built it.
+
+## Unsurfaced unclassified roads
+
+**What they are.** Adopted public highway that was never given a hard
+surface: an unclassified county road the council maintains and lists in its
+List of Streets (Highways Act 1980 s36(6)). The Natural Environment and Rural
+Communities Act 2006 s67(2)(b) kept the motor vehicle rights over ways in that
+list. They are on no definitive map, so rowmaps has none. Devon's maintenance
+category 12 ("Often, they are 'green lanes'", its Highway Asset Management
+Plan, Annex 10) is the first council read.
+
+**Where they come from.** `tools/council_ucrs.py` reads each council's own
+layer through `tools/polite_http.py` into `council-ucrs/<CODE>.json`, with its
+own keep-last-good floor (a read under the entry's `min_records`, or under two
+thirds of the routes held, is refused and the last good file kept) and its own
+`council-ucrs/status.json`. Each council's reading rules - which records are
+unsurfaced roads, which fields hold the parish, number and name - are one
+entry in `UCR_LAYERS`. They NEVER go through `council_ways.py`'s byway merge:
+rowmaps has no UCRs to merge with, and every one would read as "new".
+
+**One route, one way.** A council draws a road in sections; every section of
+one parish and number is one `ucr` way (several lines in one geometry). The
+id is `<code>-UCR-<parish>-<number>-<hash of every line>`; the name is the
+council's name for the road with its reference - "Rocky Lane (Abbotsham UCR
+301)" - or, where it names none, "Unsurfaced unclassified road (UCR)
+Abbotsham 301". A UCR lying along a published byway (90% of it within 20 m)
+is the same way recorded twice, and the byway's definitive-map record wins.
+
+**Provenance, per way.** `legal_tier = 'highway_record'` and
+`access_evidence = 'highway_record'`: the council's highway record, a
+different kind of evidence from a definitive-map BOAT, and the sheet says
+which it is reading. `source = 'highway-records:<council slug>'` names the
+council. Both motor flags are 1 - it is a public road - and an order closes
+it exactly as one closes a byway: the closures matchers (`byway_match.py`)
+read UCRs too, a reference names its class ("uUCR 306" matches only UCRs,
+"Byway 6" only byways), and a council closure matched only to UCRs is
+labelled "Road closed".
+
+**Where they are in a container, and why there.** An app before 119 maps
+`ucr` to unknown, and draws unknown red and tight-dashed: "you may not ride
+this" over a public road. So a UCR is never where those apps read:
+
+| | carries UCRs in | an app before 119 |
+|---|---|---|
+| area container | table `ucr_ways` + r-tree `ucr_ways_bbox` | never reads either |
+| tiles (area and overview) | MVT layer `ucr`, beside `lanes` in the same tile | styles source-layer `lanes` only |
+| `.tbpack` (the GeoJSON fallback) | member `ucrFeatures` (and `ucrSources`) | reads `features` only |
+| meta | `ucr_count`, `ucr_sources` | ignores keys it does not know |
+
+`ucr_ways` is `ways` column for column (`build_map_container.UCR_SCHEMA` is
+derived from it), so the app reads `ways UNION ALL ucr_ways` as one table.
+Rowids come from the same `stable_id(way_uid)` and one id space covers both
+tables: the builder refuses a collision, `validate_container.py` refuses a
+shared rowid, and `check_containers.py` refuses a `ucr` row in `ways`, a `ucr`
+feature in layer `lanes`, or anything else in layer `ucr`. `lane_count`,
+`way_count`, `class_counts`, `legal_tier_counts` and `authorities` describe
+`ways` alone, as the app recounts them after a changeset. A changeset carries
+`ucr_ways` like every other table (`build_changeset.carried_tables`); the
+first build that adds the table is a schema change, so riders download that
+region whole once.
+
+## Local rules
+
+`local-rules/rules.json`, validated by `tools/local_rules.py` (which documents
+the format): per place, what a national park, a council or a scheme asks of
+riders - a code of conduct, a voluntary restraint, a seasonal policy, a cited
+order, the council's own guidance - each with its effect (`info`,
+`voluntary`, `legal_order`), where it applies (`authorities`, `areas` boxes,
+a `polygon`, `way_classes`, `way_uids`; every key given must match) and the
+official page it came from with the day it was checked. Each area container
+carries the rules that could apply to one of its ways as meta `local_rules`,
+and the app matches them lane by lane. A rule is cited, never enforced: a lane
+is closed on the map only by the orders pipeline.
 
 `access_evidence` must never be `'none'` on a way where `fourxfour_ok = 0` —
 hiding a lane requires evidence, and F1 measured that we have it for under 10%.
@@ -262,6 +343,9 @@ checksum forever, and a signature over bytes that no longer exist.
 | `evidence_dates` | `evidence_age.py --write` | JSON; see below |
 | `also_recorded_by` | `build_map_container.py`, from `duplicate_ways.py` and `build_packages.py` (`join_pieces`) | JSON; the other records of ways drawn once here - another authority's, or this lane's own pieces; see below |
 | `joined_from` | `build_map_container.py`, from `build_packages.py` (`join_pieces`) | JSON; the piece ids each joined lane was published as; see below |
+| `ucr_count` | `build_map_container.py` | rows in `ucr_ways` (area), UCRs drawn (overview); absent where none. See "Unsurfaced unclassified roads" |
+| `ucr_sources` | `build_map_container.py`, from `council_ucrs.py` via the pack's `ucrSources` | JSON list, one per council: `code`, `council`, `authority`, `what`, `url`, `licence`, `licence_note`, `decided`, `attribution`, `since` (the day the council's layer last changed - never the last read, which moves daily) and `count` |
+| `local_rules` | `build_containers.py`, from `local_rules.py` | JSON `{"format": 1, "rules": [...]}`: the local rules that could apply here; absent where none. See "Local rules" |
 
 **`built_at` must not leak into any pack's content hash** — a run stamp doing
 exactly that broke reproducibility once already.

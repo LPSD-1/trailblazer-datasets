@@ -147,6 +147,10 @@ def label_for(item):
     elif item.get("vehicles") in ("other", "height_limit",
                                   "weight_limit") and item.get("label"):
         label = item["label"]
+    # On an unsurfaced unclassified road (council_sources.match sets `on`):
+    # a public road, so not "Byway closed" over it.
+    if item.get("on") == "ucr" and label.startswith("Byway "):
+        label = "Road " + label[len("Byway "):]
     return code, otype, label
 
 

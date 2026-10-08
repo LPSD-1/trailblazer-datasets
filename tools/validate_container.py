@@ -170,6 +170,7 @@ def problems_with(path):
                         % meta["bounds"]))
 
         records = _record_problems(db, tables, meta, kind, out)
+        records += _ucr_problems(db, tables, meta, kind, out)
         if "tiles" in tables:
             _tile_problems(db, meta, records, out)
         return out
@@ -401,6 +402,93 @@ def _record_problems(db, tables, meta, kind, out):
     return count
 
 
+#: Where an unsurfaced unclassified road lives (docs/WAYS-SCHEMA.md).
+UCR_TABLE = "ucr_ways"
+
+
+def _ucr_problems(db, tables, meta, kind, out):
+    """The unsurfaced roads' own table: appends to [out]; returns its rows.
+
+    A `ucr` IS NEVER IN `ways`. An app before 119 reads every row of `ways`
+    and draws a `ucr` red - "you may not ride this" over a public road - so
+    the roads live in `ucr_ways`, which those apps never read. The table
+    gets the same refusals as `ways`: a count that agrees with meta, an
+    r-tree row for every row and none dangling, geometry, an id and a
+    provenance on every row.
+    """
+    if "ways" in tables:
+        try:
+            in_ways = db.execute("SELECT COUNT(*) FROM ways "
+                                 "WHERE way_class = 'ucr'").fetchone()[0]
+        except sqlite3.Error:
+            in_ways = 0
+        if in_ways:
+            out.append((REFUSE,
+                        "%d unsurfaced road(s) in `ways`, which an app before "
+                        "119 reads and draws red; they belong in `%s`"
+                        % (in_ways, UCR_TABLE)))
+    if UCR_TABLE not in tables:
+        if meta.get("ucr_count") not in (None, "", "0") and \
+                kind != "overview":
+            out.append((REFUSE, "meta says ucr_count=%s and there is no %s "
+                                "table" % (meta.get("ucr_count"), UCR_TABLE)))
+        return 0
+    try:
+        count = db.execute("SELECT COUNT(*) FROM %s"
+                           % UCR_TABLE).fetchone()[0]
+    except sqlite3.Error as error:
+        out.append((REFUSE, "%s will not read (%s)" % (UCR_TABLE, error)))
+        return 0
+    if kind == "overview":
+        if count:
+            out.append((REFUSE, "an overview holds %d %s rows" % (count,
+                                                                  UCR_TABLE)))
+        return count
+    declared = meta.get("ucr_count")
+    if str(declared) != str(count):
+        out.append((REFUSE, "meta says ucr_count=%s and %s holds %d rows"
+                    % (declared, UCR_TABLE, count)))
+    rtree = "%s_bbox" % UCR_TABLE
+    if rtree not in tables:
+        out.append((REFUSE, "no %s r-tree, so no unsurfaced road can be "
+                            "found from the map" % rtree))
+    else:
+        orphan = db.execute(
+            "SELECT COUNT(*) FROM %s WHERE rowid NOT IN (SELECT id FROM %s)"
+            % (UCR_TABLE, rtree)).fetchone()[0]
+        dangling = db.execute(
+            "SELECT COUNT(*) FROM %s WHERE id NOT IN (SELECT rowid FROM %s)"
+            % (rtree, UCR_TABLE)).fetchone()[0]
+        if orphan or dangling:
+            out.append((REFUSE, "%s and %s disagree: %d rows with no box, "
+                                "%d boxes with no row"
+                        % (UCR_TABLE, rtree, orphan, dangling)))
+    if "ways" in tables:
+        shared = db.execute(
+            "SELECT COUNT(*) FROM %s WHERE rowid IN (SELECT rowid FROM ways)"
+            % UCR_TABLE).fetchone()[0]
+        if shared:
+            out.append((REFUSE, "%d unsurfaced roads share a rowid with a "
+                                "byway; the app reads the two tables as one, "
+                                "so a tap on one would answer with the other"
+                        % shared))
+    for why, where in (
+            ("are not unsurfaced roads", "way_class <> 'ucr'"),
+            ("have no geometry", "geometry IS NULL OR LENGTH(geometry) = 0"),
+            ("have no way_uid", "way_uid IS NULL OR way_uid = ''"),
+            ("carry no legal tier, source or date",
+             "legal_tier IS NULL OR legal_tier = '' OR source IS NULL OR "
+             "source = '' OR source_date IS NULL OR source_date = ''"),
+            ("are closed to a 4x4 with no evidence",
+             "fourxfour_ok = 0 AND (access_evidence IS NULL OR "
+             "access_evidence IN ('', 'none'))")):
+        bad = db.execute("SELECT COUNT(*) FROM %s WHERE %s"
+                         % (UCR_TABLE, where)).fetchone()[0]
+        if bad:
+            out.append((REFUSE, "%d rows in %s %s" % (bad, UCR_TABLE, why)))
+    return count
+
+
 def report(paths, strict=False):
     bad = notes = 0
     for path in paths:
@@ -522,6 +610,62 @@ def _corruptions():
     ]
 
 
+def with_a_ucr(path):
+    """A good container made to carry one unsurfaced road, as the builder
+    writes it: its own table and r-tree, a rowid of its own, ucr_count."""
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import build_map_container as B
+    db = sqlite3.connect(path)
+    db.executescript(B.UCR_SCHEMA)
+    rowid = db.execute("SELECT MAX(rowid) + 1 FROM ways").fetchone()[0]
+    columns = [r[1] for r in db.execute("PRAGMA table_info(ways)")]
+    picked = ", ".join(
+        "'ZZ-UCR-selftest-1'" if c == "way_uid" else "'ucr'"
+        if c == "way_class" else "'highway_record'" if c == "legal_tier"
+        else c for c in columns)
+    db.execute("INSERT INTO ucr_ways (rowid, %s) SELECT ?, %s FROM ways "
+               "WHERE rowid = (SELECT MIN(rowid) FROM ways)"
+               % (", ".join(columns), picked), (rowid,))
+    db.execute("INSERT INTO ucr_ways_bbox SELECT ?, min_lon, max_lon, "
+               "min_lat, max_lat FROM ways_bbox WHERE id = (SELECT MIN(id) "
+               "FROM ways_bbox)", (rowid,))
+    db.execute("INSERT INTO meta VALUES ('ucr_count', '1')")
+    db.commit()
+    db.close()
+
+
+def _ucr_corruptions():
+    """(what was done to a good container carrying a UCR). Each refused."""
+    def sql(*statements):
+        def apply(path):
+            db = sqlite3.connect(path)
+            for statement in statements:
+                db.execute(statement)
+            db.commit()
+            db.close()
+        return apply
+    return [
+        ("a UCR in `ways`, where an older app draws it red",
+         sql("UPDATE ways SET way_class = 'ucr' "
+             "WHERE rowid = (SELECT MIN(rowid) FROM ways)")),
+        ("ucr_count disagrees with the rows",
+         sql("UPDATE meta SET value = '7' WHERE key = 'ucr_count'")),
+        ("a UCR with no r-tree row", sql("DELETE FROM ucr_ways_bbox")),
+        ("a byway filed among the UCRs",
+         sql("UPDATE ucr_ways SET way_class = 'boat'")),
+        ("a UCR sharing a rowid with a byway",
+         sql("DELETE FROM ucr_ways_bbox",
+             "UPDATE ucr_ways SET rowid = (SELECT MIN(rowid) FROM ways)",
+             "INSERT INTO ucr_ways_bbox SELECT id, min_lon, max_lon, "
+             "min_lat, max_lat FROM ways_bbox WHERE id = (SELECT MIN(id) "
+             "FROM ways_bbox)")),
+        ("a UCR that cannot say where it came from",
+         sql("UPDATE ucr_ways SET source = ''")),
+        ("the UCR table gone and ucr_count still set",
+         sql("DROP TABLE ucr_ways", "DROP TABLE ucr_ways_bbox")),
+    ]
+
+
 def selftest():
     import shutil
     import tempfile
@@ -551,9 +695,24 @@ def selftest():
             else:
                 print("  ok     a correct %s container passes" % label)
 
-        for name, corrupt in _corruptions():
+        # AND ONE CARRYING AN UNSURFACED ROAD, the shape a Devon container
+        # takes: accepted whole, and refused for every corruption of its own.
+        with_ucr = os.path.join(work, "with-ucr.tbmap")
+        shutil.copyfile(good, with_ucr)
+        with_a_ucr(with_ucr)
+        found = problems_with(with_ucr)
+        if found:
+            failures.append("the GOOD container with a UCR was refused: %s"
+                            % "; ".join(t for _s, t in found))
+            print("  FAIL   a correct container with a UCR was refused")
+        else:
+            print("  ok     a correct container with a UCR passes")
+
+        for name, corrupt, source in (
+                [(n, c, good) for n, c in _corruptions()]
+                + [(n, c, with_ucr) for n, c in _ucr_corruptions()]):
             path = os.path.join(work, "bad.tbmap")
-            shutil.copyfile(good, path)
+            shutil.copyfile(source, path)
             corrupt(path)
             found = [t for sev, t in problems_with(path) if sev == REFUSE]
             if not found:
@@ -569,8 +728,8 @@ def selftest():
         for f in failures:
             print("  " + f)
         return 1
-    print("\nselftest ok: 2 good containers accepted, %d corruptions refused"
-          % len(_corruptions()))
+    print("\nselftest ok: 3 good containers accepted, %d corruptions refused"
+          % (len(_corruptions()) + len(_ucr_corruptions())))
     return 0
 
 

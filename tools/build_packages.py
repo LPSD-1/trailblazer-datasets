@@ -38,6 +38,7 @@ from collections import Counter
 from datetime import datetime, timezone
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import council_ucrs  # noqa: E402
 import council_ways  # noqa: E402
 import duplicate_ways  # noqa: E402
 from text_clean import clean_text  # noqa: E402
@@ -137,6 +138,43 @@ ROW_RULES = {
         "access_evidence": "osm",
         "carried": True,
         "context": False,
+    },
+    #: THE SIXTH CLASS, AND THE FIRST NOT READ FROM A RIGHTS OF WAY RECORD.
+    #:
+    #: An unsurfaced unclassified road is a PUBLIC ROAD: adopted highway the
+    #: council maintains and lists in its List of Streets, where the NERC Act
+    #: 2006 s67(2)(b) kept its motor vehicle rights. It is on no definitive
+    #: map, so no rowmaps file has it; council_ucrs.py reads the councils
+    #: that publish theirs (Devon first, on the owner's decision of 8 October
+    #: 2026 that every green lane is to be shown).
+    #:
+    #: `legal_tier` is 'highway_record', NOT 'statutory': the record is the
+    #: council's highway record, a different kind of evidence from a
+    #: definitive-map BOAT, and the sheet must be able to say which it is
+    #: reading. Open to both motor flags because it is a public road; an
+    #: order can still close it, exactly as one closes a byway.
+    #:
+    #: NOT IN `features`: it travels in its own pack member (`ucrFeatures`),
+    #: its own container table (`ucr_ways`) and its own tile layer (`ucr`),
+    #: because an app built before 119 reads `ucr` as unknown and draws it
+    #: red - "you may not ride this" over a public road. See
+    #: docs/WAYS-SCHEMA.md "Unsurfaced unclassified roads".
+    "unsurfaced_unclassified_road": {
+        "way_class": "ucr",
+        "designation": "Unsurfaced unclassified road (UCR)",
+        "legal_tier": "highway_record",
+        "motorbike_ok": 1,
+        "fourxfour_ok": 1,
+        # {council} is the council whose records it is (normalise_ucr).
+        "access_reason": "Unsurfaced unclassified road: a public road the "
+                         "council maintains, recorded in {council}'s highway "
+                         "records. Being a public road does not on its own "
+                         "prove every vehicle may use it - check the signs "
+                         "and any traffic orders.",
+        "access_evidence": "highway_record",
+        "carried": True,
+        "context": False,
+        "council_record": True,
     },
     "footpath": {
         "way_class": "footpath",
@@ -849,6 +887,9 @@ def load_all(authorities):
     for code in sorted(authorities):
         name = authorities[code]
         for row_type in ROW_RULES:
+            if ROW_RULES[row_type].get("council_record"):
+                # Not a rowmaps file: council_ucrs.py, through ucr_lanes().
+                continue
             path = os.path.join(cache_dir(), code, "%s.json" % row_type)
             if not os.path.exists(path):
                 continue
@@ -882,6 +923,138 @@ def load_all(authorities):
     if skipped:
         print("  skipped: %s" % dict(skipped))
     return by_type
+
+
+#: The row type council_ucrs.py's roads are built as.
+UCR_TYPE = "unsurfaced_unclassified_road"
+
+#: A UCR lying this close to a byway, along UCR_ON_BYWAY_SHARE of its length,
+#: is the same way recorded twice - and the byway's definitive-map record is
+#: the stronger one, so the UCR is not published. 20 m: the test the 8 Oct
+#: 2026 read of Devon's layer was measured with (none of its 958 routes lay
+#: on any of Devon's 178 BOATs).
+UCR_ON_BYWAY_M = 20.0
+UCR_ON_BYWAY_SHARE = 0.9
+
+
+def normalise_ucr(route, source, authority_code, authority_name):
+    """One council_ucrs route -> one lane, in the shape normalise() writes.
+
+    THE ROUTE IS ONE LANE. Councils draw a road in sections; a route is a
+    parish and number, and every section of it is a line of one lane - the
+    shape join_pieces() gives a byway drawn in pieces, without the piece ids:
+    these roads were never published in pieces, so there is no earlier id
+    for anything to follow.
+
+    THE ID hashes every line, sorted, so it moves only when the geometry
+    does, and names the council's reference so a rider can quote it:
+    'DN-UCR-abbotsham-301-<hash>'.
+
+    THE NAME is what the council calls the road, with its reference, so a
+    rider searching "Rocky Lane" or "Abbotsham 301" finds it:
+    "Rocky Lane (Abbotsham UCR 301)"; with no name, the designation and the
+    reference, as a byway is named.
+    """
+    rule = ROW_RULES[UCR_TYPE]
+    parts = sorted([[float(p[0]), float(p[1])] for p in l]
+                   for l in route.get("lines") or [] if len(l) >= 2)
+    if not parts:
+        return None
+    parish = clean_text(route.get("parish")) or ""
+    number = clean_text(route.get("number")) or ""
+    geom_hash = hashlib.sha1(json.dumps(
+        parts, separators=(",", ":")).encode()).hexdigest()[:10]
+    uid = "-".join(x for x in (authority_code, "UCR", slugify(parish)
+                               if parish else "", number, geom_hash) if x)
+    road = clean_text(route.get("name")) or ""
+    ref = " ".join(x for x in (parish, "UCR", number) if x)
+    name = "%s (%s)" % (road, ref) if road else " ".join(
+        x for x in (rule["designation"], parish, number) if x)
+    council = clean_text(source.get("council")) or authority_name
+    authority_name = clean_text(authority_name)
+    length_km = sum(council_ways._length(l) for l in parts) / 1000.0
+    props = {
+        "lane_uid": uid,
+        "class": rule["way_class"],
+        "county": authority_name,
+        "name": name,
+        "designation": rule["designation"],
+        "rowType": UCR_TYPE,
+        "authority": authority_name,
+        "authorityCode": authority_code,
+        "legal_tier": rule["legal_tier"],
+        # The council's highway records, named by the council, so the sheet
+        # can credit it: 'highway-records:devon-county-council'.
+        "source": "highway-records:%s" % slugify(council),
+        "source_date": SOURCE_DATE_PLACEHOLDER,
+        "motorbike_ok": rule["motorbike_ok"],
+        "fourxfour_ok": rule["fourxfour_ok"],
+        "access_reason": rule["access_reason"].format(council=council),
+        "access_evidence": rule["access_evidence"],
+        "attribution": clean_text(source.get("attribution")) or council,
+        "lengthKm": round(length_km, 6),
+    }
+    geometry = {"type": "LineString", "coordinates": parts[0]}         if len(parts) == 1 else {"type": "MultiLineString",
+                                 "coordinates": parts}
+    return {"type": "Feature", "properties": props, "geometry": geometry}
+
+
+def ucr_lanes(authorities, byways, out_dir=None, today=None, log=print):
+    """-> ([UCR lane], [source], report): every council's unsurfaced roads,
+    as lanes, less any lying on a published byway.
+
+    `authorities` is rowmaps' {code: name}, which names the authority as
+    every byway of it is named ("Devon"), so the app's authority filter and
+    county chips treat a UCR and a byway of one council alike. It is also
+    the set of authorities this build builds: a council file for one it
+    does not (a test's fixture cache, a partial run) is left alone.
+
+    Each source is the council file's `source` with `since` and `count`
+    added - what a pack and a container say about where the roads came from.
+    """
+    index = council_ways._Index(
+        [tuple(p) for p in l] for f in byways for l in lines_of(f))
+    lanes, sources, report = [], [], {"on_byway": [], "routes": 0}
+    for source, since, routes in council_ucrs.held(out_dir, today=today,
+                                                   log=log):
+        code = source["code"]
+        if code not in authorities:
+            continue
+        name = clean_text(authorities[code]) or source.get("authority")             or code
+        count = 0
+        for route in routes:
+            report["routes"] += 1
+            lane = normalise_ucr(route, source, code, name)
+            if lane is None:
+                continue
+            lines = [[tuple(p) for p in l] for l in lines_of(lane)]
+            total = sum(council_ways._length(l) for l in lines) or 1.0
+            share = sum(council_ways.covered_share(l, index, UCR_ON_BYWAY_M)
+                        * council_ways._length(l) for l in lines) / total
+            if share >= UCR_ON_BYWAY_SHARE:
+                report["on_byway"].append(lane["properties"]["name"])
+                continue
+            lanes.append(lane)
+            count += 1
+        sources.append(dict(source, since=since, count=count))
+        log("  %s: %d unsurfaced roads from %s (%d lie on a byway and are "
+            "left to it)" % (code, count, source.get("council"),
+                             len(report["on_byway"])))
+    return lanes, sources, report
+
+
+def attach_ucrs(parts, ucrs):
+    """Each UCR to the area piece of its region that holds its authority's
+    byways, or to the first piece when none does. -> [[ucr], ...] by piece.
+    A region that fits one package (all six today) has one piece."""
+    out = [[] for _ in parts]
+    for f in ucrs:
+        authority = f["properties"].get("authority")
+        k = next((i for i, (_label, feats) in enumerate(parts)
+                  if any(g["properties"].get("authority") == authority
+                         for g in feats)), 0)
+        out[k].append(f)
+    return out
 
 
 def lines_of(feature):
@@ -1202,7 +1375,7 @@ def in_region(feature, box):
 
 def write_package(pkg_name, region_id, region_label, area_label, features,
                   key, stamp, published=None, note=None,
-                  context=DEFAULT_CONTEXT):
+                  context=DEFAULT_CONTEXT, ucrs=None, ucr_sources=None):
     """Seal one downloadable piece.
 
     [context] is the step 1.2c option these [features] were selected under,
@@ -1216,7 +1389,14 @@ def write_package(pkg_name, region_id, region_label, area_label, features,
     [published] is what is already on riders' phones, from published_packages().
     It is what lets an unchanged package keep the date it was cut - and
     therefore keep its bytes. See the comment on the seal below.
+
+    [ucrs] are this piece's unsurfaced unclassified roads (ucr_lanes), and
+    [ucr_sources] the councils they came from. They are sealed in their OWN
+    member, `ucrFeatures`, never in `features`: an app before 119 reads a
+    pack's `features` on its GeoJSON path and would draw a `ucr` red. A
+    package with none is sealed exactly as before, byte for byte.
     """
+    ucrs = list(ucrs or [])
     area_id = region_id if area_label is None else \
         "%s-%s" % (region_id, slugify(area_label))
     shown = region_label if area_label is None else area_label
@@ -1225,7 +1405,7 @@ def write_package(pkg_name, region_id, region_label, area_label, features,
     # The app dedupes on lane_uid when it loads neighbouring areas together, so a
     # non-unique id inside one package is data the rider will never see. This
     # cost us 38% of the Midlands once; it does not get to happen quietly again.
-    uids = [f["properties"]["lane_uid"] for f in features]
+    uids = [f["properties"]["lane_uid"] for f in features + ucrs]
     if len(set(uids)) != len(uids):
         dupes = Counter(uids)
         worst = [u for u, n in dupes.most_common(3) if n > 1]
@@ -1244,7 +1424,7 @@ def write_package(pkg_name, region_id, region_label, area_label, features,
         clock into every way and hand every rider a fresh download a month.
         """
         day = cut[:10]
-        for f in features:
+        for f in features + ucrs:
             f["properties"]["source_date"] = day
         collection = {
             "type": "FeatureCollection",
@@ -1259,6 +1439,9 @@ def write_package(pkg_name, region_id, region_label, area_label, features,
             "attribution": OGL,
             "features": features,
         }
+        if ucrs:
+            collection["ucrFeatures"] = ucrs
+            collection["ucrSources"] = _sources_in(ucr_sources, ucrs)
         body = json.dumps(collection, separators=(",", ":")).encode("utf8")
         return body, pack(body, key)
 
@@ -1335,7 +1518,21 @@ def write_package(pkg_name, region_id, region_label, area_label, features,
         # into one lane from fifteen byways lost.
         "lengthKm": round(distinct_line_km(features), 3),
         "generated": stamp,
+        # Only where there are any, so a manifest entry for a package with
+        # none is what it always was.
+        **({"ucrCount": len(ucrs),
+            "ucrLengthKm": round(distinct_line_km(ucrs), 3)} if ucrs else {}),
     }
+
+
+def _sources_in(sources, ucrs):
+    """The councils these roads came from, each with how many are here."""
+    counts = Counter(f["properties"].get("authorityCode") for f in ucrs)
+    out = []
+    for source in sources or []:
+        if counts.get(source.get("code")):
+            out.append(dict(source, count=counts[source["code"]]))
+    return out
 
 
 def main():
@@ -1443,6 +1640,18 @@ def main():
               % (r["gap_km"], r["way_uid"], r["authority"], r["name"],
                  r["pieces"], r["length_km"]))
 
+    # THE COUNCILS' UNSURFACED ROADS, beside the byways and never merged
+    # with them (council_ucrs.py). Read after the pool, so a road lying on a
+    # published byway is left to the byway.
+    print("")
+    print("unsurfaced unclassified roads (council_ucrs.py)")
+    ucr_pool, ucr_sources, ucr_report = ucr_lanes(authorities, pool)
+    print("  %d roads from %d council layers; %d lie on a byway and are not "
+          "published" % (len(ucr_pool), len(ucr_sources),
+                         len(ucr_report["on_byway"])))
+    for n in ucr_report["on_byway"][:20]:
+        print("    on a byway: %s" % n)
+
     if args.measure_only:
         return
 
@@ -1478,12 +1687,16 @@ def main():
         features = [f for f in pool if in_region(f, box)]
         if not features:
             continue
-        placed.update(f["properties"]["lane_uid"] for f in features)
-        for area_label, part in split_by_authority(features):
+        ucrs = [f for f in ucr_pool if in_region(f, box)]
+        placed.update(f["properties"]["lane_uid"] for f in features + ucrs)
+        parts = split_by_authority(features)
+        for (area_label, part), part_ucrs in zip(parts,
+                                                 attach_ucrs(parts, ucrs)):
             entry = write_package(DATASET, region_id, region_label,
                                   area_label, part, key, stamp,
                                   published=published, note=note,
-                                  context=args.context)
+                                  context=args.context, ucrs=part_ucrs,
+                                  ucr_sources=ucr_sources)
             entries.append(entry)
             over = "  OVER BUDGET" \
                 if entry["plainBytes"] > MAX_PLAIN_BYTES else ""
@@ -1493,7 +1706,8 @@ def main():
                      entry["bytes"] / 1048576.0,
                      entry["plainBytes"] / 1048576.0, state, over))
 
-    orphans = [f for f in pool if f["properties"]["lane_uid"] not in placed]
+    orphans = [f for f in pool + ucr_pool
+               if f["properties"]["lane_uid"] not in placed]
 
     # A way that fell outside every region box.
     #
@@ -1540,7 +1754,8 @@ def main():
             " Byways for %s read from the councils' own live layers."
             % ", ".join(sorted(set(clean_text(n) for n in
                                    COUNCIL_LAYERS_USED)))
-            if COUNCIL_LAYERS_USED else ""),
+            if COUNCIL_LAYERS_USED else "") + "".join(
+            " " + s["attribution"] for s in ucr_sources if s["count"]),
         "licence": "OGL-3.0",
         "source": "Local highway authority definitive maps via rowmaps.com"
                   + ("; byways for %d authorities from the council's own "
@@ -1557,6 +1772,11 @@ def main():
         # so their absence is never read as absence on the ground.
         **scope,
         "wayClassCounts": dict(sorted(by_class.items())),
+        # The unsurfaced roads, counted apart: they are not in any pack's
+        # `features` (write_package), so not in wayClassCounts either.
+        **({"ucrCount": len(ucr_pool),
+            "ucrSources": [s for s in ucr_sources if s["count"]]}
+           if ucr_pool else {}),
         "notCarried": not_carried,
         "regions": [
             {"id": r, "label": lab,

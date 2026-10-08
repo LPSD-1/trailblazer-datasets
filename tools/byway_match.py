@@ -83,6 +83,13 @@ def unpack_geometry(blob, scale=None):
 
 _DESIGNATION = re.compile(r"^\s*byway open to all traffic\s*\(boat\)\s*", re.I)
 
+#: An unsurfaced unclassified road's name (build_packages.normalise_ucr):
+#: "Rocky Lane (Abbotsham UCR 301)", or, where the council names no road,
+#: "Unsurfaced unclassified road (UCR) Abbotsham 301".
+_UCR_NAMED = re.compile(r"\((.+?)\s+UCR\s+(\S+)\)\s*$", re.I)
+_UCR_DESIGNATION = re.compile(
+    r"^\s*unsurfaced unclassified road\s*\(ucr\)\s*", re.I)
+
 
 def norm_parish(text):
     """A parish (or parish code) as compared: lower case, letters and digits.
@@ -99,10 +106,13 @@ def norm_number(text):
     """A path number as compared: "024/0" -> "24", "13A" -> "13a".
 
     A trailing "/0" (Suffolk's "no suffix") and "BOAT"/"byway"/"No." words
-    are dropped; every numeric run loses its leading zeros.
+    are dropped - and Devon's "uUCR"/"UCR" status words, so its "uUCR 306"
+    is our UCR 306; every numeric run loses its leading zeros.
     """
     text = (text or "").lower()
-    text = re.sub(r"\b(boat|byway|by|bw|no\.?|number)\b", " ", text)
+    text = re.sub(r"\b(boat|byway|by|bw|u?ucr|u?uct|no\.?|number)\b", " ",
+                  text)
+    text = re.sub(r"^u?uc[rt](?=\d)", "", text.strip())
     text = text.strip(" ./-")
     parts = [p for p in re.split(r"[^a-z0-9]+", text) if p]
     parts = [(p.lstrip("0") or "0") if p.isdigit() else
@@ -113,7 +123,16 @@ def norm_number(text):
 
 
 def split_name(name):
-    """(parish part, number part) of a container way name, normalised."""
+    """(parish part, number part) of a container way name, normalised.
+
+    A UCR's name carries its reference in brackets after the road's own
+    name, or after the designation where the council names no road; either
+    reads as the council's parish and number, as a byway's name does.
+    """
+    m = _UCR_NAMED.search(name or "")
+    if m:
+        return norm_parish(m.group(1)), norm_number(m.group(2))
+    name = _UCR_DESIGNATION.sub("", name or "")
     rest = _DESIGNATION.sub("", name or "").strip()
     if not rest:
         return "", ""
@@ -231,12 +250,16 @@ def bbox(lines):
 
 class Way(object):
     __slots__ = ("uid", "authority", "name", "parish", "number", "lines",
-                 "box")
+                 "box", "way_class")
 
-    def __init__(self, uid, authority, name, lines):
+    def __init__(self, uid, authority, name, lines, way_class="boat"):
         self.uid = uid
         self.authority = authority
         self.name = name
+        # `boat` or `ucr`. A reference names one or the other ("Byway 6",
+        # "uUCR 306"), and the two numberings are the council's to keep
+        # apart, not ours to assume apart: see match_ref.
+        self.way_class = way_class
         self.parish, self.number = split_name(name)
         self.lines = lines
         self.box = bbox(lines)
@@ -315,12 +338,19 @@ class Byways(object):
         out.sort()
         return out
 
-    def match_ref(self, authority, parish, number):
-        """Way uids recorded as this authority's parish + path number."""
-        key = (authority, norm_parish(parish), norm_number(number))
-        return sorted(w.uid for w in self._by_ref.get(key, ()))
+    def match_ref(self, authority, parish, number, way_class="boat"):
+        """Way uids recorded as this authority's parish + path number.
 
-    def match_number(self, authority, number):
+        OF ONE CLASS, a byway's by default. A council numbering its byways
+        and its unsurfaced roads in two series could give "Bere Ferrers 6"
+        to both, and a notice closing Byway 6 must not close UCR 6 with it;
+        a source naming a UCR asks for `ucr`.
+        """
+        key = (authority, norm_parish(parish), norm_number(number))
+        return sorted(w.uid for w in self._by_ref.get(key, ())
+                      if w.way_class == way_class)
+
+    def match_number(self, authority, number, way_class="boat"):
         """Way uids with this path number anywhere in the authority.
 
         For sources whose parish wording cannot be compared (a route code,
@@ -328,7 +358,8 @@ class Byways(object):
         """
         n = norm_number(number)
         return sorted(w.uid for w in self.ways.values()
-                      if w.authority == authority and w.number == n)
+                      if w.authority == authority and w.number == n
+                      and w.way_class == way_class)
 
     def geometry(self, uids):
         """The lines of these ways, for a feature drawn from a reference."""
@@ -343,8 +374,18 @@ class Byways(object):
         return sorted(set(w.authority for w in self.ways.values()))
 
 
-def load_byways(pattern=None):
-    """Every BOAT in the published regional containers.
+def load_byways(pattern=None, include_ucr=True):
+    """Every BOAT in the published regional containers - and, unless
+    [include_ucr] is False, every unsurfaced unclassified road.
+
+    THE ROADS TOO, because an order closes a road exactly as it closes a
+    byway: a council's closure notice, a register entry, a Street Manager
+    closure or a firing range can each be about a UCR, and a matcher that
+    sees only byways would publish none of them against the lane a rider
+    has. UCRs live in their own table (`ucr_ways`, which an app before 119
+    never reads), so this reads both. The definitive-map processes - a DMMO
+    application, a Planning Inspectorate decision - are about the definitive
+    map, which no UCR is on; their callers pass False.
 
     The overview container is skipped: it holds simplified copies of the
     same ways, and matching against a simplified line would move a record
@@ -360,12 +401,18 @@ def load_byways(pattern=None):
         try:
             meta = dict(conn.execute("SELECT key, value FROM meta"))
             scale = float(meta.get("geometry_scale") or GEOMETRY_SCALE)
-            rows = conn.execute(
-                "SELECT way_uid, authority, name, geometry FROM ways "
-                "WHERE way_class = 'boat'")
-            for uid, authority, name, blob in rows:
-                ways.append(Way(uid, authority, name,
-                                unpack_geometry(blob, scale)))
+            tables = set(r[0] for r in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type = 'table'"))
+            queries = ["SELECT way_uid, authority, name, geometry, way_class "
+                       "FROM ways WHERE way_class = 'boat'"]
+            if include_ucr and "ucr_ways" in tables:
+                queries.append("SELECT way_uid, authority, name, geometry, "
+                               "way_class FROM ucr_ways "
+                               "WHERE way_class = 'ucr'")
+            for query in queries:
+                for uid, authority, name, blob, klass in conn.execute(query):
+                    ways.append(Way(uid, authority, name,
+                                    unpack_geometry(blob, scale), klass))
         finally:
             conn.close()
     return Byways(ways)

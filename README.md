@@ -10,6 +10,11 @@ the legal record of public rights of way in England and Wales — obtained via
 > Contains public sector information licensed under the Open Government Licence
 > v3.0. Source: local highway authority definitive maps, via rowmaps.com.
 
+Since 8 October 2026 the lanes also include **unsurfaced unclassified roads**
+read from the councils' own highway records - so far Devon's, credited to
+Devon County Council. That layer is not published under the Open Government
+Licence; see [Unsurfaced unclassified roads](#unsurfaced-unclassified-roads-ucrs).
+
 ## What this is not
 
 **Traffic Regulation Orders and temporary closures are not in this data.** The
@@ -284,9 +289,64 @@ refuses GitHub's runners and is read by the collector server
 (HOME-COLLECTOR.md). Kent's, Dartmoor's and Exmoor's own layers carry
 licences that restrict their use and are not read.
 
+## Unsurfaced unclassified roads (UCRs)
+
+Many green lanes are not byways at all: they are ordinary public roads -
+unclassified county roads the council maintains and lists in its List of
+Streets (Highways Act 1980 s36(6)) - that were never given a hard surface. The
+Natural Environment and Rural Communities Act 2006 s67(2)(b) kept the motor
+vehicle rights over ways in that list. They are on no definitive map, so
+rowmaps has none of them. On 8 October 2026 the owner decided that every green
+lane is to be shown, so `council-ways.yml` also reads the councils that publish
+their unsurfaced roads, every day, into `council-ucrs/<CODE>.json`
+(`tools/council_ucrs.py`; its own status in `council-ucrs/status.json`).
+
+Coverage in England and Wales:
+
+| Authority | Source | Read since | Roads (8 Oct 2026) | Licence |
+|---|---|---|---|---|
+| Devon | Devon County Council: ArcGIS `Environment_Intranet/Public_Access_Intranet/MapServer/5`, "PROW CAT 12" - its unsurfaced unclassified county roads, maintenance category 12 | 8 Oct 2026 | 959 routes (1,143 sections, 589 km) | not stated - see below |
+| every other authority | not yet read: a survey of every council's highway records is under way, and each council found is one entry in `UCR_LAYERS` | - | - | - |
+
+Where a council's roads are not read, the app says so: an absence of UCRs on
+the map is never an absence on the ground.
+
+**Devon's layer states no licence. It is published on the owner's decision of
+8 October 2026** that it is public highway information - a council's highway
+records must be open to public inspection - credited to Devon County Council
+on every road, pack and container that carries it, and it will be taken down if
+the council objects. Every road says, in its `attribution`: "Source: Devon
+County Council's unsurfaced unclassified county roads (maintenance category
+12), read from the council." followed by that decision.
+
+Each route (a parish and number, every section of it) is one lane of class
+`ucr`, with `legal_tier` and `access_evidence` `highway_record` - the council's
+highway record, a different kind of evidence from a definitive-map BOAT -
+named from the council's road name and reference ("Rocky Lane (Abbotsham UCR
+301)"), and open to motorbikes and 4x4s unless an order says otherwise. A road
+that lies along a published byway is left to the byway. The closures pipeline
+matches orders to UCRs as it does to byways (Devon's own closure notices name
+three today). UCRs travel in their own table and tile layer so that app builds
+before 119, which would draw them as lanes you may not ride, never see them:
+docs/WAYS-SCHEMA.md, "Unsurfaced unclassified roads".
+
+## Local rules
+
+`local-rules/rules.json` (format in `tools/local_rules.py`) holds what a
+national park, a council or a scheme asks of riders in a particular place - a
+code of conduct, a voluntary restraint, a seasonal policy, an order to cite -
+each with the official page it came from and the day it was checked. Every
+area container carries the rules that could apply to its lanes (meta
+`local_rules`), and the app shows the right one on a lane's sheet. Seeded on
+8 October 2026 with four rules read politely from Devon County Council's and
+the Lake District National Park Authority's own pages; nothing is taken from a
+site `tools/polite_http.py` blocks.
+
 ## Licence
 
-Data: Open Government Licence v3.0 — attribution required, no share-alike.
+Data: Open Government Licence v3.0 — attribution required, no share-alike -
+except the unsurfaced unclassified roads above, which are credited to the
+council that publishes them under the terms stated there.
 The attribution string above travels on the collection *and* on every single
 feature, because losing it silently would put users in breach while everything
 still appeared to work.

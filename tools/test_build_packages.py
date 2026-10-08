@@ -383,15 +383,27 @@ check("there is one dataset and it is named for what it holds",
 # against `way_class = 'boat'`.
 check("the schema's classes are what the builder emits",
       sorted(r["way_class"] for r in build_packages.ROW_RULES.values()),
-      ["boat", "bridleway", "footpath", "osm_track", "restricted_byway"])
+      ["boat", "bridleway", "footpath", "osm_track", "restricted_byway",
+       "ucr"])
 
 # THE TIER IS PER RULE, and exactly one rule is not statutory. Where there is
 # no definitive map there is no statutory tier to claim, and a build that
 # quietly marked an OSM track 'statutory' would put an unrecorded track into
 # the one class this app treats as proven.
-check("only the OSM track is carried on anything but a definitive map",
+# AND, SINCE 8 OCT 2026, THE UNSURFACED ROAD: a public road in the council's
+# highway records, which is not a definitive map either and must not claim
+# to be one. Its tier names the record it IS.
+check("only the OSM track and the UCR are carried on anything but a "
+      "definitive map",
       sorted(t for t, r in build_packages.ROW_RULES.items()
-             if r["legal_tier"] != "statutory"), ["osm_track"])
+             if r["legal_tier"] != "statutory"),
+      ["osm_track", "unsurfaced_unclassified_road"])
+check("and the UCR's tier is the highway record it was read from",
+      build_packages.ROW_RULES["unsurfaced_unclassified_road"]["legal_tier"],
+      "highway_record")
+check("and its evidence says so, not 'statutory'",
+      build_packages.ROW_RULES["unsurfaced_unclassified_road"]
+      ["access_evidence"], "highway_record")
 check("and its tier says which", build_packages.ROW_RULES["osm_track"]
       ["legal_tier"], "osm")
 check("and its evidence says so too - not 'statutory'",
@@ -453,10 +465,12 @@ check("among statutory ways, only a BOAT is open to a 4x4",
 # carries motorbike_ok=1 because nothing says it cannot, and it is still not
 # drawn rideable, because no source recorded a right. Those two are different
 # questions and the schema answers them in different columns.
-check("the drawn-rideable set is exactly the statutory BOAT",
+check("the drawn-rideable set is exactly the statutory BOAT and the "
+      "highway-record UCR",
       sorted(t for t, r in build_packages.ROW_RULES.items()
-             if r["way_class"] == "boat" and r["legal_tier"] == "statutory"),
-      ["byway_open_to_all_traffic"])
+             if (r["way_class"], r["legal_tier"]) in (
+                 ("boat", "statutory"), ("ucr", "highway_record"))),
+      ["byway_open_to_all_traffic", "unsurfaced_unclassified_road"])
 check_true("an OSM track is not drawn rideable",
            build_packages.ROW_RULES["osm_track"]["way_class"] != "boat")
 check_true("and it tells the rider to check locally",

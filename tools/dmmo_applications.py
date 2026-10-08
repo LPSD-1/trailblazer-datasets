@@ -455,7 +455,8 @@ def main(argv=None):
     ap.add_argument("--out", default=OUT)
     args = ap.parse_args(argv)
     from byway_match import load_byways
-    byways = load_byways()
+    # About the definitive map, which no UCR is on: byways only.
+    byways = load_byways(include_ucr=False)
     if len(byways) < 1000:
         print("::error::only %d byways in the published containers"
               % len(byways))

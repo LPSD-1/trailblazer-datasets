@@ -27,6 +27,7 @@ import hashlib
 import io
 import json
 import os
+import re
 import sqlite3
 import struct
 import sys
@@ -263,6 +264,36 @@ def load_features(paths, key):
     return [seen[uid] for uid in order]
 
 
+def load_ucrs(paths, key):
+    """(UCR features, their sources) from every pack given, deduped as
+    load_features dedupes ways.
+
+    THEIR OWN PACK MEMBER, `ucrFeatures` (build_packages.write_package):
+    never `features`, because an app before 119 reads `features` on its
+    GeoJSON path and draws a `ucr` as a lane it may not ride. Sources are
+    merged by council code, counts summed over the packs that carry them.
+    """
+    seen, order, sources = {}, [], collections.OrderedDict()
+    for path in sorted(paths):
+        body = unpack(path, key)
+        for f in body.get("ucrFeatures") or []:
+            uid = f["properties"]["lane_uid"]
+            if uid in seen:
+                continue
+            seen[uid] = f
+            order.append(uid)
+        for src in body.get("ucrSources") or []:
+            code = src.get("code")
+            if code not in sources:
+                sources[code] = dict(src)
+    for code, src in sources.items():
+        src["count"] = sum(1 for uid in order
+                           if seen[uid]["properties"].get("authorityCode")
+                           == code)
+    return [seen[uid] for uid in order], [s for s in sources.values()
+                                          if s["count"]]
+
+
 def lines_of(feature):
     g = feature["geometry"]
     if g["type"] == "LineString":
@@ -441,9 +472,36 @@ def coalesce_key(props):
             props.get("climb_m"))
 
 
-def build_tiles(features, zoom, coalesced, on_tile, ids=None):
-    """Cut `features` into tiles at `zoom` and hand each to `on_tile`."""
+#: The MVT layer the unsurfaced unclassified roads are drawn in.
+#:
+#: ITS OWN LAYER, NOT `lanes`. An app before 119 styles source-layer `lanes`
+#: and reads a `ucr` there as unknown - drawn red, tight-dashed: "you may not
+#: ride this" over a public road. In a layer of its own it is simply not
+#: drawn by those builds, and 119 folds it into `lanes` as it serves the tile
+#: (PmTilesServer), so every lane filter and closure applies to it.
+UCR_LAYER = "ucr"
+
+
+def build_tiles(features, zoom, coalesced, on_tile, ids=None, ucrs=None):
+    """Cut `features` into tiles at `zoom` and hand each to `on_tile`.
+
+    [ucrs] are drawn into the same tiles, in layer UCR_LAYER; a tile is
+    encoded with whichever of the two layers it has, `lanes` first. With no
+    ucrs every tile is byte for byte what it always was.
+    """
     ids = ids if ids is not None else assign_ids(features, "lane_uid")
+    lanes = _buckets(features, zoom, coalesced, ids)
+    roads = _buckets(ucrs or [], zoom, coalesced, ids)
+    for tile in sorted(set(lanes) | set(roads)):
+        layers = [_layer("lanes", lanes.get(tile, ()), coalesced),
+                  _layer(UCR_LAYER, roads.get(tile, ()), coalesced)]
+        blob = mvt.encode_tile(layers)
+        if blob:
+            on_tile(zoom, tile[0], tile[1], blob, sum(len(l) for l in layers))
+
+
+def _buckets(features, zoom, coalesced, ids):
+    """{(tx, ty): [(id, props, local lines)]} for `features` at `zoom`."""
     # Bucket every feature's clipped pieces by tile first, so each tile is
     # encoded once.
     buckets = collections.defaultdict(list)
@@ -478,28 +536,29 @@ def build_tiles(features, zoom, coalesced, on_tile, ids=None):
                     (ids.get(feature["properties"].get("lane_uid"), 0),
                      props, local))
 
-    for (tx, ty), items in sorted(buckets.items()):
-        layer = mvt.Layer("lanes")
-        if coalesced:
-            groups = collections.OrderedDict()
-            for fid, props, local in sorted(items, key=lambda r: r[0]):
-                key = coalesce_key(props)
-                if key not in groups:
-                    groups[key] = (props, [])
-                groups[key][1].extend(local)
-            for props, lines in groups.values():
-                layer.add(lines, props)
-        else:
-            # Sorted by id so a tile's bytes depend on its CONTENT and not on
-            # the order features happened to arrive in - which is the other
-            # half of making a rebuild byte-identical.
-            for fid, props, local in sorted(items, key=lambda r: r[0]):
-                # A numeric id is what setFeatureState needs; the uid stays a
-                # property for the tap lookup.
-                layer.add(local, props, feature_id=fid)
-        blob = mvt.encode_tile([layer])
-        if blob:
-            on_tile(zoom, tx, ty, blob, len(layer))
+    return buckets
+
+
+def _layer(name, items, coalesced):
+    layer = mvt.Layer(name)
+    if coalesced:
+        groups = collections.OrderedDict()
+        for fid, props, local in sorted(items, key=lambda r: r[0]):
+            key = coalesce_key(props)
+            if key not in groups:
+                groups[key] = (props, [])
+            groups[key][1].extend(local)
+        for props, lines in groups.values():
+            layer.add(lines, props)
+    else:
+        # Sorted by id so a tile's bytes depend on its CONTENT and not on
+        # the order features happened to arrive in - which is the other
+        # half of making a rebuild byte-identical.
+        for fid, props, local in sorted(items, key=lambda r: r[0]):
+            # A numeric id is what setFeatureState needs; the uid stays a
+            # property for the tap lookup.
+            layer.add(local, props, feature_id=fid)
+    return layer
 
 
 # --------------------------------------------------------------------------
@@ -559,6 +618,20 @@ CREATE VIRTUAL TABLE ways_bbox USING rtree(id, min_lon, max_lon, min_lat, max_la
 
 CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT);
 """
+
+#: The unsurfaced unclassified roads' own record table and r-tree.
+#:
+#: COLUMN FOR COLUMN `ways`, derived from SCHEMA rather than written out, so
+#: the two cannot drift: the app reads `ways UNION ALL ucr_ways` through one
+#: view, which needs the same columns in the same order. A table of its own
+#: because an app before 119 reads every row of `ways` and draws a `ucr` red
+#: (docs/WAYS-SCHEMA.md "Unsurfaced unclassified roads"). Written only into
+#: an area container holding at least one, so a container without UCRs is
+#: byte for byte what it was.
+UCR_SCHEMA = (re.search(r"CREATE TABLE ways \(.*?\);", SCHEMA, re.S).group(0)
+              .replace("CREATE TABLE ways (", "CREATE TABLE ucr_ways (")
+              + "\nCREATE VIRTUAL TABLE ucr_ways_bbox USING "
+                "rtree(id, min_lon, max_lon, min_lat, max_lat);\n")
 
 # TRANSITIONAL. Delete these two views in phase 2, with the reader.
 #
@@ -667,15 +740,26 @@ def check_access_evidence(features):
 
 
 def write_container(path, features, kind, zooms, source_date,
-                    tile_exclude=None, context_scope=None, context_note=None):
+                    tile_exclude=None, context_scope=None, context_note=None,
+                    ucrs=None, ucr_sources=None, local_rules=None):
     """Write a container. `zooms` is inclusive, and for an overview the caller
-    is expected to have chosen the low end with [lowest_zoom_that_fits]."""
+    is expected to have chosen the low end with [lowest_zoom_that_fits].
+
+    [ucrs] are unsurfaced unclassified roads (build_packages.ucr_lanes),
+    written to their own table and tile layer, and [ucr_sources] the
+    councils they came from (meta `ucr_sources`). [local_rules] is the list
+    of local rules that apply here (local_rules.py; meta `local_rules`).
+    With none of the three, the container is what it always was.
+    """
+    ucrs = list(ucrs or [])
     if os.path.exists(path):
         os.remove(path)
     db = sqlite3.connect(path)
     db.executescript(SCHEMA)
+    if ucrs and kind != "overview":
+        db.executescript(UCR_SCHEMA)
     if kind != "overview":
-        check_access_evidence(features)
+        check_access_evidence(features + ucrs)
 
     # "both" builds the two bands into one file: coalesced below the split,
     # individual above, records present. It is NOT the shipping arrangement -
@@ -716,7 +800,12 @@ def write_container(path, features, kind, zooms, source_date,
         got[1] += len(blob)
         got[2] = max(got[2], len(blob))
 
-    ids = assign_ids(features, "lane_uid")
+    # ONE ID SPACE FOR BOTH TABLES. A way's id is its rowid, its r-tree id
+    # and its tile feature id; the app reads the two tables as one, so a UCR
+    # sharing an id with a byway would answer a tap on one with the other.
+    # assign_ids refuses a collision, and a byway's id is the same whether
+    # or not UCRs are in the build (each is a hash of its own uid).
+    ids = assign_ids(features + ucrs, "lane_uid")
 
     # EVERY AREA DRAWS EVERY WAY IT CARRIES.
     #
@@ -736,71 +825,19 @@ def write_container(path, features, kind, zooms, source_date,
                    if f["properties"].get("lane_uid") not in tile_exclude]
                   if tile_exclude else features)
     for zoom in range(zooms[0], zooms[1] + 1):
-        build_tiles(tiles_from, zoom, zoom < coalesced_below, on_tile, ids)
+        build_tiles(tiles_from, zoom, zoom < coalesced_below, on_tile, ids,
+                    ucrs=ucrs)
 
     # The overview carries no records: it exists to be looked at, and every
     # legal answer comes from an area container.
     if kind != "overview":
-        for f in features:
-            props = f["properties"]
-            lines = lines_of(f)
-            lons = [p[0] for line in lines for p in line]
-            lats = [p[1] for line in lines for p in line]
-            if not lons:
-                continue
-            # The SAME id the tile carries, so a rendered feature and its record
-            # are the same thing to everything downstream.
-            rowid = ids[props["lane_uid"]]
-            # PHYSICAL and TERRAIN are PASSED THROUGH, and NULL where the
-            # feature does not carry them - which today is every published
-            # feature, because OSM attributes (step 1.3) and the DEM-derived
-            # climb and sustained gradient (step 1.4) are produced by other
-            # builds and joined in later. NULL is the schema's "unknown", and
-            # WAYS-SCHEMA.md is explicit that unknown is not 'no'.
-            #
-            # WRITTEN AS A PASS-THROUGH NOW RATHER THAN WHEN 1.3 LANDS, because
-            # a hard-coded NULL cannot be told apart from a reader that answers
-            # null to everything: the builder/reader contract test (0.8) had
-            # eight columns it could only ever compare null against null, and a
-            # check that cannot come back red is not a check.
-            barriers = props.get("barriers")
-            db.execute(
-                "INSERT INTO ways (rowid, way_uid, way_class, designation, "
-                "name, authority, county, legal_tier, source, source_date, "
-                "surface, smoothness, tracktype, width_m, min_width_m, "
-                "barriers, climb_m, sustained_pct, "
-                "motorbike_ok, fourxfour_ok, access_reason, access_evidence, "
-                "length_m, geometry) "
-                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                (rowid, props["lane_uid"], props.get("class"),
-                 props.get("designation"), props.get("name"),
-                 props.get("authority") or UNKNOWN_AUTHORITY,
-                 props.get("county"),
-                 props.get("legal_tier") or "statutory",
-                 props.get("source") or "unknown",
-                 props.get("source_date") or source_date,
-                 props.get("surface"), props.get("smoothness"),
-                 props.get("tracktype"), props.get("width_m"),
-                 props.get("min_width_m"),
-                 # The column is TEXT holding JSON. A list arrives from the
-                 # attribute build; a string arrives from a rebuild of a
-                 # container we already wrote, and re-encoding that would give
-                 # a JSON string of a JSON string.
-                 json.dumps(barriers, separators=(",", ":"))
-                 if isinstance(barriers, (list, tuple)) else barriers,
-                 props.get("climb_m"), props.get("sustained_pct"),
-                 1 if props.get("motorbike_ok") else 0,
-                 1 if props.get("fourxfour_ok") else 0,
-                 props.get("access_reason") or "",
-                 props.get("access_evidence") or "none",
-                 (props.get("lengthKm") or 0) * 1000.0,
-                 pack_geometry(lines)))
-            db.execute("INSERT INTO ways_bbox VALUES (?,?,?,?,?)",
-                       (rowid, min(lons), max(lons), min(lats), max(lats)))
+        _insert_ways(db, "ways", features, ids, source_date)
+        if ucrs:
+            _insert_ways(db, "ucr_ways", ucrs, ids, source_date)
 
     db.executescript(COMPAT_VIEWS)
 
-    bounds = _bounds_of(features)
+    bounds = _bounds_of(features + ucrs)
     tiers = collections.Counter(
         (f["properties"].get("legal_tier") or "statutory") for f in features)
     classes = collections.Counter(
@@ -873,6 +910,24 @@ def write_container(path, features, kind, zooms, source_date,
             rows.append(("joined_from",
                          json.dumps(joined, sort_keys=True,
                                     separators=(",", ":"))))
+    # THE UNSURFACED ROADS, COUNTED APART. `lane_count`, `way_count`,
+    # `class_counts`, `legal_tier_counts` and `authorities` above describe
+    # `ways` alone: the app recounts exactly those from `ways` after a
+    # changeset (container_update.dart _carryMeta), and an app before 119
+    # reads them as what its map draws. Written only where there are any.
+    if ucrs:
+        rows.append(("ucr_count", str(len(ucrs))))
+        if ucr_sources:
+            rows.append(("ucr_sources", json.dumps(
+                ucr_sources, sort_keys=True, separators=(",", ":"))))
+    # THE LOCAL RULES THAT APPLY HERE (local_rules.py): a national park's
+    # scheme, a voluntary request, a seasonal policy, with its citation. The
+    # app matches each to a lane by authority, area and class. Written only
+    # where at least one applies.
+    if local_rules:
+        rows.append(("local_rules", json.dumps(
+            {"format": 1, "rules": local_rules}, sort_keys=True,
+            separators=(",", ":"))))
     for key, value in rows:
         db.execute("INSERT INTO meta VALUES (?,?)", (key, value))
 
@@ -880,6 +935,67 @@ def write_container(path, features, kind, zooms, source_date,
     db.execute("VACUUM")
     db.close()
     return stats
+
+
+def _insert_ways(db, table, features, ids, source_date):
+    """Each feature as a row of `table` (`ways` or `ucr_ways`), with its box
+    in `<table>_bbox` under the same id the tile carries."""
+    for f in features:
+        props = f["properties"]
+        lines = lines_of(f)
+        lons = [p[0] for line in lines for p in line]
+        lats = [p[1] for line in lines for p in line]
+        if not lons:
+            continue
+        # The SAME id the tile carries, so a rendered feature and its record
+        # are the same thing to everything downstream.
+        rowid = ids[props["lane_uid"]]
+        # PHYSICAL and TERRAIN are PASSED THROUGH, and NULL where the
+        # feature does not carry them - which today is every published
+        # feature, because OSM attributes (step 1.3) and the DEM-derived
+        # climb and sustained gradient (step 1.4) are produced by other
+        # builds and joined in later. NULL is the schema's "unknown", and
+        # WAYS-SCHEMA.md is explicit that unknown is not 'no'.
+        #
+        # WRITTEN AS A PASS-THROUGH NOW RATHER THAN WHEN 1.3 LANDS, because
+        # a hard-coded NULL cannot be told apart from a reader that answers
+        # null to everything: the builder/reader contract test (0.8) had
+        # eight columns it could only ever compare null against null, and a
+        # check that cannot come back red is not a check.
+        barriers = props.get("barriers")
+        db.execute(
+            "INSERT INTO %s (rowid, way_uid, way_class, designation, "
+            "name, authority, county, legal_tier, source, source_date, "
+            "surface, smoothness, tracktype, width_m, min_width_m, "
+            "barriers, climb_m, sustained_pct, "
+            "motorbike_ok, fourxfour_ok, access_reason, access_evidence, "
+            "length_m, geometry) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)" % table,
+            (rowid, props["lane_uid"], props.get("class"),
+             props.get("designation"), props.get("name"),
+             props.get("authority") or UNKNOWN_AUTHORITY,
+             props.get("county"),
+             props.get("legal_tier") or "statutory",
+             props.get("source") or "unknown",
+             props.get("source_date") or source_date,
+             props.get("surface"), props.get("smoothness"),
+             props.get("tracktype"), props.get("width_m"),
+             props.get("min_width_m"),
+             # The column is TEXT holding JSON. A list arrives from the
+             # attribute build; a string arrives from a rebuild of a
+             # container we already wrote, and re-encoding that would give
+             # a JSON string of a JSON string.
+             json.dumps(barriers, separators=(",", ":"))
+             if isinstance(barriers, (list, tuple)) else barriers,
+             props.get("climb_m"), props.get("sustained_pct"),
+             1 if props.get("motorbike_ok") else 0,
+             1 if props.get("fourxfour_ok") else 0,
+             props.get("access_reason") or "",
+             props.get("access_evidence") or "none",
+             (props.get("lengthKm") or 0) * 1000.0,
+             pack_geometry(lines)))
+        db.execute("INSERT INTO %s_bbox VALUES (?,?,?,?,?)" % table,
+                   (rowid, min(lons), max(lons), min(lats), max(lats)))
 
 
 def _bounds_of(features):
@@ -1104,6 +1220,7 @@ def main():
             features.extend(unpack(path, key).get("features", []))
     else:
         features = load_features(args.packs, key)
+    ucrs, ucr_sources = ([], []) if args.orders else         load_ucrs(args.packs, key)
     kind = ("overview" if args.overview
             else "both" if args.both
             else "orders" if args.orders
@@ -1126,7 +1243,8 @@ def main():
             args.out, features, ORDER_ZOOMS, str(source_date))
     else:
         stats = write_container(args.out, features, kind, zooms,
-                                str(source_date))
+                                str(source_date), ucrs=ucrs,
+                                ucr_sources=ucr_sources)
 
     size = os.path.getsize(args.out)
     print("%s  %s  %d lanes" % (args.out, kind, len(features)))

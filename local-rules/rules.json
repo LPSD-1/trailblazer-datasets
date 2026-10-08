@@ -1,0 +1,108 @@
+{
+ "format": 1,
+ "about": "Local rules, per place, each citing the official page it came from. Format and rules: tools/local_rules.py. Seeded 8 October 2026 from pages read through tools/polite_http.py; the separate national-park survey adds more entries of the same shape.",
+ "rules": [
+  {
+   "id": "dn-unsurfaced-county-roads",
+   "kind": "guidance",
+   "effect": "info",
+   "title": "Devon's unsurfaced county roads",
+   "summary": "Devon County Council says the public may use its unsurfaced county roads on foot, horseback, bicycle and with wheeled vehicles of all kinds, but most have no surface suitable for ordinary motor traffic. Expect a rough track, often waymarked in black.",
+   "applies_to": {
+    "authorities": [
+     "Devon"
+    ],
+    "way_classes": [
+     "ucr"
+    ]
+   },
+   "source": {
+    "publisher": "Devon County Council",
+    "url": "https://www.devon.gov.uk/prow/what-are-public-rights-of-way/",
+    "checked": "2026-10-08",
+    "quote": "A minor road over which the public is entitled to travel on foot, horseback or pedal cycle and by wheeled vehicle of all kinds ... Most of these routes do not have a surface suitable for ordinary motor traffic"
+   }
+  },
+  {
+   "id": "l1-green-road-code",
+   "kind": "code_of_conduct",
+   "effect": "voluntary",
+   "title": "Lake District: Green Road Drivers Code of Conduct",
+   "summary": "The Lake District National Park asks everyone driving or riding its unsealed roads and byways to follow the Green Road Drivers Code of Conduct. Some routes also have traffic orders or seasonal closures, so check before you go.",
+   "applies_to": {
+    "authorities": [
+     "Lake District National Park"
+    ]
+   },
+   "source": {
+    "publisher": "Lake District National Park Authority",
+    "url": "https://lakedistrict.gov.uk/explore/plan-your-visit/rights-of-way-access/unsealed-roads/",
+    "checked": "2026-10-08",
+    "quote": "it's important to understand where vehicle access is permitted, be aware of seasonal closures and Traffic Regulation Orders (TROs), and follow the Green Road Drivers Code of Conduct."
+   }
+  },
+  {
+   "id": "l1-gatescarth-pass-permit",
+   "kind": "traffic_order",
+   "effect": "legal_order",
+   "title": "Gatescarth Pass: permit days only",
+   "summary": "A traffic order closes Gatescarth Pass (Sadgill to Mardale) to motor vehicles except on permit days, one day a month, with a permit from the National Park. 4x4s may only go north to south and not at all from December to March.",
+   "applies_to": {
+    "authorities": [
+     "Lake District National Park"
+    ],
+    "way_classes": [
+     "boat"
+    ],
+    "areas": [
+     [
+      -2.8235,
+      54.4632,
+      -2.8055,
+      54.4893
+     ]
+    ]
+   },
+   "source": {
+    "publisher": "Lake District National Park Authority",
+    "url": "https://lakedistrict.gov.uk/explore/plan-your-visit/rights-of-way-access/unsealed-roads/gatescarth-pass/",
+    "checked": "2026-10-08",
+    "quote": "The Byway Open to All Traffic (BOAT) running between Sadgill and Mardale (known as Gatescarth Pass) is closed to public mechanically propelled vehicular traffic other than on specific permit days."
+   }
+  },
+  {
+   "id": "wf-rusland-pool-u5566-seasonal",
+   "kind": "seasonal_policy",
+   "effect": "legal_order",
+   "title": "Rusland Pool fords (U5566): closed 1 October to 31 May",
+   "summary": "A seasonal traffic order stops motor vehicles crossing the fords of Ashes Beck and Force Beck on the U5566 at Rusland Pool from 1 October to 31 May each year, to protect fish and crayfish.",
+   "order_ref": "Rusland Pool Seasonal Traffic Regulation Order (U5566), in force since 1 October 2005",
+   "season": {
+    "from": "10-01",
+    "to": "05-31"
+   },
+   "applies_to": {
+    "authorities": [
+     "Westmorland and Furness"
+    ],
+    "way_classes": [
+     "ucr"
+    ],
+    "areas": [
+     [
+      -3.0247,
+      54.293,
+      -3.02025,
+      54.29587
+     ]
+    ]
+   },
+   "source": {
+    "publisher": "Lake District National Park Authority",
+    "url": "https://lakedistrict.gov.uk/explore/plan-your-visit/rights-of-way-access/unsealed-roads/rusland-pool/",
+    "checked": "2026-10-08",
+    "quote": "Between October and 31 May every year mechanically propelled vehicles and horse-drawn carriages will not be able to cross the fords of Ashes Beck and Force Beck (grid references SD 33588918 to SD 33508930)."
+   }
+  }
+ ]
+}
