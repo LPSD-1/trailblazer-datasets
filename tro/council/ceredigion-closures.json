@@ -1,0 +1,15 @@
+{
+ "items": [],
+ "records": 127,
+ "review": [],
+ "source": {
+  "authority": "Ceredigion",
+  "endpoint": "https://wms.ceredigion.gov.uk/geoserver/CeredigionMaps/wfs?service=WFS&version=2.0.0&request=GetFeature&typeNames=CeredigionMaps:road_closures_live_ctc&outputFormat=application/json&srsName=EPSG:27700&propertyName=layer_type,id,reference,status,category,times,road_closed_all_day,justification,date_start,date_end,geom",
+  "id": "ceredigion-closures",
+  "kind": "council-layer",
+  "licence": "Published by the council (no licence stated; WFS Fees and AccessConstraints: NONE)",
+  "name": "Ceredigion County Council - live road closures (WFS)",
+  "note": "Ceredigion is in Wales: Street Manager, England's street works register, never covers it, so this layer is the only machine-readable source of its road closures. Closures only; diversion routes are never read, and the field that can name a person or a firm is never requested."
+ },
+ "unmatched": []
+}
