@@ -886,6 +886,19 @@ def read_wiltshire(client):
         lambda text: strip_personal(clean_text(text or "")), log=print)
 
 
+def read_ceredigion(client):
+    """Ceredigion County Council's live road closures layer (WFS), one GET.
+
+    Closures only: a diversion route is never read, the `applicant` field is
+    never asked for, and what each category becomes is in
+    tools/ceredigion_closures.py.
+    """
+    import ceredigion_closures
+    return ceredigion_closures.read(
+        client, parse_date, geojson_lines,
+        lambda text: strip_personal(clean_text(text or "")))
+
+
 def read_blocked(_client):
     raise Refused("not read")
 
@@ -957,6 +970,24 @@ SOURCES = [
      "licence": "Published by the council (no licence stated)",
      "endpoint": "https://apps.wiltshire.gov.uk/RightsOfWay/Closure",
      "read": read_wiltshire},
+    {"id": "ceredigion-closures", "authority": "Ceredigion",
+     "name": "Ceredigion County Council - live road closures (WFS)",
+     "kind": "council-layer",
+     "licence": "Published by the council (no licence stated; WFS Fees "
+                "and AccessConstraints: NONE)",
+     "endpoint": "https://wms.ceredigion.gov.uk/geoserver/CeredigionMaps/"
+                 "wfs?service=WFS&version=2.0.0&request=GetFeature&"
+                 "typeNames=CeredigionMaps:road_closures_live_ctc&"
+                 "outputFormat=application/json&srsName=EPSG:27700&"
+                 "propertyName=layer_type,id,reference,status,category,"
+                 "times,road_closed_all_day,justification,date_start,"
+                 "date_end,geom",
+     "note": "Ceredigion is in Wales: Street Manager, England's street "
+             "works register, never covers it, so this layer is the only "
+             "machine-readable source of its road closures. Closures "
+             "only; diversion routes are never read, and the field that "
+             "can name a person or a firm is never requested.",
+     "read": read_ceredigion},
 ]
 
 

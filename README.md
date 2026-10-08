@@ -147,6 +147,7 @@ council's own `url` for it:
 | `bracknell-prow-tros` | Bracknell Forest Council - public rights of way TROs | Published by the council |
 | `hertfordshire-ptros` | Hertfordshire County Council - rights of way layer (permanent traffic regulation orders) | Open Government Licence v3.0 |
 | `wiltshire-closures` | Wiltshire Council - rights of way closures register (BOATs; collected directly from the council by the collector server) | Published by the council (no licence stated) |
+| `ceredigion-closures` | Ceredigion County Council - live road closures (WFS; closures on our byways only, never diversion routes; Wales, so never in Street Manager) | Published by the council (no licence stated; WFS Fees and AccessConstraints: NONE) |
 | `order-register` | Published lists of permanent and seasonal byway orders: East Sussex, Surrey, West and North Northamptonshire, Central Bedfordshire, Derbyshire, Lake District NPA (and others as reviewed) | Published by each council; transcribed and reviewed |
 
 The pack's own `attribution` and `sources` name every one of these, and each
