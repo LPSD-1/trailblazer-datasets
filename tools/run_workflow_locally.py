@@ -443,9 +443,16 @@ def checkout(keep, log):
             raise RuntimeError("git %s: %s" % (" ".join(args),
                                                r.stderr.strip()))
         return r.stdout
+    # Files as a Linux runner sees them. Git for Windows checks text out
+    # with CRLF, and bash then fails on `$'\r': command not found` in
+    # every tools/*.sh a step runs.
+    git("config", "core.autocrlf", "input")
     git("fetch", "--quiet", "origin", "main")
     git("checkout", "--quiet", "-B", "main", "origin/main")
     git("reset", "--quiet", "--hard", "origin/main")
+    if "w/crlf" in git("ls-files", "--eol", "--", "tools/*.sh"):
+        git("rm", "-rq", "--cached", ".")
+        git("reset", "--quiet", "--hard", "origin/main")
     excludes = []
     for p in keep + [".tb-local"]:
         excludes += ["-e", p.rstrip("/")]
