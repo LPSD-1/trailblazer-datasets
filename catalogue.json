@@ -1,6 +1,6 @@
 {
  "schema": 2,
- "generated": "2026-10-08T10:56:20Z",
+ "generated": "2026-10-08T11:45:04Z",
  "attribution": "Map and routing data (c) OpenStreetMap contributors, ODbL. United Kingdom rights of way contain public sector information licensed under the Open Government Licence v3.0, via rowmaps.com.",
  "baseUrl": "https://lpsd-1.github.io/trailblazer-datasets/",
  "overviews": [
@@ -10,15 +10,15 @@
    "format": "tbmap",
    "label": "Overview",
    "file": "containers/ways-overview.tbmap",
-   "sha256": "306d5ad121cc7cde27e06d008a561ae88085db67b8e56ca4172f0764e15be733",
+   "sha256": "8d8f4a034754139c81329a1b3c47d32b67ddc2a3511bcf4f6a5e315e9974e1f8",
    "bytes": 1126400,
-   "downloadBytes": 494986,
-   "signature": "T26b2AySZqikalq5Bkqg66YNdD7UntBjxucTMTRNB7YCtKycIQa5G+6OcDvLwDS+/aW3sexS6/eFYbylwqPICg==",
+   "downloadBytes": 494970,
+   "signature": "MwALwd1YTDk31O0Zc7g9eTCFia8n//WFGj6uE56SsoU99K349eHBgMOvDTk98F4WqCAgm8DPHLM54Kg9U7juCw==",
    "minZoom": 4,
    "featureCount": 8363,
-   "generated": "2026-10-07T10:27:45Z",
-   "waysCut": "2026-10-07T10:27:45Z",
-   "build": "2026-10-07T10:27:45Z",
+   "generated": "2026-10-08T11:41:51Z",
+   "waysCut": "2026-10-08T11:41:51Z",
+   "build": "2026-10-08T11:41:51Z",
    "changesets": [
     {
      "from": "2026-10-01T23:17:21Z",
@@ -35,6 +35,14 @@
      "sha256": "94540a46466317882e9c9ee14fcea0a8ac9cf41366507d48cb49a5b1e6e93f93",
      "bytes": 171520,
      "signature": "8/SFr0D93JfjTJcHD+6SnzCNBXbllBd5pC0N4UxTyYVCNos7TUvH7FWBFxf+3LqpQmf3boB4y+L5S2XAyTO3Dw=="
+    },
+    {
+     "from": "2026-10-07T10:27:45Z",
+     "to": "2026-10-08T11:41:51Z",
+     "file": "changes/gb-overview/20261007T102745Z-20261008T114151Z.tbchange",
+     "sha256": "e54b0caf6cfc4f5830bf0a386a9b625162bf444de9b2e2beb652bd19863baf6c",
+     "bytes": 152064,
+     "signature": "SlD9H1WcqRPhWVpDX3lmKMlRlWPiAd8GPG7qvGYcYDVE9x2BY0sSxIRyk8PMrGw2cc2R8K3DNz84FITBjD3FAA=="
     }
    ]
   }
@@ -2571,16 +2579,16 @@
          "format": "tbmap",
          "label": "Overview",
          "file": "containers/ways-overview.tbmap",
-         "sha256": "306d5ad121cc7cde27e06d008a561ae88085db67b8e56ca4172f0764e15be733",
+         "sha256": "8d8f4a034754139c81329a1b3c47d32b67ddc2a3511bcf4f6a5e315e9974e1f8",
          "bytes": 1126400,
-         "downloadBytes": 494986,
-         "signature": "T26b2AySZqikalq5Bkqg66YNdD7UntBjxucTMTRNB7YCtKycIQa5G+6OcDvLwDS+/aW3sexS6/eFYbylwqPICg==",
+         "downloadBytes": 494970,
+         "signature": "MwALwd1YTDk31O0Zc7g9eTCFia8n//WFGj6uE56SsoU99K349eHBgMOvDTk98F4WqCAgm8DPHLM54Kg9U7juCw==",
          "featureCount": 8363,
-         "generated": "2026-10-07T10:27:45Z",
-         "waysCut": "2026-10-07T10:27:45Z",
+         "generated": "2026-10-08T11:41:51Z",
+         "waysCut": "2026-10-08T11:41:51Z",
          "minZoom": 4,
          "legalBasis": "official",
-         "build": "2026-10-07T10:27:45Z",
+         "build": "2026-10-08T11:41:51Z",
          "changesets": [
           {
            "from": "2026-10-01T23:17:21Z",
@@ -2597,6 +2605,14 @@
            "sha256": "94540a46466317882e9c9ee14fcea0a8ac9cf41366507d48cb49a5b1e6e93f93",
            "bytes": 171520,
            "signature": "8/SFr0D93JfjTJcHD+6SnzCNBXbllBd5pC0N4UxTyYVCNos7TUvH7FWBFxf+3LqpQmf3boB4y+L5S2XAyTO3Dw=="
+          },
+          {
+           "from": "2026-10-07T10:27:45Z",
+           "to": "2026-10-08T11:41:51Z",
+           "file": "changes/gb-overview/20261007T102745Z-20261008T114151Z.tbchange",
+           "sha256": "e54b0caf6cfc4f5830bf0a386a9b625162bf444de9b2e2beb652bd19863baf6c",
+           "bytes": 152064,
+           "signature": "SlD9H1WcqRPhWVpDX3lmKMlRlWPiAd8GPG7qvGYcYDVE9x2BY0sSxIRyk8PMrGw2cc2R8K3DNz84FITBjD3FAA=="
           }
          ]
         }
@@ -2743,16 +2759,16 @@
          "format": "tbmap",
          "label": "Overview",
          "file": "containers/ways-overview.tbmap",
-         "sha256": "306d5ad121cc7cde27e06d008a561ae88085db67b8e56ca4172f0764e15be733",
+         "sha256": "8d8f4a034754139c81329a1b3c47d32b67ddc2a3511bcf4f6a5e315e9974e1f8",
          "bytes": 1126400,
-         "downloadBytes": 494986,
-         "signature": "T26b2AySZqikalq5Bkqg66YNdD7UntBjxucTMTRNB7YCtKycIQa5G+6OcDvLwDS+/aW3sexS6/eFYbylwqPICg==",
+         "downloadBytes": 494970,
+         "signature": "MwALwd1YTDk31O0Zc7g9eTCFia8n//WFGj6uE56SsoU99K349eHBgMOvDTk98F4WqCAgm8DPHLM54Kg9U7juCw==",
          "featureCount": 8363,
-         "generated": "2026-10-07T10:27:45Z",
-         "waysCut": "2026-10-07T10:27:45Z",
+         "generated": "2026-10-08T11:41:51Z",
+         "waysCut": "2026-10-08T11:41:51Z",
          "minZoom": 4,
          "legalBasis": "official",
-         "build": "2026-10-07T10:27:45Z",
+         "build": "2026-10-08T11:41:51Z",
          "changesets": [
           {
            "from": "2026-10-01T23:17:21Z",
@@ -2769,6 +2785,14 @@
            "sha256": "94540a46466317882e9c9ee14fcea0a8ac9cf41366507d48cb49a5b1e6e93f93",
            "bytes": 171520,
            "signature": "8/SFr0D93JfjTJcHD+6SnzCNBXbllBd5pC0N4UxTyYVCNos7TUvH7FWBFxf+3LqpQmf3boB4y+L5S2XAyTO3Dw=="
+          },
+          {
+           "from": "2026-10-07T10:27:45Z",
+           "to": "2026-10-08T11:41:51Z",
+           "file": "changes/gb-overview/20261007T102745Z-20261008T114151Z.tbchange",
+           "sha256": "e54b0caf6cfc4f5830bf0a386a9b625162bf444de9b2e2beb652bd19863baf6c",
+           "bytes": 152064,
+           "signature": "SlD9H1WcqRPhWVpDX3lmKMlRlWPiAd8GPG7qvGYcYDVE9x2BY0sSxIRyk8PMrGw2cc2R8K3DNz84FITBjD3FAA=="
           }
          ]
         }
@@ -2915,16 +2939,16 @@
          "format": "tbmap",
          "label": "Overview",
          "file": "containers/ways-overview.tbmap",
-         "sha256": "306d5ad121cc7cde27e06d008a561ae88085db67b8e56ca4172f0764e15be733",
+         "sha256": "8d8f4a034754139c81329a1b3c47d32b67ddc2a3511bcf4f6a5e315e9974e1f8",
          "bytes": 1126400,
-         "downloadBytes": 494986,
-         "signature": "T26b2AySZqikalq5Bkqg66YNdD7UntBjxucTMTRNB7YCtKycIQa5G+6OcDvLwDS+/aW3sexS6/eFYbylwqPICg==",
+         "downloadBytes": 494970,
+         "signature": "MwALwd1YTDk31O0Zc7g9eTCFia8n//WFGj6uE56SsoU99K349eHBgMOvDTk98F4WqCAgm8DPHLM54Kg9U7juCw==",
          "featureCount": 8363,
-         "generated": "2026-10-07T10:27:45Z",
-         "waysCut": "2026-10-07T10:27:45Z",
+         "generated": "2026-10-08T11:41:51Z",
+         "waysCut": "2026-10-08T11:41:51Z",
          "minZoom": 4,
          "legalBasis": "official",
-         "build": "2026-10-07T10:27:45Z",
+         "build": "2026-10-08T11:41:51Z",
          "changesets": [
           {
            "from": "2026-10-01T23:17:21Z",
@@ -2941,6 +2965,14 @@
            "sha256": "94540a46466317882e9c9ee14fcea0a8ac9cf41366507d48cb49a5b1e6e93f93",
            "bytes": 171520,
            "signature": "8/SFr0D93JfjTJcHD+6SnzCNBXbllBd5pC0N4UxTyYVCNos7TUvH7FWBFxf+3LqpQmf3boB4y+L5S2XAyTO3Dw=="
+          },
+          {
+           "from": "2026-10-07T10:27:45Z",
+           "to": "2026-10-08T11:41:51Z",
+           "file": "changes/gb-overview/20261007T102745Z-20261008T114151Z.tbchange",
+           "sha256": "e54b0caf6cfc4f5830bf0a386a9b625162bf444de9b2e2beb652bd19863baf6c",
+           "bytes": 152064,
+           "signature": "SlD9H1WcqRPhWVpDX3lmKMlRlWPiAd8GPG7qvGYcYDVE9x2BY0sSxIRyk8PMrGw2cc2R8K3DNz84FITBjD3FAA=="
           }
          ]
         }
@@ -3087,16 +3119,16 @@
          "format": "tbmap",
          "label": "Overview",
          "file": "containers/ways-overview.tbmap",
-         "sha256": "306d5ad121cc7cde27e06d008a561ae88085db67b8e56ca4172f0764e15be733",
+         "sha256": "8d8f4a034754139c81329a1b3c47d32b67ddc2a3511bcf4f6a5e315e9974e1f8",
          "bytes": 1126400,
-         "downloadBytes": 494986,
-         "signature": "T26b2AySZqikalq5Bkqg66YNdD7UntBjxucTMTRNB7YCtKycIQa5G+6OcDvLwDS+/aW3sexS6/eFYbylwqPICg==",
+         "downloadBytes": 494970,
+         "signature": "MwALwd1YTDk31O0Zc7g9eTCFia8n//WFGj6uE56SsoU99K349eHBgMOvDTk98F4WqCAgm8DPHLM54Kg9U7juCw==",
          "featureCount": 8363,
-         "generated": "2026-10-07T10:27:45Z",
-         "waysCut": "2026-10-07T10:27:45Z",
+         "generated": "2026-10-08T11:41:51Z",
+         "waysCut": "2026-10-08T11:41:51Z",
          "minZoom": 4,
          "legalBasis": "official",
-         "build": "2026-10-07T10:27:45Z",
+         "build": "2026-10-08T11:41:51Z",
          "changesets": [
           {
            "from": "2026-10-01T23:17:21Z",
@@ -3113,6 +3145,14 @@
            "sha256": "94540a46466317882e9c9ee14fcea0a8ac9cf41366507d48cb49a5b1e6e93f93",
            "bytes": 171520,
            "signature": "8/SFr0D93JfjTJcHD+6SnzCNBXbllBd5pC0N4UxTyYVCNos7TUvH7FWBFxf+3LqpQmf3boB4y+L5S2XAyTO3Dw=="
+          },
+          {
+           "from": "2026-10-07T10:27:45Z",
+           "to": "2026-10-08T11:41:51Z",
+           "file": "changes/gb-overview/20261007T102745Z-20261008T114151Z.tbchange",
+           "sha256": "e54b0caf6cfc4f5830bf0a386a9b625162bf444de9b2e2beb652bd19863baf6c",
+           "bytes": 152064,
+           "signature": "SlD9H1WcqRPhWVpDX3lmKMlRlWPiAd8GPG7qvGYcYDVE9x2BY0sSxIRyk8PMrGw2cc2R8K3DNz84FITBjD3FAA=="
           }
          ]
         }
@@ -3134,18 +3174,18 @@
          "format": "tbmap",
          "label": "Green lanes and byways - The North",
          "file": "containers/ways-north.tbmap",
-         "sha256": "35446acc9329e277a668c8711543aa1a6781c8ab4dd61ace9c75e9fc8aa56b36",
+         "sha256": "06961f6078a7c0cf604d651547dcf18d314d6ec8d1e97222e77efb6ed9b6f247",
          "bytes": 20242432,
-         "downloadBytes": 8133217,
-         "signature": "sU875L7ffyEi4f6siJFcGCsiY3sgh5cfCLF+STUBWu3znMD+5EKHItkkPf1isj5BxKcGWQhVBAwXXxkjxJJyDw==",
+         "downloadBytes": 8133228,
+         "signature": "YTrvhpV8zom6balh4lG2NsGdNBijRXlKQow3u4iF0iAmqnRk18LXKd7NZVXO9s7LQoG/hdc6R04e3NDL9GlzDg==",
          "legacyFile": "packages/ways-north.tbpack",
-         "plainBytes": 2100996,
+         "plainBytes": 2101276,
          "featureCount": 1457,
          "legalBasis": "official",
          "note": "Byways open to all traffic - the lanes you may legally ride. Bridleways and restricted byways are not on this map: it carries only the ways a motor vehicle may use. Where none is shown, this map has not looked - it does not mean there is none on the ground.",
-         "generated": "2026-10-07T10:27:45Z",
-         "waysCut": "2026-10-07T10:27:45Z",
-         "build": "2026-10-07T10:27:45Z",
+         "generated": "2026-10-08T11:41:51Z",
+         "waysCut": "2026-10-08T11:41:51Z",
+         "build": "2026-10-08T11:41:51Z",
          "changesets": [
           {
            "from": "2026-10-01T23:17:21Z",
@@ -3170,6 +3210,14 @@
            "sha256": "8d2064aff4efed2e907f78dbccd66b903098f46a4212c5e49b45b565b0285ca4",
            "bytes": 978944,
            "signature": "nGaf9flmQoM777Z4j1r0m2GVxLWNerF2lA4j6mu8P2cRfeVatFJQkpmVMAQlHx2ADuKRY6uhDMg54S2VGjVFBQ=="
+          },
+          {
+           "from": "2026-10-07T10:27:45Z",
+           "to": "2026-10-08T11:41:51Z",
+           "file": "changes/gb-north/20261007T102745Z-20261008T114151Z.tbchange",
+           "sha256": "1c4ade93db2c8de1742da313ea0db7cb5d391f0d2149d3025b317b3f846c7cc8",
+           "bytes": 970752,
+           "signature": "6AVCNSPks2Ih862XHIANAgjz5xUL0KQUeEy3W5P3yanRY64sfQ0W5j5stI9kjUccdVSUEkpECqqVc6a6PzfAAw=="
           }
          ]
         },
@@ -3259,16 +3307,16 @@
          "format": "tbmap",
          "label": "Overview",
          "file": "containers/ways-overview.tbmap",
-         "sha256": "306d5ad121cc7cde27e06d008a561ae88085db67b8e56ca4172f0764e15be733",
+         "sha256": "8d8f4a034754139c81329a1b3c47d32b67ddc2a3511bcf4f6a5e315e9974e1f8",
          "bytes": 1126400,
-         "downloadBytes": 494986,
-         "signature": "T26b2AySZqikalq5Bkqg66YNdD7UntBjxucTMTRNB7YCtKycIQa5G+6OcDvLwDS+/aW3sexS6/eFYbylwqPICg==",
+         "downloadBytes": 494970,
+         "signature": "MwALwd1YTDk31O0Zc7g9eTCFia8n//WFGj6uE56SsoU99K349eHBgMOvDTk98F4WqCAgm8DPHLM54Kg9U7juCw==",
          "featureCount": 8363,
-         "generated": "2026-10-07T10:27:45Z",
-         "waysCut": "2026-10-07T10:27:45Z",
+         "generated": "2026-10-08T11:41:51Z",
+         "waysCut": "2026-10-08T11:41:51Z",
          "minZoom": 4,
          "legalBasis": "official",
-         "build": "2026-10-07T10:27:45Z",
+         "build": "2026-10-08T11:41:51Z",
          "changesets": [
           {
            "from": "2026-10-01T23:17:21Z",
@@ -3285,6 +3333,14 @@
            "sha256": "94540a46466317882e9c9ee14fcea0a8ac9cf41366507d48cb49a5b1e6e93f93",
            "bytes": 171520,
            "signature": "8/SFr0D93JfjTJcHD+6SnzCNBXbllBd5pC0N4UxTyYVCNos7TUvH7FWBFxf+3LqpQmf3boB4y+L5S2XAyTO3Dw=="
+          },
+          {
+           "from": "2026-10-07T10:27:45Z",
+           "to": "2026-10-08T11:41:51Z",
+           "file": "changes/gb-overview/20261007T102745Z-20261008T114151Z.tbchange",
+           "sha256": "e54b0caf6cfc4f5830bf0a386a9b625162bf444de9b2e2beb652bd19863baf6c",
+           "bytes": 152064,
+           "signature": "SlD9H1WcqRPhWVpDX3lmKMlRlWPiAd8GPG7qvGYcYDVE9x2BY0sSxIRyk8PMrGw2cc2R8K3DNz84FITBjD3FAA=="
           }
          ]
         }
@@ -3431,16 +3487,16 @@
          "format": "tbmap",
          "label": "Overview",
          "file": "containers/ways-overview.tbmap",
-         "sha256": "306d5ad121cc7cde27e06d008a561ae88085db67b8e56ca4172f0764e15be733",
+         "sha256": "8d8f4a034754139c81329a1b3c47d32b67ddc2a3511bcf4f6a5e315e9974e1f8",
          "bytes": 1126400,
-         "downloadBytes": 494986,
-         "signature": "T26b2AySZqikalq5Bkqg66YNdD7UntBjxucTMTRNB7YCtKycIQa5G+6OcDvLwDS+/aW3sexS6/eFYbylwqPICg==",
+         "downloadBytes": 494970,
+         "signature": "MwALwd1YTDk31O0Zc7g9eTCFia8n//WFGj6uE56SsoU99K349eHBgMOvDTk98F4WqCAgm8DPHLM54Kg9U7juCw==",
          "featureCount": 8363,
-         "generated": "2026-10-07T10:27:45Z",
-         "waysCut": "2026-10-07T10:27:45Z",
+         "generated": "2026-10-08T11:41:51Z",
+         "waysCut": "2026-10-08T11:41:51Z",
          "minZoom": 4,
          "legalBasis": "official",
-         "build": "2026-10-07T10:27:45Z",
+         "build": "2026-10-08T11:41:51Z",
          "changesets": [
           {
            "from": "2026-10-01T23:17:21Z",
@@ -3457,6 +3513,14 @@
            "sha256": "94540a46466317882e9c9ee14fcea0a8ac9cf41366507d48cb49a5b1e6e93f93",
            "bytes": 171520,
            "signature": "8/SFr0D93JfjTJcHD+6SnzCNBXbllBd5pC0N4UxTyYVCNos7TUvH7FWBFxf+3LqpQmf3boB4y+L5S2XAyTO3Dw=="
+          },
+          {
+           "from": "2026-10-07T10:27:45Z",
+           "to": "2026-10-08T11:41:51Z",
+           "file": "changes/gb-overview/20261007T102745Z-20261008T114151Z.tbchange",
+           "sha256": "e54b0caf6cfc4f5830bf0a386a9b625162bf444de9b2e2beb652bd19863baf6c",
+           "bytes": 152064,
+           "signature": "SlD9H1WcqRPhWVpDX3lmKMlRlWPiAd8GPG7qvGYcYDVE9x2BY0sSxIRyk8PMrGw2cc2R8K3DNz84FITBjD3FAA=="
           }
          ]
         }

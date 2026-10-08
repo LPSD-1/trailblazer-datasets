@@ -1,7 +1,7 @@
 {
  "schema": 1,
  "schemaVersion": 1,
- "generated": "2026-10-07T13:13:36Z",
+ "generated": "2026-10-08T11:41:51Z",
  "attribution": "Contains public sector information licensed under the Open Government Licence v3.0. Source: local highway authority definitive maps, via rowmaps.com. Byways for Bracknell Forest, Cambridgeshire, Central Bedfordshire, Cheshire East, Cheshire West and Chester, Devon, East Sussex, Essex, Hertfordshire, Lancashire, Northumberland, Oxfordshire, West Berkshire, Wiltshire, Wokingham read from the councils' own live layers.",
  "licence": "OGL-3.0",
  "source": "Local highway authority definitive maps via rowmaps.com; byways for 15 authorities from the council's own live layer",
@@ -32,7 +32,7 @@
   "boat": 8363
  },
  "notCarried": {
-  "footpath": 435299
+  "footpath": 435297
  },
  "regions": [
   {
@@ -192,12 +192,12 @@
    "note": "Byways open to all traffic - the lanes you may legally ride. Bridleways and restricted byways are not on this map: it carries only the ways a motor vehicle may use. Where none is shown, this map has not looked - it does not mean there is none on the ground.",
    "contextScope": "none",
    "file": "packages/ways-north.tbpack",
-   "sha256": "26287b8e421ac4baed53e1467959c7916b052f27d74e5fbf78d1e3311c9ea0ea",
-   "bytes": 285288,
-   "plainBytes": 2100996,
+   "sha256": "6829feb777ad754aecb8ac4de8427f921ec1bc3f031ba8bee0a950d1c760a283",
+   "bytes": 285393,
+   "plainBytes": 2101276,
    "laneCount": 1457,
-   "lengthKm": 1137.05,
-   "generated": "2026-10-07T10:27:45Z"
+   "lengthKm": 1137.077,
+   "generated": "2026-10-08T11:41:51Z"
   }
  ]
 }
