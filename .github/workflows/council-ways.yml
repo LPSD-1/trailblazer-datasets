@@ -8,6 +8,13 @@ name: Council byway layers
 # build (build_packages.py) then takes from it which byways exist - keeping
 # every unchanged way's rowmaps record, so its id does not move.
 #
+# AND THE COUNCILS' UNSURFACED UNCLASSIFIED ROADS (tools/council_ucrs.py):
+# public roads that are green lanes, on no definitive map, read from the
+# council's own highway records into council-ucrs/<CODE>.json. Their own
+# files, status and keep-last-good floor; never the byway merge (rowmaps has
+# no UCRs to merge with). Devon first, by the owner's decision of 8 October
+# 2026.
+#
 # A layer that cannot be read, or reads as a collapse, leaves its last good
 # file exactly as it was; the build falls back to rowmaps for any council
 # file that disagrees with rowmaps too much to be the same network. Every
@@ -57,9 +64,21 @@ jobs:
         run: |
           python tools/test_polite_http.py
           python tools/test_council_ways.py
+          python tools/test_council_ucrs.py
 
       - name: Read the councils' byway layers
         run: python tools/council_ways.py fetch --report /tmp/council-ways-problems.txt
+
+      # After the byways, into the same problems report (it appends). One
+      # council being down is reported, not a failed run; exit 1 only when
+      # no UCR layer at all could be read, and then the byways above are
+      # still committed below.
+      - name: Read the councils' unsurfaced unclassified roads
+        run: |
+          python tools/council_ucrs.py fetch \
+              --report /tmp/council-ways-problems.txt \
+            || echo "council UCR layers: no layer could be read - the last good files stand" \
+                 >> /tmp/council-ways-problems.txt
 
       - name: Commit what changed
         run: |
@@ -67,7 +86,7 @@ jobs:
           git config user.email "data@trailblazer.invalid"
 
           commit_it() {
-            git add -A council-ways
+            git add -A council-ways council-ucrs
             if git diff --cached --quiet; then
               echo "nothing changed"
               return 1
@@ -79,11 +98,12 @@ jobs:
 
           commit_it || exit 0
 
-          # Only this job writes council-ways/: on a lost race, take the
-          # newest main and put ours back over it.
+          # Only this job writes council-ways/ and council-ucrs/: on a lost
+          # race, take the newest main and put ours back over it.
           mkdir -p dist
-          rm -rf dist/council-ways-built
+          rm -rf dist/council-ways-built dist/council-ucrs-built
           cp -r council-ways dist/council-ways-built
+          cp -r council-ucrs dist/council-ucrs-built
           for attempt in 1 2 3; do
             if git push; then
               exit 0
@@ -91,8 +111,9 @@ jobs:
             echo "push rejected; putting our files back on top of origin/main"
             git fetch origin main
             git reset --hard origin/main
-            rm -rf council-ways
+            rm -rf council-ways council-ucrs
             cp -r dist/council-ways-built council-ways
+            cp -r dist/council-ucrs-built council-ucrs
             commit_it || exit 0
             sleep $((attempt * 5))
           done
