@@ -393,9 +393,9 @@ class IndependentReviewNeverRunsThePullRequest(unittest.TestCase):
             " councils, national parks, or rowmaps.com copies of a council's"
             " definitive map credited to that council.",
             "Other open data may draw the map, never decide those.",
-            "Other layers (basemap, imagery, height, routing): open-licensed"
-            " data only, such as OpenStreetMap or Copernicus; never"
-            " commercial.",
+            "All data, any layer: never commercial.",
+            "Other layers may use open-licensed data such as OpenStreetMap"
+            " or government open data.",
             "England and Wales only for lanes and closures; foreign routing"
             " tiles are deliberate.",
         )

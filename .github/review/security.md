@@ -17,16 +17,17 @@ Flag only correctness, requirement gaps, security and owner-rule breaks. Nothing
 - .gitattributes: `-diff`, `binary` or a diff driver hiding content from review; `-text` removed from packs.
 - Secrets: anything that reads, prints, logs or sends .env, keys, keystores, tokens or android/key.properties.
 
-Owner rules; breaking one is a finding:
+Owner rules (a break is a finding):
+- All data, any layer: never commercial.
 - Lane data means which ways are lanes and their status, rules or closures, in any file or pack; it comes only from government, councils, national parks, or rowmaps.com copies of a council's definitive map credited to that council. Other open data may draw the map, never decide those. Never TRF, GLASS, LARA or HoTR.
-- Other layers (basemap, imagery, height, routing): open-licensed data only, such as OpenStreetMap or Copernicus; never commercial.
+- Other layers may use open-licensed data such as OpenStreetMap or government open data.
 - No server of ours except the one collector VM.
 - robots.txt is respected, except for the reviewed allowlist tools/robots_override.json. A block is never bypassed.
 - England and Wales only for lanes and closures; foreign routing tiles are deliberate. The app's TRO caveat always stays. No new floating map buttons. No route for riders to contribute data.
 - Email to councils is polite and formal, digital only, never mentions fees. Credit is stated, not offered.
 - Code before models; the cheapest model that passes; nothing re-read that has not changed.
 - Every change brings a test that FAILS without it.
-- Files are written with LF line endings.
+- Files use LF line endings.
 
 # Tests
 
