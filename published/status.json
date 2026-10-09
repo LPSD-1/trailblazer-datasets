@@ -1,6 +1,6 @@
 {
  "schema": 1,
- "generated": "2026-10-09T09:18:43Z",
+ "generated": "2026-10-09T10:42:23Z",
  "datasets": [
   {
    "id": "lanes",
@@ -37,10 +37,10 @@
    "name": "Unsurfaced roads from councils",
    "what": "Byways and unsurfaced roads read straight from councils' own maps",
    "schedule": "Daily",
-   "last_run": "2026-10-08T10:40:21Z",
+   "last_run": "2026-10-09T10:39:39Z",
    "result": "ok",
-   "last_ok": "2026-10-08T10:40:21Z",
-   "data_as_of": "2026-10-08"
+   "last_ok": "2026-10-09T10:39:39Z",
+   "data_as_of": "2026-10-09"
   },
   {
    "id": "street-works",
@@ -77,8 +77,8 @@
    "name": "Ground height",
    "what": "Hill shading and 3D ground, from Environment Agency height data",
    "schedule": "Daily",
-   "last_run": "2026-10-08T10:43:13Z",
-   "result": "ok",
+   "last_run": "2026-10-09T10:42:08Z",
+   "result": "running",
    "last_ok": "2026-10-08T10:43:13Z",
    "data_as_of": null
   },
@@ -87,8 +87,8 @@
    "name": "Satellite imagery",
    "what": "Satellite photos of the ground, from the 2024 Sentinel-2 cloudless mosaic",
    "schedule": "Twice a day",
-   "last_run": "2026-10-08T20:04:44Z",
-   "result": "ok",
+   "last_run": "2026-10-09T09:37:16Z",
+   "result": "running",
    "last_ok": "2026-10-08T20:04:44Z",
    "data_as_of": null
   },
@@ -333,7 +333,7 @@
     {
      "what": "Byways",
      "from": "Bracknell Forest Council",
-     "as_of": "2026-10-08"
+     "as_of": "2026-10-09"
     },
     {
      "what": "Traffic orders",
@@ -527,7 +527,7 @@
     {
      "what": "Byways",
      "from": "Cambridgeshire County Council",
-     "as_of": "2026-10-08"
+     "as_of": "2026-10-09"
     },
     {
      "what": "Traffic orders",
@@ -568,7 +568,7 @@
     {
      "what": "Byways",
      "from": "Central Bedfordshire Council",
-     "as_of": "2026-10-08"
+     "as_of": "2026-10-09"
     },
     {
      "what": "Traffic orders",
@@ -601,7 +601,7 @@
     {
      "what": "Byways",
      "from": "Cheshire East Council",
-     "as_of": "2026-10-08"
+     "as_of": "2026-10-09"
     },
     {
      "what": "Traffic orders",
@@ -628,7 +628,7 @@
     {
      "what": "Byways",
      "from": "Cheshire West and Chester Council",
-     "as_of": "2026-10-08"
+     "as_of": "2026-10-09"
     },
     {
      "what": "Traffic orders",
@@ -805,12 +805,12 @@
     {
      "what": "Byways",
      "from": "Devon County Council",
-     "as_of": "2026-10-08"
+     "as_of": "2026-10-09"
     },
     {
      "what": "Unsurfaced roads",
      "from": "Devon County Council",
-     "as_of": "2026-10-08"
+     "as_of": "2026-10-09"
     },
     {
      "what": "Closures",
@@ -961,7 +961,7 @@
     {
      "what": "Unsurfaced roads",
      "from": "East Riding of Yorkshire Council",
-     "as_of": "2026-10-08"
+     "as_of": "2026-10-09"
     },
     {
      "what": "Traffic orders",
@@ -988,7 +988,7 @@
     {
      "what": "Byways",
      "from": "East Sussex County Council",
-     "as_of": "2026-10-08"
+     "as_of": "2026-10-09"
     },
     {
      "what": "Traffic orders",
@@ -1040,7 +1040,7 @@
     {
      "what": "Byways",
      "from": "Essex County Council",
-     "as_of": "2026-10-08"
+     "as_of": "2026-10-09"
     },
     {
      "what": "Traffic orders",
@@ -1286,7 +1286,7 @@
     {
      "what": "Byways",
      "from": "Hertfordshire County Council",
-     "as_of": "2026-10-08"
+     "as_of": "2026-10-09"
     },
     {
      "what": "Traffic orders",
@@ -1568,7 +1568,7 @@
     {
      "what": "Byways",
      "from": "Lancashire County Council",
-     "as_of": "2026-10-08"
+     "as_of": "2026-10-09"
     },
     {
      "what": "Closures",
@@ -1692,7 +1692,7 @@
     {
      "what": "Unsurfaced roads",
      "from": "Lincolnshire County Council",
-     "as_of": "2026-10-08"
+     "as_of": "2026-10-09"
     },
     {
      "what": "Traffic orders",
@@ -1876,7 +1876,7 @@
     {
      "what": "Unsurfaced roads",
      "from": "Norfolk County Council",
-     "as_of": "2026-10-08"
+     "as_of": "2026-10-09"
     },
     {
      "what": "Traffic orders",
@@ -2014,7 +2014,7 @@
     {
      "what": "Unsurfaced roads",
      "from": "North Yorkshire Council",
-     "as_of": "2026-10-08"
+     "as_of": "2026-10-09"
     },
     {
      "what": "Traffic orders",
@@ -2041,12 +2041,12 @@
     {
      "what": "Byways",
      "from": "Northumberland County Council",
-     "as_of": "2026-10-08"
+     "as_of": "2026-10-09"
     },
     {
      "what": "Unsurfaced roads",
      "from": "Northumberland County Council",
-     "as_of": "2026-10-08"
+     "as_of": "2026-10-09"
     },
     {
      "what": "Closures",
@@ -2146,12 +2146,12 @@
     {
      "what": "Byways",
      "from": "Oxfordshire County Council",
-     "as_of": "2026-10-08"
+     "as_of": "2026-10-09"
     },
     {
      "what": "Unsurfaced roads",
      "from": "Oxfordshire County Council",
-     "as_of": "2026-10-08"
+     "as_of": "2026-10-09"
     },
     {
      "what": "Traffic orders",
@@ -2793,7 +2793,7 @@
     {
      "what": "Unsurfaced roads",
      "from": "Surrey County Council",
-     "as_of": "2026-10-08"
+     "as_of": "2026-10-09"
     },
     {
      "what": "Traffic orders",
@@ -3090,7 +3090,7 @@
     {
      "what": "Byways",
      "from": "West Berkshire Council",
-     "as_of": "2026-10-08"
+     "as_of": "2026-10-09"
     },
     {
      "what": "Traffic orders",
@@ -3233,7 +3233,7 @@
     {
      "what": "Byways",
      "from": "Wiltshire Council",
-     "as_of": "2026-10-08"
+     "as_of": "2026-10-09"
     },
     {
      "what": "Closures",
@@ -3314,7 +3314,7 @@
     {
      "what": "Byways",
      "from": "Wokingham Borough Council",
-     "as_of": "2026-10-08"
+     "as_of": "2026-10-09"
     }
    ],
    "honours": [
