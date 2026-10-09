@@ -356,19 +356,83 @@ UNREAD_ABOVE = [
      TOP + "jobs: {ship: {runs-on: x, steps: [%s]}}\n" % SOFT_FLOW),
     ("a top-level complex key", "(workflow)", 6,
      TOP + "? jobs\n: {ship: {runs-on: x, steps: [%s]}}\n" % SOFT_FLOW),
+    # A sequence at its key's indent is fine, but `jobs` must be a mapping.
+    ("jobs as a sequence", "(workflow)", 7,
+     TOP + "jobs:\n- ship:\n    runs-on: x\n    steps:\n    - %s\n"
+     % SOFT_FLOW),
 ]
 
 
 def unread_wrong():
-    """Each unread form: exit 1, a check 4 FAIL naming z.yml and its line."""
+    """Each unread form: exit 1, a check 4 FAIL naming z.yml, its line and
+    a cause in brackets."""
     wrong = []
     cases = [(l, "ship", n, UNREAD_HEAD + b) for l, n, b in UNREAD]
     for label, job, line, text in cases + UNREAD_ABOVE:
         rc, out = scope.hunt(extra_files={"z.yml": text})
         want = "FAIL  check 4: z.yml job `%s` line %d: step the alarm " \
-            "cannot read" % (job, line)
-        if rc != 1 or not any(l.startswith(want) for l in out.splitlines()):
+            "cannot read (" % (job, line)
+        hit = [l for l in out.splitlines() if l.startswith(want)]
+        if rc != 1 or not hit or "), so nobody" not in hit[0]:
             wrong.append("%s: exit %d, no %r\n%s" % (label, rc, want, out))
+    return wrong
+
+
+# Block sequences at their key's own indent, which GitHub accepts: read as
+# steps, held to check 4 as usual, and never called unreadable.
+SAME_FILE = "zz-same.yml"
+SAME = """name: same
+on:
+- workflow_dispatch
+jobs:
+  s1:
+    runs-on: ubuntu-latest
+    needs:
+    - build
+    steps:
+    - name: Push s1
+      run: git push
+    - name: Same soft
+      continue-on-error: true
+      run: git push
+    - if: failure()
+      run: gh issue create
+  s2:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Push s2
+      run: git push
+    - name: Same hard
+      run: echo hi
+    - if: failure()
+      run: gh issue create
+"""
+
+
+def same_indent_wrong():
+    rc, out = scope.hunt(extra_files={SAME_FILE: SAME})
+    fails = [l for l in out.splitlines() if l.startswith("FAIL")]
+    mine = [l for l in fails if SAME_FILE in l]
+    wrong = []
+    if not any(l.startswith("FAIL  check 4: %s `Same soft` " % SAME_FILE)
+               for l in mine):
+        wrong.append("same-indent soft step not flagged by check 4")
+    if any("cannot read" in l or "s2" in l or "Same hard" in l
+           or "check 1" in l for l in mine):
+        wrong.append("same-indent workflow flagged beyond `Same soft`")
+    if len(mine) != 1 or rc != 1:
+        wrong.append("same-indent: exit %d, %d FAILs, not 1 and 1"
+                     % (rc, len(mine)))
+    h = scope.load_hunt()
+    with tempfile.TemporaryDirectory() as d:
+        path = os.path.join(d, SAME_FILE)
+        with open(path, "w", encoding="utf-8", newline="\n") as f:
+            f.write(SAME)
+        names = [s["name"] for s in h.jobs_of(path).get("s2", [])]
+    if names[:2] != ["Push s2", "Same hard"] or len(names) != 3:
+        wrong.append("same-indent s2 read as %r" % names)
+    if wrong:
+        wrong.append(out)
     return wrong
 
 
@@ -376,6 +440,7 @@ def test_every_form_and_style_is_read():
     wrong, out = sweep_wrong()
     wrong += run_text_wrong()
     wrong += flow_wrong() + flow_fields_wrong() + unread_wrong()
+    wrong += same_indent_wrong()
     assert not wrong, "\n".join(wrong[:20])
 
 
@@ -384,6 +449,7 @@ def main():
         wrong, out = sweep_wrong()
         wrong += run_text_wrong()
         wrong += flow_wrong() + flow_fields_wrong() + unread_wrong()
+        wrong += same_indent_wrong()
     except scope.base.Premise as e:
         print("PREMISE  %s" % e)
         return 3

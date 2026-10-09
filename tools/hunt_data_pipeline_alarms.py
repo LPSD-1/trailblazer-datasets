@@ -160,7 +160,7 @@ def _take(lines, i, end, rest, col, step):
     if not kv:
         # Fail closed: a step line that is no `key: value` the reader knows
         # (`? key`, a bare `{...}`) may set anything.
-        step.setdefault("unread", i + 1)
+        _mark(step, i + 1, "a step line that is not `key: value`")
         return k
     key, raw = kv
     v = _scalar(raw)
@@ -214,7 +214,8 @@ def _flow(lines, i, end, rest, step):
             elif ch in "}]" and depth == 1:
                 for item in items + [cur]:
                     if item.strip() and not _key(item.strip()):
-                        step.setdefault("unread", i + 1)  # `"k":v`, `? k`
+                        _mark(step, i + 1, "a flow item that is not "
+                              "`key: value`")  # `"k":v`, `? k`
                     elif item.strip():
                         _take([item.strip()], 0, 1, item.strip(), -1, step)
                 return k
@@ -236,11 +237,19 @@ def _flow(lines, i, end, rest, step):
         k += 1
 
 
-def _unread(at):
-    """A stand-in step for line `at` (1-based) that the reader cannot read;
-    check 4 fails on it, so an unknown form can never hide a soft step."""
+def _unread(at, why):
+    """A stand-in step for line `at` (1-based) that the reader cannot read,
+    for the reason `why`; check 4 fails on it, so an unknown form can never
+    hide a soft step."""
     return {"name": "unreadable step at line %d" % at, "if": "", "run": "",
-            "indent": 0, "id": "", "soft": False, "uses": "", "unread": at}
+            "indent": 0, "id": "", "soft": False, "uses": "", "unread": at,
+            "why": why}
+
+
+def _mark(step, at, why):
+    """Mark `step` unreadable at line `at`, keeping the first reason."""
+    if not step.get("unread"):
+        step["unread"], step["why"] = at, why
 
 
 def _steps(lines, start, end):
@@ -252,7 +261,8 @@ def _steps(lines, start, end):
                 == "steps":
             if _scalar(_key(lines[i].strip())[1]):
                 # `steps: [...]`, or any value on the key's own line.
-                return [_unread(i + 1)]
+                return [_unread(i + 1, "a value on the `steps:` line "
+                                "itself (a flow sequence?)")]
             ki = _indent(lines[i])
             i += 1
             break
@@ -265,7 +275,10 @@ def _steps(lines, start, end):
         if not _content(line):
             i += 1
             continue
-        if ind <= ki:
+        # A block sequence may sit at its key's own indent: `steps:` then
+        # `- run: x` directly below it.
+        if ind < ki or ind == ki and not (bare == "-" or
+                                         bare.startswith("- ")):
             break
         if (bare == "-" or bare.startswith("- ")) and \
                 (item is None or ind == item):
@@ -285,7 +298,8 @@ def _steps(lines, start, end):
         if step is not None and ind == step.get("kcol", ind):
             i = _take(lines, i, end, bare, ind, step)
             continue
-        steps.append(_unread(i + 1))  # e.g. `steps:` with `[` below it
+        steps.append(_unread(i + 1, "a line in the steps block that is "
+                             "neither a step nor a key of one"))
         i += 1
     for n, s in enumerate(steps):
         s.pop("kcol", None)
@@ -308,37 +322,58 @@ def jobs_of(path):
     with open(path, encoding="utf-8", newline="") as f:
         lines, blocks = _jobs(f.read())
     jobs = {job: _steps(lines, s, e) for job, s, e in blocks}
-    for job, at in _unplaced(lines, blocks):
-        jobs.setdefault(job, []).append(_unread(at))
+    for job, at, why in _unplaced(lines, blocks):
+        jobs.setdefault(job, []).append(_unread(at, why))
     return jobs
 
 
+def _keys_wrong(lines, rows, bare_key):
+    """[(row, why)] for lines of `rows` (one mapping's lines at its own
+    indent) that are no `key: value`, or that write `bare_key` any way but
+    bare. A `- ` item there is fine below a key with no value of its own:
+    a block sequence may sit at its key's indent (`needs:` then `- a`).
+    Not below `jobs`, which must be a mapping."""
+    out, seq = [], False
+    for i in rows:
+        bare = lines[i].strip()
+        kv = _key(bare)
+        if seq and (bare == "-" or bare.startswith("- ")):
+            continue
+        seq = bool(kv) and not _scalar(kv[1]) and kv[0] != "jobs"
+        if not kv:
+            out.append((i, "a line that is not `key: value`"))
+        elif kv[0] == bare_key and not bare.startswith(bare_key + ":"):
+            out.append((i, "`%s` written other than as a bare `%s:`"
+                        % (bare_key, bare_key)))
+    return out
+
+
 def _unplaced(lines, blocks):
-    """[(job, 1-based line)] above the steps that the reader cannot place,
-    so check 4 fails closed on them: a top-level or job-level line that is
-    no `key: value`, `jobs` or `steps` written any way but bare (`"jobs":{`,
-    `'steps':`), a value on the `jobs:` line or a job's header line, and a
-    job line indented less than the job's keys. Top-level ones go under the
-    job name `(workflow)`."""
-    bad = []
-    for i, line in enumerate(lines):
-        kv = _key(line.strip()) if _content(line) else ("", "")
-        if _indent(line) == 0 and (not kv or kv[0] == "jobs" and (
-                _scalar(kv[1]) or not line.startswith("jobs:"))):
-            bad.append(("(workflow)", i + 1))
+    """[(job, 1-based line, why)] above the steps that the reader cannot
+    place, so check 4 fails closed on them: a top-level or job-level line
+    that is no `key: value`, `jobs` or `steps` written any way but bare
+    (`"jobs":{`, `'steps':`), a value on the `jobs:` line or a job's header
+    line, and a job line indented less than the job's keys. Top-level ones
+    go under the job name `(workflow)`."""
+    top = [i for i, l in enumerate(lines) if _content(l) and not _indent(l)]
+    bad = [("(workflow)", i + 1, why)
+           for i, why in _keys_wrong(lines, top, "jobs")]
+    for i in top:
+        kv = _key(lines[i].strip())
+        if kv and kv[0] == "jobs" and _scalar(kv[1]):
+            bad.append(("(workflow)", i + 1, "a value on the `jobs:` line "
+                        "itself"))
     for job, s, e in blocks:
         kv = _key(lines[s].strip())
         if not kv or _scalar(kv[1]):
-            bad.append((job, s + 1))
+            bad.append((job, s + 1, "a value on the job's header line"))
             continue
         body = [i for i in range(s + 1, e) if _content(lines[i])]
         col = _indent(lines[body[0]]) if body else 0
-        for i in body:
-            kv = _key(lines[i].strip())
-            if _indent(lines[i]) < col or _indent(lines[i]) == col and (
-                    not kv or kv[0] == "steps"
-                    and not lines[i].strip().startswith("steps:")):
-                bad.append((job, i + 1))
+        bad += [(job, i + 1, "indented less than the job's keys")
+                for i in body if _indent(lines[i]) < col]
+        bad += [(job, i + 1, why) for i, why in _keys_wrong(
+            lines, [i for i in body if _indent(lines[i]) == col], "steps")]
     return bad
 
 
@@ -488,9 +523,9 @@ def main():
                     print("%-20s %-11s line %d: step the alarm cannot read"
                           % (f, job, s["unread"]))
                     problems.append((4,
-                        "%s job `%s` line %d: step the alarm cannot read, so "
-                        "nobody can tell whether it may fail unheard; write "
-                        "it as `- key: value` lines" % (f, job, s["unread"])))
+                        "%s job `%s` line %d: step the alarm cannot read (%s),"
+                        " so nobody can tell whether it may fail unheard"
+                        % (f, job, s["unread"], s["why"])))
                     continue
                 if not s["soft"]:
                     continue
