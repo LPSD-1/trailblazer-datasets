@@ -148,6 +148,30 @@ FAILED_RUNNING = 20             # failed tiles in a row that stop the area
 FAILED_WINDOW = 200             # the last this many tiles ...
 FAILED_SHARE = 0.05             # ... of which more than this share stops it
 BLOCKED_EXIT = 3                # main()'s exit code when EOX refused us
+REFUSED_LAYER_EXIT = 4          # main()'s exit code for a layer off the list
+
+
+def _allowlist():
+    """imagery_withdrawn, which owns the one list of layers we may use."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        "imagery_withdrawn", os.path.join(os.path.dirname(
+            os.path.abspath(__file__)), "imagery_withdrawn.py"))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def layer_refused():
+    """Why LAYER and SOURCE may not be built from, or None if they may.
+
+    Both must name the allowed layer: SOURCE is what is fetched, LAYER keys
+    the staging cache and is recorded in every entry."""
+    iw = _allowlist()
+    why = iw.layer_refused(LAYER) or iw.source_refused(SOURCE, ATTRIBUTION)
+    if why is None and iw.layer_of_source(SOURCE) != LAYER:
+        why = "SOURCE %r is not on LAYER %r" % (SOURCE, LAYER)
+    return why
 
 
 def _is_refusal(code):
@@ -222,6 +246,14 @@ class Fetcher:
                  sleep=time.sleep, clock=time.monotonic,
                  rate=MAX_REQUESTS_PER_SECOND, source=SOURCE,
                  wall=time.time):
+        # Anything naming a WMTS layer, or on EOX's host, must be on the
+        # allowlist; sample_imagery.py makes its Fetcher directly.
+        iw = _allowlist()
+        if (iw.layer_of_source(source) is not None
+                or urlparse(source).netloc.split(":")[0].endswith("eox.at")):
+            why = iw.source_refused(source)
+            if why:
+                raise ValueError(why)
         self.sharpen = sharpen
         self.retries = retries
         self.opener = opener or urllib.request.build_opener(_NoRedirect)
@@ -723,6 +755,13 @@ def main():
                     help="keep this small; it is a free service")
     args = ap.parse_args()
 
+    # Before anything is fetched, staged or packaged.
+    why = layer_refused()
+    if why:
+        print("REFUSED: %s. Nothing fetched; nothing written." % why,
+              file=sys.stderr)
+        return REFUSED_LAYER_EXIT
+
     if args.package and not args.out:
         print("--package needs --out", file=sys.stderr)
         return 2
@@ -849,6 +888,9 @@ def main():
             "bounds": {"west": bbox[0], "south": bbox[1],
                        "east": bbox[2], "north": bbox[3]},
             "note": ATTRIBUTION,
+            # What the check before publishing and the deletion list read:
+            # only an allowed layer is ever published.
+            "layer": LAYER,
             "maxZoom": tier["zoom"],
             "detail": {
                 "id": tier["id"],

@@ -89,6 +89,16 @@ jobs:
       - name: Check the alarm wiring
         run: python tools/hunt_data_pipeline_satellite_alarm_lifecycle.py
 
+      # Before anything is fetched or uploaded. Every pack up to 9 Oct 2026
+      # came from EOX's 2024 layer, which is non-commercial, and was withdrawn
+      # that day. An area with no imagery is due first, so without this a
+      # SOURCE or LAYER moved off the allowlist (tools/imagery_withdrawn.py
+      # ALLOWED_LAYERS) would be fetched and re-published. Fails the run, and
+      # raises the alarm, rather than skipping in silence.
+      # tools/test_imagery_withdrawn.py holds the order of these steps.
+      - name: Is the imagery source one we may publish?
+        run: python tools/imagery_withdrawn.py --source-check
+
       # Which area, if any. The plan is derived from the catalogue's own
       # areas, so adding a lane region adds an imagery region with no second
       # list to keep in step.
@@ -316,6 +326,12 @@ jobs:
           path: staging
           key: sat-${{ steps.plan.outputs.id }}-${{ steps.plan.outputs.month }}-${{ github.run_id }}-${{ github.run_attempt }}
 
+      # tools/imagery_withdrawn.py runs twice in here: nothing is uploaded
+      # unless every new entry records an allowed layer and no withdrawn
+      # asset, and nothing is committed (on either path) whose index or
+      # rebuilt catalogue lists a withdrawn asset or a layer off the list.
+      # The comments live out here because the retry hunt hands this run
+      # body to `bash -c`, which on Windows drops anything past ~8 KB.
       - name: Publish
         id: publish
         if: steps.plan.outputs.work == 'true'
@@ -324,6 +340,8 @@ jobs:
         run: |
           # Every pack this run wrote: one per detail tier.
           PACKS=$(ls dist/satellite/*.pmtiles)
+
+          python tools/imagery_withdrawn.py --entry dist/satellite/entry.json
 
           # One long-lived release holds every imagery pack. They are hundreds
           # of megabytes and cannot live beside the index on GitHub Pages,
@@ -382,6 +400,7 @@ jobs:
           # forgets an index DELETES what another job published - silently, in
           # a build that otherwise succeeds. It has happened three times.
           python tools/verify_catalogue.py dist/catalogue.json
+          python tools/imagery_withdrawn.py --index satellite/index.json --catalogue dist/catalogue.json
           mv dist/catalogue.json catalogue.json
 
           git config user.name  'Trail Blazer data bot'
@@ -442,6 +461,7 @@ jobs:
               --index satellite/index.json
             bash tools/rebuild_catalogue.sh manifest.json dist/catalogue.json
             python tools/verify_catalogue.py dist/catalogue.json
+            python tools/imagery_withdrawn.py --index satellite/index.json --catalogue dist/catalogue.json
             mv dist/catalogue.json catalogue.json
 
             git add -A satellite/index.json catalogue.json

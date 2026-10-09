@@ -1,5 +1,6 @@
 {
-  "packs": [
+  "packs": [],
+  "withdrawn": [
     {
       "id": "gb-east-anglia-satellite-high",
       "kind": "basemap",
@@ -22,7 +23,10 @@
         "groundMetresPerPixel": 4.8
       },
       "area": "gb-east-anglia",
-      "generated": "2026-10-07T09:59:31Z"
+      "generated": "2026-10-07T09:59:31Z",
+      "layer": "s2cloudless-2024_3857",
+      "withdrawn": "2026-10-09",
+      "reason": "EOX license this layer CC BY-NC-SA 4.0 (non-commercial); the app is paid. Owner decision 9 Oct 2026: withdraw now."
     },
     {
       "id": "gb-east-anglia-satellite-standard",
@@ -46,7 +50,10 @@
         "groundMetresPerPixel": 9.6
       },
       "area": "gb-east-anglia",
-      "generated": "2026-10-07T09:59:31Z"
+      "generated": "2026-10-07T09:59:31Z",
+      "layer": "s2cloudless-2024_3857",
+      "withdrawn": "2026-10-09",
+      "reason": "EOX license this layer CC BY-NC-SA 4.0 (non-commercial); the app is paid. Owner decision 9 Oct 2026: withdraw now."
     },
     {
       "id": "gb-midlands-satellite-high",
@@ -70,7 +77,10 @@
         "groundMetresPerPixel": 4.8
       },
       "area": "gb-midlands",
-      "generated": "2026-10-07T12:40:59Z"
+      "generated": "2026-10-07T12:40:59Z",
+      "layer": "s2cloudless-2024_3857",
+      "withdrawn": "2026-10-09",
+      "reason": "EOX license this layer CC BY-NC-SA 4.0 (non-commercial); the app is paid. Owner decision 9 Oct 2026: withdraw now."
     },
     {
       "id": "gb-midlands-satellite-standard",
@@ -94,7 +104,10 @@
         "groundMetresPerPixel": 9.6
       },
       "area": "gb-midlands",
-      "generated": "2026-10-07T12:40:59Z"
+      "generated": "2026-10-07T12:40:59Z",
+      "layer": "s2cloudless-2024_3857",
+      "withdrawn": "2026-10-09",
+      "reason": "EOX license this layer CC BY-NC-SA 4.0 (non-commercial); the app is paid. Owner decision 9 Oct 2026: withdraw now."
     },
     {
       "id": "gb-north-satellite-high",
@@ -118,7 +131,10 @@
         "groundMetresPerPixel": 4.8
       },
       "area": "gb-north",
-      "generated": "2026-09-13T19:53:38Z"
+      "generated": "2026-09-13T19:53:38Z",
+      "layer": "s2cloudless-2024_3857",
+      "withdrawn": "2026-10-09",
+      "reason": "EOX license this layer CC BY-NC-SA 4.0 (non-commercial); the app is paid. Owner decision 9 Oct 2026: withdraw now."
     },
     {
       "id": "gb-north-satellite-standard",
@@ -142,7 +158,10 @@
         "groundMetresPerPixel": 9.6
       },
       "area": "gb-north",
-      "generated": "2026-09-13T19:53:38Z"
+      "generated": "2026-09-13T19:53:38Z",
+      "layer": "s2cloudless-2024_3857",
+      "withdrawn": "2026-10-09",
+      "reason": "EOX license this layer CC BY-NC-SA 4.0 (non-commercial); the app is paid. Owner decision 9 Oct 2026: withdraw now."
     },
     {
       "id": "gb-south-east-satellite-high",
@@ -166,7 +185,10 @@
         "groundMetresPerPixel": 4.8
       },
       "area": "gb-south-east",
-      "generated": "2026-10-08T10:28:31Z"
+      "generated": "2026-10-08T10:28:31Z",
+      "layer": "s2cloudless-2024_3857",
+      "withdrawn": "2026-10-09",
+      "reason": "EOX license this layer CC BY-NC-SA 4.0 (non-commercial); the app is paid. Owner decision 9 Oct 2026: withdraw now."
     },
     {
       "id": "gb-south-east-satellite-standard",
@@ -190,7 +212,10 @@
         "groundMetresPerPixel": 9.6
       },
       "area": "gb-south-east",
-      "generated": "2026-10-08T10:28:31Z"
+      "generated": "2026-10-08T10:28:31Z",
+      "layer": "s2cloudless-2024_3857",
+      "withdrawn": "2026-10-09",
+      "reason": "EOX license this layer CC BY-NC-SA 4.0 (non-commercial); the app is paid. Owner decision 9 Oct 2026: withdraw now."
     },
     {
       "id": "gb-south-west-satellite-high",
@@ -214,7 +239,10 @@
         "groundMetresPerPixel": 4.8
       },
       "area": "gb-south-west",
-      "generated": "2026-10-08T21:51:13Z"
+      "generated": "2026-10-08T21:51:13Z",
+      "layer": "s2cloudless-2024_3857",
+      "withdrawn": "2026-10-09",
+      "reason": "EOX license this layer CC BY-NC-SA 4.0 (non-commercial); the app is paid. Owner decision 9 Oct 2026: withdraw now."
     },
     {
       "id": "gb-south-west-satellite-standard",
@@ -238,7 +266,10 @@
         "groundMetresPerPixel": 9.6
       },
       "area": "gb-south-west",
-      "generated": "2026-10-08T21:51:13Z"
+      "generated": "2026-10-08T21:51:13Z",
+      "layer": "s2cloudless-2024_3857",
+      "withdrawn": "2026-10-09",
+      "reason": "EOX license this layer CC BY-NC-SA 4.0 (non-commercial); the app is paid. Owner decision 9 Oct 2026: withdraw now."
     },
     {
       "id": "gb-wales-satellite-high",
@@ -262,7 +293,10 @@
         "groundMetresPerPixel": 4.8
       },
       "area": "gb-wales",
-      "generated": "2026-09-14T20:24:12Z"
+      "generated": "2026-09-14T20:24:12Z",
+      "layer": "s2cloudless-2024_3857",
+      "withdrawn": "2026-10-09",
+      "reason": "EOX license this layer CC BY-NC-SA 4.0 (non-commercial); the app is paid. Owner decision 9 Oct 2026: withdraw now."
     },
     {
       "id": "gb-wales-satellite-standard",
@@ -286,7 +320,30 @@
         "groundMetresPerPixel": 9.6
       },
       "area": "gb-wales",
-      "generated": "2026-09-14T20:24:12Z"
+      "generated": "2026-09-14T20:24:12Z",
+      "layer": "s2cloudless-2024_3857",
+      "withdrawn": "2026-10-09",
+      "reason": "EOX license this layer CC BY-NC-SA 4.0 (non-commercial); the app is paid. Owner decision 9 Oct 2026: withdraw now."
+    },
+    {
+      "id": "gb-east-anglia-satellite",
+      "file": "https://github.com/LPSD-1/trailblazer-datasets/releases/download/satellite/gb-east-anglia-satellite.pmtiles",
+      "sha256": "58bc66847f6df7e264a6d71828d6252985ab514dd2e2be35c628c482f209c9c8",
+      "bytes": 53984644,
+      "area": "gb-east-anglia",
+      "layer": "s2cloudless-2024_3857",
+      "withdrawn": "2026-10-09",
+      "reason": "EOX license this layer CC BY-NC-SA 4.0 (non-commercial); the app is paid. Owner decision 9 Oct 2026: withdraw now."
+    },
+    {
+      "id": "gb-midlands-satellite",
+      "file": "https://github.com/LPSD-1/trailblazer-datasets/releases/download/satellite/gb-midlands-satellite.pmtiles",
+      "sha256": "deb8c911254a3916612064c65917eacf5255d5151c2a3fb0c1356bc3b72e19a7",
+      "bytes": 104132355,
+      "area": "gb-midlands",
+      "layer": "s2cloudless-2024_3857",
+      "withdrawn": "2026-10-09",
+      "reason": "EOX license this layer CC BY-NC-SA 4.0 (non-commercial); the app is paid. Owner decision 9 Oct 2026: withdraw now."
     }
   ]
 }

@@ -144,6 +144,7 @@ def main():
     check_root_limit()
     check_blocks(sp)
     check_workflow_wiring()
+    check_layer_allowlist()
 
     if failures:
         for f in failures:
@@ -342,6 +343,118 @@ def check_workflow_wiring():
     check(len(builds) == 1 and
           "--block-out satellite/blocks.json" in builds[0],
           "satellite.yml's build does not record a stop: %r" % builds)
+
+
+# --- only the CC BY layer may be built ----------------------------------------
+#
+# The 2024 mosaic (CC BY-NC-SA) was withdrawn on 9 Oct 2026. The allowlist is
+# in code (imagery_withdrawn.ALLOWED_LAYERS), so pointing LAYER or SOURCE at
+# any other layer stops the build before a single tile is asked for. The
+# other-year names are built from numbers so the licence hunt's own scan of
+# tools/ does not read this file as naming them as a source.
+
+def _eox(layer):
+    return ("https://tiles.maps.eox.at/wmts/1.0.0/" + layer
+            + "/default/g/{z}/{y}/{x}.jpg")
+
+
+NC_LAYERS = ["s2cloudless-%d_3857" % year for year in (2018, 2020, 2024)] + [
+    "s2cloudless", "s2cloudless_3857 ", "S2CLOUDLESS_3857", "s2cloudless_4326"]
+
+# Smallest thing stage() accepts as a tile.
+JPEG = b"\xff\xd8\xff\xe0" + b"tile"
+
+BOX = ["--bbox", "-1.0", "52.0", "-0.99", "52.01", "--id", "t", "--label", "T",
+       "--min-zoom", "13", "--max-zoom", "13"]
+
+
+class _Spy:
+    made = []
+
+    def __init__(self, *a, **k):
+        _Spy.made.append(k)
+        raise AssertionError("a Fetcher was made for a refused layer")
+
+
+def _build_refused(layer, source):
+    """Run main() with LAYER/SOURCE set; True if it refused before fetching."""
+    with tempfile.TemporaryDirectory() as tmp:
+        staging = os.path.join(tmp, "s")
+        bs.LAYER, bs.SOURCE, bs.Fetcher = layer, source, _Spy
+        sys.argv = ["build_satellite.py"] + BOX + ["--staging", staging]
+        err = io.StringIO()
+        with contextlib.redirect_stdout(io.StringIO()), \
+                contextlib.redirect_stderr(err):
+            try:
+                rc = bs.main()
+            except AssertionError as e:
+                rc = "fetched: %s" % e
+        check(rc == bs.REFUSED_LAYER_EXIT,
+              "build_satellite built from %r (rc %r)" % (source, rc))
+        check(not os.path.exists(staging),
+              "build_satellite staged tiles from %r" % source)
+        check("refus" in err.getvalue().lower(),
+              "build_satellite gave no reason for refusing %r: %r"
+              % (source, err.getvalue()))
+
+
+def check_layer_allowlist():
+    real = (bs.LAYER, bs.SOURCE, bs.Fetcher, sys.argv)
+    _Spy.made = []
+    try:
+        for layer in NC_LAYERS:
+            # The build: refused before the Fetcher exists, so nothing is
+            # fetched and nothing is staged.
+            _build_refused(layer, _eox(layer))
+            bs.LAYER, bs.SOURCE, bs.Fetcher = real[:3]
+            # The Fetcher itself, for anything that makes one directly
+            # (sample_imagery.py does).
+            try:
+                bs.Fetcher(sharpen=False, source=_eox(layer))
+                check(False, "Fetcher accepted %r" % layer)
+            except ValueError:
+                pass
+        # LAYER allowed but SOURCE on another layer, and the other way round:
+        # staging and the recorded layer are keyed by LAYER, the fetch by
+        # SOURCE, so both must name the allowed layer.
+        _build_refused(real[0], _eox(NC_LAYERS[-1]))
+        _build_refused(NC_LAYERS[0], real[1])
+    finally:
+        bs.LAYER, bs.SOURCE, bs.Fetcher, sys.argv = real
+    check(not _Spy.made, "a Fetcher was made for a refused layer: %r"
+          % _Spy.made)
+
+    # The allowed layer still builds, and every entry records its layer, which
+    # is what the check before publishing and the deletion list read.
+    try:
+        bs.Fetcher(sharpen=False, source=bs.SOURCE)
+    except ValueError as e:
+        check(False, "Fetcher refused the CC BY layer: %s" % e)
+    with tempfile.TemporaryDirectory() as tmp:
+        staging = os.path.join(tmp, "s")
+        bbox = (-1.0, 52.0, -0.99, 52.01)
+        for z, x, y in bs.tiles_in(bbox, 13, 13):
+            bs.stage(staging, z, x, y, JPEG)
+        entry_out = os.path.join(tmp, "entry.json")
+        sys.argv = (["build_satellite.py"] + BOX
+                    + ["--staging", staging, "--package",
+                       "--out", os.path.join(tmp, "t.pmtiles"),
+                       "--entry-out", entry_out])
+        try:
+            with contextlib.redirect_stdout(io.StringIO()), \
+                    contextlib.redirect_stderr(io.StringIO()):
+                rc = bs.main()
+        finally:
+            sys.argv = real[3]
+        check(rc == 0, "the CC BY layer did not package (rc %r)" % rc)
+        if rc == 0:
+            with open(entry_out, encoding="utf-8") as f:
+                entry = json.load(f)
+            entries = entry if isinstance(entry, list) else [entry]
+            check(entries and all(e.get("layer") == "s2cloudless_3857"
+                                  for e in entries),
+                  "the entry does not record its layer: %r"
+                  % [e.get("layer") for e in entries])
 
 
 if __name__ == "__main__":
