@@ -501,6 +501,12 @@ jobs:
           commit_it() {
             cp dist/catalogue.json catalogue.json
             git add -A tro/index.json catalogue.json
+            # Who publishes to D-TRO, for the public status page
+            # (tools/build_status.py). Written by the build beside the index.
+            # Never a reason to stop the orders: absent, they still go.
+            if [ -f tro/publishers.json ]; then
+              git add -A tro/publishers.json
+            fi
             if git diff --cached --quiet; then
               echo "nothing changed"
               return 1
@@ -537,7 +543,13 @@ jobs:
           # republished. So the built index is kept in dist/ across the reset
           # and put back before the catalogue is rebuilt from it.
           # tools/test_tro_push_race_keeps_its_index.py runs this step.
+          # tro/publishers.json is tracked and built here too, so it is kept
+          # across the reset the same way (tools/test_tro_publishers.py).
           cp tro/index.json dist/tro-index.built.json
+          rm -f dist/tro-publishers.built.json
+          if [ -f tro/publishers.json ]; then
+            cp tro/publishers.json dist/tro-publishers.built.json
+          fi
           for attempt in 1 2 3; do
             if git push; then
               exit 0
@@ -546,6 +558,9 @@ jobs:
             git fetch origin main
             git reset --hard origin/main
             cp dist/tro-index.built.json tro/index.json
+            if [ -f dist/tro-publishers.built.json ]; then
+              cp dist/tro-publishers.built.json tro/publishers.json
+            fi
             bash tools/rebuild_catalogue.sh manifest.json dist/catalogue.json
             python tools/verify_catalogue.py dist/catalogue.json
             commit_it || exit 0

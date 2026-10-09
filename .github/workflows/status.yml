@@ -1,0 +1,138 @@
+name: Data status
+
+# THE PUBLIC STATUS FILE, published/status.json (tools/build_status.py):
+# for every data workflow, when it last ran and whether it worked; for every
+# highway authority, how many of its byways and unsurfaced roads we hold,
+# where they came from, and the honours it has earned. The app's "Where our
+# data comes from" screen and the help site's data-status page read it, and
+# the catalogue names it as `status`.
+#
+# Hourly, and as soon as any data workflow finishes, so a rider is not told
+# "running" for an hour after a run ended. The run results come from the
+# GitHub API (read-only: `actions: read`); everything else is read from this
+# checkout. A quiet hour commits nothing: build_status.py rewrites the file
+# only when something other than its `generated` time moved.
+on:
+  schedule:
+    - cron: '47 * * * *'   # :47 past each hour, clear of every other job here
+  workflow_dispatch:
+  workflow_run:
+    # By each workflow's `name:`, which is what workflow_run matches - not
+    # its file name. The ten build_status.DATASETS shows, and no others.
+    workflows:
+      - Refresh lane data
+      - Traffic orders
+      - Council orders
+      - Council byway layers
+      - Street Manager closures
+      - Order register check
+      - Status changes
+      - Build ground height
+      - Build satellite imagery
+      - Mirror routing tiles
+    types: [completed]
+
+permissions:
+  contents: write   # the committed published/status.json
+  actions: read     # every data workflow's recent runs
+  # WITHOUT THIS THE ALARM CANNOT RING. Every job here that pushes raises an
+  # issue when it fails (tools/hunt_data_pipeline_alarms.py, check 1, which
+  # the lane refresh's suite runs - a publishing job without one stops lane
+  # data publishing), and declaring `permissions:` replaces the default set.
+  issues: write
+
+concurrency:
+  group: status
+  cancel-in-progress: false
+
+jobs:
+  status:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09  # v5
+
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1  # v6
+        with:
+          python-version: '3.12'
+
+      # Standard library only: nothing to install.
+      - name: Run the tests before trusting the build
+        run: python tools/test_build_status.py
+
+      - name: Build the status file
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python tools/build_status.py
+
+      # NO REBASE, the way every other job here commits a generated file: on a
+      # lost race, take the newest main and run the recipe again on top of it.
+      # The rebuild also reads whatever the winning commit changed. Only this
+      # job writes published/status.json, and its concurrency group means only
+      # one of it runs at a time.
+      - name: Commit it if anything but the time moved
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          git config user.name  "trailblazer-data"
+          git config user.email "data@trailblazer.invalid"
+
+          commit_it() {
+            git add -A published/status.json
+            if git diff --cached --quiet; then
+              echo "nothing changed but the time"
+              return 1
+            fi
+            git commit -m "Data status: $(date -u +%Y-%m-%dT%H:%MZ)" \
+              -m "Built by .github/workflows/status.yml"
+            return 0
+          }
+
+          commit_it || exit 0
+
+          for attempt in 1 2 3; do
+            if git push; then
+              exit 0
+            fi
+            echo "push rejected; rebuilding the status on top of origin/main"
+            git fetch origin main
+            git reset --hard origin/main
+            python tools/build_status.py
+            commit_it || exit 0
+            sleep $((attempt * 5))
+          done
+          echo "::error::could not push after three attempts"
+          exit 1
+
+      # ONE ISSUE, AND NO COMMENT AN HOUR. This runs hourly, so the "Failed
+      # again" comment the other jobs add would be twenty-four a day about one
+      # fault. The issue stays open until a run succeeds.
+      - name: Raise an issue if this failed
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          EXISTING=$(gh issue list --label data-status --state open \
+                       --json number --jq '.[0].number' 2>/dev/null || true)
+          if [ -n "$EXISTING" ]; then
+            echo "issue #$EXISTING is already open"
+          else
+            gh label create data-status --color D93F0B \
+              --description "Automated data status problems" 2>/dev/null || true
+            gh issue create --label data-status \
+              --title "Data status file failed" \
+              --body "$RUN_URL failed. published/status.json is unchanged - nothing was blanked - but the data status page and the app's \"Where our data comes from\" screen now show the last good picture, and it will age. The run log says whether a test, the build or the push failed."
+          fi
+
+      - name: Stand the alarm down if this worked
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          for n in $(gh issue list --label data-status --state open \
+                       --json number --jq '.[].number' 2>/dev/null || true); do
+            gh issue close "$n" --comment "Fixed: $RUN_URL succeeded." || true
+          done
