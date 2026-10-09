@@ -314,18 +314,19 @@ def test_the_satellite_job_checks_before_it_publishes():
               "||" not in m.group(0) and ";" not in m.group(0))
 
 
-# Workflows that publish catalogue.json but were outside this change's files
-# on 9 Oct 2026. Each is listed so the gap is visible; the test fails as soon
-# as one gains the check, so the list can only shrink.
-KNOWN_GAPS = {"height.yml", "mirror-routing.yml", "traffic-orders.yml"}
+# Workflows allowed to publish catalogue.json without verify_catalogue.py.
+# Empty since 9 Oct 2026; a name here must still be a gap, or the test fails.
+KNOWN_GAPS = set()
 
-CHECK = ("python tools/imagery_withdrawn.py --index satellite/index.json "
-         "--catalogue dist/catalogue.json")
+# verify_catalogue.py runs imagery_withdrawn.publish_problems, so it is the
+# one check every catalogue publisher must run on what it is about to publish.
+VERIFY = "python tools/verify_catalogue.py dist/catalogue.json"
 PUBLISH = re.compile(r"^\s*(?:mv|cp) dist/catalogue\.json catalogue\.json\b")
+SWALLOWED = ("|| true", "|| exit 0", "|| :")
 
 
 def unchecked_publishes(text):
-    """For each rebuild of the catalogue, whether the imagery check runs on
+    """For each rebuild of the catalogue, whether verify_catalogue.py runs on
     the rebuilt file before it replaces catalogue.json. Returns the line
     numbers of rebuilds that reach a publish unchecked, and the number of
     rebuilds seen."""
@@ -340,8 +341,7 @@ def unchecked_publishes(text):
         for _, later in code[i + 1:]:
             if "tools/rebuild_catalogue.sh" in later:
                 break
-            if (CHECK in later and "|| true" not in later
-                    and "|| exit 0" not in later):
+            if VERIFY in later and not any(s in later for s in SWALLOWED):
                 checked = True
             if PUBLISH.search(later):
                 if not checked:
@@ -350,14 +350,17 @@ def unchecked_publishes(text):
     return bad, seen
 
 
-def test_every_workflow_that_publishes_the_catalogue_checks_imagery():
+def _workflows():
     wf = os.path.join(ROOT, ".github", "workflows")
-    publishers = []
     for name in sorted(os.listdir(wf)):
-        if not name.endswith(".yml"):
-            continue
-        with open(os.path.join(wf, name), encoding="utf-8") as f:
-            text = f.read().replace("\r\n", "\n")
+        if name.endswith(".yml"):
+            with open(os.path.join(wf, name), encoding="utf-8") as f:
+                yield name, f.read().replace("\r\n", "\n")
+
+
+def test_every_workflow_that_publishes_the_catalogue_verifies_it():
+    publishers = []
+    for name, text in _workflows():
         if not any(PUBLISH.search(l) for l in text.split("\n")):
             continue
         publishers.append(name)
@@ -367,19 +370,12 @@ def test_every_workflow_that_publishes_the_catalogue_checks_imagery():
             check("%s is still a known gap (drop it from KNOWN_GAPS)" % name,
                   bad != [], "every rebuild is now checked")
             continue
-        check("%s checks imagery before every catalogue it publishes" % name,
-              bad == [], "unchecked rebuild at line(s) %s" % bad)
-        for m in re.finditer(r"- name: [^\n]*\n\s*run: " + re.escape(CHECK),
-                             text):
-            step = text[m.start():].split("\n      - name:")[0]
-            check("%s's imagery step cannot be skipped" % name,
-                  "continue-on-error" not in step and "|| true" not in step,
-                  step[:200])
-    for name in ("satellite.yml", "refresh-data.yml"):
+        check("%s runs verify_catalogue before every catalogue it publishes"
+              % name, bad == [], "unchecked rebuild at line(s) %s" % bad)
+    for name in ("satellite.yml", "refresh-data.yml", "height.yml",
+                 "mirror-routing.yml", "traffic-orders.yml"):
         check("%s is found as a catalogue publisher" % name,
               name in publishers, str(publishers))
-    check("every known gap still publishes the catalogue",
-          KNOWN_GAPS <= set(publishers), str(publishers))
 
 
 def test_the_publisher_hunt_can_fail():
@@ -389,16 +385,69 @@ def test_the_publisher_hunt_can_fail():
     check("an unchecked publish is caught",
           unchecked_publishes(rebuilt + publish) == ([1], 1))
     check("a checked publish passes",
-          unchecked_publishes(rebuilt + CHECK + "\n" + publish) == ([], 1))
+          unchecked_publishes(rebuilt + VERIFY + "\n" + publish) == ([], 1))
     check("a check made to pass is not a check",
-          unchecked_publishes(rebuilt + CHECK + " || true\n" + publish)
+          unchecked_publishes(rebuilt + VERIFY + " || true\n" + publish)
           == ([1], 1))
     check("a commented-out check is not a check",
-          unchecked_publishes(rebuilt + "# " + CHECK + "\n" + publish)
+          unchecked_publishes(rebuilt + "# " + VERIFY + "\n" + publish)
           == ([1], 1))
     check("a check of an earlier rebuild does not cover a later one",
-          unchecked_publishes(rebuilt + CHECK + "\n" + rebuilt + publish)
+          unchecked_publishes(rebuilt + VERIFY + "\n" + rebuilt + publish)
           == ([3], 2))
+
+
+def _poisoned(cat, how):
+    cat = json.loads(json.dumps(cat))
+    area = cat["continents"][0]["countries"][0]["areas"][0]
+    p = {"id": "gb-wales-satellite-high", "kind": "basemap",
+         "file": RELEASE + "gb-wales-satellite-high.pmtiles",
+         "sha256": "1" * 64, "bytes": 1, "note": CC_NOTE}
+    if how == "withdrawn":
+        p["sha256"] = WALES_HIGH_2024
+    else:
+        p["note"] = NC_NOTE
+    area["packs"].append(p)
+    return cat
+
+
+def test_verify_catalogue_refuses_withdrawn_imagery_in_every_path():
+    """Each workflow's own verify_catalogue.py command, as written, run on
+    the committed catalogue (exit 0) and on it plus one withdrawn or 2024
+    entry (exit non-zero, naming why)."""
+    import shlex
+    clean = load("catalogue.json")
+    commands = set()
+    for name, text in _workflows():
+        for line in text.split("\n"):
+            line = line.strip()
+            if line.startswith(VERIFY):
+                cmd = line.split("||")[0].strip()
+                commands.add((name, cmd))
+    check("verify_catalogue commands found in five workflows",
+          len({n for n, _ in commands}) >= 5, str(sorted(commands)))
+    with tempfile.TemporaryDirectory() as tmp:
+        for name, cmd in sorted(commands):
+            argv = shlex.split(cmd)[1:]
+            for label, cat in (("clean", clean),
+                               ("withdrawn", _poisoned(clean, "withdrawn")),
+                               ("2024 note", _poisoned(clean, "note"))):
+                path = os.path.join(tmp, "catalogue.json")
+                with open(path, "w", encoding="utf-8", newline="\n") as f:
+                    json.dump(cat, f)
+                run = subprocess.run(
+                    [sys.executable] + [path if a == "dist/catalogue.json"
+                                        else a for a in argv],
+                    cwd=ROOT, capture_output=True, text=True)
+                out = run.stdout + run.stderr
+                if label == "clean":
+                    check("%s: `%s` passes the committed catalogue"
+                          % (name, cmd), run.returncode == 0, out[-300:])
+                else:
+                    check("%s: `%s` refuses a catalogue with a %s entry"
+                          % (name, cmd, label),
+                          run.returncode != 0 and "gb-wales-satellite-high"
+                          in out, "%d %s" % (run.returncode, out[-300:]))
 
 
 def test_an_area_without_imagery_is_due():
