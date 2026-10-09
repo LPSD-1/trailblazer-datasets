@@ -127,8 +127,8 @@ test that imports a package missing from that job's pip line breaks publishing.
 **Guarded by.** `tools/test_every_job_installs_what_it_runs.py`.
 
 ### 12. Two pull requests that each pass can fail together
-**What happened.** 9 Oct 2026: PR #22 (status page, merged 05:27 UTC) and PR #23 (review gate,
-merged 06:17 UTC) each passed alone. Together they broke three alarm suites and
+**What happened.** 9 Oct 2026: PR #22 (status page, merged 08:44:24 UTC) and PR #23 (review gate,
+merged 08:45:04 UTC) each passed alone. Together they broke three alarm suites and
 `tools/test_review_gate.py` on `main`. Alarm check 4 flagged two `continue-on-error` steps in
 `independent-review.yml`, and the gate checklist in `docs/REVIEW-GATE-SETUP.md` never listed
 `status.yml`, the workflow PR #22 added. The fix is PR #26 (open as of writing).
@@ -176,37 +176,34 @@ normal path. The first local run of a cached job is slow (the D-TRO extract is 5
 ## Alarms and the review gate
 
 ### 17. A checker that cannot read its input must fail closed
-**What happened.** 9 Oct 2026: the alarm hunt's hand-rolled YAML reader read many valid workflow
-forms as having no jobs or no steps, which silently dropped checks 1, 2 and 4. Examples include
-flow-mapping steps, aliases, a BOM, `*.yaml` files and an empty parse taken as valid. Commit
-`d3037fe` on branch `fix/hunt-yaml-parser` replaces it with `yaml.safe_load`. A file that does
-not parse, or has no jobs, is now a PREMISE failure (exit 3).
-**Rule.** A guard that reads nothing must say so, never pass. Its scope is honest mistakes, not a
-hostile author.
+**What happened.** 9 Oct 2026: the alarm hunt's hand-rolled reader missed several valid YAML
+forms and dropped checks without saying so. It is not a defence against a hostile author; the
+review gate is. A fix that reads workflows with PyYAML is pending. With it, a file that does not
+parse, or has no jobs, will be a PREMISE failure (exit 3).
+**Rule.** A guard that reads nothing must say so, never pass. Its scope is honest mistakes.
 *Repo note:* an earlier note said workflow changes are GATE tier. `tools/review_tier.py` says
 otherwise: only `pr-capture.yml`, `independent-review.yml` and the gate's own files are GATE; every
 other `.github/**` file is SECURITY tier (two models must pass it).
-**Guarded by.** On `main`, `tools/hunt_data_pipeline_alarms.py`, through the three
-`tools/test_data_alarms_*` suites. The fail-closed reader and its parser-sweep tests are not on
-`main` yet.
+**Guarded by.** On `main`, `tools/hunt_data_pipeline_alarms.py`, through the four
+`tools/test_data_alarms_*` suites. The fail-closed reader is not on `main` yet.
 
 ### 18. A job that times out is cancelled, not failed
 **What happened.** 9 Oct 2026, found by review of `satellite.yml`: a job that reaches
 `timeout-minutes` is cancelled, so an `if: failure()` alarm never runs. The worst case is a
 timeout inside the upload: packs replaced, checksums old, and no issue raised.
-**Rule.** An alarm on a job that has `timeout-minutes` needs `if: failure() || cancelled()`.
-**Guarded by.** `satellite.yml` only, held by
-`tools/hunt_data_pipeline_satellite_alarm_lifecycle.py` (run by that workflow). The other
-workflows' alarms are still `if: failure()`. Nothing yet covers them.
+**Rule.** Every publishing workflow's alarm runs on `if: failure() || cancelled()`. Bringing
+every workflow to that rule is in progress.
+**Guarded by.** `tools/hunt_data_pipeline_satellite_alarm_lifecycle.py` for the satellite
+workflow; the rest is in progress.
 
 ### 19. Pre-flight the review gate before every push
 **What happened.** Each pull request or branch may fail review twice in 7 days, and review pauses
 for the whole repository after 4 failures in 24 hours. Errors count as failures. On 9 Oct 2026, a
 malformed model token came back within 2 seconds as `"subtype": "success", "is_error": true`.
-**Rule.** Before pushing, run the deterministic check (`personal_data` in
-`tools/review_data_check.py`) on the added text, and run the tier's model review locally with its
-prompt from `.github/review/`. Push only on a pass. Treat `is_error: true` as a failure whatever
-the subtype says.
+**Rule.** Before pushing, run the deterministic checks (`personal_data` in
+`tools/review_data_check.py` on the added text). If the review flags something, fix the cause;
+never reword to hide it, and never re-run unchanged content hoping for a different verdict.
+Treat `is_error: true` as a failure whatever the subtype says.
 **Guarded by.** `tools/review_ledger.py` enforces the limits; `tools/review_verdict.py` refuses
 `is_error` (case in `tools/test_review_gate.py`). Nothing runs the pre-flight for you.
 
@@ -245,10 +242,10 @@ they are silent, publish it with credit.
 **What happened.** October 2026: some councils refuse GitHub's runners, and some sit behind
 Cloudflare's bot challenge, which refuses every data centre. A collector server run by the owner
 now reads the councils that accept it (`home-collected/collector.json`, see `HOME-COLLECTOR.md`).
-**Rule.** A 403, a bot challenge or Cloudflare means stop: no proxies, no other addresses, no
-borrowed User-Agent, no headless browser. A council moves to the collector server only after a
-test fetch from that server succeeds. A council that refuses it too is not read from anywhere,
-and `manual/` is the backstop. robots.txt is obeyed except for the reviewed paths in
+**Rule.** When a council refuses GitHub's runners, the collector server may fetch it, and only
+after a test fetch from that server succeeds. If the collector is refused too, stop: the council
+is not read from anywhere, and `manual/` is the backstop. Blocks are never worked around: no
+proxies, no spoofed or borrowed User-Agent, no headless browser. robots.txt is obeyed except for the reviewed paths in
 `tools/robots_override.json`.
 **Guarded by.** `tools/polite_http.py` (`BLOCKED_HOSTS`, `FORM_POSTS`, robots handling) with
 `tools/test_polite_http.py`; the allowlist is SECURITY tier.
@@ -275,9 +272,12 @@ against a road network during the build, which this pipeline does not have.
 ### 26. A seasonal order is never published without its dates
 **What happened.** 12 Sep 2026: "seasonal" meant two opposite things, a request and a dated
 closure, so a careful source that published its dates came off worse than one that did not.
-*Repo note:* an earlier note said "`seasonal` is a request and draws as rideable". In the
-published TRO pack, `seasonal` is an order **form** (`ORDER_FORMS` in `tools/build_tro.py`), and
-the way is shut inside its dates and open outside them. A request is otype `voluntary` (see 27).
+*Repo note:* an earlier note said "`seasonal` is a request and draws as rideable". That is a
+different field. A lane's usability `seasonal` is a council request, drawn green. A TRO's
+`oform: seasonal` labels the form of an order (`ORDER_FORMS` in `tools/build_tro.py`), and it
+also covers temporary orders (TTROs). `way_access` in `tools/build_tro.py` never shuts a seasonal
+or experimental way during the build; the dates travel with the order, and the app shuts the way
+while the order is in force. A request in the closures pack is otype `voluntary` (see 27).
 **Rule.** Write a seasonal order with the dates of its current or next season. If a source gives
 no dates, list it for review and do not publish it, because an undated seasonal order would be
 drawn shut all year.
