@@ -381,6 +381,29 @@ class IndependentReviewNeverRunsThePullRequest(unittest.TestCase):
                 "VERDICT: PASS\nVERDICT: FAIL"), tier)
             self.assertIn("UNTRUSTED PR CONTENT", text, tier)
 
+    def test_every_tier_prompt_carries_the_owner_rules(self):
+        # Owner rulings 24 Sep, 8 Oct and 9 Oct 2026. Lane data is defined
+        # by what it decides, so an OSM designation in a "basemap" pack is
+        # still lane data. The other-layer list is identical in every tier.
+        rules = (
+            "TRF", "GLASS", "LARA", "HoTR", "commercial", "TRO caveat",
+            "floating", "contribute",
+            "Lane data means which ways are lanes and their status, rules or"
+            " closures, in any file or pack; it comes only from government,"
+            " councils, national parks, or rowmaps.com copies of a council's"
+            " definitive map credited to that council.",
+            "Other open data may draw the map, never decide those.",
+            "Other layers (basemap, imagery, height, routing): open-licensed"
+            " data only, such as OpenStreetMap or Copernicus; never"
+            " commercial.",
+            "England and Wales only for lanes and closures; foreign routing"
+            " tiles are deliberate.",
+        )
+        for tier in ("code", "security", "data"):
+            text = " ".join(read(os.path.join(REVIEW, tier + ".md")).split())
+            for rule in rules:
+                self.assertIn(rule, text, "%s: %s" % (tier, rule))
+
 
 class SetupDocument(unittest.TestCase):
     """8. The owner's checklist names every workflow that pushes to main."""
