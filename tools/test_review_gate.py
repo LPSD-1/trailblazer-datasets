@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The independent review gate: its two workflows and its three tools.
+"""The independent review gate: its two workflows and its four tools.
 
     python tools/test_review_gate.py
 
@@ -11,8 +11,11 @@ read here as text (no YAML library: the CI jobs install none) and held to it.
 
 The tools are tested on the cases that decide whether the gate can be
 fooled: a .github change routed to the cheap reviewer, a reply with no
-verdict counted as a pass, contact details slipping into public data.
+verdict counted as a pass, contact details slipping into public data, a
+change that failed once passing on a second try.
 """
+import glob
+import json
 import os
 import re
 import sys
@@ -25,6 +28,7 @@ REVIEW = os.path.join(ROOT, ".github", "review")
 sys.path.insert(0, HERE)
 
 import review_data_check  # noqa: E402
+import review_ledger  # noqa: E402
 import review_tier  # noqa: E402
 import review_verdict  # noqa: E402
 
@@ -110,77 +114,184 @@ class PrCaptureHoldsNothing(unittest.TestCase):
         self.assertIn("name: review-input", self.text)
 
 
+def step_named(steps, name):
+    found = [s for s in steps if s.startswith("name: %s\n" % name)]
+    if len(found) != 1:
+        raise AssertionError("expected one step named %r, found %d"
+                             % (name, len(found)))
+    return found[0]
+
+
 class IndependentReviewNeverRunsThePullRequest(unittest.TestCase):
 
     def setUp(self):
         self.text = read(REVIEWER)
+        self.code = code_of(self.text)
         self.steps = steps_of(self.text)
+        self.inputs = step_named(self.steps,
+                                 "Check the capture against GitHub and "
+                                 "choose the tier")
+        self.post = step_named(self.steps, "Post the status and the comment")
 
     def test_the_steps_are_found(self):
-        self.assertGreater(len(self.steps), 5)
+        self.assertGreater(len(self.steps), 8)
 
     def test_triggered_only_by_workflow_run(self):
         on = top_level_block(self.text, "on")
         self.assertEqual(keys_of(on), ["workflow_run"])
-        self.assertFalse("pull_request_target" in code_of(self.text))
+        self.assertFalse("pull_request_target" in self.code)
 
     def test_never_checks_out_the_pull_request(self):
         checkouts = [s for s in self.steps if "actions/checkout@" in s]
         self.assertEqual(len(checkouts), 1)
         self.assertRegex(checkouts[0], r"(?m)^\s+ref: main\s*$")
         self.assertIn("persist-credentials: false", checkouts[0])
-        code = code_of(self.text)
         for bad in (r"\bgit (checkout|switch|worktree|reset|restore)\b",
                     r"ref:\s*\$\{\{[^}]*(head|pull_request|workflow_run)",
                     r"refs/pull/[^\s\"]*/merge"):
-            self.assertNotRegex(code, bad)
+            self.assertNotRegex(self.code, bad)
 
     def test_posts_the_independent_review_context(self):
-        # The final verdict is posted by the last step, which runs unless the
-        # run was cancelled, and is the one step with GitHub's token.
-        post = [s for s in self.steps
-                if s.startswith("name: Post the status and the comment\n")]
-        self.assertEqual(len(post), 1)
-        self.assertIn("if: ${{ !cancelled() }}", post[0])
-        self.assertIn("GH_TOKEN: ${{ github.token }}", post[0])
-        self.assertRegex(post[0], r'statuses/\$HEAD_SHA" -f state="\$state"')
-        self.assertRegex(post[0], r"-f context=independent-review\s")
-        self.assertIs(self.steps[-1], post[0])
+        self.assertIn("if: ${{ !cancelled() && steps.app.outputs.token != '' }}",
+                      self.post)
+        self.assertRegex(self.post,
+                         r'statuses/\$HEAD_SHA" -f state="\$state"')
+        self.assertRegex(self.post, r"-f context=independent-review\s")
+        self.assertIs(self.steps[-1], self.post)
         # The head sha comes from GitHub's event, never from the capture.
         self.assertRegex(
             self.text,
             r"HEAD_SHA: \$\{\{ github\.event\.workflow_run\.head_sha \}\}")
 
-    def test_an_unconfigured_reviewer_is_an_error_not_a_pass(self):
-        self.assertIn('state=error; desc="reviewer not configured"', self.text)
-        self.assertEqual(len(re.findall(r"state=success", self.text)), 1)
-        self.assertIn('elif [ "$RESULT" = "PASS" ]; then\n'
-                      '            state=success', self.text)
+    # 1. Only the review app may say pass.
+    def test_the_workflow_token_cannot_write_statuses_or_comments(self):
+        block = top_level_block(self.text, "permissions")
+        lines = sorted(ln.split("#")[0].strip() for ln in block.split("\n")
+                       if ln.split("#")[0].strip())
+        self.assertEqual(lines, ["actions: read", "contents: read"])
+        self.assertEqual(len(re.findall(r"(?m)^\s*permissions:", self.text)),
+                         1)
 
-    def test_the_cli_never_sees_github_token(self):
-        review = [s for s in self.steps if s.startswith("name: Review\n")]
-        self.assertEqual(len(review), 1)
-        step = review[0]
-        self.assertNotIn("GH_TOKEN", step)
-        self.assertNotIn("github.token", step)
-        self.assertNotIn("GITHUB_TOKEN", step)
+    def test_every_status_and_comment_goes_through_the_app_token(self):
+        self.assertRegex(self.text, r"(?m)^    environment: review\s*$")
+        mint = step_named(self.steps, "Mint the review app's token")
+        self.assertRegex(
+            mint, r"uses: actions/create-github-app-token@[0-9a-f]{40}\b")
+        self.assertIn("client-id: ${{ secrets.REVIEW_APP_ID }}", mint)
+        self.assertIn("private-key: ${{ secrets.REVIEW_APP_KEY }}", mint)
+        talkers = [s for s in self.steps if "gh api" in code_of(s)]
+        self.assertGreaterEqual(len(talkers), 4)
+        for step in talkers:
+            self.assertRegex(
+                step, r"GH_TOKEN: \$\{\{ steps\.(app|ledger-app)\.outputs\."
+                      r"token \}\}", step.split("\n")[0])
+        self.assertNotRegex(self.code, r"GH_TOKEN: \$\{\{ github\.token")
+        self.assertIn('${APP_SLUG}[bot]', self.post)
+
+    # 2. The OAuth token is an environment secret; missing it is an error.
+    def test_an_unconfigured_reviewer_is_an_error_not_a_pass(self):
+        configured = step_named(self.steps, "Is the gate configured?")
+        self.assertIn("HAS_OAUTH: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN != '' }}",
+                      configured)
+        self.assertIn('elif [ "$OAUTH" != "true" ]; then\n'
+                      '            state=error; desc="reviewer not configured"',
+                      self.post)
+        self.assertEqual(len(re.findall(r"state=success", self.text)), 1)
+
+    def test_the_cli_never_sees_a_github_token(self):
+        step = step_named(self.steps, "Review")
+        for token in ("GH_TOKEN", "github.token", "GITHUB_TOKEN",
+                      "outputs.token", "REVIEW_APP"):
+            self.assertNotIn(token, step)
         self.assertIn("env -i ", step)
-        # The OAuth token reaches this step and no other.
         holders = [s for s in self.steps
                    if "secrets.CLAUDE_CODE_OAUTH_TOKEN }}" in s]
         self.assertEqual(holders, [step])
+
+    # 3. The gate's own files are the owner's.
+    def test_a_change_to_the_gate_fails_without_a_model(self):
+        self.assertIn('[ "$gate" != "gate" ] || fail "owner must review the '
+                      'review gate"', self.inputs)
+
+    # 4. No re-runs, and a change that failed once never passes.
+    def test_reruns_are_refused(self):
+        self.assertIn("RUN_ATTEMPT: ${{ github.run_attempt }}", self.text)
+        self.assertIn(
+            "CAPTURE_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}",
+            self.text)
+        self.assertIn('if [ "$RUN_ATTEMPT" != "1" ] || '
+                      '[ "$CAPTURE_ATTEMPT" != "1" ]; then\n'
+                      '            fail "Re-runs are refused', self.inputs)
+
+    def test_a_failed_patch_id_is_checked_before_review_and_before_success(self):
+        self.assertIn('3) fail "This exact change already failed review',
+                      self.inputs)
+        self.assertRegex(
+            self.post,
+            r'elif \[ "\$RESULT" = "PASS" \]; then\n(?:.*\n){0,6}.*'
+            r'review_ledger\.py check "\$rt/ledger-final\.json" "\$PID"; then'
+            r'\n\s+state=success')
+        record = step_named(self.steps, "Record the failure in the ledger")
+        self.assertIn("review_ledger.py record", record)
+        self.assertIn("branch: \"review-ledger\"", record)
+        self.assertNotIn("actions/cache", self.code)
+
+    # 5. What a text diff cannot show.
+    def test_binary_links_submodules_and_modes_fail_every_tier(self):
+        self.assertIn("review_data_check.py --structure --diff", self.inputs)
+        self.assertIn('|| fail "owner must review: binary content',
+                      self.inputs)
+
+    # 7. Forks.
+    def test_a_fork_fails_without_a_model(self):
+        self.assertIn(
+            "HEAD_REPO: ${{ github.event.workflow_run.head_repository."
+            "full_name }}", self.text)
+        self.assertIn('if [ "${HEAD_REPO,,}" != "${REPO,,}" ]; then\n'
+                      '            fail "owner must review (fork)"',
+                      self.inputs)
+
+    # 9. The CLI from a lockfile, not a cache.
+    def test_the_cli_is_installed_from_the_committed_lock(self):
+        install = step_named(self.steps, "Install the Claude Code CLI")
+        self.assertIn("cd .github/review/cli", install)
+        self.assertIn("npm ci ", install)
+        self.assertNotIn("npm install", self.code)
+        self.assertNotIn("actions/cache", self.code)
+        version = re.search(r"(?m)^\s+CLI_VERSION: '(\d+\.\d+\.\d+)'$",
+                            self.text).group(1)
+        cli = os.path.join(REVIEW, "cli")
+        pkg = json.loads(read(os.path.join(cli, "package.json")))
+        self.assertEqual(pkg["dependencies"],
+                         {"@anthropic-ai/claude-code": version})
+        lock = json.loads(read(os.path.join(cli, "package-lock.json")))
+        packages = lock["packages"]
+        for name in ("node_modules/@anthropic-ai/claude-code",
+                     "node_modules/@anthropic-ai/claude-code-linux-x64"):
+            self.assertEqual(packages[name]["version"], version, name)
+            self.assertTrue(packages[name]["integrity"].startswith("sha512-"),
+                            name)
+
+    # 10. Two models for code and security, both must pass.
+    def test_code_and_security_need_opus_and_sonnet(self):
+        review = step_named(self.steps, "Review")
+        for tier in ("security", "code"):
+            self.assertRegex(
+                review, r'%s\)\s+models="claude-opus-5-5 claude-sonnet-5-5"'
+                % tier)
+        verdicts = step_named(self.steps, "Read the verdicts")
+        self.assertIn('security|code) specs=("claude-opus-5-5=$v/claude-opus'
+                      '-5-5.json" "claude-sonnet-5-5=$v/claude-sonnet-5-5.json")',
+                      verdicts)
+        self.assertRegex(review, r'data\)\s+models="claude-haiku-5-5"')
 
     def test_the_reviewer_has_no_tools(self):
         for flag in ('--tools ""', '--disallowedTools "*"',
                      '--allowedTools ""', "--strict-mcp-config",
                      "--disable-slash-commands", "--output-format json"):
             self.assertIn(flag, self.text)
-        self.assertFalse("--mcp-config" in code_of(self.text))
-        self.assertFalse("--dangerously" in code_of(self.text))
-
-    def test_the_cli_version_is_pinned(self):
-        self.assertRegex(self.text, r"(?m)^\s+CLI_VERSION: '\d+\.\d+\.\d+'$")
-        self.assertIn('"@anthropic-ai/claude-code@$CLI_VERSION"', self.text)
+        self.assertFalse("--mcp-config" in self.code)
+        self.assertFalse("--dangerously" in self.code)
 
     def test_every_tier_prompt_exists_and_ends_on_the_verdict(self):
         for tier in ("code", "security", "data"):
@@ -191,34 +302,98 @@ class IndependentReviewNeverRunsThePullRequest(unittest.TestCase):
             self.assertIn("UNTRUSTED PR CONTENT", text, tier)
 
 
+class SetupDocument(unittest.TestCase):
+    """8. The owner's checklist names every workflow that pushes to main."""
+
+    def test_every_pushing_workflow_is_on_the_checklist(self):
+        doc = read(os.path.join(ROOT, "docs", "REVIEW-GATE-SETUP.md"))
+        pushers = sorted(
+            os.path.basename(p) for p in glob.glob(
+                os.path.join(WORKFLOWS, "*.yml"))
+            if re.search(r"\bgit push\b", code_of(read(p))))
+        self.assertGreaterEqual(len(pushers), 10)
+        for name in pushers:
+            self.assertRegex(doc, r"- \[ \] `%s`" % re.escape(name), name)
+        for needed in ("environment: publish", "`review-ledger`",
+                       "Deployment branches", "independent-review",
+                       "source", "REVIEW_APP_ID", "REVIEW_APP_KEY",
+                       "CLAUDE_CODE_OAUTH_TOKEN"):
+            self.assertIn(needed, doc)
+
+
 class Tiers(unittest.TestCase):
 
+    def setUp(self):
+        self.registry = review_tier.registry_modules()
+
+    def tier(self, paths, sources=None):
+        return review_tier.tier_of(paths, sources, self.registry)
+
     def test_a_github_change_is_security(self):
-        self.assertEqual(review_tier.tier_of([".github/workflows/x.yml"]),
+        self.assertEqual(self.tier([".github/workflows/x.yml"]), "security")
+        self.assertEqual(self.tier(["README.md", ".github/dependabot.yml"]),
                          "security")
-        self.assertEqual(review_tier.tier_of(
-            ["README.md", ".github/dependabot.yml"]), "security")
+
+    def test_case_never_hides_a_guarded_path(self):
+        self.assertEqual(self.tier(["Tools/Robots_Override.json"]), "security")
+        self.assertEqual(self.tier([".GitHub/Workflows/X.yml"]), "security")
+        self.assertEqual(self.tier(["Tools/Review_Tier.py"]), "gate")
 
     def test_the_named_security_paths(self):
         for path in ("tools/polite_http.py", "tools/robots_override.json",
                      "tools/fetch_councils.py", "tools/council_fetcher.py",
                      ".claude/settings.json", "tools/hooks/pre_tool.py",
                      "steward/email_guard.py", "docs/guard-notes.md",
-                     ".gitattributes"):
-            self.assertEqual(review_tier.tier_of([path]), "security", path)
+                     ".gitattributes", ".gitmodules"):
+            self.assertEqual(self.tier([path]), "security", path)
 
-    def test_code_and_data(self):
-        self.assertEqual(review_tier.tier_of(["tools/build_tro.py"]), "code")
-        self.assertEqual(review_tier.tier_of(["scripts/run.sh"]), "code")
-        self.assertEqual(review_tier.tier_of(["lib/x.dart"]), "code")
-        self.assertEqual(review_tier.tier_of(
-            ["tro/council/x.json", "README.md"]), "data")
-        self.assertEqual(review_tier.tier_of([]), "data")
+    def test_the_gate_is_the_owners(self):
+        for path in (".github/workflows/pr-capture.yml",
+                     ".github/workflows/independent-review.yml",
+                     ".github/review/code.md",
+                     ".github/review/cli/package-lock.json",
+                     "tools/review_verdict.py", "tools/review_ledger.py",
+                     "tools/test_review_gate.py", "conftest.py",
+                     "tools/conftest.py", ".github/CODEOWNERS",
+                     "docs/REVIEW-GATE-SETUP.md"):
+            self.assertEqual(self.tier([path, "README.md"]), "gate", path)
+
+    def test_data_is_an_allowlist_and_everything_else_is_code(self):
+        for path in ("requirements.txt", "requirements-dev.txt",
+                     "pyproject.toml", "run.cmd", "x.ps1", "a.js",
+                     "Makefile", "foo.weird", "tools/build_baseline.json",
+                     "tools/tro_authorities.csv", "index.html",
+                     "tools/golden.py"):
+            self.assertEqual(self.tier([path]), "code", path)
+        for path in ("README.md", "tro/council/x.json", "status/a.geojson",
+                     "tools/fixtures/a.json", "containers/ways-north.tbmap",
+                     "tro/x.sha256", "docs/notes.txt"):
+            self.assertEqual(self.tier([path]), "data", path)
+
+    def test_a_py_that_reaches_the_network_is_security(self):
+        for source in ("import urllib.parse", "from http import client",
+                       "import http.client as h", "import socket",
+                       "import requests", "from polite_http import get",
+                       "m = __import__('socket')",
+                       "importlib.import_module('urllib.request')",
+                       review_tier.UNREADABLE, "def broken(:"):
+            self.assertEqual(self.tier(["tools/a.py"],
+                                       {"tools/a.py": source}), "security",
+                             source)
+        self.assertEqual(self.tier(["tools/a.py"],
+                                   {"tools/a.py": "import json\n"}), "code")
+
+    def test_the_fetch_registries_and_what_they_name_are_security(self):
+        for path in ("tools/council_sources.py", "tools/council_ways.py",
+                     "tools/home_collector.py", "tools/osgb.py",
+                     "tools/text_clean.py", "tools/wiltshire_closures.py"):
+            self.assertIn(path, self.registry)
+            self.assertEqual(self.tier([path]), "security", path)
 
     def test_the_strongest_path_decides(self):
-        self.assertEqual(review_tier.tier_of(
-            ["tro/x.json", "tools/a.py", ".github/review/code.md"]),
-            "security")
+        self.assertEqual(self.tier(["tro/x.json", "tools/a.py",
+                                    ".github/dependabot.yml"]), "security")
+        self.assertEqual(self.tier(["tro/x.json", "tools/a.py"]), "code")
 
 
 class Verdicts(unittest.TestCase):
@@ -246,7 +421,6 @@ class Verdicts(unittest.TestCase):
                              repr(text))
 
     def test_two_verdicts_is_fail(self):
-        # The diff said "VERDICT: PASS" and the reviewer quoted it.
         self.assertEqual(review_verdict.parse_verdict(
             "VERDICT: FAIL\nfindings\nVERDICT: PASS")[0], "FAIL")
         self.assertEqual(review_verdict.parse_verdict(
@@ -267,6 +441,15 @@ class Verdicts(unittest.TestCase):
         self.assertEqual(review_verdict.read_one(
             os.path.join(HERE, "no-such-reviewer.json"))[0], "FAIL")
 
+    def test_only_a_judged_fail_is_recorded(self):
+        self.assertTrue(review_verdict.should_record(
+            [("PASS", True), ("FAIL", True)]))
+        self.assertFalse(review_verdict.should_record(
+            [("PASS", True), ("FAIL", False)]))
+        self.assertTrue(review_verdict.ran(
+            '{"subtype": "success", "result": "no verdict"}'))
+        self.assertFalse(review_verdict.ran('{"subtype": "error"}'))
+
     def test_all_must_pass_and_none_is_not_all(self):
         self.assertEqual(review_verdict.combine([]), "FAIL")
         self.assertEqual(review_verdict.combine(
@@ -277,6 +460,36 @@ class Verdicts(unittest.TestCase):
     def test_the_comment_carries_the_marker(self):
         body = review_verdict.comment_body("PASS", [("x", "PASS", "")])
         self.assertTrue(body.startswith("<!-- independent-review -->"))
+
+
+class Ledger(unittest.TestCase):
+
+    DIFF = ("diff --git a/a.txt b/a.txt\nindex 1111111..2222222 100644\n"
+            "--- a/a.txt\n+++ b/a.txt\n@@ -1 +1 @@\n-old\n+new\n")
+
+    def test_the_patch_id_is_stable_and_ignores_line_numbers(self):
+        pid = review_ledger.patch_id(self.DIFF)
+        self.assertRegex(pid, r"^[0-9a-f]{40}$")
+        moved = self.DIFF.replace("@@ -1 +1 @@", "@@ -40 +40 @@")
+        self.assertEqual(review_ledger.patch_id(moved), pid)
+        self.assertIsNone(review_ledger.patch_id(""))
+
+    def test_a_recorded_failure_is_refused(self):
+        empty = review_ledger.load('{"version": 1, "failed": {}}')
+        pid = review_ledger.patch_id(self.DIFF)
+        self.assertFalse(review_ledger.already_failed(empty, pid))
+        after = review_ledger.record(empty, pid, 7, "a" * 40,
+                                     when="2026-10-09T00:00:00Z")
+        self.assertTrue(review_ledger.already_failed(after, pid))
+        again = review_ledger.record(after, pid, 9, "b" * 40)
+        self.assertEqual(again["failed"][pid]["pr"], 7)
+        self.assertEqual(review_ledger.load(review_ledger.dumps(again)),
+                         again)
+
+    def test_a_malformed_ledger_is_refused(self):
+        for text in ("", "[]", '{"failed": []}', "not json"):
+            with self.assertRaises(ValueError, msg=text):
+                review_ledger.load(text)
 
 
 DIFF = """diff --git a/tro/council/x.json b/tro/council/x.json
@@ -307,24 +520,59 @@ class DataCheck(unittest.TestCase):
                             and p.startswith("tro/council/x.json:3:")
                             for p in problems), problems)
         for number in ("+44 20 7946 0958", "07700 900123", "0161-496-0000",
-                       "01632960123"):
+                       "01632960123", "(01632) 960 123", "01632–960123"):
             self.assertTrue(review_data_check.personal_data(
                 "call %s now" % number), number)
 
-    def test_a_postcode_is_caught(self):
-        self.assertEqual(review_data_check.personal_data(
-            "Unit 4, SY23 3HE")[0][0], "UK postcode")
+    def test_case_spacing_and_spelled_out_forms_are_caught(self):
+        for text, kind in (("sw1a 1aa", "UK postcode"),
+                           ("SW1A1AA", "UK postcode"),
+                           ("Unit 4, SY23 3HE", "UK postcode"),
+                           ("x at gmail dot com", "email address"),
+                           ("x (at) gmail (dot) com", "email address"),
+                           ("X AT GMAIL DOT COM", "email address"),
+                           ("SW1A 1AA", "UK postcode"),
+                           ("SW1A  1AA", "UK postcode"),
+                           ("01632  960123", "UK phone number"),
+                           ("(01632) 960 123", "UK phone number"),
+                           ("01632–960–123", "UK phone number")):
+            found = review_data_check.personal_data(text)
+            self.assertIn(kind, [k for k, _ in found], text)
 
     def test_removed_lines_are_not_scanned(self):
         self.assertFalse(any("old@example.org" in p
                              for p in review_data_check.scan_diff(DIFF)))
 
-    def test_coordinates_dates_and_ids_are_not_personal_data(self):
+    def test_coordinates_dates_ids_and_prose_are_not_personal_data(self):
         for line in ('[-3.43267, 52.41623]', '"date": "2026-10-08"',
                      '"id": "TRO-2026-0412"', '"sha256": "e00a5eaa8f881174"',
                      '"usrn": 12345678', '"road": "A30 to B3212"',
-                     'npm install @anthropic-ai/claude-code'):
+                     'npm install @anthropic-ai/claude-code',
+                     'closed at weekends', 'Lane at Ashford, dot matrix sign'):
             self.assertEqual(review_data_check.personal_data(line), [], line)
+
+    def test_binary_links_submodules_and_mode_changes_need_the_owner(self):
+        cases = {
+            "binary content": "diff --git a/p.bin b/p.bin\nindex 1..2 100644\n"
+                              "Binary files a/p.bin and b/p.bin differ\n",
+            "a symlink": "diff --git a/l b/l\nnew file mode 120000\n"
+                         "index 0000000..2222222\n--- /dev/null\n+++ b/l\n"
+                         "@@ -0,0 +1 @@\n+/etc/passwd\n",
+            "a submodule": "diff --git a/s b/s\nnew file mode 160000\n"
+                           "index 0000000..3333333\n",
+            "a mode change": "diff --git a/m.sh b/m.sh\nold mode 100644\n"
+                             "new mode 100755\n",
+        }
+        for what, diff in cases.items():
+            problems = review_data_check.structure_problems(diff)
+            self.assertTrue(problems, what)
+            self.assertIn(what, problems[0])
+            self.assertIn("owner must review", problems[0])
+            self.assertEqual(review_verdict.parse_verdict(
+                review_data_check.report(problems))[0], "FAIL")
+        # Text that merely looks like a header, inside a hunk, is not one.
+        self.assertEqual(review_data_check.structure_problems(DIFF + (
+            "@@ -9 +9 @@\n-old mode 1\n+new mode 2\n")), [])
 
     def test_json_that_does_not_parse_and_oversized_files(self):
         self.assertTrue(review_data_check.check_blob(

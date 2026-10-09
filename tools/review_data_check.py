@@ -2,12 +2,20 @@
 """The cheap, deterministic half of a DATA-tier review. No model, no network.
 
     python tools/review_data_check.py --diff DIFF --files FILES --rev SHA
+    python tools/review_data_check.py --structure --diff DIFF
 
+  * no binary hunk, symlink (mode 120000), submodule (mode 160000), mode
+    change or new executable: none of those can be read in a diff, so the
+    owner must review them. `--structure` runs only this check, and the
+    review workflow runs it for EVERY tier before any model is asked;
   * every changed .json / .geojson file at SHA parses;
   * no changed file at SHA is over the size cap;
   * no line the pull request ADDS carries an email address, a UK phone
     number or a UK postcode. This repository is public and everything in it
     is served to riders; a person's contact details never belong in it.
+    Each line is normalised first: case, runs of spaces, odd dashes and
+    brackets, and a spelled-out " at " / " dot " (`x at gmail dot com`), so
+    `sw1a 1aa`, `SW1A1AA` and `(01632) 960 123` are all caught.
 
 Only added lines are scanned, so a file that already holds (say) a council's
 published office number is not re-flagged every time a neighbouring line
@@ -23,6 +31,7 @@ import json
 import re
 import subprocess
 import sys
+import unicodedata
 
 #: GitHub warns at 50 MB and refuses 100 MB. The largest file published
 #: today is a 24 MB container, so 50 MB is room for growth, not for a mistake.
@@ -40,13 +49,20 @@ EMAIL = re.compile(
 PHONE = re.compile(
     r"(?<![\w.+/-])(?:\+44[ ]?(?:\(0\)[ ]?)?|0)[1235789](?:[ -]?\d){8,9}"
     r"(?![\w.])")
-# The Royal Mail shape, with its single space, in capitals.
+# The Royal Mail shape, matched on the upper-cased line, space optional.
 POSTCODE = re.compile(
-    r"(?<![A-Za-z0-9])(?:[A-PR-UWYZ][A-HK-Y]?[0-9][A-Z0-9]?) "
+    r"(?<![A-Za-z0-9])(?:[A-PR-UWYZ][A-HK-Y]?[0-9][A-Z0-9]?) ?"
     r"[0-9][ABD-HJLNP-UW-Z]{2}(?![A-Za-z0-9])")
 
 KINDS = (("email address", EMAIL), ("UK phone number", PHONE),
          ("UK postcode", POSTCODE))
+
+_DASHES = re.compile("[\u2010-\u2015\u2212\ufe58\ufe63\uff0d]")
+_SPACES = re.compile(r"\s+")
+_AT = re.compile(r"\s*[\(\[\{<]?\s*\bat\b\s*[\)\]\}>]?\s*", re.I)
+_DOT = re.compile(r"\s*[\(\[\{<]?\s*\bdot\b\s*[\)\]\}>]?\s*", re.I)
+
+STRUCTURE_HINT = "owner must review"
 
 
 def added_lines(diff_text):
@@ -81,13 +97,74 @@ def added_lines(diff_text):
     return out
 
 
+def normalise(text):
+    """One line as the patterns read it: NFKC, one kind of dash, single
+    spaces, no brackets round a number."""
+    text = unicodedata.normalize("NFKC", text)
+    text = _DASHES.sub("-", text)
+    text = re.sub(r"[()]", " ", text)
+    return _SPACES.sub(" ", text).strip()
+
+
 def personal_data(text):
-    """-> [(kind, matched text)] found in one line."""
+    """-> [(kind, matched text)] found in one line, after normalising."""
+    plain = normalise(text)
+    spelled = _DOT.sub(".", _AT.sub("@", plain))
     found = []
-    for kind, rx in KINDS:
-        for m in rx.finditer(text):
-            found.append((kind, m.group(0)))
+    for kind, rx, variants in (
+            ("email address", EMAIL, (plain, spelled)),
+            ("UK phone number", PHONE, (plain,)),
+            ("UK postcode", POSTCODE, (plain.upper(),))):
+        seen = set()
+        for variant in variants:
+            for m in rx.finditer(variant):
+                if m.group(0) not in seen:
+                    seen.add(m.group(0))
+                    found.append((kind, m.group(0)))
     return found
+
+
+def structure_problems(diff_text):
+    """-> ["path: what: owner must review"] for every change a text diff
+    cannot show: binary content, a symlink, a submodule, a mode change, a
+    new executable."""
+    problems = []
+    path, in_hunk = "?", False
+    for line in diff_text.split("\n"):
+        if line.startswith("diff --git "):
+            in_hunk = False
+            rest = line[len("diff --git "):]
+            i = rest.rfind(" b/")
+            path = rest[i + 3:] if i >= 0 else rest
+            continue
+        if line.startswith("@@"):
+            in_hunk = True
+            continue
+        if in_hunk:
+            continue
+        what = None
+        if line.startswith("Binary files ") and line.endswith(" differ"):
+            what = "binary content"
+        elif line == "GIT binary patch":
+            what = "binary content"
+        elif line.startswith(("old mode ", "new mode ")):
+            what = "a mode change (%s)" % line
+        else:
+            m = re.match(r"^(?:new file|deleted file) mode (\d+)$", line) \
+                or re.match(r"^index [0-9a-f]+\.\.[0-9a-f]+ (\d+)$", line)
+            if m:
+                mode = m.group(1)
+                if mode == "120000":
+                    what = "a symlink"
+                elif mode == "160000":
+                    what = "a submodule"
+                elif mode != "100644" and line.startswith("new file"):
+                    what = "a new file with mode %s" % mode
+        if what:
+            entry = "%s: %s: %s" % (path, what, STRUCTURE_HINT)
+            if entry not in problems:
+                problems.append(entry)
+    return problems
 
 
 def scan_diff(diff_text):
@@ -157,15 +234,25 @@ def report(problems):
 def main(argv=None):
     ap = argparse.ArgumentParser()
     ap.add_argument("--diff", required=True)
-    ap.add_argument("--files", required=True,
+    ap.add_argument("--structure", action="store_true",
+                    help="only the binary/link/submodule/mode check; exit 1 "
+                         "when it finds anything")
+    ap.add_argument("--files",
                     help="changed paths still present at --rev, one a line")
-    ap.add_argument("--rev", required=True)
+    ap.add_argument("--rev")
     a = ap.parse_args(argv)
     with open(a.diff, encoding="utf-8", errors="replace") as fh:
         diff_text = fh.read()
+    if a.structure:
+        problems = structure_problems(diff_text)
+        sys.stdout.write("".join(p + "\n" for p in problems))
+        return 1 if problems else 0
+    if not a.files or not a.rev:
+        ap.error("--files and --rev are required without --structure")
     with open(a.files, encoding="utf-8") as fh:
         paths = [p for p in fh.read().splitlines() if p.strip()]
-    problems = scan_diff(diff_text) + check_files(paths, a.rev)
+    problems = (structure_problems(diff_text) + scan_diff(diff_text)
+                + check_files(paths, a.rev))
     sys.stdout.write(report(problems))
     return 0
 

@@ -65,15 +65,35 @@ def from_cli_json(raw):
     return parse_verdict(data.get("result"))
 
 
+def ran(raw):
+    """True when a CLI result shows the reviewer actually answered: a FAIL
+    from such a run is the reviewer's judgement, not an outage."""
+    try:
+        data = json.loads(raw)
+    except (TypeError, ValueError):
+        return False
+    return (isinstance(data, dict) and not data.get("is_error")
+            and data.get("subtype") == "success")
+
+
 def read_one(path):
+    """-> (verdict, findings, judged). `judged` is False when no reviewer
+    answered at all (missing file, failed run): still a FAIL, but not one
+    the ledger should remember against the change."""
     if not os.path.isfile(path):
-        return "FAIL", "This reviewer produced nothing (%s is missing)." % (
-            os.path.basename(path))
+        return ("FAIL", "This reviewer produced nothing (%s is missing)."
+                % os.path.basename(path), False)
     with open(path, encoding="utf-8", errors="replace") as fh:
         raw = fh.read()
     if path.endswith(".json"):
-        return from_cli_json(raw)
-    return parse_verdict(raw)
+        return from_cli_json(raw) + (ran(raw),)
+    return parse_verdict(raw) + (True,)
+
+
+def should_record(judgements):
+    """[(verdict, judged)] -> True when a reviewer that really answered
+    said FAIL. An outage is not a verdict on the change."""
+    return any(v == "FAIL" and judged for v, judged in judgements)
 
 
 def combine(results):
@@ -103,16 +123,18 @@ def main(argv):
         sys.stderr.write("usage: review_verdict.py BODY.md NAME=PATH ...\n")
         print("FAIL")
         return 2
-    results = []
+    results, judgements = [], []
     for spec in argv[2:]:
         name, _, path = spec.partition("=")
-        verdict, findings = read_one(path)
+        verdict, findings, judged = read_one(path)
         results.append((name, verdict, findings))
+        judgements.append((verdict, judged))
     overall = combine(results)
     with open(argv[1], "w", encoding="utf-8", newline="\n") as fh:
         fh.write(comment_body(overall, results))
     for name, verdict, _ in results:
         print("%s: %s" % (name, verdict))
+    print("record: %s" % ("yes" if should_record(judgements) else "no"))
     print(overall)
     return 0
 
