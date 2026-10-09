@@ -101,9 +101,12 @@ jobs:
           MAX_ZOOM: ${{ inputs.max_zoom || '14' }}
         run: |
           if [ -n "$AREA" ]; then
+            # A forced run honours a refusal too: an area EOX refused is not
+            # planned, so it is "not the one due" below.
             PLAN=$(python tools/satellite_plan.py --catalogue catalogue.json \
                      --refresh-after-days 0 \
-                     --max-zoom "$MAX_ZOOM")
+                     --max-zoom "$MAX_ZOOM" \
+                     --blocks satellite/blocks.json)
             PLAN=$(python - "$PLAN" "$AREA" <<'PY'
           import json, sys
           plan = json.loads(sys.argv[1])
@@ -128,7 +131,8 @@ jobs:
             # far were built by hand, and this workflow's own header promising
             # a full pass "in under a week" had never once been true.
             PLAN=$(python tools/satellite_plan.py --catalogue catalogue.json \
-                     --max-zoom "$MAX_ZOOM")
+                     --max-zoom "$MAX_ZOOM" \
+                     --blocks satellite/blocks.json)
           fi
           echo "$PLAN"
           echo "plan=$PLAN" >> "$GITHUB_OUTPUT"
@@ -141,38 +145,37 @@ jobs:
         if: steps.plan.outputs.work != 'true'
         run: echo "Everything is current. No bandwidth spent."
 
-      # Resumption rests on a run SUCCEEDING, not on surviving a failure.
+      # THE STAGED TILES ARE KEPT HOWEVER THE RUN ENDS.
       #
-      # This said "survives a failed job". It does not: actions/cache declares
-      # `post-if: success()`, so a job that fails saves nothing and the next
-      # night starts from an empty staging directory. What actually makes a
-      # multi-night area work is that a run which merely exhausts its budget
-      # EXITS ZERO - it prints what is left and stops - so the cache is written
-      # and the next run picks it up.
+      # This used actions/cache, which declares `post-if: success()`: a run
+      # that EOX stopped, that failed or that timed out saved nothing, and the
+      # next run of that area asked EOX again for every tile it had already
+      # sent - the heaviest possible answer to being told to back off. The
+      # restore and the save are now separate steps, and "Save the staged
+      # tiles" below runs on failure and cancellation too.
       #
-      # Which is why the timeout above is sized against the budget. A run that
-      # overruns is a run whose entire night of tiles is thrown away, and at
-      # z14 the North needs two nights: had the 180-minute timeout stayed, the
-      # larger regions could have failed, discarded everything and retried for
-      # ever without converging.
+      # ONE ENTRY PER WORKING RUN. A cache key is written once and never
+      # replaced, so under the old single key per area and month the second
+      # night's tiles were never saved at all. Each run that fetches now saves
+      # under its own run id, and the restore takes the newest entry for this
+      # area and month by prefix. Runs that find nothing due save nothing,
+      # and a run that packaged its area cleared the tiles and saves nothing
+      # either, so the entries are one or two per area per monthly rebuild,
+      # well inside the repository's 10 GB (the lane refresh's council cache
+      # shares it). GitHub drops an entry nobody has read for 7 days.
       #
       # Keyed by month as well as area, so a rebuild genuinely re-fetches
       # rather than repackaging stale imagery.
       - name: Restore the staged tiles
         if: steps.plan.outputs.work == 'true'
-        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25  # v5
+        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25  # v5
         with:
           path: staging
-          # Keyed by the MONTH, not the run. Keyed by run id every run wrote a
-          # fresh 70-240 MB entry, and a repository's cache is capped at 10 GB
-          # with least-recently-used eviction — so a daily job would have
-          # quietly evicted the lane refresh's council-data cache and turned
-          # its 25-minute fetch back on. Within a month a retry resumes; a new
-          # month re-fetches, which is the point of a rebuild.
-          key: sat-${{ steps.plan.outputs.id }}-${{ steps.plan.outputs.month }}
-          restore-keys: sat-${{ steps.plan.outputs.id }}-${{ steps.plan.outputs.month }}
+          key: sat-${{ steps.plan.outputs.id }}-${{ steps.plan.outputs.month }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: sat-${{ steps.plan.outputs.id }}-${{ steps.plan.outputs.month }}-
 
       - name: Fetch and package
+        id: fetch
         if: steps.plan.outputs.work == 'true'
         run: |
           PLAN='${{ steps.plan.outputs.plan }}'
@@ -191,6 +194,13 @@ jobs:
           # connections with backoff; the run simply lasts longer, and a
           # 55,000-tile run is about four hours against the 350-minute ceiling
           # above. Fewer, longer runs move the same bytes in fewer days.
+          #
+          # Exit 3 is EOX refusing us. The build has then written the refusal
+          # to satellite/blocks.json, and `blocked` tells "Remember the
+          # refusal" to commit it. The code is caught rather than left to
+          # bash -e, which would end the step before anything said so; the
+          # step still fails with the build's own code.
+          rc=0
           python tools/build_satellite.py \
             --bbox $BBOX \
             --id "${{ steps.plan.outputs.id }}" \
@@ -201,7 +211,47 @@ jobs:
             --budget 55000 \
             --package \
             --out "dist/satellite/${{ steps.plan.outputs.id }}.pmtiles" \
-            --entry-out dist/satellite/entry.json
+            --entry-out dist/satellite/entry.json \
+            --block-out satellite/blocks.json || rc=$?
+          if [ "$rc" = 3 ]; then
+            echo "blocked=true" >> "$GITHUB_OUTPUT"
+          fi
+          exit "$rc"
+
+      # A REFUSAL IS REMEMBERED. Without this the next run, twelve hours on,
+      # planned the same area and asked EOX again. The planner reads
+      # satellite/blocks.json and leaves the area alone for at least 7 days,
+      # or until EOX's Retry-After when that is longer.
+      #
+      # Only this workflow writes the file, and its concurrency group lets
+      # one run at a time, so a rebase onto another job's commit cannot
+      # conflict.
+      - name: Remember the refusal
+        id: remember
+        if: always() && steps.fetch.outputs.blocked == 'true'
+        env:
+          AREA_ID: ${{ steps.plan.outputs.id }}
+        run: |
+          git config user.name  'Trail Blazer data bot'
+          git config user.email 'noreply@github.com'
+          git add satellite/blocks.json
+          if git diff --cached --quiet; then
+            echo "the refusal is already recorded"
+          else
+            git commit -m "Satellite: EOX refused $AREA_ID; not asked again until its block ends" \
+                       -m "Recorded in satellite/blocks.json by tools/build_satellite.py."
+          fi
+          for attempt in 1 2 3; do
+            if git push; then
+              echo "remembered=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            echo "push rejected; replaying the record on top of origin/main"
+            sleep $((attempt * 5))
+            git pull --rebase origin main
+          done
+          git push
+          echo "remembered=true" >> "$GITHUB_OUTPUT"
 
       # The one check worth having: the app's own reader must be able to open
       # it. A pack that packages cleanly and will not open is a pack every
@@ -249,10 +299,20 @@ jobs:
       # would run for ever and the pictures would never actually change. That
       # is a correctness fault wearing the clothes of untidiness.
       - name: Clear the staged tiles
+        id: clear
         if: steps.plan.outputs.work == 'true'
         run: |
           rm -rf "staging/${{ steps.plan.outputs.id }}"
           echo "staged tiles cleared; next rebuild re-fetches"
+
+      # However the run ended - refused, failed, timed out - except once the
+      # tiles were packaged and cleared, when there is nothing to keep.
+      - name: Save the staged tiles
+        if: always() && steps.plan.outputs.work == 'true' && steps.clear.outcome != 'success'
+        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25  # v5
+        with:
+          path: staging
+          key: sat-${{ steps.plan.outputs.id }}-${{ steps.plan.outputs.month }}-${{ github.run_id }}-${{ github.run_attempt }}
 
       - name: Publish
         id: publish
@@ -463,6 +523,8 @@ jobs:
           AREA_ID: ${{ steps.plan.outputs.id }}
           UPLOADED: ${{ steps.publish.outputs.uploaded }}
           RECORDED: ${{ steps.publish.outputs.recorded }}
+          BLOCKED: ${{ steps.fetch.outputs.blocked }}
+          REMEMBERED: ${{ steps.remember.outputs.remembered }}
           JOB_STATUS: ${{ job.status }}
         run: |
           KEY="${AREA_ID:-none}"
@@ -500,6 +562,41 @@ jobs:
           you can. Only a run that rebuilds and records this area closes this.
           EOF
           )
+          elif [ "$BLOCKED" = "true" ]; then
+            # What EOX said and when the area comes due again, from the
+            # record the build wrote.
+            SAID=$(python -c '
+          import json, sys
+          try:
+              with open("satellite/blocks.json", encoding="utf-8") as f:
+                  rec = json.load(f)["areas"][sys.argv[1]]
+              status = rec.get("status")
+              what = ("connection failures" if status == "network"
+                      else "HTTP %s" % status)
+              if rec.get("retry_after") is not None:
+                  what += ", Retry-After %s s" % rec["retry_after"]
+              print("%s|%s" % (what, rec.get("until") or "an unknown date"))
+          except (OSError, ValueError, KeyError, TypeError, AttributeError):
+              print("a refusal not on record|an unknown date")
+          ' "$KEY")
+            WHAT="${SAID%%|*}"
+            UNTIL="${SAID#*|}"
+            TITLE="Satellite build for $KEY stopped: EOX refused us"
+            if [ "$REMEMBERED" = "true" ]; then
+              NEXT="Nothing retries around a refusal: the planner skips \`$KEY\` until **$UNTIL** (7 days, or longer when EOX's Retry-After asks for longer), as recorded in satellite/blocks.json."
+            else
+              NEXT="**The refusal could not be recorded** in satellite/blocks.json, so the planner may pick \`$KEY\` again on the next run. Disable this workflow from the Actions tab until someone has looked into EOX's refusal."
+            fi
+            OUTCOME=$(cat <<EOF
+          EOX refused the tile service to us ($WHAT), so the build stopped
+          and **nothing was published**. Riders keep the imagery they have.
+
+          $NEXT
+
+          The tiles fetched before the stop were saved to the cache, so a
+          later run resumes rather than fetching them again.
+          EOF
+          )
           else
             TITLE="Satellite build $HEADLINE for $KEY on $(date -u +%Y-%m-%d)"
             OUTCOME=$(cat <<EOF
@@ -522,9 +619,8 @@ jobs:
             asking too much of a free service — talk to them about the
             offline mosaic.
           - **It ran out of time** (cancelled at 350 minutes). The staged
-            tiles are cached only by a run that ends GREEN, so a failed,
-            cancelled or timed-out run's tiles are lost and a re-run fetches
-            this area again; one that keeps timing out needs a smaller
+            tiles are saved however a run ends, so a re-run resumes where
+            this one stopped; one that keeps timing out needs a smaller
             budget, not another try.
           - **The archive check objected.** Read what it said; a pack that
             will not open is worse than no pack.

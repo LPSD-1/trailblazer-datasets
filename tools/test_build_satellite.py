@@ -22,9 +22,15 @@ end of that coupling - the same shape as the gazetteer's folding, where one
 side indexed and the other queried and only a test across both would have
 noticed.
 """
+import contextlib
+import datetime as dt
 import importlib.util
+import io
+import json
 import os
+import re
 import sys
+import tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 spec = importlib.util.spec_from_file_location(
@@ -136,6 +142,8 @@ def main():
           % sp.below_zoom(mixed, 14))
 
     check_root_limit()
+    check_blocks(sp)
+    check_workflow_wiring()
 
     if failures:
         for f in failures:
@@ -203,6 +211,127 @@ def check_root_limit():
             "%d entries produce a conformant root" % _n,
             bs.HEADER_LENGTH + len(_r) <= bs.ROOT_LIMIT,
         )
+
+
+# --- a refusal is remembered ---------------------------------------------------
+#
+# A STOP USED TO BE FORGOTTEN BY THE NEXT RUN. EOX refused us, the area stopped
+# with no pack, and twelve hours later the planner picked the same area again
+# and asked the same service for the same tiles. A stop now writes a record in
+# satellite/blocks.json, and the planner skips that area for at least 7 days,
+# or until EOX's Retry-After if that is longer.
+
+def _plan(sp, catalogue, blocks):
+    """satellite_plan's own main(), as the workflow runs it."""
+    with tempfile.TemporaryDirectory() as tmp:
+        cat = os.path.join(tmp, "catalogue.json")
+        with open(cat, "w", encoding="utf-8", newline=LF) as f:
+            json.dump(catalogue, f)
+        path = os.path.join(tmp, "blocks.json")
+        if blocks is not None:
+            with open(path, "w", encoding="utf-8", newline=LF) as f:
+                f.write(blocks if isinstance(blocks, str)
+                        else json.dumps(blocks))
+        argv, out = sys.argv, io.StringIO()
+        sys.argv = ["satellite_plan.py", "--catalogue", cat,
+                    "--blocks", path]
+        try:
+            with contextlib.redirect_stdout(out),                     contextlib.redirect_stderr(io.StringIO()):
+                rc = sp.main()
+        except (Exception, SystemExit) as e:  # noqa: BLE001
+            return {"error": repr(e)}, None
+        finally:
+            sys.argv = argv
+        try:
+            return json.loads(out.getvalue()), rc
+        except ValueError:
+            return {"output": out.getvalue()}, rc
+
+
+def check_blocks(sp):
+    now = dt.datetime.now(dt.timezone.utc)
+
+    def stamp(days_ago):
+        return (now - dt.timedelta(days=days_ago)).strftime(
+            "%Y-%m-%dT%H:%M:%SZ")
+
+    def area(aid):
+        return {"id": aid, "label": aid, "bounds": {
+            "west": -1, "south": 51, "east": 0, "north": 52},
+            "packs": [{"kind": "lanes", "id": aid + "-ways"}]}
+    # Neither area has imagery, so both are due; gb-a is first in line.
+    catalogue = {"continents": [{"countries": [{"label": "GB", "areas": [
+        area("gb-a"), area("gb-b")]}]}]}
+
+    def rec(days_ago, status=403, retry_after=None):
+        return {"at": stamp(days_ago), "status": status,
+                "retry_after": retry_after}
+
+    def picks(blocks):
+        plan, _rc = _plan(sp, catalogue, blocks)
+        return plan.get("id") if plan.get("work") else plan
+
+    got = picks(None)
+    check(got == "gb-a-satellite",
+          "with no blocks file gb-a is not planned: %r" % (got,))
+    got = picks({"areas": {"gb-a-satellite": rec(1)}})
+    check(got == "gb-b-satellite",
+          "an area EOX refused yesterday was planned again: %r" % (got,))
+    got = picks({"areas": {"gb-a-satellite": rec(6.9, status=429)}})
+    check(got == "gb-b-satellite",
+          "an area refused 6.9 days ago was planned again: %r" % (got,))
+    got = picks({"areas": {"gb-a-satellite": rec(7.1)}})
+    check(got == "gb-a-satellite",
+          "an area refused 7.1 days ago with no Retry-After is still "
+          "skipped: %r" % (got,))
+    got = picks({"areas": {"gb-a-satellite": rec(8, retry_after=30 * 86400)}})
+    check(got == "gb-b-satellite",
+          "a Retry-After of 30 days was cut to 7: %r" % (got,))
+    got = picks({"areas": {"gb-a-satellite": rec(31, retry_after=30 * 86400)}})
+    check(got == "gb-a-satellite",
+          "an area is skipped after its 30-day Retry-After ran out: %r"
+          % (got,))
+    # A record whose time cannot be read is a block, not a pass.
+    got = picks({"areas": {"gb-a-satellite": {"at": "yesterday",
+                                              "status": 403}}})
+    check(got == "gb-b-satellite",
+          "a block record with an unreadable time was ignored: %r" % (got,))
+    # Every due area refused: no work, and it says why.
+    plan, rc = _plan(sp, catalogue, {"areas": {
+        "gb-a-satellite": rec(1), "gb-b-satellite": rec(2, status=429)}})
+    check(plan.get("work") is False and "refused" in plan.get("why", "")
+          and "gb-a-satellite" in plan.get("why", ""),
+          "with every area refused the plan is %r" % plan)
+    # A blocks file that cannot be read stops the plan rather than being
+    # taken as "no blocks".
+    plan, rc = _plan(sp, catalogue, "{not json")
+    check(plan.get("work") is not True and rc not in (0, None),
+          "an unreadable blocks file was read as no blocks: %r, rc %r"
+          % (plan, rc))
+
+
+# One shell command: the line naming the tool, and every line it continues
+# onto with a trailing backslash.
+CMD = r"python tools/%s\.py(?:[^\n]*\\\n)*[^\n]*"
+LF = "\n"
+
+
+def check_workflow_wiring():
+    """satellite.yml hands the planner the blocks file on both of its paths,
+    and the build writes there."""
+    here = os.path.dirname(HERE)
+    with open(os.path.join(here, ".github", "workflows", "satellite.yml"),
+              encoding="utf-8") as f:
+        text = f.read()
+    commands = re.findall(CMD % "satellite_plan", text)
+    check(len(commands) == 2 and all(
+        "--blocks satellite/blocks.json" in c for c in commands),
+        "satellite.yml runs the planner without the blocks file: %r"
+        % commands)
+    builds = re.findall(CMD % "build_satellite", text)
+    check(len(builds) == 1 and
+          "--block-out satellite/blocks.json" in builds[0],
+          "satellite.yml's build does not record a stop: %r" % builds)
 
 
 if __name__ == "__main__":

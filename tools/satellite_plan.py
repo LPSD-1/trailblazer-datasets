@@ -29,6 +29,7 @@ finished pack or produces nothing: no half-built state to reason about.
 import argparse
 import datetime as dt
 import json
+import os
 import sys
 
 
@@ -141,6 +142,59 @@ def build_satellite_attribution():
     return mod.ATTRIBUTION
 
 
+# A REFUSAL IS REMEMBERED. When EOX stops an area, build_satellite.py writes
+# the stop to satellite/blocks.json (its time, the HTTP status or "network",
+# and any Retry-After), and the workflow commits it. Without that the next run,
+# twelve hours on, picked the same area and asked the same service again. An
+# area stays idle for at least BLOCK_DAYS, or until Retry-After when EOX asked
+# for longer; nothing shortens either.
+BLOCK_DAYS = 7
+NEVER = dt.datetime.max.replace(tzinfo=dt.timezone.utc)
+
+
+def stamp(when):
+    return when.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _when(text):
+    built = dt.datetime.fromisoformat(str(text).replace("Z", "+00:00"))
+    if built.tzinfo is None:
+        built = built.replace(tzinfo=dt.timezone.utc)
+    return built
+
+
+def blocked_until(record):
+    """When an area refused at record["at"] may be asked for again. A
+    record whose time cannot be read blocks until a person mends it."""
+    try:
+        at = _when(record["at"])
+        asked = float(record.get("retry_after") or 0)
+        until = at + max(dt.timedelta(days=BLOCK_DAYS),
+                         dt.timedelta(seconds=asked))
+    except (KeyError, TypeError, ValueError, AttributeError, OverflowError):
+        return NEVER
+    try:
+        until = max(until, _when(record["until"]))
+    except (KeyError, TypeError, ValueError):
+        pass
+    return until
+
+
+def load_blocks(path):
+    """{"areas": {area id: record}} from `path`; no file is no blocks. A
+    file that is there and cannot be read raises: taking it as "no blocks"
+    would ask again of a service that refused us."""
+    if not path or not os.path.exists(path):
+        return {"areas": {}}
+    with open(path, encoding="utf-8") as f:
+        data = json.load(f)
+    if not isinstance(data, dict) or not isinstance(data.get("areas", {}),
+                                                    dict):
+        raise ValueError("%s is not {\"areas\": {...}}" % path)
+    data.setdefault("areas", {})
+    return data
+
+
 def age_days(stamp, now):
     if not stamp:
         return None
@@ -172,7 +226,17 @@ def main():
     # one run now publishes both and the picker in the app finally has
     # something to pick between.
     ap.add_argument("--max-zoom", type=int, default=14)
+    ap.add_argument("--blocks",
+                    help="satellite/blocks.json: areas EOX refused, which "
+                         "are not planned until their block runs out")
     args = ap.parse_args()
+
+    try:
+        blocks = load_blocks(args.blocks)["areas"]
+    except (OSError, ValueError) as e:
+        print(json.dumps({"work": False,
+                          "why": "cannot read the blocks file: %s" % e}))
+        return 1
 
     try:
         with open(args.catalogue, encoding="utf-8") as f:
@@ -185,19 +249,28 @@ def main():
     published = existing_satellite(catalogue)
     short = below_zoom(catalogue, args.max_zoom)
     relabel = wrong_attribution(catalogue, build_satellite_attribution())
-    candidates = []
+    candidates, refused = [], []
     for area in areas_with_lanes(catalogue):
+        if area["id"] in blocks:
+            until = blocked_until(blocks[area["id"]])
+            if until > now:
+                refused.append("%s until %s" % (
+                    area["id"], "a person mends its record" if until == NEVER
+                    else stamp(until)))
+                continue
         age = age_days(published.get(area["id"]), now)
-        # Never built comes first, then built from another mosaic (the
-        # licence), then built below the agreed zoom, then oldest. `None`
-        # sorts ahead of any number, which is what we want and is worth
-        # being explicit about.
-        rank = (0 if age is None else 1 if area["id"] in relabel
+        # Built from another mosaic (the licence) comes first: that imagery
+        # is being served under terms we may not use, which is a live
+        # breach. Then never built, then built below the agreed zoom, then
+        # oldest.
+        rank = (0 if area["id"] in relabel else 1 if age is None
                 else 2 if area["id"] in short else 3)
         candidates.append((rank, -(age or 0), area, age))
 
     if not candidates:
-        print(json.dumps({"work": False, "why": "no areas publish lanes"}))
+        print(json.dumps({"work": False, "why": (
+            "EOX refused us, so these are not asked for again yet: %s"
+            % "; ".join(refused)) if refused else "no areas publish lanes"}))
         return 0
 
     candidates.sort(key=lambda c: (c[0], c[1]))

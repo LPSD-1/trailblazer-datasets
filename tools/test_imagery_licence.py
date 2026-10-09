@@ -31,6 +31,7 @@ tile, so it was.
 import contextlib
 import datetime as dt
 import email.message
+import email.utils
 import hashlib
 import html
 import http.server
@@ -39,10 +40,12 @@ import io
 import json
 import os
 import re
+import ssl
 import sys
 import tempfile
 import threading
 import urllib.error
+import urllib.request
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
@@ -83,6 +86,12 @@ def layer_of(source):
     return m.group(1) if m else None
 
 
+# A JPEG's first bytes. A 200 whose body is not an image is EOX's busy page
+# served as a success, and counts as a failed tile, so a stand-in tile has to
+# look like what EOX serves.
+JPG = b"\xff\xd8\xff\xe0" + b"tile"
+
+
 class _Response:
     status = 200
 
@@ -103,7 +112,7 @@ class _Opener:
     """Answers each request from a script: bytes for a 200, or an HTTP
     status code to raise. Records every request it is asked to make."""
 
-    def __init__(self, script, default=b"tile"):
+    def __init__(self, script, default=JPG):
         self.script, self.default, self.calls = list(script), default, []
 
     def open(self, req, timeout=None):
@@ -134,33 +143,57 @@ class _Clock:
         self.now += s
 
 
+def _guarded(name, fn):
+    """Each check on its own, so one that cannot run hides no other."""
+    try:
+        fn()
+    except (Exception, SystemExit) as e:  # noqa: BLE001
+        check(False, "%s could not be driven: %r" % (name, e))
+
+
 def service_checks(bs):
     # (c) Who we are, with no email address.
     check(bs.USER_AGENT ==
           "TrailBlazer-data/1.0 (+https://lpsd-1.github.io/trailblazer-help/)",
           "USER_AGENT is %r" % bs.USER_AGENT)
 
-    def fetcher(script, retries=4):
+    def fetcher(script, **kw):
         clock = _Clock()
         opener = _Opener(script)
-        f = bs.Fetcher(sharpen=False, retries=retries, opener=opener,
-                       sleep=clock.sleep, clock=clock)
+        f = bs.Fetcher(sharpen=False, opener=opener, sleep=clock.sleep,
+                       clock=clock, **kw)
         return f, opener, clock
 
-    try:
+    def long_waits(clock):
+        return [s for s in clock.slept if s >= 1]
+
+    def waited_out():
         # A 429 that says when to come back is waited out, then the tile
         # arrives; the request carried the User-Agent.
-        f, op, clock = fetcher([(429, {"Retry-After": "7"}), b"ok"])
+        f, op, clock = fetcher([(429, {"Retry-After": "7"}), JPG])
         got = f.get(13, 1, 2)
-        check(got == b"ok" and 7 in clock.slept and f.stopped is None,
+        check(got == JPG and 7 in clock.slept and f.stopped is None
+              and f.block is None,
               "a 429 with Retry-After 7 was not waited out: got %r, slept %s"
               % (got, clock.slept))
         check(all(ua == bs.USER_AGENT for _u, ua in op.calls),
               "a request went without the User-Agent: %r" % op.calls)
 
+    def default_tries():
+        # FOUR requests for one tile, then the area stops: the number is
+        # pinned here through the default, with no retries= override.
+        for code in (429, 503):
+            f, op, clock = fetcher([(code, {})] * 10)
+            f.get(13, 1, 2)
+            check(len(op.calls) == 4 and f.stopped,
+                  "HTTP %d with the default tries: %d requests, stopped=%r; "
+                  "expected 4 and a stop" % (code, len(op.calls), f.stopped))
+
+    def refusals():
         # (a) Refused every time: a bounded number of tries, then the whole
-        # run stops - no other tile is asked for.
-        for code in (301, 302, 403, 429, 500, 503):
+        # run stops - no other tile is asked for. Every redirect, and every
+        # 5xx, not just the common ones.
+        for code in (301, 302, 303, 307, 308, 429, 500, 502, 503, 504):
             f, op, clock = fetcher([(code, {})] * 10, retries=3)
             first = f.get(13, 1, 2)
             asked = len(op.calls)
@@ -171,28 +204,82 @@ def service_checks(bs):
             check(second is None and len(op.calls) == asked,
                   "HTTP %d: the run went on asking after it was refused"
                   % code)
+            check((getattr(f, "block", None) or {}).get("status") == code,
+                  "HTTP %d: the stop does not record its status: %r"
+                  % (code, getattr(f, "block", None)))
 
-        # Retry-After is honoured but capped, so a hostile header cannot
-        # hold a runner all day; and backoff grows between refusals.
-        f, op, clock = fetcher([(503, {"Retry-After": "999999"}), b"ok"])
+    def stop_at_once():
+        # 401 and 403 say "not you": the area stops on the first one, with
+        # no retry and no wait.
+        for code in (401, 403):
+            f, op, clock = fetcher([(code, {})] * 10)
+            got = f.get(13, 1, 2)
+            f.get(13, 1, 3)
+            check(got is None and len(op.calls) == 1 and f.stopped
+                  and not long_waits(clock)
+                  and (getattr(f, "block", None) or {}).get("status") == code,
+                  "HTTP %d was retried or did not stop the area: %d "
+                  "requests, slept %s, stopped=%r, block %r"
+                  % (code, len(op.calls), clock.slept, f.stopped,
+                     getattr(f, "block", None)))
+
+    def retry_after_limit():
+        # 600 seconds is the longest wait, pinned as a number. Up to it,
+        # the wait is honoured in full.
+        f, op, clock = fetcher([(503, {"Retry-After": "600"}), JPG])
+        got = f.get(13, 1, 2)
+        check(got == JPG and 600 in clock.slept and f.stopped is None,
+              "a Retry-After of 600 s was not waited out: got %r, slept %s"
+              % (got, clock.slept))
+        # Past it, the area stops at once and records what EOX asked for.
+        # Never shortened: no shorter wait and another try.
+        for ra in ("601", "999999"):
+            f, op, clock = fetcher([(503, {"Retry-After": ra}), JPG])
+            got = f.get(13, 1, 2)
+            block = getattr(f, "block", None) or {}
+            check(got is None and len(op.calls) == 1 and f.stopped
+                  and not long_waits(clock)
+                  and block.get("retry_after") == float(ra),
+                  "Retry-After %s was shortened rather than stopping the "
+                  "area: got %r, %d requests, slept %s, block %r"
+                  % (ra, got, len(op.calls), clock.slept, block))
+        # The HTTP-date form says the same, and is read, not guessed at.
+        base = 1800000000.0
+        later = email.utils.formatdate(base + 2 * 86400, usegmt=True)
+        f, op, clock = fetcher([(429, {"Retry-After": later}), JPG],
+                               wall=lambda: base)
+        got = f.get(13, 1, 2)
+        block = getattr(f, "block", None) or {}
+        check(got is None and f.stopped and len(op.calls) == 1
+              and abs((block.get("retry_after") or 0) - 2 * 86400) < 2,
+              "a Retry-After date two days off did not stop the area: "
+              "got %r, block %r, slept %s" % (got, block, clock.slept))
+        soon = email.utils.formatdate(base + 30, usegmt=True)
+        f, op, clock = fetcher([(429, {"Retry-After": soon}), JPG],
+                               wall=lambda: base)
+        got = f.get(13, 1, 2)
+        check(got == JPG and any(29 <= s <= 31 for s in clock.slept),
+              "a Retry-After date 30 s off was not waited out: got %r, "
+              "slept %s" % (got, clock.slept))
+
+    def backoff_grows():
+        f, op, clock = fetcher([(503, {})] * 3 + [JPG])
         f.get(13, 1, 2)
-        check(clock.slept and max(clock.slept) <= bs.RETRY_AFTER_CAP,
-              "Retry-After was not capped: slept %s" % clock.slept)
-        f, op, clock = fetcher([(503, {})] * 3 + [b"ok"])
-        f.get(13, 1, 2)
-        waits = [s for s in clock.slept if s >= 1]
+        waits = long_waits(clock)
         check(len(waits) == 3 and waits == sorted(waits) and
               waits[0] < waits[-1],
               "backoff without Retry-After does not grow: %s" % clock.slept)
 
+    def network_retry():
         # A network fault is not a refusal: retried after a short, paced
         # wait (through the injected clock, so it is the fetcher's own).
-        f, op, clock = fetcher([urllib.error.URLError("reset"), b"ok"])
-        check(f.get(13, 1, 2) == b"ok" and 1.5 in clock.slept
+        f, op, clock = fetcher([urllib.error.URLError("reset"), JPG])
+        check(f.get(13, 1, 2) == JPG and 1.5 in clock.slept
               and f.stopped is None,
               "a network fault was not retried after 1.5 s: slept %s"
               % clock.slept)
 
+    def not_found():
         # A 404 is a tile that is not there: recorded, not retried, and it
         # does not stop the run.
         f, op, clock = fetcher([(404, {})])
@@ -201,9 +288,11 @@ def service_checks(bs):
               "a 404 was retried or stopped the run: %d calls, stopped=%r"
               % (len(op.calls), f.stopped))
 
-        # (b) A polite rate, stated: request starts are spaced out.
-        rate = bs.MAX_REQUESTS_PER_SECOND
-        check(0 < rate <= 5, "MAX_REQUESTS_PER_SECOND is %r" % rate)
+    def paced():
+        # (b) A polite rate, stated and pinned: four a second.
+        check(bs.MAX_REQUESTS_PER_SECOND == 4.0,
+              "MAX_REQUESTS_PER_SECOND is %r, not 4"
+              % bs.MAX_REQUESTS_PER_SECOND)
         f, op, clock = fetcher([])
         starts = []
         real_open = op.open
@@ -215,13 +304,172 @@ def service_checks(bs):
         for y in range(6):
             f.get(13, 1, y)
         gaps = [b - a for a, b in zip(starts, starts[1:])]
-        check(len(gaps) == 5 and min(gaps) >= 1.0 / rate - 1e-9,
-              "requests were not paced to %s a second: gaps %s"
-              % (rate, gaps))
-    except Exception as e:  # noqa: BLE001
-        check(False, "the fetcher could not be driven: %r" % e)
+        check(len(gaps) == 5 and all(abs(g - 0.25) < 1e-9 for g in gaps),
+              "requests were not paced to 4 a second: gaps %s" % gaps)
 
-    # (a) A redirect is never followed, through the opener the build uses.
+    def paced_across_threads():
+        # Three connections, as main() runs them, share ONE slot: a slot per
+        # thread would triple the rate. Time stands still here and each
+        # request's start is when its sleep would have ended, so the spacing
+        # is exact and owes nothing to the scheduler.
+        tl = threading.local()
+        lock = threading.Lock()
+        starts = []
+
+        class Op(_Opener):
+            def open(self, req, timeout=None):
+                with lock:
+                    starts.append(1000.0 + getattr(tl, "slept", 0.0))
+                tl.slept = 0.0
+                return _Response(JPG)
+
+        def sleep(s):
+            tl.slept = getattr(tl, "slept", 0.0) + s
+
+        f = bs.Fetcher(sharpen=False, opener=Op([]), sleep=sleep,
+                       clock=lambda: 1000.0)
+
+        def worker(n):
+            for y in range(3):
+                f.get(13, n, y)
+        threads = [threading.Thread(target=worker, args=(n,))
+                   for n in range(3)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+        starts.sort()
+        gaps = [b - a for a, b in zip(starts, starts[1:])]
+        check(len(starts) == 9 and all(abs(g - 0.25) < 1e-9 for g in gaps),
+              "three connections were not paced together at 4 a second: "
+              "starts %s" % starts)
+
+    def pause_is_host_wide():
+        # A Retry-After pauses every connection, not just the refused one:
+        # another worker asking while this one waits leaves no sooner.
+        clock = _Clock()
+        starts = []
+        nested = []
+        box = {}
+
+        def sleep(s):
+            if s >= 5 and not nested:
+                nested.append(True)
+                box["f"].get(13, 5, 6)   # another worker, mid-wait
+            clock.sleep(s)
+
+        op = _Opener([(429, {"Retry-After": "7"}), JPG, JPG])
+        real_open = op.open
+
+        def timed(req, timeout=None):
+            starts.append((req.full_url, clock.now))
+            return real_open(req, timeout)
+        op.open = timed
+        box["f"] = bs.Fetcher(sharpen=False, opener=op, sleep=sleep,
+                              clock=clock)
+        box["f"].get(13, 1, 2)
+        other = [t for u, t in starts if u.endswith("/13/6/5.jpg")]
+        check(nested and other and other[0] >= 1000.0 + 7,
+              "another worker asked during a Retry-After pause: refused at "
+              "1000, it asked at %s" % other)
+
+    def nothing_after_a_stop():
+        # A worker held in the pacing sleep when another is refused must not
+        # send its request once it wakes.
+        clock = _Clock()
+        box = {}
+
+        def sleep(s):
+            box["f"].stopped = box["f"].stopped or "refused elsewhere"
+            clock.sleep(s)
+
+        op = _Opener([JPG, JPG])
+        box["f"] = bs.Fetcher(sharpen=False, opener=op, sleep=sleep,
+                              clock=clock)
+        box["f"].get(13, 1, 2)
+        got = box["f"].get(13, 1, 3)
+        check(got is None and len(op.calls) == 1,
+              "a request left after the area was stopped: %d requests"
+              % len(op.calls))
+
+    def connection_failures():
+        # Resets, timeouts, TLS faults and a 200 that is not an image are
+        # refusals too, counted per tile: 20 tiles running, or more than 5%
+        # of the last 200, stop the area as an HTTP refusal does.
+        faults = [ConnectionResetError("reset"), TimeoutError("timed out"),
+                  ssl.SSLError("bad record mac"),
+                  urllib.error.URLError("refused"),
+                  b"<html>heavyload</html>"]
+        f, op, clock = fetcher([faults[i % 5] for i in range(20)]
+                               + [JPG] * 5, retries=1)
+        for y in range(19):
+            f.get(13, 1, y)
+        check(f.stopped is None,
+              "19 failed tiles running stopped the area: %r" % f.stopped)
+        f.get(13, 1, 19)
+        asked = len(op.calls)
+        f.get(13, 1, 20)
+        block = getattr(f, "block", None) or {}
+        check(f.stopped and asked == 20 and len(op.calls) == 20
+              and block.get("status") == "network",
+              "20 failed tiles running did not stop the area: stopped=%r, "
+              "%d requests, block %r" % (f.stopped, len(op.calls), block))
+
+        f, op, clock = fetcher([faults[i % 5] for i in range(19)] + [JPG]
+                               + [faults[i % 5] for i in range(19)],
+                               retries=1)
+        for y in range(39):
+            f.get(13, 1, y)
+        check(f.stopped is None,
+              "a good tile did not break the run of failures: %r"
+              % f.stopped)
+
+        def run(fail_at, n):
+            g, op2, _c = fetcher([faults[0] if i in fail_at else JPG
+                                  for i in range(n)], retries=1)
+            for i in range(n):
+                g.get(13, 1, i)
+            return g
+        # The share is of the last 200 tiles, so it is judged once 200 have
+        # been asked for; before that, 20 running is the rule. 10 of 200 is
+        # 5%, which is not MORE than 5%.
+        g = run(set(range(0, 136, 15)), 200)
+        check(g.stopped is None,
+              "10 failed tiles of 200 (5%%) stopped the area: %r" % g.stopped)
+        g = run(set(range(0, 151, 15)), 199)
+        check(g.stopped is None,
+              "the share was judged before 200 tiles: %r" % g.stopped)
+        g = run(set(range(0, 151, 15)), 200)
+        check(g.stopped,
+              "11 failed tiles in the last 200 did not stop the area")
+        g = run(set(range(0, 136, 15)) | set(range(350, 486, 15)), 486)
+        check(g.stopped is None,
+              "failures more than 200 tiles back still counted: %r"
+              % g.stopped)
+
+        # And the busy page is never kept as a tile.
+        f, op, clock = fetcher([b"<html>busy</html>"], retries=1)
+        check(f.get(13, 1, 2) is None and len(f.failed) == 1,
+              "a 200 that is not an image was kept as a tile")
+
+    for name, fn in (("the Retry-After wait", waited_out),
+                     ("the default tries", default_tries),
+                     ("the refusal sweep", refusals),
+                     ("the stop-at-once codes", stop_at_once),
+                     ("the Retry-After limit", retry_after_limit),
+                     ("the backoff", backoff_grows),
+                     ("the network retry", network_retry),
+                     ("the 404 case", not_found),
+                     ("the pacing", paced),
+                     ("the pacing across threads", paced_across_threads),
+                     ("the host-wide pause", pause_is_host_wide),
+                     ("the stop after pacing", nothing_after_a_stop),
+                     ("the connection failures", connection_failures)):
+        _guarded(name, fn)
+
+    # (a) A redirect is never followed, through the opener the build uses,
+    # and through sample_imagery's own FETCHER, the real object.
+    si = load("sample_imagery")
     hits = []
 
     class Handler(http.server.BaseHTTPRequestHandler):
@@ -242,16 +490,30 @@ def service_checks(bs):
     server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
+    base = "http://127.0.0.1:%d" % server.server_address[1]
     try:
         clock = _Clock()
         f = bs.Fetcher(sharpen=False, retries=2, sleep=clock.sleep,
-                       clock=clock, source="http://127.0.0.1:%d/{z}/{x}/{y}"
-                       % server.server_address[1])
+                       clock=clock, source=base + "/{z}/{x}/{y}")
         got = f.get(13, 1, 2)
         check(got is None and f.stopped and
               not any(h.startswith("/heavyload") for h in hits),
               "a redirect was followed or not treated as a refusal: "
               "got %r, stopped=%r, requests %s" % (got, f.stopped, hits))
+
+        real = si.FETCHER
+        del hits[:]
+        try:
+            real.opener.open(urllib.request.Request(base + "/13/1/2"),
+                             timeout=10).read()
+            followed = True
+        except urllib.error.HTTPError as e:
+            followed = e.code != 302
+        check(not followed and hits == ["/13/1/2"],
+              "sample_imagery's FETCHER follows a redirect: %s" % hits)
+        check(abs(real.interval - 0.25) < 1e-9 and real.retries == 4,
+              "sample_imagery's FETCHER is not the build's polite one: "
+              "interval %r, retries %r" % (real.interval, real.retries))
     except Exception as e:  # noqa: BLE001
         check(False, "the redirect check could not run: %r" % e)
     finally:
@@ -260,7 +522,8 @@ def service_checks(bs):
 
     # (a, d) The build end to end over a tiny area: staged tiles are never
     # fetched again, and a refusal stops the area with no pack written, so
-    # the published one stays.
+    # the published one stays, and records the stop where the planner
+    # reads it.
     box = ["--bbox", "-1.0", "51.0", "-0.9", "51.1", "--min-zoom", "0",
            "--max-zoom", "2", "--id", "t", "--label", "T"]
     wanted = list(bs.tiles_in((-1.0, 51.0, -0.9, 51.1), 0, 2))
@@ -300,12 +563,23 @@ def service_checks(bs):
                   "a complete staging set was fetched again: %d requests"
                   % again)
 
+            # Refused: exit 3, no pack, and a block record beside the one
+            # already there for another area.
+            blocks = os.path.join(tmp, "satellite", "blocks.json")
+            os.makedirs(os.path.dirname(blocks))
+            other = {"at": "2026-10-01T00:00:00Z", "status": 429,
+                     "retry_after": None, "until": "2026-10-08T00:00:00Z",
+                     "reason": "earlier"}
+            with open(blocks, "w", encoding="utf-8", newline="\n") as fh:
+                json.dump({"areas": {"gb-x-satellite": other}}, fh)
             staging2 = os.path.join(tmp, "staging2")
             out = os.path.join(tmp, "t.pmtiles")
             bs.Fetcher = make([(429, {})] * 100)
             sys.argv = (["build_satellite.py"] + box +
-                        ["--staging", staging2, "--package", "--out", out])
+                        ["--staging", staging2, "--package", "--out", out,
+                         "--block-out", blocks])
             log = io.StringIO()
+            before = dt.datetime.now(dt.timezone.utc)
             with contextlib.redirect_stdout(log), \
                     contextlib.redirect_stderr(log):
                 rc = bs.main()
@@ -316,7 +590,44 @@ def service_checks(bs):
                   "%d requests, log %r" % (rc, os.path.exists(out),
                                            len(opened[-1].calls),
                                            log.getvalue()[-300:]))
-    except Exception as e:  # noqa: BLE001
+            with open(blocks, encoding="utf-8") as fh:
+                areas = json.load(fh).get("areas", {})
+            rec = areas.get("t") or {}
+
+            def when(s):
+                return dt.datetime.fromisoformat(
+                    str(s).replace("Z", "+00:00"))
+            try:
+                at, until = when(rec.get("at")), when(rec.get("until"))
+            except (TypeError, ValueError):
+                at = until = None
+            check(areas.get("gb-x-satellite") == other,
+                  "the stop overwrote another area's block: %r" % areas)
+            check(rec.get("status") == 429 and rec.get("retry_after") is None
+                  and at is not None
+                  and abs((at - before).total_seconds()) < 120
+                  and until - at == dt.timedelta(days=7),
+                  "the stop was not recorded with its time, status and a "
+                  "7-day block: %r" % rec)
+
+            # A 403 asking for a month: recorded as a month.
+            bs.Fetcher = make([(403, {"Retry-After": "2592000"})] * 100)
+            with contextlib.redirect_stdout(io.StringIO()), \
+                    contextlib.redirect_stderr(io.StringIO()):
+                rc = bs.main()
+            with open(blocks, encoding="utf-8") as fh:
+                rec = json.load(fh).get("areas", {}).get("t") or {}
+            try:
+                at, until = when(rec.get("at")), when(rec.get("until"))
+            except (TypeError, ValueError):
+                at = until = None
+            check(rc == 3 and len(opened[-1].calls) == 1
+                  and rec.get("status") == 403
+                  and rec.get("retry_after") == 2592000
+                  and at is not None and until - at == dt.timedelta(days=30),
+                  "a 403 asking for 30 days was not recorded as 30 days: "
+                  "rc %r, %d requests, %r" % (rc, len(opened[-1].calls), rec))
+    except (Exception, SystemExit) as e:  # noqa: BLE001 - argparse exits
         check(False, "the build could not be driven: %r" % e)
     finally:
         bs.Fetcher, sys.argv = real_fetcher, argv
@@ -539,6 +850,40 @@ def main():
     idle = plan(area("gb-a", a), area("gb-b", a))
     check(idle.get("work") is False,
           "packs under ATTRIBUTION and a day old were rebuilt: %r" % idle)
+    # A pack with no note at all is not known to be the CC BY mosaic.
+    bare = area("gb-b", a)
+    del bare["packs"][1]["note"]
+    due = plan(area("gb-a", a), bare)
+    check(due.get("work") is True and due.get("id") == "gb-b-satellite",
+          "a day-old pack with no note is not due: %r" % due)
+    # The wrong words on only the high-detail pack are enough.
+    half = area("gb-b", a)
+    half["packs"][2]["note"] = old_note
+    due = plan(area("gb-a", a), half)
+    check(due.get("work") is True and due.get("id") == "gb-b-satellite",
+          "a wrong note on only the high-detail pack is not due: %r" % due)
+
+    # THE ORDER, pinned: imagery served under another licence is replaced
+    # first, because it is a live breach; then an area with no imagery at
+    # all; then one built below z14; then the oldest. Each area is listed
+    # ahead of the one that must beat it.
+    never = {"id": "gb-n", "label": "gb-n", "bounds": {
+        "west": -1, "south": 51, "east": 0, "north": 52},
+        "packs": [{"kind": "lanes", "id": "gb-n-ways"}]}
+    low = area("gb-z", a)
+    low["packs"] = low["packs"][:2]          # standard only: below z14
+    old = area("gb-o", a)
+    for p in old["packs"][1:]:
+        p["generated"] = "2026-08-01T00:00:00Z"
+    for areas, want in (((never, low, old, area("gb-w", old_note)),
+                         "gb-w-satellite"),
+                        ((low, old, never), "gb-n-satellite"),
+                        ((old, low), "gb-z-satellite"),
+                        ((area("gb-a", a), old), "gb-o-satellite")):
+        due = plan(*areas)
+        check(due.get("id") == want,
+              "with %s due, the plan took %r, not %s"
+              % ([x["id"] for x in areas], due.get("id"), want))
 
     # 5. The comparison page credits the plates with the same words.
     dp = load("make_detail_page")

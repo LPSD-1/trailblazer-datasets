@@ -79,6 +79,9 @@ L2A scenes are on AWS open data. Either is a better neighbour than a crawl
 that never ends.
 """
 import argparse
+import collections
+import datetime as dt
+import email.utils
 import gzip
 import hashlib
 import io
@@ -117,19 +120,41 @@ ATTRIBUTION = ("EOxCloudless https://cloudless.eox.at by EOX IT Services "
 # EOX's tile service has no bulk-download terms, but it rate-limits: it
 # answers a heavy user with HTTP errors and redirects to a "heavyload" page.
 # So this tool says who it is (no email address), keeps to a stated rate, and
-# treats a redirect, 403, 429 or 5xx as EOX asking us to stop: it backs off,
-# honouring Retry-After, and after REFUSED_TRIES refusals for one tile it
-# stops the whole area, writes no pack, and leaves the published one alone.
-# It never follows the redirect and never retries around a block.
+# treats a redirect, 401, 403, 429 or 5xx as EOX asking us to stop:
+#
+#   - a 401 or 403 stops the area at once, with no retry;
+#   - a Retry-After over RETRY_AFTER_CAP stops it at once too: what EOX asked
+#     for is recorded, never cut short to a wait we would rather make;
+#   - otherwise it waits (Retry-After, else a growing backoff), and the wait
+#     holds EVERY connection, not only the refused one; after REFUSED_TRIES
+#     refusals for one tile the area stops.
+#
+# Failures below HTTP count as well: a reset, a timeout, a TLS fault, or a 200
+# whose body is not a JPEG (a busy page served as success). Once a tile has
+# used its tries it counts as failed, and FAILED_RUNNING failed tiles in a
+# row, or more than FAILED_SHARE of the last FAILED_WINDOW, stop the area.
+#
+# A stopped area writes no pack and leaves the published one alone. With
+# --block-out it also records the stop (time, status, Retry-After) where the
+# planner reads it, so nothing asks again before it may. It never follows the
+# redirect and never retries around a block.
 USER_AGENT = "TrailBlazer-data/1.0 (+https://lpsd-1.github.io/trailblazer-help/)"
 MAX_REQUESTS_PER_SECOND = 4.0   # across every worker; 55,000 tiles ~ 4 hours
 REFUSED_TRIES = 4               # requests for one tile before the area stops
-RETRY_AFTER_CAP = 600           # seconds; the longest single wait
+RETRY_AFTER_CAP = 600           # seconds; a longer Retry-After stops the area
+STOP_AT_ONCE = (401, 403)       # "not you": no second request
+FAILED_RUNNING = 20             # failed tiles in a row that stop the area
+FAILED_WINDOW = 200             # the last this many tiles ...
+FAILED_SHARE = 0.05             # ... of which more than this share stops it
 BLOCKED_EXIT = 3                # main()'s exit code when EOX refused us
 
 
 def _is_refusal(code):
-    return 300 <= code < 400 or code in (403, 429) or code >= 500
+    return 300 <= code < 400 or code in (401, 403, 429) or code >= 500
+
+
+def _is_jpeg(body):
+    return body[:3] == b"\xff\xd8\xff"
 
 
 class _NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -194,11 +219,12 @@ def tile_id(z, x, y):
 class Fetcher:
     def __init__(self, sharpen, retries=REFUSED_TRIES, opener=None,
                  sleep=time.sleep, clock=time.monotonic,
-                 rate=MAX_REQUESTS_PER_SECOND, source=SOURCE):
+                 rate=MAX_REQUESTS_PER_SECOND, source=SOURCE,
+                 wall=time.time):
         self.sharpen = sharpen
         self.retries = retries
         self.opener = opener or urllib.request.build_opener(_NoRedirect)
-        self.sleep, self.clock = sleep, clock
+        self.sleep, self.clock, self.wall = sleep, clock, wall
         self.interval = 1.0 / rate
         self.source = source
         self.lock = threading.Lock()
@@ -206,7 +232,12 @@ class Fetcher:
         self.failed = []
         # Why the run stopped, once EOX has refused us; None until then.
         self.stopped = None
+        # What to remember about the stop: {"status", "retry_after",
+        # "reason"}. status is the HTTP code, or "network".
+        self.block = None
         self._next_start = 0.0
+        self._recent = collections.deque(maxlen=FAILED_WINDOW)
+        self._running = 0
 
     def _pace(self):
         """Hold this request until its slot: starts are `interval` apart
@@ -219,14 +250,54 @@ class Fetcher:
         if start > now:
             self.sleep(start - now)
 
-    def _wait(self, error, attempt):
-        """Seconds to wait after a refusal: Retry-After when it is given in
-        seconds, else a growing backoff; never more than RETRY_AFTER_CAP."""
+    def _hold(self, seconds):
+        """No connection starts a request for `seconds`: a refusal is about
+        us, not about the one connection that heard it."""
+        with self.lock:
+            self._next_start = max(self._next_start, self.clock() + seconds)
+
+    def _retry_after(self, error):
+        """Seconds EOX asked us to wait, in either of Retry-After's forms
+        (seconds, or an HTTP date); None when it did not say."""
         try:
-            wait = float(error.headers.get("Retry-After"))
-        except (AttributeError, TypeError, ValueError):
-            wait = 15.0 * (2 ** attempt)
-        return max(1.0, min(wait, RETRY_AFTER_CAP))
+            value = error.headers.get("Retry-After")
+        except AttributeError:
+            return None
+        if value is None:
+            return None
+        try:
+            return max(0.0, float(value))
+        except ValueError:
+            pass
+        try:
+            when = email.utils.parsedate_to_datetime(value)
+        except (TypeError, ValueError, IndexError):
+            return None
+        if when is None:
+            return None
+        if when.tzinfo is None:
+            when = when.replace(tzinfo=dt.timezone.utc)
+        return max(0.0, when.timestamp() - self.wall())
+
+    def _stop(self, status, retry_after, reason):
+        with self.lock:
+            if self.stopped is None:
+                self.stopped = reason
+                self.block = {"status": status, "retry_after": retry_after,
+                              "reason": reason}
+
+    def _tile_done(self, failed):
+        """Count a tile's outcome; too many failures stop the area."""
+        with self.lock:
+            self._recent.append(failed)
+            self._running = self._running + 1 if failed else 0
+            running, bad = self._running, sum(self._recent)
+            full = len(self._recent) == FAILED_WINDOW
+        if running >= FAILED_RUNNING:
+            self._stop("network", None, "%d tiles failed running" % running)
+        elif full and bad > FAILED_SHARE * FAILED_WINDOW:
+            self._stop("network", None, "%d of the last %d tiles failed"
+                       % (bad, FAILED_WINDOW))
 
     def get(self, z, x, y):
         url = self.source.format(z=z, x=x, y=y)
@@ -234,33 +305,50 @@ class Fetcher:
             if self.stopped:
                 return None
             self._pace()
+            # Another connection may have been refused while this one slept
+            # for its slot: then nothing more leaves.
+            if self.stopped:
+                return None
             try:
                 req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
                 with self.opener.open(req, timeout=40) as r:
                     body = r.read()
-                if not body:
-                    raise ValueError("empty body")
-                return self._process(body)
+                if not _is_jpeg(body):
+                    raise ValueError("not a JPEG: %r" % body[:32])
+                tile = self._process(body)
             except urllib.error.HTTPError as e:
                 if not _is_refusal(e.code):
                     # A 404 or other 4xx is about this tile, not about us.
                     with self.lock:
                         self.failed.append((z, x, y, "HTTP %d" % e.code))
                     return None
-                if attempt == self.retries - 1:
-                    with self.lock:
-                        self.stopped = self.stopped or (
-                            "HTTP %d for z%d/%d/%d, %d times running"
-                            % (e.code, z, x, y, self.retries))
+                asked = self._retry_after(e)
+                where = "HTTP %d for z%d/%d/%d" % (e.code, z, x, y)
+                if e.code in STOP_AT_ONCE:
+                    self._stop(e.code, asked, where + ", which is not retried")
                     return None
-                self.sleep(self._wait(e, attempt))
+                if asked is not None and asked > RETRY_AFTER_CAP:
+                    self._stop(e.code, asked, where + ", asking us to wait "
+                               "%d s" % asked)
+                    return None
+                if attempt == self.retries - 1:
+                    self._stop(e.code, asked, where + ", %d times running"
+                               % self.retries)
+                    return None
+                wait = 15.0 * (2 ** attempt) if asked is None else asked
+                self._hold(max(1.0, wait))
+                continue
             except Exception as e:  # noqa: BLE001 - a network fault is retried
                 if attempt == self.retries - 1:
                     with self.lock:
                         self.failed.append((z, x, y, str(e)))
+                    self._tile_done(True)
                     return None
                 # Backoff, and do not stampede a free service.
                 self.sleep(1.5 * (attempt + 1))
+                continue
+            self._tile_done(False)
+            return tile
         return None
 
     def _process(self, body):
@@ -568,6 +656,36 @@ def tiers_up_to(max_zoom):
     return [t for t in TIERS if t["zoom"] <= max_zoom]
 
 
+def _planner():
+    """satellite_plan, which owns how long a stop keeps an area idle."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        "satellite_plan", os.path.join(os.path.dirname(
+            os.path.abspath(__file__)), "satellite_plan.py"))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def record_block(path, area_id, block):
+    """Write the stop into `path` beside the other areas' records, and
+    return it. Retry-After is rounded UP: what EOX asked for is never cut."""
+    plan = _planner()
+    now = dt.datetime.now(dt.timezone.utc).replace(microsecond=0)
+    asked = block.get("retry_after")
+    rec = {"at": plan.stamp(now), "status": block.get("status"),
+           "retry_after": None if asked is None else int(math.ceil(asked)),
+           "reason": block.get("reason")}
+    rec["until"] = plan.stamp(plan.blocked_until(rec))
+    data = plan.load_blocks(path) if os.path.exists(path) else {"areas": {}}
+    data.setdefault("areas", {})[area_id] = rec
+    os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
+    with open(path, "w", encoding="utf-8", newline="\n") as f:
+        json.dump(data, f, indent=2, sort_keys=True)
+        f.write("\n")
+    return rec
+
+
 def main():
     ap = argparse.ArgumentParser(
         description=__doc__,
@@ -592,6 +710,10 @@ def main():
     ap.add_argument("--entry-out",
                     help="write the catalogue entry here as well as printing "
                          "it, so automation does not have to scrape stdout")
+    ap.add_argument("--block-out",
+                    help="when EOX stops the area, record the stop in this "
+                         "JSON file (satellite/blocks.json), which the "
+                         "planner reads so nothing asks again before it may")
     ap.add_argument("--workers", type=int, default=3,
                     help="keep this small; it is a free service")
     args = ap.parse_args()
@@ -638,6 +760,11 @@ def main():
             print("STOPPED: EOX refused the tile service to us (%s). No pack "
                   "written; %s keeps its published imagery. Not retried."
                   % (fetcher.stopped, args.id), file=sys.stderr)
+            if args.block_out:
+                rec = record_block(args.block_out, args.id, fetcher.block)
+                print("Recorded in %s: %s is not asked for again until %s."
+                      % (args.block_out, args.id, rec["until"]),
+                      file=sys.stderr)
             return BLOCKED_EXIT
 
         if fetcher.failed:
