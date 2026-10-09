@@ -11,8 +11,9 @@ Named hunt_* while it was a red proof, so the lane refresh's tools/test_*.py
 glob would not pick it up. It is green now, and that glob DOES run it: it is
 the premise of test_data_alarms_follow_up_fires_on_failure.py,
 test_data_alarms_follow_up_refuses_what_never_runs.py,
-test_data_alarms_premise_names_the_check.py and
-test_data_alarms_check4_scope.py. Those need the whole hunt green
+test_data_alarms_premise_names_the_check.py,
+test_data_alarms_check4_scope.py and test_data_alarms_parser_sweep.py.
+Those need the whole hunt green
 on the unmodified workflows, so ANY check below going red stops lane data
 publishing at "Run every tool suite". Their PREMISE message names the red
 check and quotes its FAIL line: that is the defect to fix, in
@@ -53,12 +54,15 @@ the property is about the workflow and nothing else can be asked:
    an issue on `steps.trips.outcome == 'failure'`.
 
    Check 4 guards what riders download, so it spares a job only when it is
-   on NON_PUBLISHING_JOBS below AND none of its steps publishes (PUBLISHES).
-   That list is reviewed by hand: a new job is held to check 4 until someone
-   adds it. "Only jobs that git push" was rejected as the scope: four
-   workflows publish release assets with `gh release upload` and push only
-   by coincidence, so a release-only job would slip through.
+   on NON_PUBLISHING_JOBS below AND its text still hashes to the sha256 a
+   reviewer pinned there: any edit re-arms the check until it is re-read
+   and re-pinned. A new job is held to check 4 until someone lists it.
+   Rejected scopes, each by an escape that was measured: "only jobs that
+   git push" (four workflows publish with `gh release upload` and push only
+   by coincidence), and a list of publishing verbs (19 ways round one were
+   found, from `git -C . push` to a push inside a called script).
 """
+import hashlib
 import os
 import re
 import sys
@@ -67,69 +71,197 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 WORKFLOWS = os.environ.get("HUNT_WORKFLOWS") or \
     os.path.join(ROOT, ".github", "workflows")
 
-# (workflow, job) pairs whose continue-on-error steps check 4 does not hold
-# to an issue, because the job publishes nothing riders download. Each entry
-# says why; each is re-checked against PUBLISHES on every run.
+# (workflow, job) -> sha256 of that job's pinned text (job_pin): the jobs
+# whose continue-on-error steps check 4 does not hold to an issue, because
+# a reviewer read the job and found it publishes nothing riders download.
+# The pin covers the job and its workflow's top-level keys (on, env,
+# permissions, defaults), so ANY edit to either re-arms check 4 until a
+# reviewer reads the job again and re-pins it here. To re-pin, print the
+# new value with
+#   python -c "import sys; sys.path.insert(0, 'tools'); import hunt_data_pipeline_alarms as h; print(h.job_pin(open('.github/workflows/<file>', encoding='utf-8').read(), '<job>'))"
+# Not pinned: scripts the job calls. They cannot publish without a token
+# that can write this repository, and the job's permissions are pinned.
 NON_PUBLISHING_JOBS = {
     # Posts a status, a check and a comment on the pull request, and writes
-    # a private ledger repository. Its soft steps fail closed: the step after
-    # each one fails and reports on the pull request.
-    ("independent-review.yml", "review"),
+    # the private review-ledger repository with an app token that cannot
+    # reach this one; GITHUB_TOKEN is contents: read. Its two soft steps
+    # fail closed: the step after each one fails and reports on the PR.
+    ("independent-review.yml", "review"):
+        "36741548e7fe31ed80d8720a16328f31eeed2ee7faa4036a0854845ceb74847c",
 }
 
-# Any of these in a step's run or uses means the job publishes.
-PUBLISHES = re.compile(
-    r"git push|gh release (upload|create|edit|delete)"
-    r"|gh api[^\n]*/contents/|deploy-pages|upload-pages-artifact|gh-pages")
+KEY = re.compile(r"""^(['"]?)([A-Za-z0-9_.-]+)\1\s*:(?:\s+(.*))?$""")
+
+
+def _indent(line):
+    return len(line) - len(line.lstrip())
+
+
+def _content(line):
+    """A line that is neither blank nor only a comment."""
+    b = line.strip()
+    return bool(b) and not b.startswith("#")
+
+
+def _scalar(v):
+    """A one-line YAML value without its quotes or trailing comment."""
+    v = v.strip()
+    if v[:1] in ("'", '"'):
+        end = v.find(v[0], 1)
+        return v[1:end] if end > 0 else v[1:]
+    return re.sub(r"(^|\s)#.*$", "", v).strip()
+
+
+def _key(bare):
+    """(key, raw value) of a `key: value` line, or None."""
+    m = KEY.match(bare)
+    return (m.group(2), m.group(3) or "") if m else None
+
+
+def _jobs(text):
+    """(lines, [(job, first line, end)]) of the workflow's jobs section.
+
+    A job's block runs from its header to the next job's header, less its
+    trailing blank lines; comments inside it count as part of it."""
+    lines = text.replace("\r\n", "\n").split("\n")
+    start = next((i for i, l in enumerate(lines) if _content(l)
+                  and _indent(l) == 0 and (_key(l.strip()) or ("",))[0]
+                  == "jobs"), None)
+    if start is None:
+        return lines, []
+    end = next((i for i in range(start + 1, len(lines)) if _content(lines[i])
+                and _indent(lines[i]) == 0), len(lines))
+    body = [i for i in range(start + 1, end) if _content(lines[i])]
+    if not body:
+        return lines, []
+    ji = _indent(lines[body[0]])
+    heads = [i for i in body if _indent(lines[i]) == ji]
+    blocks = []
+    for n, h in enumerate(heads):
+        stop = heads[n + 1] if n + 1 < len(heads) else end
+        while stop > h + 1 and not lines[stop - 1].strip():
+            stop -= 1
+        k = _key(lines[h].strip())
+        blocks.append((k[0] if k else lines[h].strip(), h, stop))
+    return lines, blocks
+
+
+def _take(lines, i, end, rest, col, step):
+    """Read the step key `rest` (at column col) on line i; return next i."""
+    step.setdefault("kcol", col)
+    k = i + 1
+    body = []
+    while k < end and (not lines[k].strip() or _indent(lines[k]) > col):
+        body.append(lines[k])
+        k += 1
+    while body and not body[-1].strip():
+        body.pop()
+    kv = _key(rest)
+    if not kv:
+        return k
+    key, raw = kv
+    v = _scalar(raw)
+    if re.match(r"^[|>][-+0-9]*$", v):
+        text = "\n".join(body)
+    else:
+        text = " ".join([v] + [b.strip() for b in body if b.strip()]).strip()
+    if key == "run":
+        step["run"] = text
+    elif key == "if":
+        step["if"] = " ".join(text.split())
+    elif key in ("name", "id", "uses"):
+        step[key] = text
+    elif key == "continue-on-error":
+        step["soft"] = text.strip().lower() != "false"
+    return k
+
+
+def _steps(lines, start, end):
+    """The steps of the job whose block is lines[start:end]."""
+    i, ki = start + 1, None
+    while i < end:
+        if _content(lines[i]) and (_key(lines[i].strip()) or ("",))[0] \
+                == "steps":
+            ki = _indent(lines[i])
+            i += 1
+            break
+        i += 1
+    steps, item, step = [], None, None
+    while ki is not None and i < end:
+        line = lines[i]
+        bare = line.strip()
+        ind = _indent(line)
+        if not _content(line):
+            i += 1
+            continue
+        if ind <= ki:
+            break
+        if (bare == "-" or bare.startswith("- ")) and \
+                (item is None or ind == item):
+            item = ind
+            step = {"name": "", "if": "", "run": "", "indent": ind,
+                    "id": "", "soft": False, "uses": ""}
+            steps.append(step)
+            rest = bare[1:].lstrip()
+            if rest:
+                i = _take(lines, i, end, rest, ind + len(bare) - len(rest),
+                          step)
+            else:
+                i += 1
+            continue
+        if step is not None and ind == step.get("kcol", ind):
+            i = _take(lines, i, end, bare, ind, step)
+            continue
+        i += 1
+    for n, s in enumerate(steps):
+        s.pop("kcol", None)
+        s["name"] = s["name"] or s["uses"] or \
+            (s["run"].strip().split("\n") or [""])[0].strip() or \
+            "step %d" % (n + 1)
+    return steps
 
 
 def jobs_of(path):
-    """{job: [step dict(name, if, run)]} from the workflow text."""
-    lines = open(path, encoding="utf-8").read().split("\n")
-    jobs, job, step, in_jobs = {}, None, None, False
-    i = 0
-    while i < len(lines):
-        line = lines[i]
-        bare = line.strip()
-        indent = len(line) - len(line.lstrip())
-        if line.rstrip() == "jobs:":
-            in_jobs = True
-        elif in_jobs and indent == 2 and bare.endswith(":") \
-                and not bare.startswith("#"):
-            job = bare[:-1]
-            jobs[job] = []
-        elif job and bare.startswith("- name:") or \
-                (job and bare.startswith("- uses:")):
-            step = {"name": bare.split(":", 1)[1].strip(), "if": "",
-                    "run": "", "indent": indent, "id": "", "soft": False,
-                    "uses": bare.split(":", 1)[1].strip()
-                    if bare.startswith("- uses:") else ""}
-            jobs[job].append(step)
-        elif step is not None and bare.startswith("if:") \
-                and indent == step["indent"] + 2:
-            step["if"] = bare[3:].strip()
-        elif step is not None and bare.startswith("id:")                 and indent == step["indent"] + 2:
-            step["id"] = bare[3:].strip()
-        elif step is not None and bare.startswith("uses:")                 and indent == step["indent"] + 2:
-            step["uses"] = bare[5:].strip()
-        elif step is not None and bare == "continue-on-error: true"                 and indent == step["indent"] + 2:
-            step["soft"] = True
-        elif step is not None and bare == "run: |":
-            body = []
-            k = i + 1
-            while k < len(lines):
-                b = lines[k]
-                if b.strip() and len(b) - len(b.lstrip()) <= indent:
-                    break
-                body.append(b)
-                k += 1
-            step["run"] = "\n".join(body)
-            i = k
-            continue
-        elif step is not None and bare.startswith("run:"):
-            step["run"] = bare[4:]
-        i += 1
-    return jobs
+    """{job: [step dict(name, if, run, id, uses, soft)]} from the workflow.
+
+    Read as text, without a YAML library (the lane refresh installs none).
+    A job header may carry a comment; a step may start with any key
+    (`- run:`, `- id:`, `- if:`, ...); a run may be `|`, `>`, with `-`/`+`
+    and a comment, quoted, one line, or a plain line continued below.
+    tools/test_data_alarms_parser_sweep.py holds it to each of those."""
+    with open(path, encoding="utf-8", newline="") as f:
+        lines, blocks = _jobs(f.read())
+    return {job: _steps(lines, s, e) for job, s, e in blocks}
+
+
+def pinned_lines(text, job):
+    """Indices of the lines job_pin hashes: the whole workflow but the other
+    jobs, so the job itself and the top-level keys it runs under."""
+    lines, blocks = _jobs(text)
+    if job not in [b[0] for b in blocks]:
+        return None
+    others = set()
+    for name, s, e in blocks:
+        if name != job:
+            others.update(range(s, e))
+    return [i for i in range(len(lines)) if i not in others]
+
+
+def job_pin(text, job):
+    """sha256 of the job's pinned text: line endings and blank lines aside,
+    any change to it gives another value. None if there is no such job."""
+    idx = pinned_lines(text, job)
+    if idx is None:
+        return None
+    lines = text.replace("\r\n", "\n").split("\n")
+    kept = "\n".join(lines[i] for i in idx if lines[i].strip())
+    return hashlib.sha256(kept.encode("utf-8")).hexdigest()
+
+
+def is_spared(file, job, text):
+    """Is `job` in workflow `file` (with this text) the reviewed job?"""
+    pin = NON_PUBLISHING_JOBS.get((file, job))
+    return pin is not None and job_pin(text, job) == pin
 
 
 def fires_on_failure(cond, step_id):
@@ -173,6 +305,11 @@ def fires_on_failure(cond, step_id):
 def main():
     files = sorted(f for f in os.listdir(WORKFLOWS) if f.endswith(".yml"))
     all_jobs = {f: jobs_of(os.path.join(WORKFLOWS, f)) for f in files}
+    texts = {}
+    for f in files:
+        with open(os.path.join(WORKFLOWS, f), encoding="utf-8",
+                  newline="") as fh:
+            texts[f] = fh.read()
     problems = []
     publishing = 0
 
@@ -234,15 +371,15 @@ def main():
     soft_seen = 0
     for f, jobs in all_jobs.items():
         for job, steps in jobs.items():
-            spared = (f, job) in NON_PUBLISHING_JOBS and not any(
-                PUBLISHES.search(s["run"] + "\n" + s["uses"]) for s in steps)
+            spared = is_spared(f, job, texts[f])
+            listed = (f, job) in NON_PUBLISHING_JOBS
             for n, s in enumerate(steps):
                 if not s["soft"]:
                     continue
                 soft_seen += 1
                 if spared:
                     print("%-20s %-11s %-30s continue-on-error; job does not "
-                          "publish (reviewed)" % (f, job, s["name"][:30]))
+                          "publish (reviewed, pinned)" % (f, job, s["name"][:30]))
                     continue
                 told = s["id"] and any(
                     fires_on_failure(later["if"], s["id"])
@@ -255,7 +392,13 @@ def main():
                         "%s `%s` may fail without failing the job, and "
                         "nothing raises an issue when it does: the files it "
                         "writes age out on every phone and the owner is "
-                        "never told" % (f, s["name"])))
+                        "never told%s" % (f, s["name"], (
+                            " (job `%s` is on NON_PUBLISHING_JOBS, but its "
+                            "text no longer matches the pinned sha256: check "
+                            "4 holds it again until a reviewer confirms it "
+                            "still publishes nothing and re-pins it to %s)"
+                            % (job, job_pin(texts[f], job))) if listed
+                            else "")))
     if not soft_seen:
         problems.append((4, "PREMISE: no continue-on-error step found at "
                          "all"))

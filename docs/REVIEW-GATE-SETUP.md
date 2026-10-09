@@ -251,7 +251,7 @@ before editing.
       release), checkout at :68. Pushes at :352 and :393, in "Publish", and
       at :429, in "Prune what is no longer published". These are two steps,
       so mint before each.
-- [ ] `status.yml`: job `status`. Permissions at :35 (contents: write; set
+- [ ] `status.yml`: job `status`. Permissions at :36 (contents: write; set
       read), checkout at :54. Push at :95, in "Commit it if anything but the
       time moved".
 - [ ] `status-changes.yml`: job `status`. Permissions at :22, checkout at
@@ -259,10 +259,10 @@ before editing.
 - [ ] `street-manager.yml`: job `streetworks`. Permissions at :24, checkout
       at :37. Push at :81, in "Commit what changed".
 - [ ] `traffic-orders.yml`: job `build`. Permissions at :28 (keep write:
-      release), checkout at :53. Push at :542, in "Commit the index and the
+      release), checkout at :53. Push at :554, in "Commit the index and the
       catalogue".
 
-That is 11 workflows, 12 jobs, 15 pushing steps and 16 push lines.
+That is 11 workflows, 12 jobs, 14 pushing steps and 15 push lines.
 
 ### B2. The collector VM
 
