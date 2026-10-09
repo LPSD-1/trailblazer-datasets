@@ -225,7 +225,44 @@ CASES = [
      [(REVIEW, ["Reviewer soft"])],
      dict(append=(REVIEW, SECOND_JOB.replace("second:", "reviewer:")
                   .replace("Second soft", "Reviewer soft")))),
+    # GitHub runs .yaml as well as .yml: neither name escapes the hunt.
+    ("an unreviewed job in a .yaml workflow", [("zz-extra.yaml", ["Soft"])],
+     dict(extra_files={"zz-extra.yaml": EXTRA % "echo hi"})),
+    ("the review workflow saved as .yaml",
+     [("independent-review.yaml", REVIEW_SOFT)],
+     dict(extra_files={"independent-review.yaml": real(REVIEW)})),
 ]
+
+# Trips checks 1 (push, no alarm), 2 (clobber, then a bare push) and 4.
+ALL_CHECKS = EXTRA % ("gh release upload v1 x.pmtiles --clobber\n"
+                      "          git push")
+
+
+def yaml_like_yml_wrong():
+    """A .yaml workflow is read and alarmed exactly as the same file .yml."""
+    rc1, out1 = hunt(extra_files={"zz-all.yml": ALL_CHECKS})
+    rc2, out2 = hunt(extra_files={"zz-all.yaml": ALL_CHECKS})
+    fails = [l for l in out1.splitlines() if l.startswith("FAIL")
+             and "zz-all.yml" in l]
+    checks = sorted({l.split(":")[0] for l in fails})
+    if checks != ["FAIL  check 1", "FAIL  check 2", "FAIL  check 4"]:
+        return ".yml control did not trip checks 1, 2 and 4: %s\n%s" % (
+            checks, out1)
+    # Column padding differs by the one letter; the words must not.
+    same = out2.replace("zz-all.yaml", "zz-all.yml").split() == out1.split()
+    if rc2 != rc1 or not same:
+        return ".yaml read unlike .yml: exit %d vs %d\n%s" % (rc2, rc1, out2)
+    return ""
+
+
+def non_workflow_ignored_wrong():
+    """Files GitHub does not run as workflows stay unread."""
+    names = ["README.md", "zz.yaml.txt", "zz.yml.bak", "zz.YML-"]
+    rc, out = hunt(extra_files={n: EXTRA % "echo hi" for n in names})
+    read = [n for n in names if n in out]
+    if rc == 0 and not read:
+        return ""
+    return "non-workflow files read: %s, exit %d\n%s" % (read, rc, out)
 
 
 def second_job_leaves_review_spared():
@@ -240,7 +277,10 @@ def all_wrong():
     for label, fn in (("spared", spared_wrong),
                       ("one character", one_char_wrong),
                       ("re-pin message", edit_message_wrong),
-                      ("per job", second_job_leaves_review_spared)):
+                      ("per job", second_job_leaves_review_spared),
+                      (".yaml read like .yml", yaml_like_yml_wrong),
+                      ("non-workflow files ignored",
+                       non_workflow_ignored_wrong)):
         w = fn()
         print("%-4s %s" % ("FAIL" if w else "ok", w or label))
         if w:

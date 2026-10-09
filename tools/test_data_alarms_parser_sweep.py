@@ -21,6 +21,9 @@ style, each with a soft step and no alarm at all. Every one must be flagged
 by check 1 (its push seen) and by check 4 (its soft step, by name). Beside
 them, jobs that DO have a failure alarm, in every run style, must not be
 flagged by check 1, so the sweep cannot pass by flagging everything.
+A second file writes steps as YAML flow mappings (`- {name: x, ...}`), which
+GitHub accepts: its soft steps must be flagged, and a step that is
+`continue-on-error: false`, or soft and told, must not.
 """
 import hashlib
 import os
@@ -174,9 +177,126 @@ def run_text_wrong():
     return wrong
 
 
+# Steps written as YAML flow mappings, which GitHub accepts. f1-f3 publish
+# with no alarm; h1 and h2 are alarmed and every soft step there is told.
+FLOW_FILE = "zz-flow.yml"
+FLOW = r"""name: flow
+on:
+  workflow_dispatch:
+jobs:
+  f1:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Push f1
+        run: git push
+      - {name: Flow soft one, continue-on-error: true, run: echo hi}
+  f2:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Push f2
+        run: git push
+      - {name: 'Flow soft, two',
+         with: {a: b, c: [d, e]},   # why
+         # a comment line
+         run: echo it's here,
+         continue-on-error: "true"}
+  f3:
+    runs-on: ubuntu-latest
+    steps:
+      - {name: Flow push, run: git push}
+      - {name: Flow soft three, run: 'it''s, {x', continue-on-error: true}
+      - {name: Flow soft four, run: "a \", {x", continue-on-error: true}
+  h1:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Push h1
+        run: git push
+      - {name: Flow hard, continue-on-error: false, run: echo hi}
+      - if: failure()
+        run: gh issue create
+  h2:
+    runs-on: ubuntu-latest
+    steps:
+      - {name: Push h2, run: git push}
+      - {id: soft5, name: Flow soft told, continue-on-error: true, run: echo hi}
+      - {if: "steps.soft5.outcome == 'failure'", name: Tell, run: gh issue create}
+      - {if: failure(), name: Alarm h2, run: gh issue create}
+"""
+FLOW_SOFT = ["Flow soft one", "Flow soft, two", "Flow soft three",
+             "Flow soft four"]
+FLOW_QUIET = ["Flow hard", "Flow soft told"]
+
+
+def flow_wrong():
+    """A soft flow-mapping step is held to check 4 and its push to check 1;
+    `continue-on-error: false`, and a told soft step, are left alone."""
+    rc, out = scope.hunt(extra_files={FLOW_FILE: FLOW})
+    fails = [l for l in out.splitlines() if l.startswith("FAIL")]
+    wrong = []
+    for s in FLOW_SOFT:
+        if not any(l.startswith("FAIL  check 4: %s `%s` " % (FLOW_FILE, s))
+                   for l in fails):
+            wrong.append("check 4 missed flow soft step %r" % s)
+    for s in FLOW_QUIET:
+        if any("`%s`" % s in l for l in fails):
+            wrong.append("flow step %r flagged" % s)
+    for j in ("f1", "f2", "f3"):
+        if not any(l.startswith("FAIL  check 1: %s job `%s` " % (FLOW_FILE, j))
+                   for l in fails):
+            wrong.append("check 1 missed flow job %s" % j)
+    for j in ("h1", "h2"):
+        if any(l.startswith("FAIL  check 1: %s job `%s` " % (FLOW_FILE, j))
+               for l in fails):
+            wrong.append("check 1 flagged alarmed flow job %s" % j)
+    if rc != 1:
+        wrong.append("flow file: exit %d, not 1" % rc)
+    if wrong:
+        wrong.append(out)
+    return wrong
+
+
+def flow_fields_wrong():
+    """In-process: each flow step's fields, exactly."""
+    h = scope.load_hunt()
+    with tempfile.TemporaryDirectory() as d:
+        path = os.path.join(d, FLOW_FILE)
+        with open(path, "w", encoding="utf-8", newline="\n") as f:
+            f.write(FLOW)
+        parsed = h.jobs_of(path)
+    want = {
+        "f2": [None, dict(name="Flow soft, two", run="echo it's here",
+                          soft=True, id="", uses="")],
+        "f3": [dict(name="Flow push", run="git push", soft=False),
+               dict(name="Flow soft three", soft=True),
+               # Read after a quoted comma, brace and escaped quote.
+               dict(name="Flow soft four", soft=True)],
+        "h1": [None, dict(name="Flow hard", soft=False, run="echo hi"),
+               None],
+        "h2": [dict(name="Push h2", run="git push", soft=False),
+               dict(id="soft5", name="Flow soft told", soft=True),
+               dict(name="Tell", run="gh issue create",
+                    **{"if": "steps.soft5.outcome == 'failure'"}),
+               dict(name="Alarm h2", **{"if": "failure()"})],
+    }
+    wrong = []
+    for job, steps in want.items():
+        got = parsed.get(job, [])
+        if len(got) != len(steps):
+            wrong.append("job %s read as %d steps, not %d"
+                         % (job, len(got), len(steps)))
+            continue
+        for n, fields in enumerate(steps):
+            for k, v in (fields or {}).items():
+                if got[n].get(k) != v:
+                    wrong.append("%s step %d %s read as %r, not %r"
+                                 % (job, n + 1, k, got[n].get(k), v))
+    return wrong
+
+
 def test_every_form_and_style_is_read():
     wrong, out = sweep_wrong()
     wrong += run_text_wrong()
+    wrong += flow_wrong() + flow_fields_wrong()
     assert not wrong, "\n".join(wrong[:20])
 
 
@@ -184,6 +304,7 @@ def main():
     try:
         wrong, out = sweep_wrong()
         wrong += run_text_wrong()
+        wrong += flow_wrong() + flow_fields_wrong()
     except scope.base.Premise as e:
         print("PREMISE  %s" % e)
         return 3

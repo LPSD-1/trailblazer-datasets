@@ -176,6 +176,61 @@ def _take(lines, i, end, rest, col, step):
     return k
 
 
+def _flow(lines, i, end, rest, step):
+    """Read the flow-mapping step `- {k: v, ...}` that starts with `rest` on
+    line i, through the line holding its closing brace; return next i.
+
+    It splits at top-level commas only, so a quoted value or a nested `{}`
+    or `[]` keeps its commas. A quote opens only where a key or value
+    starts, so the apostrophe in a plain `echo it's` does not open one."""
+    text, k, pos = rest, i + 1, 0
+    items, cur, depth, quote, start = [], "", 0, "", True
+    while True:
+        while pos < len(text):
+            ch = text[pos]
+            pos += 1
+            if quote:
+                cur += ch
+                if ch == quote and quote == "'" and text[pos:pos + 1] == "'":
+                    cur += "'"
+                    pos += 1
+                elif ch == quote:
+                    quote = ""
+                elif ch == "\\" and quote == '"':
+                    cur += text[pos:pos + 1]
+                    pos += 1
+            elif start and ch in "'\"":
+                quote, start = ch, False
+                cur += ch
+            elif ch == "#" and text[pos - 2:pos - 1].isspace():
+                pos = len(text)
+            elif ch in "{[":
+                depth += 1
+                start = True
+                cur += ch if depth > 1 else ""
+            elif ch in "}]" and depth == 1:
+                for item in items + [cur]:
+                    if item.strip():
+                        _take([item.strip()], 0, 1, item.strip(), -1, step)
+                return k
+            elif ch in "}]":
+                depth -= 1
+                cur += ch
+            elif ch == "," and depth == 1:
+                items.append(cur)
+                cur, start = "", True
+            else:
+                cur += ch
+                if ch == ":":
+                    start = text[pos:pos + 1] in (" ", "")
+                elif not ch.isspace():
+                    start = False
+        if k >= end:
+            return k
+        text, pos = " " + lines[k].strip(), 0
+        k += 1
+
+
 def _steps(lines, start, end):
     """The steps of the job whose block is lines[start:end]."""
     i, ki = start + 1, None
@@ -203,7 +258,9 @@ def _steps(lines, start, end):
                     "id": "", "soft": False, "uses": ""}
             steps.append(step)
             rest = bare[1:].lstrip()
-            if rest:
+            if rest.startswith("{"):
+                i = _flow(lines, i, end, rest, step)
+            elif rest:
                 i = _take(lines, i, end, rest, ind + len(bare) - len(rest),
                           step)
             else:
@@ -227,8 +284,10 @@ def jobs_of(path):
     Read as text, without a YAML library (the lane refresh installs none).
     A job header may carry a comment; a step may start with any key
     (`- run:`, `- id:`, `- if:`, ...); a run may be `|`, `>`, with `-`/`+`
-    and a comment, quoted, one line, or a plain line continued below.
-    tools/test_data_alarms_parser_sweep.py holds it to each of those."""
+    and a comment, quoted, one line, or a plain line continued below. A
+    step may also be one flow mapping, `- {name: x, run: y}`, on one line or
+    several. tools/test_data_alarms_parser_sweep.py holds it to each of
+    those."""
     with open(path, encoding="utf-8", newline="") as f:
         lines, blocks = _jobs(f.read())
     return {job: _steps(lines, s, e) for job, s, e in blocks}
@@ -303,7 +362,9 @@ def fires_on_failure(cond, step_id):
 
 
 def main():
-    files = sorted(f for f in os.listdir(WORKFLOWS) if f.endswith(".yml"))
+    # GitHub runs both extensions; a copy saved as .yaml is still a workflow.
+    files = sorted(f for f in os.listdir(WORKFLOWS)
+                   if f.endswith((".yml", ".yaml")))
     all_jobs = {f: jobs_of(os.path.join(WORKFLOWS, f)) for f in files}
     texts = {}
     for f in files:
