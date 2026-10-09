@@ -267,11 +267,18 @@ jobs:
           # of megabytes and cannot live beside the index on GitHub Pages,
           # which caps a site at 1 GB — the same reason the routing tiles are
           # addressed absolutely.
+          #
+          # The notes are build_satellite.py's ATTRIBUTION word for word
+          # (tools/test_imagery_licence.py checks), and are set again on every
+          # run: the release was created under the 2024 mosaic, whose notes
+          # wrongly said CC BY 4.0, and would otherwise keep them for ever.
+          NOTES="EOxCloudless 2017 (https://cloudless.eox.at) by EOX IT Services GmbH, CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/). Contains modified Copernicus Sentinel data 2017; resampled and sharpened by Trail Blazer. Rebuilt one area at a time; see the dated asset list."
           gh release view satellite >/dev/null 2>&1 || \
             gh release create satellite \
               --title "Satellite imagery" \
-              --notes "Sentinel-2 cloudless by EOX IT Services GmbH (CC BY 4.0). Contains modified Copernicus Sentinel data. Rebuilt one area at a time; see the dated asset list." \
+              --notes "$NOTES" \
               --latest=false
+          gh release edit satellite --notes "$NOTES"
 
           # From here until `recorded`, the served packs are new (or, if the
           # upload dies part-way, deleted by --clobber or only some replaced)
@@ -325,7 +332,7 @@ jobs:
           fi
           SIZE=$(python -c "import glob,os;print('%.0f MB' % (sum(os.path.getsize(p) for p in glob.glob('dist/satellite/*.pmtiles'))/1048576))")
           git commit -m "Satellite: ${{ steps.plan.outputs.id }} (${SIZE})" \
-                     -m "Sentinel-2 cloudless via EOX, CC BY 4.0."
+                     -m "EOxCloudless 2017 by EOX IT Services GmbH, CC BY 4.0."
           # RE-DO THE RECORD ON TOP OF WHATEVER LANDED, rather than merge it.
           #
           # These jobs run for over an hour against a checkout taken at the
@@ -382,7 +389,7 @@ jobs:
               exit 0
             fi
             git commit -m "Satellite: ${{ steps.plan.outputs.id }} (${SIZE})" \
-                       -m "Sentinel-2 cloudless via EOX, CC BY 4.0."
+                       -m "EOxCloudless 2017 by EOX IT Services GmbH, CC BY 4.0."
             sleep $((attempt * 5))
           done
           # THE LAST RE-RECORD IS PUSHED TOO, OR THE STEP FAILS. The loop used

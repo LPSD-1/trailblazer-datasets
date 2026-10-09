@@ -19,12 +19,16 @@ anybody going looking for a sharper version that does not exist.
 POLITE BY DESIGN
 ----------------
 Five tile requests per sample: one at z13 and the four at z14 that cover the
-same ground. The CC BY licence covers the DATA and does not entitle anyone to
+same ground. The tiles come from build_satellite.SOURCE, so the plates are
+the same mosaic the packs are: EOxCloudless 2017, the newest year EOX license
+CC BY 4.0 (2018 onwards is NonCommercial; see build_satellite.py). That
+licence covers redistributing the imagery and does not entitle anyone to
 hammer EOX's free tile service; a handful of tiles to build a comparison
 picture is well inside what that service is for.
 """
 
 import argparse
+import importlib.util
 import io
 import math
 import os
@@ -38,8 +42,15 @@ except ImportError:  # pragma: no cover - a clearer message than a stack trace
     print("Pillow is needed: python -m pip install Pillow", file=sys.stderr)
     raise SystemExit(2)
 
-SOURCE = ("https://tiles.maps.eox.at/wmts/1.0.0/"
-          "s2cloudless-2024_3857/default/g/{z}/{y}/{x}.jpg")
+# The packs' own source, so a plate can never show a different (or
+# differently licensed) mosaic year from the imagery it is a sample of.
+_spec = importlib.util.spec_from_file_location(
+    "build_satellite",
+    os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                 "build_satellite.py"))
+_bs = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(_bs)
+SOURCE = _bs.SOURCE
 USER_AGENT = "trailblazer-offline-maps dataset builder (contact: the repo owner)"
 TILE = 256
 

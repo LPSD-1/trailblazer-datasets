@@ -113,7 +113,7 @@ DATASETS = [
     ("height", "height.yml", "Ground height",
      "Hill shading and 3D ground, from Environment Agency height data"),
     ("imagery", "satellite.yml", "Satellite imagery",
-     "Satellite photos of the ground, from the 2024 Sentinel-2 cloudless "
+     "Satellite photos of the ground, from the 2017 Sentinel-2 cloudless "
      "mosaic"),
     ("routing", "mirror-routing.yml", "Route planning",
      "The road and track network routes are planned on, from OpenStreetMap "
@@ -425,7 +425,7 @@ def _newest(values):
 def data_as_of(dataset_id, root):
     """The date of the data itself, where one is recorded; else None.
 
-    Not where it is not: the satellite mosaic is 2024 and the height data
+    Not where it is not: the satellite mosaic is 2017 and the height data
     older still, and `generated` on those packs is when WE built them -
     the same conflation evidence_age.py refuses. The order register's
     transcriptions carry no read date at all.

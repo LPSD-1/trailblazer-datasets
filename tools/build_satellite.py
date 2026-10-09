@@ -19,8 +19,19 @@ WHY SENTINEL-2 AND NOT SOMETHING SHARPER
 ----------------------------------------
 Esri, Bing, Google and Mapbox imagery all forbid the bulk offline caching this
 app is built on. None of them can go in a pack a rider carries up a moor.
-Sentinel-2 can: the Copernicus data is open, and the EOX cloudless mosaic built
-from it is CC BY 4.0, so it may be redistributed with attribution.
+Sentinel-2 can, but only in the right YEAR. The Copernicus data is open, and
+EOX publish a cloudless mosaic of it per year - and the years are not licensed
+alike. By the abstracts in EOX's WMTS capabilities
+(https://tiles.maps.eox.at/wmts/1.0.0/WMTSCapabilities.xml, read 9 Oct 2026)
+and https://cloudless.eox.at/license-non-commercial, the 2016 and 2017
+mosaics are CC BY 4.0, and every later one (2018-2025) is CC BY-NC-SA 4.0.
+NonCommercial rules those out of a paid app. The 2018 layer holds 2017 data
+and is NC all the same, so it is the LAYER that matters, not the data year.
+
+So this builds from the 2017 mosaic, the newest CC BY one, and may
+redistribute it with the attribution below. Until 9 Oct 2026 it built from the
+2024 mosaic and called that CC BY 4.0, which it is not.
+tools/test_imagery_licence.py holds the source to the CC BY layers.
 
 It is 10 m/pixel. At British latitudes that is exactly zoom 13, so:
 
@@ -45,10 +56,11 @@ z13 + sharpen is the default recommendation.
 
 A NOTE ON PULLING THE TILES
 ---------------------------
-The CC BY licence covers the DATA. It does not entitle anyone to hammer EOX's
-public tile service, which is a free service run by a small company. This tool
-is polite by default - few connections, retries with backoff, an honest
-User-Agent - and is fine for building a sample area to look at.
+The 2017 mosaic's CC BY licence covers redistributing the IMAGERY. It does
+not entitle anyone to hammer EOX's public tile service, which is a free
+service run by a small company. This tool is polite by default - few
+connections, retries with backoff, an honest User-Agent - and is fine for
+building a sample area to look at.
 
 So a country is built up a BUDGET AT A TIME, over as many days as it takes,
 into a staging directory that survives between runs. Britain at z13 is 143,637
@@ -82,12 +94,20 @@ except ImportError:
     print("This needs Pillow:  pip install Pillow", file=sys.stderr)
     raise
 
-# EOX Sentinel-2 cloudless. Attribution is REQUIRED by CC BY 4.0 and the app
-# shows it; see ATTRIBUTION below and keep the two in step.
+# EOxCloudless 2017: the newest year EOX license CC BY 4.0 (2018 onwards is
+# NonCommercial; see the docstring). Attribution is REQUIRED by CC BY 4.0
+# s.3(a) - creator, licence with its link, and that we MODIFIED it (we
+# resample, sharpen and recompress every tile) - and the app shows it. One
+# constant: sample_imagery.py, make_detail_page.py and satellite.yml carry the
+# same words, and tools/test_imagery_licence.py holds them to it.
+LAYER = "s2cloudless-2017_3857"
 SOURCE = ("https://tiles.maps.eox.at/wmts/1.0.0/"
-          "s2cloudless-2024_3857/default/g/{z}/{y}/{x}.jpg")
-ATTRIBUTION = ("Sentinel-2 cloudless 2024 by EOX IT Services GmbH, "
-               "CC BY 4.0. Contains modified Copernicus Sentinel data 2024.")
+          + LAYER + "/default/g/{z}/{y}/{x}.jpg")
+ATTRIBUTION = ("EOxCloudless 2017 (https://cloudless.eox.at) by EOX IT "
+               "Services GmbH, CC BY 4.0 "
+               "(https://creativecommons.org/licenses/by/4.0/). Contains "
+               "modified Copernicus Sentinel data 2017; resampled and "
+               "sharpened by Trail Blazer.")
 
 USER_AGENT = "trailblazer-offline-maps dataset builder (contact: the repo owner)"
 
@@ -408,7 +428,10 @@ def write_pmtiles(path, tiles, bbox, min_zoom, max_zoom, metadata,
 # only written when every tile is present.
 # --------------------------------------------------------------------------
 def staged_path(staging, z, x, y):
-    return os.path.join(staging, str(z), str(x), "%d.jpg" % y)
+    # Under the LAYER, so tiles staged from one mosaic year are never resumed
+    # into a pack labelled with another: the cache a run restores may have
+    # been filled before SOURCE last changed.
+    return os.path.join(staging, LAYER, str(z), str(x), "%d.jpg" % y)
 
 
 def already_staged(staging, z, x, y):
