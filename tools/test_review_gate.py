@@ -394,6 +394,7 @@ class IndependentReviewNeverRunsThePullRequest(unittest.TestCase):
             " definitive map credited to that council.",
             "Other open data may draw the map, never decide those.",
             "All data, any layer: never commercial.",
+            "Never TRF, GLASS, LARA or HoTR, in any layer.",
             "Other layers may use open-licensed data such as OpenStreetMap"
             " or government open data.",
             "England and Wales only for lanes and closures; foreign routing"

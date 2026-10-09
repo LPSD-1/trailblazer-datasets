@@ -14,8 +14,8 @@ Flag only these four kinds. Nothing about style or wording that works.
 2. Requirement gaps: the change claims (in its title or comments) to do something the diff does not do.
 3. Security: secrets or tokens read, printed or sent anywhere; untrusted input pasted into a shell script (a `${{ }}` expression inside `run:`); a new network destination; widened workflow permissions; code that runs pull request content with secrets.
 4. Owner-rule breaks. The owner's rules:
-   - All data, any layer: never commercial.
-   - Lane data means which ways are lanes and their status, rules or closures, in any file or pack; it comes only from government, councils, national parks, or rowmaps.com copies of a council's definitive map credited to that council. Other open data may draw the map, never decide those. Never TRF, GLASS, LARA or HoTR.
+   - All data, any layer: never commercial. Never TRF, GLASS, LARA or HoTR, in any layer.
+   - Lane data means which ways are lanes and their status, rules or closures, in any file or pack; it comes only from government, councils, national parks, or rowmaps.com copies of a council's definitive map credited to that council. Other open data may draw the map, never decide those.
    - Other layers may use open-licensed data such as OpenStreetMap or government open data.
    - No server of ours except the one collector VM.
    - robots.txt is respected, except for the reviewed allowlist tools/robots_override.json. A block is never bypassed.
@@ -32,7 +32,7 @@ A behaviour change needs a test. For each new or changed test, decide whether it
 
 # Evidence
 
-Every finding cites evidence: `path:line` from the hunk headers, or a short exact quote. Leave out any finding without evidence. If the diff is marked truncated, FAIL.
+Every finding cites evidence: `path:line` from hunk headers, or a short exact quote. Leave out any finding without evidence. If the diff is marked truncated, FAIL.
 
 # Your answer
 

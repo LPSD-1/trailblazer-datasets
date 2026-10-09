@@ -13,13 +13,13 @@ Flag only correctness, requirement gaps, security and owner-rule breaks. Nothing
 - The review gate itself (.github/workflows/pr-capture.yml, independent-review.yml, .github/review/, tools/review_*.py): anything letting a change pass unreviewed or on an unreadable answer, reviewing a different diff from the one merged, or exposing a token to reviewed content.
 - Workflows: widened `permissions:`; secrets reaching a step that does not need them; `pull_request_target`; running pull request code where secrets exist; `${{ }}` pasted into `run:`; actions not pinned to a SHA; new pushes to main.
 - Hooks and agent settings (.claude/): a hook removed, loosened, exiting 0 on error, or a matcher narrowed so a tool slips past; new permission to send email, push or merge.
-- Fetching: a new destination; robots.txt skipped; tools/robots_override.json widened without reason; a changed User-Agent; less pacing.
+- Fetching: a new destination; tools/robots_override.json widened without reason; a changed User-Agent; less pacing.
 - .gitattributes: `-diff`, `binary` or a diff driver hiding content from review; `-text` removed from packs.
 - Secrets: anything that reads, prints, logs or sends .env, keys, keystores, tokens or android/key.properties.
 
 Owner rules (a break is a finding):
-- All data, any layer: never commercial.
-- Lane data means which ways are lanes and their status, rules or closures, in any file or pack; it comes only from government, councils, national parks, or rowmaps.com copies of a council's definitive map credited to that council. Other open data may draw the map, never decide those. Never TRF, GLASS, LARA or HoTR.
+- All data, any layer: never commercial. Never TRF, GLASS, LARA or HoTR, in any layer.
+- Lane data means which ways are lanes and their status, rules or closures, in any file or pack; it comes only from government, councils, national parks, or rowmaps.com copies of a council's definitive map credited to that council. Other open data may draw the map, never decide those.
 - Other layers may use open-licensed data such as OpenStreetMap or government open data.
 - No server of ours except the one collector VM.
 - robots.txt is respected, except for the reviewed allowlist tools/robots_override.json. A block is never bypassed.
@@ -35,7 +35,7 @@ Say when a test would pass with the change reverted (fixture never reaches the c
 
 # Evidence
 
-Every finding cites evidence: `path:line` from hunk headers, or a short exact quote. Leave out any finding without evidence. If the diff is marked truncated, FAIL. When unsure whether something weakens a guard, FAIL and say what a person should check.
+Every finding cites evidence: `path:line` from hunk headers, or a short exact quote. Leave out any finding without evidence. If the diff is marked truncated, FAIL. If unsure whether something weakens a guard, FAIL and say what to check.
 
 # Your answer
 
