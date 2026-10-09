@@ -780,6 +780,13 @@ def record_block(path, area_id, block):
     return rec
 
 
+def _write_state(path, state):
+    if path:
+        os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
+        with open(path, "w", encoding="utf-8", newline="\n") as f:
+            f.write(state + "\n")
+
+
 def main():
     ap = argparse.ArgumentParser(
         description=__doc__,
@@ -808,6 +815,11 @@ def main():
                     help="when EOX stops the area, record the stop in this "
                          "JSON file (satellite/blocks.json), which the "
                          "planner reads so nothing asks again before it may")
+    ap.add_argument("--state-out",
+                    help="write 'incomplete' here when the area needs more "
+                         "runs, or 'packaged' once its packs are written, "
+                         "so the workflow can tell a part-fetched area from "
+                         "a run that should have written a pack and did not")
     ap.add_argument("--workers", type=int, default=3,
                     help="keep this small; it is a free service")
     args = ap.parse_args()
@@ -882,6 +894,7 @@ def main():
                 format(still, ","), days, "" if days == 1 else "s"))
             if args.package:
                 print("Not packaging: the set is not complete yet.")
+            _write_state(args.state_out, "incomplete")
             return 0
 
     if not args.package:
@@ -970,6 +983,7 @@ def main():
         with open(args.entry_out, "w", encoding="utf-8") as f:
             json.dump(entry, f, indent=2)
         print("entry written to %s" % args.entry_out)
+    _write_state(args.state_out, "packaged")
     return 0
 
 

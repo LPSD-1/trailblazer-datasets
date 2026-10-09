@@ -31,6 +31,7 @@ import os
 import re
 import sys
 import tempfile
+import threading
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 spec = importlib.util.spec_from_file_location(
@@ -146,6 +147,8 @@ def main():
     check_blocks_from_main(sp)
     check_workflow_wiring()
     check_layer_allowlist()
+    check_state_out()
+    check_incomplete_run_is_green()
 
     if failures:
         for f in failures:
@@ -568,6 +571,144 @@ def check_layer_allowlist():
                                   for e in entries),
                   "the entry does not record its layer: %r"
                   % [e.get("layer") for e in entries])
+
+
+
+# --- a run that fetched part of an area is not a failure -------------------
+#
+# gb-north is 78,026 tiles at z14 and a run fetches 55,000, so it takes two
+# runs and the first writes no pack. On 9 Oct 2026 "Would the app be able to
+# read it?" read that as "no packs were written" and failed both scheduled
+# runs. The build now says which it was (--state-out): "incomplete" skips the
+# pack check, the clear and the publish; anything else, a missing state
+# included, still runs the check, which fails when no pack was written.
+
+def check_state_out():
+    real = (bs.Fetcher, sys.argv)
+    try:
+        with tempfile.TemporaryDirectory() as tmp:
+            staging = os.path.join(tmp, "s")
+            state = os.path.join(tmp, "state")
+            out = os.path.join(tmp, "t.pmtiles")
+            tiles = list(bs.tiles_in((-1.0, 52.0, -0.95, 52.05), 13, 13))
+            bs.stage(staging, *tiles[0], JPEG)
+            asked = []
+
+            class Idle:
+                lock = threading.Lock()
+                done, failed, stopped = 0, [], None
+
+                def __init__(self, *a, **k):
+                    pass
+
+                def get(self, *t):
+                    asked.append(t)
+                    return None
+            bs.Fetcher = Idle
+            box = ["--bbox", "-1.0", "52.0", "-0.95", "52.05", "--id", "t",
+                   "--label", "T", "--min-zoom", "13", "--max-zoom", "13"]
+            argv = (["build_satellite.py"] + box
+                    + ["--staging", staging, "--package", "--out", out,
+                       "--state-out", state])
+            sys.argv = argv + ["--budget", "0"]
+            with contextlib.redirect_stdout(io.StringIO()), \
+                    contextlib.redirect_stderr(io.StringIO()):
+                rc = bs.main()
+            got = open(state, encoding="utf-8").read().strip() \
+                if os.path.exists(state) else None
+            check(len(tiles) > 1 and rc == 0 and got == "incomplete"
+                  and not os.path.exists(out) and not asked,
+                  "a part-fetched area: rc %r, state %r, pack %s"
+                  % (rc, got, os.path.exists(out)))
+            for t in tiles:
+                bs.stage(staging, *t, JPEG)
+            sys.argv = argv
+            with contextlib.redirect_stdout(io.StringIO()), \
+                    contextlib.redirect_stderr(io.StringIO()):
+                rc = bs.main()
+            got = open(state, encoding="utf-8").read().strip()
+            check(rc == 0 and got == "packaged" and os.path.exists(out),
+                  "a complete area: rc %r, state %r, pack %s"
+                  % (rc, got, os.path.exists(out)))
+    except (Exception, SystemExit) as e:  # noqa: BLE001
+        check(False, "the state could not be driven: %r" % e)
+    finally:
+        bs.Fetcher, sys.argv = real
+
+
+def _steps(text):
+    """{step name: (if condition or '', block text)} of the workflow."""
+    out = {}
+    for m in re.finditer(r"\n      - name: ([^\n]+)\n(.*?)(?=\n      - |\Z)",
+                         text, re.S):
+        cond = re.search(r"\n        if: ([^\n]+)", "\n" + m.group(2))
+        out[m.group(1).strip()] = (cond.group(1).strip() if cond else "",
+                                   m.group(2))
+    return out
+
+
+def _runs(cond, outputs, failed=False):
+    """Whether an `if:` runs, given step outputs {"fetch.state": ...}."""
+    if not cond:
+        return not failed
+    expr = re.sub(r"steps\.(\w+)\.outputs\.(\w+)",
+                  lambda m: repr(outputs.get("%s.%s" % m.groups(), "")),
+                  cond)
+    expr = re.sub(r"steps\.(\w+)\.outcome",
+                  lambda m: repr(outputs.get("%s.outcome" % m.group(1),
+                                             "success")), expr)
+    expr = (expr.replace("&&", " and ").replace("||", " or ")
+            .replace("always()", "True").replace("success()", str(not failed))
+            .replace("failure()", str(failed)).replace("cancelled()", "False"))
+    ok = eval(expr, {"__builtins__": {}}, {})  # noqa: S307 - test input
+    if "always()" not in cond and "failure()" not in cond \
+            and "success()" not in cond and "cancelled()" not in cond:
+        ok = ok and not failed
+    return bool(ok)
+
+
+def check_incomplete_run_is_green():
+    with open(os.path.join(os.path.dirname(HERE), ".github", "workflows",
+                           "satellite.yml"), encoding="utf-8") as f:
+        text = f.read()
+    steps = _steps(text)
+    names = ("Fetch and package", "Would the app be able to read it?",
+             "Clear the staged tiles", "Publish", "Not finished this run",
+             "Save the staged tiles")
+    missing = [n for n in names if n not in steps]
+    check(not missing, "satellite.yml has no step %r" % missing)
+    if missing:
+        return
+    fetch = steps["Fetch and package"][1]
+    check("--state-out dist/satellite/state" in fetch
+          and re.search(r'echo "state=\$\(cat dist/satellite/state[^\n]*'
+                        r'>> "\$GITHUB_OUTPUT"', fetch),
+          "the fetch step does not hand the build's state on")
+    check('sys.exit("no packs were written")'
+          in steps["Would the app be able to read it?"][1],
+          "the pack check no longer fails when no pack was written")
+    check("nothing to build" in steps["Not finished this run"][1],
+          "the incomplete run does not say so plainly")
+    for state, want in (("incomplete", {"Would the app be able to read it?":
+                                        False,
+                                        "Clear the staged tiles": False,
+                                        "Publish": False,
+                                        "Not finished this run": True,
+                                        "Save the staged tiles": True}),
+                        ("packaged", {"Would the app be able to read it?":
+                                      True, "Clear the staged tiles": True,
+                                      "Publish": True,
+                                      "Not finished this run": False}),
+                        ("", {"Would the app be able to read it?": True,
+                              "Not finished this run": False})):
+        outs = {"plan.work": "true", "fetch.state": state,
+                "clear.outcome": "success" if state != "incomplete"
+                else "skipped"}
+        for name, runs in want.items():
+            got = _runs(steps[name][0], outs)
+            check(got == runs,
+                  "state %r: step %r runs=%r, want %r (if: %s)"
+                  % (state, name, got, runs, steps[name][0]))
 
 
 if __name__ == "__main__":

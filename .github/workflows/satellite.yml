@@ -229,10 +229,13 @@ jobs:
             --package \
             --out "dist/satellite/${{ steps.plan.outputs.id }}.pmtiles" \
             --entry-out dist/satellite/entry.json \
+            --state-out dist/satellite/state \
             --block-out satellite/blocks.json || rc=$?
           if [ "$rc" = 3 ]; then
             echo "blocked=true" >> "$GITHUB_OUTPUT"
           fi
+          # "incomplete": the area needs another run, so no pack yet.
+          echo "state=$(cat dist/satellite/state 2>/dev/null || true)" >> "$GITHUB_OUTPUT"
           exit "$rc"
 
       # A REFUSAL IS REMEMBERED. Without this the next run, twelve hours on,
@@ -273,8 +276,15 @@ jobs:
       # The one check worth having: the app's own reader must be able to open
       # it. A pack that packages cleanly and will not open is a pack every
       # rider downloads hundreds of megabytes of and cannot use.
+      # An area bigger than one run's budget is fetched over two runs, and
+      # the first writes no pack. That is progress, not a failure; any other
+      # state, a missing one included, goes on to the check below.
+      - name: Not finished this run
+        if: steps.plan.outputs.work == 'true' && steps.fetch.outputs.state == 'incomplete'
+        run: echo "nothing to build this run - ${{ steps.plan.outputs.id }} is partly fetched; its tiles are saved and the rest are fetched next run."
+
       - name: Would the app be able to read it?
-        if: steps.plan.outputs.work == 'true'
+        if: steps.plan.outputs.work == 'true' && steps.fetch.outputs.state != 'incomplete'
         run: |
           python - <<'PY'
           import glob, struct, sys
@@ -317,7 +327,7 @@ jobs:
       # is a correctness fault wearing the clothes of untidiness.
       - name: Clear the staged tiles
         id: clear
-        if: steps.plan.outputs.work == 'true'
+        if: steps.plan.outputs.work == 'true' && steps.fetch.outputs.state != 'incomplete'
         run: |
           rm -rf "staging/${{ steps.plan.outputs.id }}"
           echo "staged tiles cleared; next rebuild re-fetches"
@@ -339,7 +349,7 @@ jobs:
       # body to `bash -c`, which on Windows drops anything past ~8 KB.
       - name: Publish
         id: publish
-        if: steps.plan.outputs.work == 'true'
+        if: steps.plan.outputs.work == 'true' && steps.fetch.outputs.state != 'incomplete'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
