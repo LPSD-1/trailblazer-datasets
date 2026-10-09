@@ -114,7 +114,30 @@ ATTRIBUTION = ("EOxCloudless https://cloudless.eox.at by EOX IT Services "
                "(https://creativecommons.org/licenses/by/4.0/). Resampled "
                "and sharpened by Trail Blazer.")
 
-USER_AGENT = "trailblazer-offline-maps dataset builder (contact: the repo owner)"
+# EOX's tile service has no bulk-download terms, but it rate-limits: it
+# answers a heavy user with HTTP errors and redirects to a "heavyload" page.
+# So this tool says who it is (no email address), keeps to a stated rate, and
+# treats a redirect, 403, 429 or 5xx as EOX asking us to stop: it backs off,
+# honouring Retry-After, and after REFUSED_TRIES refusals for one tile it
+# stops the whole area, writes no pack, and leaves the published one alone.
+# It never follows the redirect and never retries around a block.
+USER_AGENT = "TrailBlazer-data/1.0 (+https://lpsd-1.github.io/trailblazer-help/)"
+MAX_REQUESTS_PER_SECOND = 4.0   # across every worker; 55,000 tiles ~ 4 hours
+REFUSED_TRIES = 4               # requests for one tile before the area stops
+RETRY_AFTER_CAP = 600           # seconds; the longest single wait
+BLOCKED_EXIT = 3                # main()'s exit code when EOX refused us
+
+
+def _is_refusal(code):
+    return 300 <= code < 400 or code in (403, 429) or code >= 500
+
+
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    """A redirect from the tile service is a refusal, not a new address.
+    Returning None makes urllib raise the 3xx as an HTTPError."""
+
+    def redirect_request(self, *args, **kwargs):
+        return None
 
 
 # --------------------------------------------------------------------------
@@ -169,30 +192,75 @@ def tile_id(z, x, y):
 # Fetching
 # --------------------------------------------------------------------------
 class Fetcher:
-    def __init__(self, sharpen, retries=4):
+    def __init__(self, sharpen, retries=REFUSED_TRIES, opener=None,
+                 sleep=time.sleep, clock=time.monotonic,
+                 rate=MAX_REQUESTS_PER_SECOND, source=SOURCE):
         self.sharpen = sharpen
         self.retries = retries
+        self.opener = opener or urllib.request.build_opener(_NoRedirect)
+        self.sleep, self.clock = sleep, clock
+        self.interval = 1.0 / rate
+        self.source = source
         self.lock = threading.Lock()
         self.done = 0
         self.failed = []
+        # Why the run stopped, once EOX has refused us; None until then.
+        self.stopped = None
+        self._next_start = 0.0
+
+    def _pace(self):
+        """Hold this request until its slot: starts are `interval` apart
+        across every worker, so the rate is the stated one however many
+        connections there are."""
+        with self.lock:
+            now = self.clock()
+            start = max(now, self._next_start)
+            self._next_start = start + self.interval
+        if start > now:
+            self.sleep(start - now)
+
+    def _wait(self, error, attempt):
+        """Seconds to wait after a refusal: Retry-After when it is given in
+        seconds, else a growing backoff; never more than RETRY_AFTER_CAP."""
+        try:
+            wait = float(error.headers.get("Retry-After"))
+        except (AttributeError, TypeError, ValueError):
+            wait = 15.0 * (2 ** attempt)
+        return max(1.0, min(wait, RETRY_AFTER_CAP))
 
     def get(self, z, x, y):
-        url = SOURCE.format(z=z, x=x, y=y)
+        url = self.source.format(z=z, x=x, y=y)
         for attempt in range(self.retries):
+            if self.stopped:
+                return None
+            self._pace()
             try:
                 req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
-                with urllib.request.urlopen(req, timeout=40) as r:
+                with self.opener.open(req, timeout=40) as r:
                     body = r.read()
                 if not body:
                     raise ValueError("empty body")
                 return self._process(body)
-            except Exception as e:  # noqa: BLE001 - any failure is worth a retry
+            except urllib.error.HTTPError as e:
+                if not _is_refusal(e.code):
+                    # A 404 or other 4xx is about this tile, not about us.
+                    with self.lock:
+                        self.failed.append((z, x, y, "HTTP %d" % e.code))
+                    return None
+                if attempt == self.retries - 1:
+                    with self.lock:
+                        self.stopped = self.stopped or (
+                            "HTTP %d for z%d/%d/%d, %d times running"
+                            % (e.code, z, x, y, self.retries))
+                    return None
+                self.sleep(self._wait(e, attempt))
+            except Exception as e:  # noqa: BLE001 - a network fault is retried
                 if attempt == self.retries - 1:
                     with self.lock:
                         self.failed.append((z, x, y, str(e)))
                     return None
                 # Backoff, and do not stampede a free service.
-                time.sleep(1.5 * (attempt + 1))
+                self.sleep(1.5 * (attempt + 1))
         return None
 
     def _process(self, body):
@@ -563,6 +631,14 @@ def main():
 
         with ThreadPoolExecutor(max_workers=args.workers) as pool:
             list(pool.map(work, batch))
+
+        if fetcher.stopped:
+            # EOX asked us to stop. No pack: the published one stays, and
+            # nothing here tries again around the refusal.
+            print("STOPPED: EOX refused the tile service to us (%s). No pack "
+                  "written; %s keeps its published imagery. Not retried."
+                  % (fetcher.stopped, args.id), file=sys.stderr)
+            return BLOCKED_EXIT
 
         if fetcher.failed:
             print("%d failed this run; they stay on the list and are tried "

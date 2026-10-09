@@ -30,8 +30,10 @@ tile, so it was.
 """
 import contextlib
 import datetime as dt
+import email.message
 import hashlib
 import html
+import http.server
 import importlib.util
 import io
 import json
@@ -39,6 +41,8 @@ import os
 import re
 import sys
 import tempfile
+import threading
+import urllib.error
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
@@ -77,6 +81,245 @@ def check(condition, message):
 def layer_of(source):
     m = re.search(r"/wmts/1\.0\.0/([^/]+)/", source)
     return m.group(1) if m else None
+
+
+class _Response:
+    status = 200
+
+    def __init__(self, body):
+        self.body = body
+
+    def read(self):
+        return self.body
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+
+class _Opener:
+    """Answers each request from a script: bytes for a 200, or an HTTP
+    status code to raise. Records every request it is asked to make."""
+
+    def __init__(self, script, default=b"tile"):
+        self.script, self.default, self.calls = list(script), default, []
+
+    def open(self, req, timeout=None):
+        self.calls.append((req.full_url, req.get_header("User-agent")))
+        item = self.script.pop(0) if self.script else self.default
+        if isinstance(item, Exception):
+            raise item
+        if isinstance(item, tuple):
+            code, headers = item
+            msg = email.message.Message()
+            for k, v in headers.items():
+                msg[k] = v
+            raise urllib.error.HTTPError(req.full_url, code, "no", msg, None)
+        return _Response(item)
+
+
+class _Clock:
+    """Time that moves only when the code under test sleeps."""
+
+    def __init__(self):
+        self.now, self.slept = 1000.0, []
+
+    def __call__(self):
+        return self.now
+
+    def sleep(self, s):
+        self.slept.append(s)
+        self.now += s
+
+
+def service_checks(bs):
+    # (c) Who we are, with no email address.
+    check(bs.USER_AGENT ==
+          "TrailBlazer-data/1.0 (+https://lpsd-1.github.io/trailblazer-help/)",
+          "USER_AGENT is %r" % bs.USER_AGENT)
+
+    def fetcher(script, retries=4):
+        clock = _Clock()
+        opener = _Opener(script)
+        f = bs.Fetcher(sharpen=False, retries=retries, opener=opener,
+                       sleep=clock.sleep, clock=clock)
+        return f, opener, clock
+
+    try:
+        # A 429 that says when to come back is waited out, then the tile
+        # arrives; the request carried the User-Agent.
+        f, op, clock = fetcher([(429, {"Retry-After": "7"}), b"ok"])
+        got = f.get(13, 1, 2)
+        check(got == b"ok" and 7 in clock.slept and f.stopped is None,
+              "a 429 with Retry-After 7 was not waited out: got %r, slept %s"
+              % (got, clock.slept))
+        check(all(ua == bs.USER_AGENT for _u, ua in op.calls),
+              "a request went without the User-Agent: %r" % op.calls)
+
+        # (a) Refused every time: a bounded number of tries, then the whole
+        # run stops - no other tile is asked for.
+        for code in (301, 302, 403, 429, 500, 503):
+            f, op, clock = fetcher([(code, {})] * 10, retries=3)
+            first = f.get(13, 1, 2)
+            asked = len(op.calls)
+            second = f.get(13, 1, 3)
+            check(first is None and asked == 3 and f.stopped,
+                  "HTTP %d: %d requests, stopped=%r; expected 3 and a stop"
+                  % (code, asked, f.stopped))
+            check(second is None and len(op.calls) == asked,
+                  "HTTP %d: the run went on asking after it was refused"
+                  % code)
+
+        # Retry-After is honoured but capped, so a hostile header cannot
+        # hold a runner all day; and backoff grows between refusals.
+        f, op, clock = fetcher([(503, {"Retry-After": "999999"}), b"ok"])
+        f.get(13, 1, 2)
+        check(clock.slept and max(clock.slept) <= bs.RETRY_AFTER_CAP,
+              "Retry-After was not capped: slept %s" % clock.slept)
+        f, op, clock = fetcher([(503, {})] * 3 + [b"ok"])
+        f.get(13, 1, 2)
+        waits = [s for s in clock.slept if s >= 1]
+        check(len(waits) == 3 and waits == sorted(waits) and
+              waits[0] < waits[-1],
+              "backoff without Retry-After does not grow: %s" % clock.slept)
+
+        # A network fault is not a refusal: retried after a short, paced
+        # wait (through the injected clock, so it is the fetcher's own).
+        f, op, clock = fetcher([urllib.error.URLError("reset"), b"ok"])
+        check(f.get(13, 1, 2) == b"ok" and 1.5 in clock.slept
+              and f.stopped is None,
+              "a network fault was not retried after 1.5 s: slept %s"
+              % clock.slept)
+
+        # A 404 is a tile that is not there: recorded, not retried, and it
+        # does not stop the run.
+        f, op, clock = fetcher([(404, {})])
+        check(f.get(13, 1, 2) is None and len(op.calls) == 1
+              and f.stopped is None and len(f.failed) == 1,
+              "a 404 was retried or stopped the run: %d calls, stopped=%r"
+              % (len(op.calls), f.stopped))
+
+        # (b) A polite rate, stated: request starts are spaced out.
+        rate = bs.MAX_REQUESTS_PER_SECOND
+        check(0 < rate <= 5, "MAX_REQUESTS_PER_SECOND is %r" % rate)
+        f, op, clock = fetcher([])
+        starts = []
+        real_open = op.open
+
+        def timed(req, timeout=None):
+            starts.append(clock.now)
+            return real_open(req, timeout)
+        op.open = timed
+        for y in range(6):
+            f.get(13, 1, y)
+        gaps = [b - a for a, b in zip(starts, starts[1:])]
+        check(len(gaps) == 5 and min(gaps) >= 1.0 / rate - 1e-9,
+              "requests were not paced to %s a second: gaps %s"
+              % (rate, gaps))
+    except Exception as e:  # noqa: BLE001
+        check(False, "the fetcher could not be driven: %r" % e)
+
+    # (a) A redirect is never followed, through the opener the build uses.
+    hits = []
+
+    class Handler(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            hits.append(self.path)
+            if self.path.startswith("/heavyload"):
+                self.send_response(200)
+                self.end_headers()
+                self.wfile.write(b"busy")
+                return
+            self.send_response(302)
+            self.send_header("Location", "/heavyload")
+            self.end_headers()
+
+        def log_message(self, *a):
+            pass
+
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        clock = _Clock()
+        f = bs.Fetcher(sharpen=False, retries=2, sleep=clock.sleep,
+                       clock=clock, source="http://127.0.0.1:%d/{z}/{x}/{y}"
+                       % server.server_address[1])
+        got = f.get(13, 1, 2)
+        check(got is None and f.stopped and
+              not any(h.startswith("/heavyload") for h in hits),
+              "a redirect was followed or not treated as a refusal: "
+              "got %r, stopped=%r, requests %s" % (got, f.stopped, hits))
+    except Exception as e:  # noqa: BLE001
+        check(False, "the redirect check could not run: %r" % e)
+    finally:
+        server.shutdown()
+        server.server_close()
+
+    # (a, d) The build end to end over a tiny area: staged tiles are never
+    # fetched again, and a refusal stops the area with no pack written, so
+    # the published one stays.
+    box = ["--bbox", "-1.0", "51.0", "-0.9", "51.1", "--min-zoom", "0",
+           "--max-zoom", "2", "--id", "t", "--label", "T"]
+    wanted = list(bs.tiles_in((-1.0, 51.0, -0.9, 51.1), 0, 2))
+    real_fetcher, argv = bs.Fetcher, sys.argv
+    try:
+        with tempfile.TemporaryDirectory() as tmp:
+            staging = os.path.join(tmp, "staging")
+            bs.stage(staging, *wanted[0], b"old")
+            opened = []
+
+            def make(script):
+                def factory(sharpen):
+                    op = _Opener(script)
+                    opened.append(op)
+                    clock = _Clock()
+                    return real_fetcher(sharpen=sharpen, opener=op,
+                                        sleep=clock.sleep, clock=clock)
+                return factory
+
+            bs.Fetcher = make([])
+            sys.argv = ["build_satellite.py"] + box + ["--staging", staging]
+            with contextlib.redirect_stdout(io.StringIO()):
+                rc = bs.main()
+            asked = [u for op in opened for u, _ua in op.calls]
+            first = "/%d/%d/%d.jpg" % (wanted[0][0], wanted[0][2],
+                                       wanted[0][1])
+            check(rc == 0 and len(asked) == len(wanted) - 1 and
+                  not any(u.endswith(first) for u in asked),
+                  "a staged tile was fetched again, or a tile was missed: "
+                  "%d asked of %d wanted, rc %r" % (len(asked), len(wanted),
+                                                      rc))
+            opened.clear()
+            with contextlib.redirect_stdout(io.StringIO()):
+                rc = bs.main()
+            again = sum(len(op.calls) for op in opened)
+            check(rc == 0 and again == 0,
+                  "a complete staging set was fetched again: %d requests"
+                  % again)
+
+            staging2 = os.path.join(tmp, "staging2")
+            out = os.path.join(tmp, "t.pmtiles")
+            bs.Fetcher = make([(429, {})] * 100)
+            sys.argv = (["build_satellite.py"] + box +
+                        ["--staging", staging2, "--package", "--out", out])
+            log = io.StringIO()
+            with contextlib.redirect_stdout(log), \
+                    contextlib.redirect_stderr(log):
+                rc = bs.main()
+            check(rc == 3 and not os.path.exists(out) and
+                  "STOPPED" in log.getvalue() and
+                  len(opened[-1].calls) <= 4,
+                  "a refused area was not stopped cleanly: rc %r, pack %s, "
+                  "%d requests, log %r" % (rc, os.path.exists(out),
+                                           len(opened[-1].calls),
+                                           log.getvalue()[-300:]))
+    except Exception as e:  # noqa: BLE001
+        check(False, "the build could not be driven: %r" % e)
+    finally:
+        bs.Fetcher, sys.argv = real_fetcher, argv
 
 
 def main():
@@ -227,6 +470,34 @@ def main():
               "sample_imagery main() did not write the plates and index: %r"
               % ran)
 
+    # 4b''. The plates are fetched the way the packs are: the build's
+    #       fetcher, its User-Agent, and a refusal ends the run.
+    jpeg = io.BytesIO()
+    Image.new("RGB", (256, 256), blue).save(jpeg, format="JPEG")
+    real = si.FETCHER
+    try:
+        clock = _Clock()
+        op = _Opener([jpeg.getvalue()])
+        si.FETCHER = bs.Fetcher(sharpen=False, opener=op, sleep=clock.sleep,
+                                clock=clock)
+        img = si.fetch(13, 1, 2)
+        check(img.size == (256, 256) and op.calls and
+              op.calls[0][1] == bs.USER_AGENT,
+              "sample_imagery.fetch does not use the build's fetcher: %r"
+              % op.calls)
+        si.FETCHER = bs.Fetcher(sharpen=False, retries=2,
+                                opener=_Opener([(429, {})] * 5),
+                                sleep=clock.sleep, clock=clock)
+        try:
+            si.fetch(13, 1, 2)
+            check(False, "sample_imagery.fetch carried on after a refusal")
+        except SystemExit as e:
+            check("429" in str(e), "the refusal is not reported: %s" % e)
+    except Exception as e:  # noqa: BLE001
+        check(False, "sample_imagery.fetch could not be driven: %r" % e)
+    finally:
+        si.FETCHER = real
+
     # 4c. A pack published under any other attribution is due NOW, however
     #     young: otherwise the NC 2024 packs stay served for up to 25 days.
     sp = load("satellite_plan")
@@ -372,6 +643,11 @@ def main():
                 if re.search(pat, line):
                     check(False, "%s:%d still names a NonCommercial mosaic: %s"
                           % (rel, n, line.strip()))
+
+    # 10. EOX's tile service: no bulk terms, but it rate-limits with HTTP
+    #     errors and redirects to a "heavyload" page. We never work around
+    #     a block.
+    service_checks(bs)
 
     if failures:
         for f in failures:

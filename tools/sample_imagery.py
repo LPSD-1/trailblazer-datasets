@@ -59,7 +59,6 @@ SOURCE = _bs.SOURCE
 # against the index written beside it.
 SAMPLE_NAMES = ("standard", "standard-sharpened", "detailed",
                 "zoom-standard", "zoom-sharpened", "zoom-detailed")
-USER_AGENT = "trailblazer-offline-maps dataset builder (contact: the repo owner)"
 TILE = 256
 
 
@@ -77,20 +76,17 @@ def ground_metres_per_pixel(lat, z):
     return 156543.03392 * math.cos(math.radians(lat)) / (2 ** z) / (TILE / 256)
 
 
-def fetch(z, x, y, retries=4):
-    url = SOURCE.format(z=z, x=x, y=y)
-    for attempt in range(retries):
-        try:
-            req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
-            with urllib.request.urlopen(req, timeout=40) as r:
-                body = r.read()
-            if not body:
-                raise ValueError("empty body")
-            return Image.open(io.BytesIO(body)).convert("RGB")
-        except Exception as e:  # noqa: BLE001
-            if attempt == retries - 1:
-                raise SystemExit(f"could not fetch z{z}/{x}/{y}: {e}")
-            time.sleep(1.5 * (attempt + 1))
+# The packs' own fetcher: the same User-Agent and rate, no redirect followed,
+# and a refusal from EOX stops the run rather than being retried around.
+FETCHER = _bs.Fetcher(sharpen=False)
+
+
+def fetch(z, x, y):
+    body = FETCHER.get(z, x, y)
+    if body is None:
+        raise SystemExit(f"could not fetch z{z}/{x}/{y}: "
+                         f"{FETCHER.stopped or FETCHER.failed[-1:]}")
+    return Image.open(io.BytesIO(body)).convert("RGB")
 
 
 def mosaic(z, x0, y0, across):
