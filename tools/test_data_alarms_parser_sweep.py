@@ -248,6 +248,8 @@ def flow_wrong():
         if any(l.startswith("FAIL  check 1: %s job `%s` " % (FLOW_FILE, j))
                for l in fails):
             wrong.append("check 1 flagged alarmed flow job %s" % j)
+    if any("cannot read" in l for l in fails):
+        wrong.append("a readable flow step called unreadable")
     if rc != 1:
         wrong.append("flow file: exit %d, not 1" % rc)
     if wrong:
@@ -293,10 +295,57 @@ def flow_fields_wrong():
     return wrong
 
 
+# Forms the reader does not parse, each a soft `git push` (PyYAML reads
+# continue-on-error: True in all four) in a job that is otherwise alarmed.
+# The reader must fail closed: check 4 names the file and the line.
+UNREAD_HEAD = """name: z
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  ship:
+    runs-on: ubuntu-latest
+"""
+UNREAD_ALARM = "      - if: failure()\n        run: gh issue create\n"
+UNREAD = [
+    ("a bare - with a flow mapping below it", 11,
+     "    steps:\n      -\n"
+     "        {name: Pub, continue-on-error: true, run: git push}\n"
+     + UNREAD_ALARM),
+    ("a flow sequence of steps", 9,
+     "    steps: [\n"
+     "      {name: Pub, continue-on-error: true, run: git push},\n"
+     "      {if: failure(), run: gh issue create}\n    ]\n"),
+    ("a complex key", 11,
+     "    steps:\n      - name: Pub\n        ? continue-on-error\n"
+     "        : true\n        run: git push\n" + UNREAD_ALARM),
+    ("a flow sequence on the line below steps:", 10,
+     "    steps:\n"
+     "      [{name: Pub, continue-on-error: true, run: git push},\n"
+     "       {if: failure(), run: gh issue create}]\n"),
+    ("a JSON-style key with no space", 10,
+     '    steps:\n      - {name: Pub, "continue-on-error":true, '
+     "run: git push}\n" + UNREAD_ALARM),
+]
+
+
+def unread_wrong():
+    """Each unread form: exit 1, a check 4 FAIL naming z.yml and its line."""
+    wrong = []
+    for label, line, body in UNREAD:
+        rc, out = scope.hunt(extra_files={"z.yml": UNREAD_HEAD + body})
+        want = "FAIL  check 4: z.yml job `ship` line %d: step the alarm " \
+            "cannot read" % line
+        if rc != 1 or not any(l.startswith(want) for l in out.splitlines()):
+            wrong.append("%s: exit %d, no %r\n%s" % (label, rc, want, out))
+    return wrong
+
+
 def test_every_form_and_style_is_read():
     wrong, out = sweep_wrong()
     wrong += run_text_wrong()
-    wrong += flow_wrong() + flow_fields_wrong()
+    wrong += flow_wrong() + flow_fields_wrong() + unread_wrong()
     assert not wrong, "\n".join(wrong[:20])
 
 
@@ -304,7 +353,7 @@ def main():
     try:
         wrong, out = sweep_wrong()
         wrong += run_text_wrong()
-        wrong += flow_wrong() + flow_fields_wrong()
+        wrong += flow_wrong() + flow_fields_wrong() + unread_wrong()
     except scope.base.Premise as e:
         print("PREMISE  %s" % e)
         return 3

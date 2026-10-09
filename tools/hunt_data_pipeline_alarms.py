@@ -158,6 +158,9 @@ def _take(lines, i, end, rest, col, step):
         body.pop()
     kv = _key(rest)
     if not kv:
+        # Fail closed: a step line that is no `key: value` the reader knows
+        # (`? key`, a bare `{...}`) may set anything.
+        step.setdefault("unread", i + 1)
         return k
     key, raw = kv
     v = _scalar(raw)
@@ -210,7 +213,9 @@ def _flow(lines, i, end, rest, step):
                 cur += ch if depth > 1 else ""
             elif ch in "}]" and depth == 1:
                 for item in items + [cur]:
-                    if item.strip():
+                    if item.strip() and not _key(item.strip()):
+                        step.setdefault("unread", i + 1)  # `"k":v`, `? k`
+                    elif item.strip():
                         _take([item.strip()], 0, 1, item.strip(), -1, step)
                 return k
             elif ch in "}]":
@@ -231,12 +236,23 @@ def _flow(lines, i, end, rest, step):
         k += 1
 
 
+def _unread(at):
+    """A stand-in step for line `at` (1-based) that the reader cannot read;
+    check 4 fails on it, so an unknown form can never hide a soft step."""
+    return {"name": "unreadable step at line %d" % at, "if": "", "run": "",
+            "indent": 0, "id": "", "soft": False, "uses": "", "unread": at}
+
+
 def _steps(lines, start, end):
-    """The steps of the job whose block is lines[start:end]."""
+    """The steps of the job whose block is lines[start:end]. A line the
+    reader cannot place gives a step with `unread` set to its line."""
     i, ki = start + 1, None
     while i < end:
         if _content(lines[i]) and (_key(lines[i].strip()) or ("",))[0] \
                 == "steps":
+            if _scalar(_key(lines[i].strip())[1]):
+                # `steps: [...]`, or any value on the key's own line.
+                return [_unread(i + 1)]
             ki = _indent(lines[i])
             i += 1
             break
@@ -269,6 +285,7 @@ def _steps(lines, start, end):
         if step is not None and ind == step.get("kcol", ind):
             i = _take(lines, i, end, bare, ind, step)
             continue
+        steps.append(_unread(i + 1))  # e.g. `steps:` with `[` below it
         i += 1
     for n, s in enumerate(steps):
         s.pop("kcol", None)
@@ -435,6 +452,14 @@ def main():
             spared = is_spared(f, job, texts[f])
             listed = (f, job) in NON_PUBLISHING_JOBS
             for n, s in enumerate(steps):
+                if s.get("unread"):
+                    print("%-20s %-11s line %d: step the alarm cannot read"
+                          % (f, job, s["unread"]))
+                    problems.append((4,
+                        "%s job `%s` line %d: step the alarm cannot read, so "
+                        "nobody can tell whether it may fail unheard; write "
+                        "it as `- key: value` lines" % (f, job, s["unread"])))
+                    continue
                 if not s["soft"]:
                     continue
                 soft_seen += 1
