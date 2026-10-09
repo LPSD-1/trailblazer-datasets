@@ -14,23 +14,27 @@ name: independent-review
 #   GATE tier      (the gate's own files)  never a model: owner must review
 #   SECURITY tier  claude-opus-5-5 AND claude-sonnet-5-5, both must pass
 #   CODE tier      claude-opus-5-5 AND claude-sonnet-5-5, both must pass
-#   DATA tier      tools/review_data_check.py, then claude-haiku-5-5
+#   DATA tier      tools/review_data_check.py AND claude-sonnet-5-5
 #   (tools/review_tier.py decides, from GitHub's own list of changed files
 #   and the new content of every changed .py, read as git objects)
 #
-# WHO MAY SAY "PASS". The commit status `independent-review` is posted with
-# a token for the dedicated review GitHub App, minted from secrets that live
-# in the `review` Environment, which only main may deploy to. This
-# workflow's own GITHUB_TOKEN cannot write statuses or comments at all. The
-# ruleset requires the status FROM THAT APP, so a workflow on a pull
-# request's branch, which can post any status it likes with its own token,
-# posts one that does not count. Setup: docs/REVIEW-GATE-SETUP.md.
+# WHO MAY SAY "PASS". The check run and the commit status, both called
+# `independent-review`, are posted with a token for the dedicated review
+# GitHub App, minted from secrets that live in the `review` Environment,
+# which only main may deploy to. This workflow's own GITHUB_TOKEN cannot
+# write statuses, checks or comments at all. The ruleset requires the check
+# FROM THAT APP, so a workflow on a pull request's branch, which can post
+# any status it likes with its own token, posts one that does not count.
+# Setup: docs/REVIEW-GATE-SETUP.md.
 #
 # IT FAILS CLOSED, and without spending a model call, when: the pull request
 # comes from a fork; touches the gate itself; is a re-run; disagrees with
 # GitHub's own record; is over 400 KB; holds binary content, a symlink, a
-# submodule or a mode change; or is a change (by `git patch-id`) that has
-# already failed review once. No verdict, or an unreadable one, is a FAIL.
+# submodule or a mode change; is a change (by `git patch-id`) that has
+# already failed review, or is under review in another run; or comes from a
+# pull request or branch that has already failed twice in 7 days. The
+# ledger is a separate private repository (tools/review_ledger.py). No
+# verdict, or an unreadable one, is a FAIL.
 # A missing CLAUDE_CODE_OAUTH_TOKEN posts `error`, "reviewer not
 # configured". Nothing here ever posts success except a PASS read by
 # tools/review_verdict.py on a change the ledger has never seen fail.
@@ -48,9 +52,13 @@ permissions:
   actions: read    # the capture artifact from the triggering run
   contents: read   # main's prompts and tools
 
+# ONE REVIEW AT A TIME, ACROSS THE WHOLE REPOSITORY, in order: each run
+# settles the ledger before the next one reads it, so no two runs can
+# both pass the same change, or both count as "the first failure".
 concurrency:
-  group: independent-review-${{ github.event.workflow_run.head_sha }}
-  cancel-in-progress: true
+  group: independent-review
+  queue: max
+  cancel-in-progress: false
 
 jobs:
   review:
@@ -91,27 +99,45 @@ jobs:
         id: configured
         env:
           HAS_APP: ${{ secrets.REVIEW_APP_ID != '' && secrets.REVIEW_APP_KEY != '' }}
+          HAS_LEDGER: ${{ secrets.LEDGER_APP_ID != '' && secrets.LEDGER_APP_KEY != '' }}
           HAS_OAUTH: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN != '' }}
         run: |
           echo "oauth=$HAS_OAUTH" >> "$GITHUB_OUTPUT"
+          echo "ledger=$HAS_LEDGER" >> "$GITHUB_OUTPUT"
           if [ "$HAS_APP" != "true" ]; then
             echo "::error::REVIEW_APP_ID / REVIEW_APP_KEY are not in the 'review' environment, so no status can be posted and nothing can merge. See docs/REVIEW-GATE-SETUP.md."
             exit 1
           fi
 
-      # Statuses, comments and reads. No contents write: that is minted
-      # separately, only to record a failure in the ledger.
+      # This repository: the check run, the status, the comment, and reads.
+      # Never contents write.
       - name: Mint the review app's token
         id: app
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1  # v3.2.0
         with:
           client-id: ${{ secrets.REVIEW_APP_ID }}
           private-key: ${{ secrets.REVIEW_APP_KEY }}
+          permission-checks: write
           permission-statuses: write
           permission-pull-requests: write
           permission-contents: read
 
+      # The ledger repository, and nothing else: a second app, installed on
+      # that private repository alone, so this token cannot reach this one.
+      - name: Mint the ledger token
+        id: ledger-app
+        if: steps.configured.outputs.ledger == 'true'
+        continue-on-error: true
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1  # v3.2.0
+        with:
+          client-id: ${{ secrets.LEDGER_APP_ID }}
+          private-key: ${{ secrets.LEDGER_APP_KEY }}
+          owner: LPSD-1
+          repositories: trailblazer-review-ledger
+          permission-contents: write
+
       - name: Mark the review as running
+        id: pending
         env:
           GH_TOKEN: ${{ steps.app.outputs.token }}
         run: |
@@ -120,6 +146,10 @@ jobs:
           gh api "repos/$REPO/statuses/$HEAD_SHA" -f state=pending \
             -f context=independent-review -f description="Review running" \
             -f target_url="$RUN_URL" > /dev/null
+          check_id=$(gh api -X POST "repos/$REPO/check-runs" \
+            -f name=independent-review -f head_sha="$HEAD_SHA" \
+            -f status=in_progress -f details_url="$RUN_URL" --jq .id)
+          echo "check_id=$check_id" >> "$GITHUB_OUTPUT"
 
       - name: Fetch the capture
         continue-on-error: true
@@ -134,6 +164,8 @@ jobs:
         id: inputs
         env:
           GH_TOKEN: ${{ steps.app.outputs.token }}
+          LEDGER_TOKEN: ${{ steps.ledger-app.outputs.token }}
+          LEDGER_REPO: LPSD-1/trailblazer-review-ledger
         run: |
           set -uo pipefail
           in="$RUNNER_TEMP/review-input"
@@ -225,18 +257,20 @@ jobs:
           case "$tier" in security|code|data) ;; *) fail "Unknown tier $tier" ;; esac
 
           # THE LEDGER: a change that failed once never passes later, however
-          # it is re-pushed. Missing or unreadable, it fails closed.
+          # it is re-pushed; an identical change already under review is
+          # refused; and a pull request or branch that has failed twice in
+          # 7 days is the owner's. Then the change is CLAIMED as in review,
+          # before any model is asked. Missing or unreadable: fail closed.
           pid=$(python3 tools/review_ledger.py patch-id "$in/diff.patch") \
             || fail "The diff has no patch-id"
-          gh api "repos/$REPO/contents/failed.json?ref=review-ledger" \
-            --jq .content > "$rt/ledger.b64" \
-            && base64 -d "$rt/ledger.b64" > "$rt/ledger.json" \
-            || fail "The review ledger cannot be read: see docs/REVIEW-GATE-SETUP.md"
-          python3 tools/review_ledger.py check "$rt/ledger.json" "$pid"
+          python3 tools/review_ledger.py claim --pid "$pid" --pr "$pr" \
+            --branch "$HEAD_BRANCH" --sha "$HEAD_SHA" > "$rt/ledger.txt"
           case $? in
-            0) ;;
+            0) echo "claimed=true" >> "$GITHUB_OUTPUT" ;;
             3) fail "This exact change already failed review (patch-id $pid)" ;;
-            *) fail "The review ledger is malformed" ;;
+            4) fail "An identical change is under review now (patch-id $pid)" ;;
+            5) fail "owner must review (repeated failures)" ;;
+            *) fail "The review ledger cannot be read or written: see docs/REVIEW-GATE-SETUP.md" ;;
           esac
 
           echo "Tier: $tier ($count files), patch-id $pid"
@@ -289,14 +323,14 @@ jobs:
           case "$TIER" in
             security) models="claude-opus-5-5 claude-sonnet-5-5" ;;
             code)     models="claude-opus-5-5 claude-sonnet-5-5" ;;
-            data)     models="claude-haiku-5-5" ;;
+            data)     models="claude-sonnet-5-5" ;;
             *) echo "::error::unknown tier"; exit 1 ;;
           esac
 
           # Tokens matter: a data change the deterministic check already
           # failed does not need a model to fail it again.
           if [ "$TIER" = data ] && [ "$(tail -n 1 "$rt/verdicts/data-check.txt" 2>/dev/null)" != "VERDICT: PASS" ]; then
-            echo '{"subtype": "skipped: the data check failed"}' > "$rt/verdicts/claude-haiku-5-5.json"
+            echo '{"subtype": "skipped: the data check failed"}' > "$rt/verdicts/claude-sonnet-5-5.json"
             exit 0
           fi
 
@@ -344,7 +378,7 @@ jobs:
           v="$RUNNER_TEMP/review/verdicts"
           case "$TIER" in
             security|code) specs=("claude-opus-5-5=$v/claude-opus-5-5.json" "claude-sonnet-5-5=$v/claude-sonnet-5-5.json") ;;
-            data)          specs=("data-check=$v/data-check.txt" "claude-haiku-5-5=$v/claude-haiku-5-5.json") ;;
+            data)          specs=("data-check=$v/data-check.txt" "claude-sonnet-5-5=$v/claude-sonnet-5-5.json") ;;
             *)             specs=() ;;
           esac
           out=$(python3 tools/review_verdict.py "$RUNNER_TEMP/review/comment.md" "${specs[@]}")
@@ -356,56 +390,38 @@ jobs:
             echo "record=yes" >> "$GITHUB_OUTPUT"
           fi
 
-      # A FAIL goes in the ledger, so the same change can never be pushed
-      # again until a model happens to pass it. Contents write, for this
-      # step alone; the ruleset limits it to the review-ledger branch.
-      - name: Mint the ledger token
-        id: ledger-app
-        if: steps.verdict.outputs.record == 'yes'
-        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1  # v3.2.0
-        with:
-          client-id: ${{ secrets.REVIEW_APP_ID }}
-          private-key: ${{ secrets.REVIEW_APP_KEY }}
-          permission-contents: write
-
-      - name: Record the failure in the ledger
-        if: steps.verdict.outputs.record == 'yes'
+      # Settle the claim: a FAIL a reviewer actually gave is recorded for
+      # good (and counts toward the repeated-failure cap); anything else
+      # just releases the claim. Runs before the status is posted.
+      - name: Settle the ledger
+        id: settle
+        if: ${{ !cancelled() && steps.inputs.outputs.claimed == 'true' }}
         env:
-          GH_TOKEN: ${{ steps.ledger-app.outputs.token }}
+          LEDGER_TOKEN: ${{ steps.ledger-app.outputs.token }}
+          LEDGER_REPO: LPSD-1/trailblazer-review-ledger
           PID: ${{ steps.inputs.outputs.pid }}
           PR: ${{ steps.inputs.outputs.pr }}
+          RECORD: ${{ steps.verdict.outputs.record }}
         run: |
           set -uo pipefail
-          rt="$RUNNER_TEMP/review"
-          for attempt in 1 2 3 4; do
-            if gh api "repos/$REPO/contents/failed.json?ref=review-ledger" > "$rt/ledger-get.json" \
-               && jq -r .content "$rt/ledger-get.json" | base64 -d > "$rt/ledger-now.json" \
-               && python3 tools/review_ledger.py record "$rt/ledger-now.json" \
-                    "$PID" "$PR" "$HEAD_SHA" > "$rt/ledger-new.json"; then
-              jq -n --arg message "Review failed: PR #$PR, patch-id $PID" \
-                    --arg sha "$(jq -r .sha "$rt/ledger-get.json")" \
-                    --arg content "$(base64 -w0 "$rt/ledger-new.json")" \
-                    '{message: $message, sha: $sha, branch: "review-ledger", content: $content}' \
-                    > "$rt/ledger-put.json"
-              # A stale sha is refused (409), so a lost race re-reads.
-              if gh api -X PUT "repos/$REPO/contents/failed.json" \
-                   --input "$rt/ledger-put.json" > /dev/null; then
-                echo "Recorded patch-id $PID"
-                exit 0
-              fi
-            fi
-            sleep $((attempt * 3))
-          done
-          echo "::error::Could not record patch-id $PID in the review ledger"
-          exit 1
+          outcome=clear
+          [ "$RECORD" = "yes" ] && outcome=failed
+          python3 tools/review_ledger.py settle --pid "$PID" --pr "$PR" \
+            --branch "$HEAD_BRANCH" --sha "$HEAD_SHA" --outcome "$outcome" \
+            || { echo "::error::Could not settle patch-id $PID ($outcome)"; exit 1; }
+          echo "settled=$outcome" >> "$GITHUB_OUTPUT"
 
-      # Not on cancellation: a newer run for the same commit has replaced
-      # this one, and the status it left at "pending" still blocks a merge.
+      # Not on cancellation: the check it left "in progress" and the status
+      # it left "pending" still block a merge.
       - name: Post the status and the comment
         if: ${{ !cancelled() && steps.app.outputs.token != '' }}
         env:
           GH_TOKEN: ${{ steps.app.outputs.token }}
+          LEDGER_TOKEN: ${{ steps.ledger-app.outputs.token }}
+          LEDGER_REPO: LPSD-1/trailblazer-review-ledger
           APP_SLUG: ${{ steps.app.outputs.app-slug }}
+          CHECK_ID: ${{ steps.pending.outputs.check_id }}
+          SETTLED: ${{ steps.settle.outputs.settled }}
           OK: ${{ steps.inputs.outputs.ok }}
           REASON: ${{ steps.inputs.outputs.reason }}
           PR: ${{ steps.inputs.outputs.pr }}
@@ -423,15 +439,14 @@ jobs:
           elif [ "$OAUTH" != "true" ]; then
             state=error; desc="reviewer not configured"
           elif [ "$RESULT" = "PASS" ]; then
-            # Read the ledger once more: a parallel run of the same change
-            # may have failed since this one started.
-            if gh api "repos/$REPO/contents/failed.json?ref=review-ledger" \
-                 --jq .content > "$rt/ledger-final.b64" \
-               && base64 -d "$rt/ledger-final.b64" > "$rt/ledger-final.json" \
-               && python3 tools/review_ledger.py check "$rt/ledger-final.json" "$PID"; then
+            # Success needs a settled claim and a ledger that, read once
+            # more, still has nothing against this change.
+            if [ "$SETTLED" = "clear" ] \
+               && python3 tools/review_ledger.py check --pid "$PID" --pr "$PR" \
+                    --branch "$HEAD_BRANCH"; then
               state=success; desc="Passed the $TIER review"; read_verdicts=yes
             else
-              state=failure; desc="This exact change has failed review before"
+              state=failure; desc="The ledger refuses this change"
             fi
           elif [ "$RESULT" = "FAIL" ]; then
             state=failure; desc="Failed the $TIER review: see the PR comment"; read_verdicts=yes
@@ -442,7 +457,19 @@ jobs:
           gh api "repos/$REPO/statuses/$HEAD_SHA" -f state="$state" \
             -f context=independent-review -f description="$desc" \
             -f target_url="$RUN_URL" > /dev/null
-          echo "independent-review: $state ($desc)"
+          # The check run the ruleset requires: same verdict, same app.
+          conclusion=failure
+          [ "$state" = success ] && conclusion=success
+          check_args=(-f status=completed -f conclusion="$conclusion"
+                      -f details_url="$RUN_URL"
+                      -f "output[title]=$desc" -f "output[summary]=$desc")
+          if [ -n "$CHECK_ID" ]; then
+            gh api -X PATCH "repos/$REPO/check-runs/$CHECK_ID" "${check_args[@]}" > /dev/null
+          else
+            gh api -X POST "repos/$REPO/check-runs" -f name=independent-review \
+              -f head_sha="$HEAD_SHA" "${check_args[@]}" > /dev/null
+          fi
+          echo "independent-review: $state / $conclusion ($desc)"
 
           [ -n "$PR" ] || exit 0
           body="$rt/comment.md"

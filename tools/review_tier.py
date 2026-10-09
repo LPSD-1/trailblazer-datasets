@@ -18,7 +18,9 @@ one that cannot be read counts as SECURITY.
             client and its robots allowlist, tools/*fetch*, any path with
             "guard" or "hook" in it, .gitattributes, .gitmodules, the council
             fetch registries and every tools module they import or name, and
-            any .py whose new content imports a network module.
+            any .py whose new content (comments stripped) imports a network
+            or process module in any form, relative imports included, or
+            uses __import__, importlib, exec(, eval(, os.system, os.popen.
   CODE      everything not positively known to be data. A new extension is
             code until somebody says otherwise.
   DATA      .json / .geojson / .csv / .md / .txt outside tools/ (except
@@ -32,10 +34,12 @@ the machine that runs it; it was rated DATA until this said so.
 The strongest tier any one path earns is the tier of the whole change.
 """
 import ast
+import io
 import os
 import re
 import subprocess
 import sys
+import tokenize
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
@@ -61,9 +65,19 @@ SECURITY_NAMES = frozenset((".gitattributes", ".gitmodules"))
 #: or name, decide what is fetched from whom.
 REGISTRIES = ("council_sources.py", "council_ways.py", "home_collector.py")
 
-#: A .py file importing one of these can reach the network.
-NETWORK_MODULES = frozenset(("polite_http", "urllib", "http", "socket",
-                             "requests"))
+#: A .py file importing one of these can reach the network or run a program
+#: that does (subprocess: `curl`).
+NETWORK_MODULES = frozenset((
+    "socket", "ssl", "http", "urllib", "urllib3", "requests", "httpx",
+    "aiohttp", "subprocess", "polite_http"))
+#: Ways to reach a module, or run code, that no import statement shows:
+#: `__import__('soc' + 'ket')`, importlib, exec, eval, os.system, os.popen.
+DYNAMIC = re.compile(r"\b__import__\b|\bimportlib\b|\bexec\s*\(|\beval\s*\("
+                     r"|\bos\s*\.\s*(?:system|popen)\b"
+                     r"|\bfrom\s+os\s+import\b[^\n]*\b(?:system|popen)\b")
+_IMPORT = re.compile(r"^\s*import\s+([\w\s.,]+)", re.M)
+_FROM = re.compile(r"^\s*from\s+(\.*)\s*([\w.]*)\s+import\s+\(?([\w\s.,*]+)",
+                   re.M)
 
 CODE_SUFFIXES = (".py", ".yml", ".yaml", ".sh", ".dart", ".cmd", ".bat",
                  ".ps1", ".js", ".mjs", ".cjs", ".ts", ".toml", ".cfg",
@@ -129,25 +143,58 @@ def registry_modules(tools_dir=HERE):
     return out
 
 
+def strip_comments(source):
+    """Python source with every comment removed, by the tokenizer (so a #
+    inside a string stays). Raises on source the tokenizer refuses."""
+    out = []
+    for tok in tokenize.generate_tokens(io.StringIO(source).readline):
+        if tok.type != tokenize.COMMENT:
+            out.append(tok)
+    return tokenize.untokenize(out)
+
+
+def _names(text):
+    return [n.strip().split(" as ")[0].strip()
+            for n in text.replace("(", " ").replace(")", " ").split(",")
+            if n.strip()]
+
+
+def _network(name):
+    return bool(name) and name.split(".")[0] in NETWORK_MODULES
+
+
 def imports_network(source):
-    """True when Python source imports a network module, or cannot be read
-    well enough to say it does not."""
+    """True when Python source imports a network or process module in any
+    import form (relative ones too: `from . import polite_http`), reaches
+    one dynamically (__import__, importlib, exec, eval, os.system,
+    os.popen), or cannot be read well enough to say it does not."""
     try:
+        code = strip_comments(source)
         tree = ast.parse(source)
-    except (SyntaxError, ValueError):
+    except (SyntaxError, ValueError, tokenize.TokenError,
+            IndentationError):
+        return True
+    if DYNAMIC.search(code):
         return True
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
-            if any(a.name.split(".")[0] in NETWORK_MODULES
-                   for a in node.names):
+            if any(_network(a.name) for a in node.names):
                 return True
         elif isinstance(node, ast.ImportFrom):
-            if node.module and node.module.split(".")[0] in NETWORK_MODULES:
+            if _network(node.module):
                 return True
-    # importlib.import_module("socket"), __import__("urllib.request")
-    for m in re.finditer(r"""(?:import_module|__import__)\s*\(\s*['"]"""
-                         r"""([\w.]+)""", source):
-        if m.group(1).split(".")[0] in NETWORK_MODULES:
+            if node.level and any(_network(a.name) for a in node.names):
+                return True
+    # The same rules over the text, in case the tree and the text disagree.
+    for m in _IMPORT.finditer(code):
+        if any(_network(n.split()[0]) for n in _names(m.group(1))
+               if n.split()):
+            return True
+    for m in _FROM.finditer(code):
+        dots, module, names = m.groups()
+        if _network(module):
+            return True
+        if dots and any(_network(n) for n in _names(names)):
             return True
     return False
 
