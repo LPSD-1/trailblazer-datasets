@@ -194,6 +194,35 @@ def test_source_check():
         "s2cloudless_3857/default/g/{z}/{y}/{x}.jpg", NC_NOTE) is not None)
     check("the committed build_satellite.py passes the source check",
           iw.main(["--source-check"]) == 0)
+    # --source-check reads build_satellite.py's constants without importing
+    # it (no Pillow in the lane and conditions jobs), and must read them
+    # as Python would.
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        "bs_for_source_check", os.path.join(HERE, "build_satellite.py"))
+    bs = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(bs)
+    got = iw.build_constants(os.path.join(HERE, "build_satellite.py"))
+    check("build_constants reads what Python would",
+          got == {"LAYER": bs.LAYER, "SOURCE": bs.SOURCE,
+                  "ATTRIBUTION": bs.ATTRIBUTION}, str(got))
+    with tempfile.TemporaryDirectory() as tmp:
+        fake = os.path.join(tmp, "build_satellite.py")
+        for body in ('LAYER = "%s"\nSOURCE = ("https://tiles.maps.eox.at/'
+                     'wmts/1.0.0/" + LAYER + "/default/g/{z}/{y}/{x}.jpg")\n'
+                     'ATTRIBUTION = "x"\n' % NC_LAYER,
+                     'LAYER = "s2cloudless_3857"\nSOURCE = LAYER.join("ab")\n'
+                     'ATTRIBUTION = "x"\n'):
+            with open(fake, "w", encoding="utf-8", newline="\n") as f:
+                f.write(body)
+            try:
+                c = iw.build_constants(fake)
+                refused = bool(iw.layer_refused(c["LAYER"]) or
+                               iw.source_refused(c["SOURCE"]))
+            except ValueError:
+                refused = True
+            check("a build_satellite.py off the list, or unreadable, is "
+                  "refused: %r" % body[:40], refused)
 
 
 # --- what is committed -------------------------------------------------------
@@ -215,6 +244,14 @@ def test_published_index_holds_none_and_records_all():
               and r["file"].endswith(".pmtiles") for r in ledger))
     check("no withdrawn hash is still listed as published",
           not ({p.get("sha256") for p in index.get("packs", [])} & shas))
+
+
+def test_the_committed_catalogue_offers_none():
+    index, cat = load("satellite/index.json"), load("catalogue.json")
+    check("catalogue.json passes the check before publishing",
+          problems(index, cat) == [], str(problems(index, cat)[:3]))
+    check("catalogue.json still lists lanes",
+          any(p.get("kind") == "lanes" for p in iw.catalogue_packs(cat)))
 
 
 def test_rebuilding_the_catalogue_brings_none_back():
@@ -275,6 +312,93 @@ def test_the_satellite_job_checks_before_it_publishes():
     for m in re.finditer(r"python tools/imagery_withdrawn\.py[^\n]*", text):
         check("no imagery check is made to pass: %s" % m.group(0),
               "||" not in m.group(0) and ";" not in m.group(0))
+
+
+# Workflows that publish catalogue.json but were outside this change's files
+# on 9 Oct 2026. Each is listed so the gap is visible; the test fails as soon
+# as one gains the check, so the list can only shrink.
+KNOWN_GAPS = {"height.yml", "mirror-routing.yml", "traffic-orders.yml"}
+
+CHECK = ("python tools/imagery_withdrawn.py --index satellite/index.json "
+         "--catalogue dist/catalogue.json")
+PUBLISH = re.compile(r"^\s*(?:mv|cp) dist/catalogue\.json catalogue\.json\b")
+
+
+def unchecked_publishes(text):
+    """For each rebuild of the catalogue, whether the imagery check runs on
+    the rebuilt file before it replaces catalogue.json. Returns the line
+    numbers of rebuilds that reach a publish unchecked, and the number of
+    rebuilds seen."""
+    code = [(n, l) for n, l in enumerate(text.split("\n"), 1)
+            if l.strip() and not l.strip().startswith("#")]
+    bad, seen = [], 0
+    for i, (n, line) in enumerate(code):
+        if "tools/rebuild_catalogue.sh" not in line:
+            continue
+        seen += 1
+        checked = False
+        for _, later in code[i + 1:]:
+            if "tools/rebuild_catalogue.sh" in later:
+                break
+            if (CHECK in later and "|| true" not in later
+                    and "|| exit 0" not in later):
+                checked = True
+            if PUBLISH.search(later):
+                if not checked:
+                    bad.append(n)
+                break
+    return bad, seen
+
+
+def test_every_workflow_that_publishes_the_catalogue_checks_imagery():
+    wf = os.path.join(ROOT, ".github", "workflows")
+    publishers = []
+    for name in sorted(os.listdir(wf)):
+        if not name.endswith(".yml"):
+            continue
+        with open(os.path.join(wf, name), encoding="utf-8") as f:
+            text = f.read().replace("\r\n", "\n")
+        if not any(PUBLISH.search(l) for l in text.split("\n")):
+            continue
+        publishers.append(name)
+        bad, seen = unchecked_publishes(text)
+        check("%s rebuilds the catalogue it publishes" % name, seen > 0)
+        if name in KNOWN_GAPS:
+            check("%s is still a known gap (drop it from KNOWN_GAPS)" % name,
+                  bad != [], "every rebuild is now checked")
+            continue
+        check("%s checks imagery before every catalogue it publishes" % name,
+              bad == [], "unchecked rebuild at line(s) %s" % bad)
+        for m in re.finditer(r"- name: [^\n]*\n\s*run: " + re.escape(CHECK),
+                             text):
+            step = text[m.start():].split("\n      - name:")[0]
+            check("%s's imagery step cannot be skipped" % name,
+                  "continue-on-error" not in step and "|| true" not in step,
+                  step[:200])
+    for name in ("satellite.yml", "refresh-data.yml"):
+        check("%s is found as a catalogue publisher" % name,
+              name in publishers, str(publishers))
+    check("every known gap still publishes the catalogue",
+          KNOWN_GAPS <= set(publishers), str(publishers))
+
+
+def test_the_publisher_hunt_can_fail():
+    rebuilt = ("bash tools/rebuild_catalogue.sh manifest.json "
+               "dist/catalogue.json\n")
+    publish = "mv dist/catalogue.json catalogue.json\n"
+    check("an unchecked publish is caught",
+          unchecked_publishes(rebuilt + publish) == ([1], 1))
+    check("a checked publish passes",
+          unchecked_publishes(rebuilt + CHECK + "\n" + publish) == ([], 1))
+    check("a check made to pass is not a check",
+          unchecked_publishes(rebuilt + CHECK + " || true\n" + publish)
+          == ([1], 1))
+    check("a commented-out check is not a check",
+          unchecked_publishes(rebuilt + "# " + CHECK + "\n" + publish)
+          == ([1], 1))
+    check("a check of an earlier rebuild does not cover a later one",
+          unchecked_publishes(rebuilt + CHECK + "\n" + rebuilt + publish)
+          == ([3], 2))
 
 
 def test_an_area_without_imagery_is_due():

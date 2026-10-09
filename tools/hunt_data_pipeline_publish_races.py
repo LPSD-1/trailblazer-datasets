@@ -208,7 +208,8 @@ def seed(tmp):
     write(os.path.join(seed_dir, ".gitignore"), "dist/\n")
     write(os.path.join(seed_dir, "tools", "rebuild_catalogue.sh"),
           STUB_REBUILD)
-    for name in ("verify_catalogue.py", "validate_catalogue.py"):
+    for name in ("verify_catalogue.py", "validate_catalogue.py",
+                 "imagery_withdrawn.py"):
         write(os.path.join(seed_dir, "tools", name),
               "import sys\nsys.exit(0)\n")
     write_json(os.path.join(seed_dir, "tro", "index.json"), tro_index(OLD))

@@ -213,6 +213,38 @@ def deletion_list(index, release):
     return out
 
 
+def build_constants(path):
+    """LAYER, SOURCE and ATTRIBUTION as build_satellite.py assigns them.
+
+    Read from its source rather than imported: importing it needs Pillow,
+    and the lane refresh and conditions jobs run this file without it.
+    Only string literals, `+` and earlier names are understood; anything
+    else raises ValueError, so a SOURCE this cannot read is refused."""
+    import ast
+    with open(path, encoding="utf-8") as f:
+        tree = ast.parse(f.read())
+    names = {}
+
+    def value(node):
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            return node.value
+        if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
+            return value(node.left) + value(node.right)
+        if isinstance(node, ast.Name) and node.id in names:
+            return names[node.id]
+        raise ValueError("not a plain string: %s" % ast.dump(node)[:80])
+
+    for node in tree.body:
+        if (isinstance(node, ast.Assign) and len(node.targets) == 1
+                and isinstance(node.targets[0], ast.Name)
+                and node.targets[0].id in ("LAYER", "SOURCE", "ATTRIBUTION")):
+            names[node.targets[0].id] = value(node.value)
+    missing = {"LAYER", "SOURCE", "ATTRIBUTION"} - set(names)
+    if missing:
+        raise ValueError("no module-level %s" % ", ".join(sorted(missing)))
+    return names
+
+
 def _load(path):
     with open(path, encoding="utf-8") as f:
         return json.load(f)
@@ -238,11 +270,12 @@ def main(argv=None):
 
     problems = []
     if args.source_check:
-        sys.path.insert(0, HERE)
-        import build_satellite
-        why = (layer_refused(build_satellite.LAYER)
-               or source_refused(build_satellite.SOURCE,
-                                 build_satellite.ATTRIBUTION))
+        try:
+            c = build_constants(os.path.join(HERE, "build_satellite.py"))
+            why = (layer_refused(c["LAYER"])
+                   or source_refused(c["SOURCE"], c["ATTRIBUTION"]))
+        except (OSError, SyntaxError, ValueError) as e:
+            why = "cannot read build_satellite.py's source: %s" % e
         if why:
             problems.append("refusing to build imagery: " + why)
     try:
