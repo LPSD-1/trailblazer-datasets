@@ -35,7 +35,7 @@ Public open data for the TrailBlazer app, served by GitHub Pages at `https://lps
 - Release assets, outside git:
   - `satellite` imagery `.pmtiles` in `standard` and `high` tiers;
   - `height` `.pmtiles`;
-  - `routing` `.rd5`. Only GB is mirrored, filtered to `GB_ROUTING_TILES`; other countries point at brouter.de;
+  - `routing` `.rd5`. Only GB is mirrored, filtered to `GB_ROUTING_TILES`; other countries are fetched from brouter.de directly;
   - `tro`: `gb-tro-<hash>.tbpack`.
   - Their indexes: `satellite/index.json`, `height/index.json`, `routing/index.json`, `tro/index.json`. In `tro/index.json`, `generated` is the applied-through date and `cut` is the D-TRO extract date.
 - Inputs committed as data:
