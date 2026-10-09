@@ -1,0 +1,9 @@
+{
+  "name": "independent-review-cli",
+  "version": "0.0.0",
+  "private": true,
+  "description": "The Claude Code CLI the independent review runs, pinned and locked. Installed with npm ci.",
+  "dependencies": {
+    "@anthropic-ai/claude-code": "2.1.286"
+  }
+}

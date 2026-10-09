@@ -1,0 +1,94 @@
+name: pr-capture
+
+# THE FIRST HALF OF THE INDEPENDENT REVIEW GATE. It runs in the pull
+# request's own context, so it holds NO secrets and can only read: it writes
+# down what the pull request changes and uploads that as the artifact
+# `review-input`. independent-review.yml, triggered when this finishes, runs
+# from main, reads the artifact as data and posts the `independent-review`
+# commit status that the main-branch ruleset requires.
+#
+# This is the shape GitHub recommends now that `pull_request_target` is
+# refused on public repositories (from 2 November 2026): the half that sees
+# the pull request has no secrets, and the half with secrets never runs the
+# pull request.
+#
+# NOTHING FROM THE PULL REQUEST RUNS HERE BEYOND GIT ITSELF. No setup step,
+# no script from the tree, no `${{ }}` of a pull-request-controlled string in
+# a shell: the title is read from the event file by jq, as data.
+#
+# Because this file runs as the pull request has it, a pull request that
+# edits it could upload a capture that lies. independent-review.yml
+# therefore fails, without asking a model, any pull request that changes
+# this file, and takes the changed-file list from GitHub's API rather than
+# from here.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  capture:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09  # v5
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Write the diff, the changed files and the metadata
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          out="$RUNNER_TEMP/review-input"
+          mkdir -p "$out"
+          cap=409600   # 400 KB
+
+          # Against the merge base (three dots), as the pull request's own
+          # "Files changed" tab shows it. No external diff drivers and no
+          # textconv: nothing configured anywhere may rewrite what is shown.
+          git -c core.quotePath=false diff --no-color --no-ext-diff \
+            --no-textconv --unified=5 "$BASE_SHA...$HEAD_SHA" \
+            > "$RUNNER_TEMP/full.diff"
+          size=$(stat -c %s "$RUNNER_TEMP/full.diff")
+          if [ "$size" -gt "$cap" ]; then
+            truncated=true
+            head -c "$cap" "$RUNNER_TEMP/full.diff" > "$out/diff.patch"
+            printf '\n\n[TRUNCATED: the diff is %s bytes; only the first %s bytes are shown.]\n' \
+              "$size" "$cap" >> "$out/diff.patch"
+          else
+            truncated=false
+            cp "$RUNNER_TEMP/full.diff" "$out/diff.patch"
+          fi
+
+          # Both sides of a rename, so a file renamed into a guarded path
+          # still lists the guarded name.
+          git -c core.quotePath=false diff --no-renames --name-only \
+            "$BASE_SHA...$HEAD_SHA" > "$out/files.txt"
+
+          jq --argjson truncated "$truncated" --argjson diff_bytes "$size" '{
+              number: .pull_request.number,
+              head_sha: .pull_request.head.sha,
+              base_sha: .pull_request.base.sha,
+              author: .pull_request.user.login,
+              title: .pull_request.title,
+              truncated: $truncated,
+              diff_bytes: $diff_bytes
+            }' "$GITHUB_EVENT_PATH" > "$out/meta.json"
+
+          echo "diff: $size bytes, truncated=$truncated"
+          echo "files: $(wc -l < "$out/files.txt")"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        with:
+          name: review-input
+          path: ${{ runner.temp }}/review-input/
+          if-no-files-found: error
+          retention-days: 7
