@@ -307,7 +307,39 @@ def jobs_of(path):
     those."""
     with open(path, encoding="utf-8", newline="") as f:
         lines, blocks = _jobs(f.read())
-    return {job: _steps(lines, s, e) for job, s, e in blocks}
+    jobs = {job: _steps(lines, s, e) for job, s, e in blocks}
+    for job, at in _unplaced(lines, blocks):
+        jobs.setdefault(job, []).append(_unread(at))
+    return jobs
+
+
+def _unplaced(lines, blocks):
+    """[(job, 1-based line)] above the steps that the reader cannot place,
+    so check 4 fails closed on them: a top-level or job-level line that is
+    no `key: value`, `jobs` or `steps` written any way but bare (`"jobs":{`,
+    `'steps':`), a value on the `jobs:` line or a job's header line, and a
+    job line indented less than the job's keys. Top-level ones go under the
+    job name `(workflow)`."""
+    bad = []
+    for i, line in enumerate(lines):
+        kv = _key(line.strip()) if _content(line) else ("", "")
+        if _indent(line) == 0 and (not kv or kv[0] == "jobs" and (
+                _scalar(kv[1]) or not line.startswith("jobs:"))):
+            bad.append(("(workflow)", i + 1))
+    for job, s, e in blocks:
+        kv = _key(lines[s].strip())
+        if not kv or _scalar(kv[1]):
+            bad.append((job, s + 1))
+            continue
+        body = [i for i in range(s + 1, e) if _content(lines[i])]
+        col = _indent(lines[body[0]]) if body else 0
+        for i in body:
+            kv = _key(lines[i].strip())
+            if _indent(lines[i]) < col or _indent(lines[i]) == col and (
+                    not kv or kv[0] == "steps"
+                    and not lines[i].strip().startswith("steps:")):
+                bad.append((job, i + 1))
+    return bad
 
 
 def pinned_lines(text, job):

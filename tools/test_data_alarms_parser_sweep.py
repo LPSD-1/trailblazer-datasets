@@ -328,15 +328,45 @@ UNREAD = [
      '    steps:\n      - {name: Pub, "continue-on-error":true, '
      "run: git push}\n" + UNREAD_ALARM),
 ]
+# The same above the steps: at the job's key level and the top level.
+# (label, job named in the FAIL, line, whole workflow text)
+SOFT_FLOW = "{name: Pub, continue-on-error: true, run: git push}"
+TOP = UNREAD_HEAD.split("jobs:\n")[0]  # lines 1-5; `jobs` is line 6
+UNREAD_ABOVE = [
+    ("a JSON-style steps key", "ship", 9,
+     UNREAD_HEAD + '    "steps":[%s]\n' % SOFT_FLOW),
+    ("a quoted steps key", "ship", 9,
+     UNREAD_HEAD + "    'steps':\n      - " + SOFT_FLOW + "\n"
+     + UNREAD_ALARM),
+    ("a complex steps key", "ship", 9,
+     UNREAD_HEAD + "    ? steps\n    : [%s]\n" % SOFT_FLOW),
+    ("a job line indented less than the job's keys", "ship", 9,
+     UNREAD_HEAD.replace("    runs-on", "      runs-on")
+     + "    timeout-minutes: 5\n      steps:\n        - name: Pub\n"
+     "          run: git push\n        - if: failure()\n"
+     "          run: gh issue create\n"),
+    ("a job written as one flow mapping", "ship", 7,
+     TOP + "jobs:\n  ship: {runs-on: x, steps: [%s]}\n" % SOFT_FLOW),
+    ("a JSON-style jobs key", "(workflow)", 6,
+     TOP + '"jobs":{ship: {runs-on: x, steps: [%s]}}\n' % SOFT_FLOW),
+    ("a quoted jobs key", "(workflow)", 6,
+     TOP + "'jobs':\n" + UNREAD_HEAD.split("jobs:\n")[1]
+     + "    steps:\n      - " + SOFT_FLOW + "\n" + UNREAD_ALARM),
+    ("jobs as one flow mapping", "(workflow)", 6,
+     TOP + "jobs: {ship: {runs-on: x, steps: [%s]}}\n" % SOFT_FLOW),
+    ("a top-level complex key", "(workflow)", 6,
+     TOP + "? jobs\n: {ship: {runs-on: x, steps: [%s]}}\n" % SOFT_FLOW),
+]
 
 
 def unread_wrong():
     """Each unread form: exit 1, a check 4 FAIL naming z.yml and its line."""
     wrong = []
-    for label, line, body in UNREAD:
-        rc, out = scope.hunt(extra_files={"z.yml": UNREAD_HEAD + body})
-        want = "FAIL  check 4: z.yml job `ship` line %d: step the alarm " \
-            "cannot read" % line
+    cases = [(l, "ship", n, UNREAD_HEAD + b) for l, n, b in UNREAD]
+    for label, job, line, text in cases + UNREAD_ABOVE:
+        rc, out = scope.hunt(extra_files={"z.yml": text})
+        want = "FAIL  check 4: z.yml job `%s` line %d: step the alarm " \
+            "cannot read" % (job, line)
         if rc != 1 or not any(l.startswith(want) for l in out.splitlines()):
             wrong.append("%s: exit %d, no %r\n%s" % (label, rc, want, out))
     return wrong
