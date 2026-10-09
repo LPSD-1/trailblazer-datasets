@@ -1,0 +1,351 @@
+name: independent-review
+
+# THE SECOND HALF OF THE INDEPENDENT REVIEW GATE. pr-capture.yml, running in
+# the pull request's context with no secrets, uploads the diff as the
+# artifact `review-input`. This workflow is triggered when that finishes. A
+# `workflow_run` workflow always runs as main has it, never as the pull
+# request has it, so the pull request cannot rewrite its own reviewer.
+#
+# It never checks out or runs the pull request. It checks out main (for the
+# reviewer prompts and tools/review_*.py), reads the capture as DATA, and
+# hands it to Claude Code with every tool removed, so the reviewer can read
+# and answer and do nothing else. Then it posts the commit status
+# `independent-review` on the pull request's head commit, which the main
+# ruleset requires, and keeps one summary comment on the pull request.
+#
+#   SECURITY tier  claude-opus-5-5 AND claude-sonnet-5-5, both must pass
+#   CODE tier      claude-sonnet-5-5
+#   DATA tier      tools/review_data_check.py, then claude-haiku-5-5
+#   (tools/review_tier.py decides, from GitHub's own list of changed files)
+#
+# IT FAILS CLOSED. No verdict, an unreadable verdict, a missing capture, a
+# capture that disagrees with GitHub, a diff over 400 KB, or a pull request
+# that edits pr-capture.yml (whose capture could therefore lie) is a failure,
+# decided without spending a model call. A missing CLAUDE_CODE_OAUTH_TOKEN
+# posts `error`, "reviewer not configured". Nothing here ever posts success
+# except a PASS read by tools/review_verdict.py.
+#
+# SECRETS: the OAuth token reaches only the reviewer step, which starts the
+# CLI under `env -i` with the token and nothing else of note. GITHUB_TOKEN is
+# given only to the steps that talk to GitHub, never to the CLI.
+
+on:
+  workflow_run:
+    workflows: [pr-capture]
+    types: [completed]
+
+permissions:
+  contents: read        # main's prompts and tools
+  actions: read         # the capture artifact from the triggering run
+  statuses: write       # the `independent-review` commit status
+  pull-requests: write  # the one summary comment
+
+concurrency:
+  group: independent-review-${{ github.event.workflow_run.head_sha }}
+  cancel-in-progress: true
+
+jobs:
+  review:
+    if: github.event.workflow_run.event == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    env:
+      # All from the workflow_run event GitHub wrote, not from the capture.
+      HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+      HEAD_OWNER: ${{ github.event.workflow_run.head_repository.owner.login }}
+      HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+      CAPTURE_PATH: ${{ github.event.workflow_run.path }}
+      CAPTURE_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+      REPO: ${{ github.repository }}
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      CLI_VERSION: '2.1.286'
+
+    steps:
+      # Main only. Sparse and blob-less: the prompts and tools are all this
+      # needs, and the data check reads pull request files as git objects.
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09  # v5
+        with:
+          ref: main
+          fetch-depth: 1
+          persist-credentials: false
+          filter: blob:none
+          sparse-checkout: |
+            .github/review
+            tools
+
+      - name: Mark the review as running
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          [[ "$HEAD_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::bad head sha"; exit 1; }
+          gh api "repos/$REPO/statuses/$HEAD_SHA" -f state=pending \
+            -f context=independent-review -f description="Review running" \
+            -f target_url="$RUN_URL" > /dev/null
+
+      - name: Fetch the capture
+        continue-on-error: true
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
+        with:
+          name: review-input
+          path: ${{ runner.temp }}/review-input
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ github.token }}
+
+      - name: Check the capture against GitHub and choose the tier
+        id: inputs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -uo pipefail
+          in="$RUNNER_TEMP/review-input"
+          rt="$RUNNER_TEMP/review"
+          mkdir -p "$rt/verdicts"
+          fail() {
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+            echo "reason=$1" >> "$GITHUB_OUTPUT"
+            echo "::error::$1"
+            exit 0
+          }
+
+          # The pull request, found from the commit GitHub says was
+          # captured: by its head branch first (works for forks), then by
+          # the commit.
+          pr=$(gh api -X GET "repos/$REPO/pulls" -f state=open -f base=main \
+                 -f head="$HEAD_OWNER:$HEAD_BRANCH" -f per_page=100 \
+                 --jq "[.[] | select(.head.sha == \"$HEAD_SHA\") | .number]
+                       | if length == 1 then .[0] else empty end") || pr=""
+          if [ -z "$pr" ]; then
+            pr=$(gh api "repos/$REPO/commits/$HEAD_SHA/pulls" \
+                   --jq "[.[] | select(.state == \"open\" and .base.ref == \"main\"
+                                  and .head.sha == \"$HEAD_SHA\") | .number]
+                         | if length == 1 then .[0] else empty end") || pr=""
+          fi
+          [[ "$pr" =~ ^[0-9]+$ ]] || fail "No single open pull request to main has this head commit"
+          echo "pr=$pr" >> "$GITHUB_OUTPUT"
+
+          [ "${CAPTURE_PATH%%@*}" = ".github/workflows/pr-capture.yml" ] \
+            || fail "Not started by .github/workflows/pr-capture.yml"
+          [ "$CAPTURE_CONCLUSION" = "success" ] || fail "pr-capture did not succeed"
+          for f in diff.patch files.txt meta.json; do
+            [ -f "$in/$f" ] || fail "The capture has no $f"
+          done
+          [ "$(jq -r .head_sha "$in/meta.json")" = "$HEAD_SHA" ] \
+            && [ "$(jq -r .number "$in/meta.json")" = "$pr" ] \
+            || fail "The capture describes a different commit or pull request"
+
+          # The changed files as GITHUB lists them, both sides of a rename.
+          # The tier is decided from this list, never from the capture's.
+          count=$(gh api "repos/$REPO/pulls/$pr" --jq .changed_files) \
+            || fail "Could not read the pull request"
+          [ "$count" -lt 3000 ] || fail "3000 or more files: too large for the automatic review"
+          gh api --paginate "repos/$REPO/pulls/$pr/files?per_page=100" \
+            --jq '.[] | .filename, (.previous_filename // empty)' \
+            | LC_ALL=C sort -u > "$rt/files.txt" \
+            || fail "Could not list the changed files"
+          gh api --paginate "repos/$REPO/pulls/$pr/files?per_page=100" \
+            --jq '.[] | select(.status != "removed") | .filename' \
+            | LC_ALL=C sort -u > "$rt/present.txt" \
+            || fail "Could not list the changed files"
+          grep -v '^$' "$in/files.txt" | LC_ALL=C sort -u > "$rt/captured.txt"
+          cmp -s "$rt/files.txt" "$rt/captured.txt" \
+            || fail "The capture's file list does not match GitHub's"
+
+          # pr-capture.yml runs as the pull request has it. If the pull
+          # request edits it, its capture proves nothing.
+          if grep -qxF ".github/workflows/pr-capture.yml" "$rt/files.txt"; then
+            fail "This pull request edits pr-capture.yml, so its capture cannot be trusted: the owner must review it"
+          fi
+          [ "$(jq -r .truncated "$in/meta.json")" = "false" ] \
+            || fail "The diff is over 400 KB: too large for the automatic review"
+
+          tier=$(python3 tools/review_tier.py "$rt/files.txt") \
+            || fail "Could not decide the review tier"
+          case "$tier" in security|code|data) ;; *) fail "Unknown tier" ;; esac
+          echo "Tier: $tier ($count files)"
+          echo "tier=$tier" >> "$GITHUB_OUTPUT"
+          echo "ok=true" >> "$GITHUB_OUTPUT"
+
+      - name: Is the reviewer configured?
+        id: configured
+        if: steps.inputs.outputs.ok == 'true'
+        env:
+          HAS_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN != '' }}
+        run: echo "yes=$HAS_TOKEN" >> "$GITHUB_OUTPUT"
+
+      # DATA tier: the deterministic check first. It reads the pull
+      # request's files as git objects; nothing is checked out or run.
+      - name: Data check
+        if: steps.inputs.outputs.tier == 'data' && steps.configured.outputs.yes == 'true'
+        env:
+          PR: ${{ steps.inputs.outputs.pr }}
+        run: |
+          set -uo pipefail
+          in="$RUNNER_TEMP/review-input"
+          out="$RUNNER_TEMP/review/verdicts/data-check.txt"
+          if ! git fetch --no-tags --depth=1 --filter=blob:none origin \
+                 "+refs/pull/$PR/head:refs/review/head" \
+             || [ "$(git rev-parse refs/review/head)" != "$HEAD_SHA" ]; then
+            printf 'Could not fetch the head commit, or the pull request has moved on.\n\nVERDICT: FAIL\n' > "$out"
+            exit 0
+          fi
+          python3 tools/review_data_check.py --diff "$in/diff.patch" \
+            --files "$RUNNER_TEMP/review/present.txt" --rev "$HEAD_SHA" > "$out" \
+            || printf '\nThe data check crashed.\n\nVERDICT: FAIL\n' >> "$out"
+          cat "$out"
+
+      - name: Cache the Claude Code CLI
+        if: steps.configured.outputs.yes == 'true'
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25
+        with:
+          path: ~/.cache/claude-code-cli
+          key: claude-code-cli-${{ runner.os }}-${{ env.CLI_VERSION }}
+
+      - name: Install the Claude Code CLI
+        if: steps.configured.outputs.yes == 'true'
+        run: |
+          set -euo pipefail
+          cli="$HOME/.cache/claude-code-cli/node_modules/.bin/claude"
+          if [ ! -x "$cli" ]; then
+            npm install --prefix "$HOME/.cache/claude-code-cli" --no-audit \
+              --no-fund --loglevel=error "@anthropic-ai/claude-code@$CLI_VERSION"
+          fi
+          "$cli" --version | grep -qF "$CLI_VERSION"
+
+      # THE REVIEWER. Zero tools:
+      #   --tools ""            removes every built-in tool;
+      #   --disallowedTools "*" denies every tool by name, MCP included;
+      #   --allowedTools ""     pre-approves nothing;
+      #   --strict-mcp-config   with no --mcp-config, so no MCP server loads;
+      #   --disable-slash-commands  no skills or commands.
+      # The tier prompt replaces the system prompt (byte-identical, so it
+      # caches); the pull request arrives on stdin between UNTRUSTED markers
+      # carrying a random id it cannot predict. `env -i` gives the CLI the
+      # OAuth token and nothing else of note: no GITHUB_TOKEN, no other secret.
+      - name: Review
+        if: steps.configured.outputs.yes == 'true'
+        env:
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          TIER: ${{ steps.inputs.outputs.tier }}
+        run: |
+          set -uo pipefail
+          in="$RUNNER_TEMP/review-input"
+          rt="$RUNNER_TEMP/review"
+          cli="$HOME/.cache/claude-code-cli/node_modules/.bin/claude"
+          case "$TIER" in
+            security) models="claude-opus-5-5 claude-sonnet-5-5" ;;
+            code)     models="claude-sonnet-5-5" ;;
+            data)     models="claude-haiku-5-5" ;;
+            *) echo "::error::unknown tier"; exit 1 ;;
+          esac
+
+          # Tokens matter: a data change the deterministic check already
+          # failed does not need a model to fail it again.
+          if [ "$TIER" = data ] && [ "$(tail -n 1 "$rt/verdicts/data-check.txt" 2>/dev/null)" != "VERDICT: PASS" ]; then
+            echo '{"subtype": "skipped: the data check failed"}' > "$rt/verdicts/claude-haiku-5-5.json"
+            exit 0
+          fi
+
+          id=$(openssl rand -hex 16)
+          {
+            echo "<<<UNTRUSTED PR CONTENT BEGIN $id>>>"
+            jq -r '"Pull request #\(.number) by \(.author)\nTitle: \(.title)\nHead: \(.head_sha)"' "$in/meta.json"
+            echo
+            echo "Changed files:"
+            cat "$rt/files.txt"
+            echo
+            echo "Diff:"
+            cat "$in/diff.patch"
+            echo
+            echo "<<<UNTRUSTED PR CONTENT END $id>>>"
+          } > "$rt/message.txt"
+
+          work=$(mktemp -d)
+          for model in $models; do
+            echo "::group::$model"
+            ( cd "$work" && env -i HOME="$HOME" PATH="$PATH" LANG=C.UTF-8 \
+                CLAUDE_CODE_OAUTH_TOKEN="$CLAUDE_CODE_OAUTH_TOKEN" \
+                DISABLE_AUTOUPDATER=1 CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1 \
+                timeout 900 "$cli" -p --model "$model" \
+                  --system-prompt-file "$GITHUB_WORKSPACE/.github/review/$TIER.md" \
+                  --tools "" --disallowedTools "*" --allowedTools "" \
+                  --strict-mcp-config --disable-slash-commands \
+                  --no-session-persistence --output-format json \
+                  < "$rt/message.txt" > "$rt/verdicts/$model.json" \
+                  2> "$rt/verdicts/$model.err" ) \
+              || echo "::warning::$model exited non-zero"
+            jq -r '.result // "(no result)"' "$rt/verdicts/$model.json" 2>/dev/null \
+              || echo "(output was not JSON)"
+            tail -c 2000 "$rt/verdicts/$model.err" || true
+            echo "::endgroup::"
+          done
+
+      - name: Read the verdicts
+        id: verdict
+        if: steps.configured.outputs.yes == 'true'
+        env:
+          TIER: ${{ steps.inputs.outputs.tier }}
+        run: |
+          set -uo pipefail
+          v="$RUNNER_TEMP/review/verdicts"
+          case "$TIER" in
+            security) specs=("claude-opus-5-5=$v/claude-opus-5-5.json" "claude-sonnet-5-5=$v/claude-sonnet-5-5.json") ;;
+            code)     specs=("claude-sonnet-5-5=$v/claude-sonnet-5-5.json") ;;
+            data)     specs=("data-check=$v/data-check.txt" "claude-haiku-5-5=$v/claude-haiku-5-5.json") ;;
+            *)        specs=() ;;
+          esac
+          out=$(python3 tools/review_verdict.py "$RUNNER_TEMP/review/comment.md" "${specs[@]}")
+          echo "$out"
+          echo "result=$(printf '%s\n' "$out" | tail -n 1)" >> "$GITHUB_OUTPUT"
+
+      # Not on cancellation: a newer run for the same commit has replaced
+      # this one, and the status it left at "pending" still blocks a merge.
+      - name: Post the status and the comment
+        if: ${{ !cancelled() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OK: ${{ steps.inputs.outputs.ok }}
+          REASON: ${{ steps.inputs.outputs.reason }}
+          PR: ${{ steps.inputs.outputs.pr }}
+          TIER: ${{ steps.inputs.outputs.tier }}
+          CONFIGURED: ${{ steps.configured.outputs.yes }}
+          RESULT: ${{ steps.verdict.outputs.result }}
+        run: |
+          set -euo pipefail
+          rt="$RUNNER_TEMP/review"
+          mkdir -p "$rt"
+          read_verdicts=no
+          if [ "$OK" != "true" ]; then
+            state=failure; desc="${REASON:-The review could not start}"
+          elif [ "$CONFIGURED" != "true" ]; then
+            state=error; desc="reviewer not configured"
+          elif [ "$RESULT" = "PASS" ]; then
+            state=success; desc="Passed the $TIER review"; read_verdicts=yes
+          elif [ "$RESULT" = "FAIL" ]; then
+            state=failure; desc="Failed the $TIER review: see the PR comment"; read_verdicts=yes
+          else
+            state=failure; desc="The review did not finish"
+          fi
+          desc="${desc:0:140}"
+          gh api "repos/$REPO/statuses/$HEAD_SHA" -f state="$state" \
+            -f context=independent-review -f description="$desc" \
+            -f target_url="$RUN_URL" > /dev/null
+          echo "independent-review: $state ($desc)"
+
+          [ -n "$PR" ] || exit 0
+          body="$rt/comment.md"
+          if [ "$read_verdicts" != yes ] || [ ! -s "$body" ]; then
+            printf '<!-- independent-review -->\n## Independent review: %s\n\n%s\n\n[Run](%s)\n' \
+              "$state" "$desc" "$RUN_URL" > "$body"
+          fi
+          jq -n --rawfile body "$body" '{body: $body}' > "$rt/comment.json"
+          existing=$(gh api --paginate "repos/$REPO/issues/$PR/comments?per_page=100" \
+            --jq '.[] | select(.user.login == "github-actions[bot]"
+                    and (.body | startswith("<!-- independent-review -->"))) | .id' \
+            | head -n 1)
+          if [ -n "$existing" ]; then
+            gh api -X PATCH "repos/$REPO/issues/comments/$existing" --input "$rt/comment.json" > /dev/null
+          else
+            gh api -X POST "repos/$REPO/issues/$PR/comments" --input "$rt/comment.json" > /dev/null
+          fi
