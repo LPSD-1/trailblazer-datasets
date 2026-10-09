@@ -15,8 +15,8 @@ name: independent-review
 #   SECURITY tier  claude-opus-5-5 AND claude-sonnet-5-5, both must pass
 #   CODE tier      claude-opus-5-5 AND claude-sonnet-5-5, both must pass
 #   DATA tier      tools/review_data_check.py AND claude-sonnet-5-5
-#   (tools/review_tier.py decides, from GitHub's own list of changed files
-#   and the new content of every changed .py, read as git objects)
+#   (tools/review_tier.py decides, from GitHub's own list of changed
+#   files; every .py is SECURITY)
 #
 # WHO MAY SAY "PASS". The check run and the commit status, both called
 # `independent-review`, are posted with a token for the dedicated review
@@ -31,9 +31,13 @@ name: independent-review
 # comes from a fork; touches the gate itself; is a re-run; disagrees with
 # GitHub's own record; is over 400 KB; holds binary content, a symlink, a
 # submodule or a mode change; is a change (by `git patch-id`) that has
-# already failed review, or is under review in another run; or comes from a
-# pull request or branch that has already failed twice in 7 days. The
-# ledger is a separate private repository (tools/review_ledger.py). No
+# already failed review, or is under review in another run; comes from a
+# pull request or branch that has already failed twice in 7 days; or
+# arrives while review is paused (4 failures in 24 hours repo-wide, or a
+# 3-day streak of that until the owner resets). The ledger is a separate
+# public repository (tools/review_ledger.py). A claim counts as a failure
+# until a PASS settles it, so cancelling a run cannot erase a FAIL, and no
+# model output reaches this public log before the ledger is settled. No
 # verdict, or an unreadable one, is a FAIL.
 # A missing CLAUDE_CODE_OAUTH_TOKEN posts `error`, "reviewer not
 # configured". Nothing here ever posts success except a PASS read by
@@ -166,6 +170,7 @@ jobs:
           GH_TOKEN: ${{ steps.app.outputs.token }}
           LEDGER_TOKEN: ${{ steps.ledger-app.outputs.token }}
           LEDGER_REPO: LPSD-1/trailblazer-review-ledger
+          OAUTH: ${{ steps.configured.outputs.oauth }}
         run: |
           set -uo pipefail
           in="$RUNNER_TEMP/review-input"
@@ -235,9 +240,10 @@ jobs:
           # THE GATE ITSELF is never reviewed by a model: a change here could
           # rewrite its own review, and pr-capture.yml runs as the pull
           # request has it, so its capture of itself proves nothing.
-          gate=$(python3 tools/review_tier.py "$rt/files.txt") \
+          tier=$(python3 tools/review_tier.py "$rt/files.txt") \
             || fail "Could not decide the review tier"
-          [ "$gate" != "gate" ] || fail "owner must review the review gate"
+          [ "$tier" != "gate" ] || fail "owner must review the review gate"
+          case "$tier" in security|code|data) ;; *) fail "Unknown tier $tier" ;; esac
 
           [ "$(jq -r .truncated "$in/meta.json")" = "false" ] \
             || fail "The diff is over 400 KB: too large for the automatic review"
@@ -246,36 +252,39 @@ jobs:
           python3 tools/review_data_check.py --structure --diff "$in/diff.patch" \
             || fail "owner must review: binary content, a symlink, a submodule or a mode change"
 
-          # The head commit's objects, for the tier's import check and the
-          # data check. Fetched, never checked out; blobs arrive on demand.
+          # The head commit's objects, for the data check. Fetched, never
+          # checked out; blobs arrive on demand.
           git fetch --no-tags --depth=1 --filter=blob:none origin "$HEAD_SHA" \
             && git cat-file -e "$HEAD_SHA^{commit}" \
             || fail "Could not fetch the head commit"
-          tier=$(python3 tools/review_tier.py "$rt/files.txt" \
-                   --rev "$HEAD_SHA" --present "$rt/present.txt") \
-            || fail "Could not decide the review tier"
-          case "$tier" in security|code|data) ;; *) fail "Unknown tier $tier" ;; esac
 
           # THE LEDGER: a change that failed once never passes later, however
           # it is re-pushed; an identical change already under review is
-          # refused; and a pull request or branch that has failed twice in
-          # 7 days is the owner's. Then the change is CLAIMED as in review,
-          # before any model is asked. Missing or unreadable: fail closed.
+          # refused; a pull request or branch that has failed twice in 7
+          # days is the owner's; and review pauses repo-wide after 4
+          # failures in 24 hours. Then the change is CLAIMED, and the claim
+          # counts as a failure until a PASS settles it, before any model
+          # is asked. Missing or unreadable: fail closed. (Without an OAuth
+          # token there is no review to claim: the status is `error`.)
           pid=$(python3 tools/review_ledger.py patch-id "$in/diff.patch") \
             || fail "The diff has no patch-id"
-          python3 tools/review_ledger.py claim --pid "$pid" --pr "$pr" \
-            --branch "$HEAD_BRANCH" --sha "$HEAD_SHA" > "$rt/ledger.txt"
-          case $? in
-            0) echo "claimed=true" >> "$GITHUB_OUTPUT" ;;
-            3) fail "This exact change already failed review (patch-id $pid)" ;;
-            4) fail "An identical change is under review now (patch-id $pid)" ;;
-            5) fail "owner must review (repeated failures)" ;;
-            *) fail "The review ledger cannot be read or written: see docs/REVIEW-GATE-SETUP.md" ;;
-          esac
+          echo "pid=$pid" >> "$GITHUB_OUTPUT"
+          if [ "$OAUTH" = "true" ]; then
+            python3 tools/review_ledger.py claim --pid "$pid" --pr "$pr" \
+              --branch "$HEAD_BRANCH" > "$rt/ledger.txt"
+            case $? in
+              0) echo "claimed=true" >> "$GITHUB_OUTPUT" ;;
+              3) fail "This exact change already failed review (patch-id $pid)" ;;
+              4) fail "An identical change is under review now (patch-id $pid)" ;;
+              5) fail "owner must review (repeated failures)" ;;
+              6) fail "review paused: too many failures today" ;;
+              7) fail "review paused until the owner resets the ledger" ;;
+              *) fail "The review ledger cannot be read or written: see docs/REVIEW-GATE-SETUP.md" ;;
+            esac
+          fi
 
           echo "Tier: $tier ($count files), patch-id $pid"
           echo "tier=$tier" >> "$GITHUB_OUTPUT"
-          echo "pid=$pid" >> "$GITHUB_OUTPUT"
           echo "ok=true" >> "$GITHUB_OUTPUT"
 
       # DATA tier: the deterministic check first. It reads the pull
@@ -362,9 +371,9 @@ jobs:
                   < "$rt/message.txt" > "$rt/verdicts/$model.json" \
                   2> "$rt/verdicts/$model.err" ) \
               || echo "::warning::$model exited non-zero"
-            jq -r '.result // "(no result)"' "$rt/verdicts/$model.json" 2>/dev/null \
-              || echo "(output was not JSON)"
-            tail -c 2000 "$rt/verdicts/$model.err" || true
+            # NOTHING THE MODEL WROTE reaches this public log before the
+            # ledger is settled: a FAIL seen here could be cancelled away.
+            echo "$model: $(wc -c < "$rt/verdicts/$model.json") bytes, kept for the comment"
             echo "::endgroup::"
           done
 
@@ -381,8 +390,9 @@ jobs:
             data)          specs=("data-check=$v/data-check.txt" "claude-sonnet-5-5=$v/claude-sonnet-5-5.json") ;;
             *)             specs=() ;;
           esac
+          # Into files and step outputs only; nothing is echoed until the
+          # ledger is settled.
           out=$(python3 tools/review_verdict.py "$RUNNER_TEMP/review/comment.md" "${specs[@]}")
-          echo "$out"
           echo "result=$(printf '%s\n' "$out" | tail -n 1)" >> "$GITHUB_OUTPUT"
           # Only a FAIL some reviewer actually gave is remembered; an outage
           # (no answer at all) fails this run but does not brand the change.
@@ -390,9 +400,10 @@ jobs:
             echo "record=yes" >> "$GITHUB_OUTPUT"
           fi
 
-      # Settle the claim: a FAIL a reviewer actually gave is recorded for
-      # good (and counts toward the repeated-failure cap); anything else
-      # just releases the claim. Runs before the status is posted.
+      # Settle the claim, before anything is posted or printed. A PASS
+      # releases it; a FAIL a reviewer gave marks the change failed for
+      # good; anything else (no answer) leaves it counted as a failure.
+      # A cancelled run never gets here, so its claim stays a failure.
       - name: Settle the ledger
         id: settle
         if: ${{ !cancelled() && steps.inputs.outputs.claimed == 'true' }}
@@ -401,13 +412,18 @@ jobs:
           LEDGER_REPO: LPSD-1/trailblazer-review-ledger
           PID: ${{ steps.inputs.outputs.pid }}
           PR: ${{ steps.inputs.outputs.pr }}
+          RESULT: ${{ steps.verdict.outputs.result }}
           RECORD: ${{ steps.verdict.outputs.record }}
         run: |
           set -uo pipefail
-          outcome=clear
-          [ "$RECORD" = "yes" ] && outcome=failed
+          outcome=error
+          if [ "$RESULT" = "PASS" ]; then
+            outcome=pass
+          elif [ "$RECORD" = "yes" ]; then
+            outcome=failed
+          fi
           python3 tools/review_ledger.py settle --pid "$PID" --pr "$PR" \
-            --branch "$HEAD_BRANCH" --sha "$HEAD_SHA" --outcome "$outcome" \
+            --branch "$HEAD_BRANCH" --outcome "$outcome" \
             || { echo "::error::Could not settle patch-id $PID ($outcome)"; exit 1; }
           echo "settled=$outcome" >> "$GITHUB_OUTPUT"
 
@@ -441,9 +457,9 @@ jobs:
           elif [ "$RESULT" = "PASS" ]; then
             # Success needs a settled claim and a ledger that, read once
             # more, still has nothing against this change.
-            if [ "$SETTLED" = "clear" ] \
-               && python3 tools/review_ledger.py check --pid "$PID" --pr "$PR" \
-                    --branch "$HEAD_BRANCH"; then
+            if [ "$SETTLED" = "pass" ] \
+               && python3 tools/review_ledger.py check --patch-only --pid "$PID" \
+                    --pr "$PR" --branch "$HEAD_BRANCH"; then
               state=success; desc="Passed the $TIER review"; read_verdicts=yes
             else
               state=failure; desc="The ledger refuses this change"

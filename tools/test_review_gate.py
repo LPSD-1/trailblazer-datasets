@@ -216,7 +216,7 @@ class IndependentReviewNeverRunsThePullRequest(unittest.TestCase):
 
     # 3. The gate's own files are the owner's.
     def test_a_change_to_the_gate_fails_without_a_model(self):
-        self.assertIn('[ "$gate" != "gate" ] || fail "owner must review the '
+        self.assertIn('[ "$tier" != "gate" ] || fail "owner must review the '
                       'review gate"', self.inputs)
 
     # 4. No re-runs, and a change that failed once never passes.
@@ -232,7 +232,10 @@ class IndependentReviewNeverRunsThePullRequest(unittest.TestCase):
     def test_the_change_is_claimed_in_the_ledger_before_any_model(self):
         for code, words in (("3", "This exact change already failed review"),
                             ("4", "An identical change is under review now"),
-                            ("5", "owner must review (repeated failures)")):
+                            ("5", "owner must review (repeated failures)"),
+                            ("6", "review paused: too many failures today"),
+                            ("7", "review paused until the owner resets the "
+                                  "ledger")):
             self.assertIn('%s) fail "%s' % (code, words), self.inputs)
         self.assertIn("review_ledger.py claim --pid", self.inputs)
         self.assertIn('0) echo "claimed=true"', self.inputs)
@@ -242,19 +245,39 @@ class IndependentReviewNeverRunsThePullRequest(unittest.TestCase):
                                     "and choose the tier"),
                         names.index("name: Review"))
 
-    def test_success_needs_a_settled_claim_and_a_clean_ledger(self):
+    def test_success_needs_a_settled_pass_and_a_clean_ledger(self):
         self.assertRegex(
             self.post,
             r'elif \[ "\$RESULT" = "PASS" \]; then\n(?:.*\n){0,3}'
-            r'\s+if \[ "\$SETTLED" = "clear" \] \\\n'
-            r'\s+&& python3 tools/review_ledger\.py check --pid "\$PID" '
-            r'--pr "\$PR" \\\n.*\n\s+state=success')
+            r'\s+if \[ "\$SETTLED" = "pass" \] \\\n'
+            r'\s+&& python3 tools/review_ledger\.py check --patch-only '
+            r'--pid "\$PID" \\\n.*\n\s+state=success')
         settle = step_named(self.steps, "Settle the ledger")
-        self.assertIn('[ "$RECORD" = "yes" ] && outcome=failed', settle)
+        self.assertIn('outcome=error\n'
+                      '          if [ "$RESULT" = "PASS" ]; then\n'
+                      '            outcome=pass\n'
+                      '          elif [ "$RECORD" = "yes" ]; then\n'
+                      '            outcome=failed', settle)
         self.assertIn("review_ledger.py settle", settle)
+        # Not run on cancellation: a cancelled claim stays a failure.
+        self.assertIn("if: ${{ !cancelled() && steps.inputs.outputs.claimed "
+                      "== 'true' }}", settle)
         names = [s.split("\n")[0] for s in self.steps]
         self.assertLess(names.index("name: Settle the ledger"),
                         names.index("name: Post the status and the comment"))
+
+    # N5: nothing a model wrote is printed before the ledger is settled.
+    def test_no_model_output_reaches_the_log_before_settling(self):
+        names = [s.split("\n")[0] for s in self.steps]
+        settle_at = names.index("name: Settle the ledger")
+        for step in self.steps[:settle_at]:
+            body = code_of(step)
+            for leak in (".result", "tail -c", 'cat "$rt/verdicts',
+                         'cat "$v', 'echo "$out"', 'comment.md"\n'):
+                self.assertNotIn(leak, body, step.split("\n")[0])
+        verdicts = step_named(self.steps, "Read the verdicts")
+        self.assertNotRegex(code_of(verdicts), r'(?m)^\s*(echo|printf|cat)\b'
+                            r'(?!.*>> "\$GITHUB_OUTPUT")')
 
     def test_reviews_run_one_at_a_time(self):
         block = top_level_block(self.text, "concurrency")
@@ -407,6 +430,25 @@ class SetupDocument(unittest.TestCase):
         self.assertIn("**the merge stays blocked**", section)
         self.assertIn("GITHUB_TOKEN", section)
 
+    # N6: a public ledger, locked to its app, the Claude app kept out.
+    def test_the_ledger_repository_is_public_and_locked_to_its_app(self):
+        section = self.doc[self.doc.index("### A2."):self.doc.index("### A3.")]
+        self.assertIn("Create a **public** repository", section)
+        self.assertNotIn("**private**", section)
+        for rule in ("**Restrict creations**", "**Restrict\n   updates**",
+                     "**Restrict deletions**", "**Block force pushes**",
+                     "**no owner bypass**"):
+            self.assertIn(rule, section)
+        self.assertIn("**The Claude GitHub App must NOT be installed on the "
+                      "ledger repository.**", section)
+
+    def test_a_locked_review_needs_the_owners_reset(self):
+        section = self.doc[self.doc.index("### A8."):self.doc.index("## B.")]
+        steps = re.findall(r"- \[ \] (.*)", section)
+        self.assertTrue(steps[0].startswith("**Pause every routine**"))
+        self.assertTrue(any("reset.json" in s for s in steps))
+        self.assertTrue(steps[-1].startswith("Resume the routines"))
+
     # N4: the ledger repository, and per-repository installations.
     def test_each_app_is_installed_on_one_repository(self):
         self.assertIn("| `trailblazer-review` | `trailblazer-datasets` only |",
@@ -419,11 +461,8 @@ class SetupDocument(unittest.TestCase):
 
 class Tiers(unittest.TestCase):
 
-    def setUp(self):
-        self.registry = review_tier.registry_modules()
-
-    def tier(self, paths, sources=None):
-        return review_tier.tier_of(paths, sources, self.registry)
+    def tier(self, paths):
+        return review_tier.tier_of(paths)
 
     def test_a_github_change_is_security(self):
         self.assertEqual(self.tier([".github/workflows/x.yml"]), "security")
@@ -434,14 +473,25 @@ class Tiers(unittest.TestCase):
         self.assertEqual(self.tier(["Tools/Robots_Override.json"]), "security")
         self.assertEqual(self.tier([".GitHub/Workflows/X.yml"]), "security")
         self.assertEqual(self.tier(["Tools/Review_Tier.py"]), "gate")
+        self.assertEqual(self.tier(["Tools/Golden.PY"]), "security")
 
     def test_the_named_security_paths(self):
         for path in ("tools/polite_http.py", "tools/robots_override.json",
-                     "tools/fetch_councils.py", "tools/council_fetcher.py",
-                     ".claude/settings.json", "tools/hooks/pre_tool.py",
-                     "steward/email_guard.py", "docs/guard-notes.md",
+                     "tools/fetch_councils.sh", "tools/council_fetcher.json",
+                     ".claude/settings.json", "tools/hooks/pre_tool.sh",
+                     "steward/email_guard.dart", "docs/guard-notes.md",
                      ".gitattributes", ".gitmodules"):
             self.assertEqual(self.tier([path]), "security", path)
+
+    # Round 4, #6: no list of network modules; every Python change is
+    # read by the security prompt and both models.
+    def test_every_python_file_is_security(self):
+        for path in ("tools/golden.py", "tools/build_tro.py", "x.py",
+                     "lib/a.pyw", "stubs/a.pyi", "site/evil.pth",
+                     "tro/council/helper.py", "tools/fixtures/a.py"):
+            self.assertEqual(self.tier([path]), "security", path)
+        self.assertEqual(self.tier(["README.md", "tools/x.py"]), "security")
+        self.assertFalse(hasattr(review_tier, "NETWORK_MODULES"))
 
     def test_the_gate_is_the_owners(self):
         for path in (".github/workflows/pr-capture.yml",
@@ -459,56 +509,18 @@ class Tiers(unittest.TestCase):
                      "pyproject.toml", "run.cmd", "x.ps1", "a.js",
                      "Makefile", "foo.weird", "tools/build_baseline.json",
                      "tools/tro_authorities.csv", "index.html",
-                     "tools/golden.py"):
+                     "scripts/run.sh", "lib/x.dart"):
             self.assertEqual(self.tier([path]), "code", path)
         for path in ("README.md", "tro/council/x.json", "status/a.geojson",
                      "tools/fixtures/a.json", "containers/ways-north.tbmap",
                      "tro/x.sha256", "docs/notes.txt"):
             self.assertEqual(self.tier([path]), "data", path)
 
-    def test_a_py_that_reaches_the_network_is_security(self):
-        for source in ("import urllib.parse", "from http import client",
-                       "import http.client as h", "import socket",
-                       "import requests", "from polite_http import get",
-                       "m = __import__('socket')",
-                       "importlib.import_module('urllib.request')",
-                       review_tier.UNREADABLE, "def broken(:",
-                       # The evasions the round-2 review listed:
-                       "from . import polite_http",
-                       "from .polite_http import fetch",
-                       "from .. import (json,\n    requests)",
-                       "m = __import__('soc' + 'ket')",
-                       "import ssl",
-                       "import subprocess\n"
-                       "subprocess.run(['curl', 'https://x.example'])",
-                       "import json, httpx", "import aiohttp",
-                       "import urllib3", "from os import system",
-                       "import os\nos.system('curl x')",
-                       "import os\nos.popen('curl x')",
-                       "exec(open('x').read())", "eval(payload)"):
-            self.assertEqual(self.tier(["tools/a.py"],
-                                       {"tools/a.py": source}), "security",
-                             source)
-        for source in ("import json\n",
-                       "import json  # import socket\n",
-                       "# from . import polite_http\nimport os\n",
-                       "x = 'not an import'\n",
-                       "import json  # never exec( or eval( here\n"):
-            self.assertEqual(self.tier(["tools/a.py"],
-                                       {"tools/a.py": source}), "code",
-                             source)
-
-    def test_the_fetch_registries_and_what_they_name_are_security(self):
-        for path in ("tools/council_sources.py", "tools/council_ways.py",
-                     "tools/home_collector.py", "tools/osgb.py",
-                     "tools/text_clean.py", "tools/wiltshire_closures.py"):
-            self.assertIn(path, self.registry)
-            self.assertEqual(self.tier([path]), "security", path)
-
     def test_the_strongest_path_decides(self):
-        self.assertEqual(self.tier(["tro/x.json", "tools/a.py",
+        self.assertEqual(self.tier(["tro/x.json", "scripts/a.sh",
                                     ".github/dependabot.yml"]), "security")
-        self.assertEqual(self.tier(["tro/x.json", "tools/a.py"]), "code")
+        self.assertEqual(self.tier(["tro/x.json", "scripts/a.sh"]), "code")
+        self.assertEqual(self.tier(["tro/x.json", "README.md"]), "data")
 
 
 class Verdicts(unittest.TestCase):
@@ -608,10 +620,26 @@ class Ledger(unittest.TestCase):
             "--- a/a.txt\n+++ b/a.txt\n@@ -1 +1 @@\n-old\n+new\n")
     NOW = datetime.datetime(2026, 10, 9, 12, tzinfo=datetime.timezone.utc)
     PID = "ab" + "0" * 38
+    L = review_ledger
 
-    def run_cli(self, store, *args):
+    def run_cli(self, store, *args, now=None):
         with contextlib.redirect_stdout(io.StringIO()):
-            return review_ledger.main(list(args), store=store)
+            return review_ledger.main(list(args), store=store,
+                                      now=now or self.NOW)
+
+    def args(self, pid=None, pr="7", branch="claude/x"):
+        return ["--pid", pid or self.PID, "--pr", pr, "--branch", branch]
+
+    def failures(self, n, start, step=datetime.timedelta(minutes=10),
+                 pr=None, branch=None):
+        """recent.json holding n failures from distinct PRs and branches."""
+        recent = self.L.empty_recent()
+        for i in range(n):
+            recent = self.L.settled_recent(
+                recent, "%040x" % (i + 1), "failed",
+                pr if pr is not None else 100 + i,
+                branch or "b%d" % i, start + i * step)
+        return recent
 
     def test_the_patch_id_is_stable_and_ignores_line_numbers(self):
         pid = review_ledger.patch_id(self.DIFF)
@@ -621,94 +649,227 @@ class Ledger(unittest.TestCase):
         self.assertIsNone(review_ledger.patch_id(""))
 
     def test_failures_are_sharded_by_the_first_two_hex_characters(self):
-        self.assertEqual(review_ledger.shard_path(self.PID), "failed/ab.json")
+        self.assertEqual(self.L.shard_path(self.PID), "failed/ab.json")
         with self.assertRaises(ValueError):
-            review_ledger.shard_path("../../etc/passwd")
+            self.L.shard_path("../../etc/passwd")
 
     def test_a_recorded_failure_is_refused_for_good(self):
-        L = review_ledger
-        shard = L.settled(L.empty_shard(), self.PID, "failed", 7, "b",
-                          "a" * 40, self.NOW)
+        L = self.L
+        shard = L.settled_shard(L.empty_shard(), self.PID, "failed", 7, "b",
+                                self.NOW)
         later = self.NOW + datetime.timedelta(days=400)
         self.assertEqual(L.decide(shard, L.empty_recent(), self.PID, 9,
                                   "other", later), L.FAILED)
-        # Settling "clear" never removes a recorded failure.
-        again = L.settled(shard, self.PID, "clear", 9, "c", "", later)
+        again = L.settled_shard(shard, self.PID, "pass", 9, "c", later)
         self.assertEqual(L.state_of(again, self.PID, later), "failed")
 
     def test_an_identical_change_under_review_is_refused(self):
-        L = review_ledger
-        shard = L.claimed(L.empty_shard(), self.PID, 7, "b", "a" * 40,
-                          self.NOW)
+        L = self.L
+        shard = L.claimed_shard(L.empty_shard(), self.PID, 7, "b", self.NOW)
         soon = self.NOW + datetime.timedelta(minutes=30)
         self.assertEqual(L.decide(shard, L.empty_recent(), self.PID, 8, "c",
                                   soon), L.BUSY)
-        # A claim from a run that died is ignored after STALE.
+
+    # N5: a claim never settled is a failure, never clear.
+    def test_a_stale_claim_counts_as_failed(self):
+        L = self.L
+        shard = L.claimed_shard(L.empty_shard(), self.PID, 7, "b", self.NOW)
         late = self.NOW + L.STALE + datetime.timedelta(minutes=1)
+        self.assertEqual(L.state_of(shard, self.PID, late), "failed")
         self.assertEqual(L.decide(shard, L.empty_recent(), self.PID, 8, "c",
-                                  late), L.CLEAR)
-        cleared = L.settled(shard, self.PID, "clear", 7, "b", "", soon)
-        self.assertEqual(L.state_of(cleared, self.PID, soon), "clear")
+                                  late), L.FAILED)
+
+    # N5: the claim is a failure from the moment it is made.
+    def test_a_claim_counts_as_a_failure_until_a_pass_settles_it(self):
+        L = self.L
+        recent = L.claimed_recent(L.empty_recent(), self.PID, 7, "claude/x",
+                                  self.NOW)
+        self.assertEqual(L.recent_failures(recent, 7, "claude/x", self.NOW), 1)
+        self.assertEqual(L.day_failures(recent, self.NOW), 1)
+        passed = L.settled_recent(recent, self.PID, "pass", 7, "claude/x",
+                                  self.NOW)
+        self.assertEqual(L.day_failures(passed, self.NOW), 0)
+        for outcome in ("failed", "error"):
+            kept = L.settled_recent(recent, self.PID, outcome, 7, "claude/x",
+                                    self.NOW)
+            self.assertEqual(L.day_failures(kept, self.NOW), 1, outcome)
+
+    def test_a_cancelled_run_leaves_a_failure_behind(self):
+        store = FakeStore()
+        self.assertEqual(self.run_cli(store, "claim", *self.args()), 0)
+        # ... and the run is cancelled: settle never happens.
+        later = self.NOW + datetime.timedelta(hours=3)
+        self.assertEqual(self.run_cli(store, "claim", *self.args(), now=later),
+                         self.L.FAILED)
+        self.assertEqual(self.run_cli(store, "check", "--patch-only",
+                                      *self.args(), now=later),
+                         self.L.FAILED)
+        recent = store.files["recent.json"][0]
+        self.assertEqual(self.L.day_failures(recent, later), 1)
 
     def test_two_failures_in_7_days_cap_the_pull_request_and_the_branch(self):
-        L = review_ledger
+        L = self.L
         recent = L.empty_recent()
         for i, day in enumerate((1, 3)):
-            recent = L.with_failure(recent, "%040x" % i, 7, "claude/x",
-                                    self.NOW - datetime.timedelta(days=day))
+            recent = L.settled_recent(recent, "%040x" % i, "failed", 7,
+                                      "claude/x",
+                                      self.NOW - datetime.timedelta(days=day))
         other = "cd" + "1" * 38
-        self.assertEqual(L.decide(L.empty_shard(), recent, other, 7, "y",
+        empty = L.empty_shard()
+        self.assertEqual(L.decide(empty, recent, other, 7, "y", self.NOW),
+                         L.CAPPED)
+        self.assertEqual(L.decide(empty, recent, other, 99, "claude/x",
                                   self.NOW), L.CAPPED)
-        self.assertEqual(L.decide(L.empty_shard(), recent, other, 99,
-                                  "claude/x", self.NOW), L.CAPPED)
-        self.assertEqual(L.decide(L.empty_shard(), recent, other, 99, "y",
-                                  self.NOW), L.CLEAR)
-        # One failure is not the cap; old ones age out.
-        one = L.with_failure(L.empty_recent(), other, 7, "claude/x", self.NOW)
-        self.assertEqual(L.decide(L.empty_shard(), one, self.PID, 7,
-                                  "claude/x", self.NOW), L.CLEAR)
+        self.assertEqual(L.decide(empty, recent, other, 99, "y", self.NOW),
+                         L.CLEAR)
         aged = self.NOW + L.WINDOW + datetime.timedelta(days=2)
-        self.assertEqual(L.decide(L.empty_shard(), recent, other, 7, "y",
-                                  aged), L.CLEAR)
-        self.assertEqual(L.with_failure(recent, other, 1, "z", aged)
-                         ["failures"][-1]["pr"], 1)
-        self.assertEqual(len(L.with_failure(recent, other, 1, "z", aged)
-                             ["failures"]), 1)
+        self.assertEqual(L.decide(empty, recent, other, 7, "y", aged),
+                         L.CLEAR)
+
+    # Round 4, #4: repo-wide, whatever the branch or pull request.
+    def test_four_failures_in_24_hours_pause_all_review(self):
+        L = self.L
+        three = self.failures(3, self.NOW - datetime.timedelta(hours=5))
+        four = self.failures(4, self.NOW - datetime.timedelta(hours=5))
+        new = "ee" + "4" * 38
+        self.assertEqual(L.decide(L.empty_shard(), three, new, 1, "fresh",
+                                  self.NOW), L.CLEAR)
+        self.assertEqual(L.decide(L.empty_shard(), four, new, 1, "fresh",
+                                  self.NOW), L.PAUSED)
+        tomorrow = self.NOW + datetime.timedelta(hours=20)
+        self.assertEqual(L.decide(L.empty_shard(), four, new, 1, "fresh",
+                                  tomorrow), L.CLEAR)
+
+    def test_three_capped_days_running_lock_until_the_owner_resets(self):
+        L = self.L
+        recent = L.empty_recent()
+        for day in (2, 1, 0):
+            start = (self.NOW - datetime.timedelta(days=day)).replace(hour=1)
+            for i in range(4):
+                recent = L.settled_recent(
+                    recent, "%038x%02d" % (day, i), "failed", 200 + day * 10 + i,
+                    "d%d-%d" % (day, i), start + datetime.timedelta(minutes=i))
+        self.assertTrue(L.streak(recent, L.EPOCH))
+        week = self.NOW + datetime.timedelta(days=2)
+        new = "ee" + "4" * 38
+        self.assertEqual(L.decide(L.empty_shard(), recent, new, 1, "fresh",
+                                  week), L.LOCKED)
+        # The lock file outlives recent.json, until a newer reset.
+        lock = self.NOW
+        self.assertEqual(L.decide(L.empty_shard(), L.empty_recent(), new, 1,
+                                  "fresh", week, lock=lock), L.LOCKED)
+        reset = self.NOW + datetime.timedelta(hours=1)
+        self.assertEqual(L.decide(L.empty_shard(), recent, new, 1, "fresh",
+                                  week, lock=lock, reset=reset), L.CLEAR)
+        # Two capped days with a gap are not a streak.
+        gap = L.empty_recent()
+        for day in (3, 1, 0):
+            start = (self.NOW - datetime.timedelta(days=day)).replace(hour=1)
+            for i in range(4):
+                gap = L.settled_recent(gap, "%038x%02d" % (day, i), "failed",
+                                       1, "g", start)
+        self.assertFalse(L.streak(gap, L.EPOCH))
+
+    def test_the_store_writes_the_lock_and_honours_a_reset(self):
+        store = FakeStore()
+        # Two full days already recorded; today's fourth failure, settled
+        # through the store, completes the streak.
+        seeded = self.L.empty_recent()
+        for day in (2, 1, 0):
+            when = (self.NOW - datetime.timedelta(days=day)).replace(hour=1)
+            for i in range(4 if day else 3):
+                seeded = self.L.settled_recent(
+                    seeded, "%038x%02d" % (day + 1, i), "failed",
+                    300 + day * 10 + i, "s%d%d" % (day, i),
+                    when + datetime.timedelta(minutes=i))
+        store.files["recent.json"] = (seeded, "seed")
+        self.assertNotIn("lock.json", store.files)
+        self.assertEqual(self.run_cli(store, "settle", *self.args(),
+                                      "--outcome", "failed"), 0)
+        self.assertIn("lock.json", store.files)
+        # recent.json forgets, but the lock holds ...
+        store.files["recent.json"] = (self.L.empty_recent(), "x1")
+        fresh = self.args("ff" + "5" * 38, "1", "z")
+        later = self.NOW + datetime.timedelta(hours=2)
+        self.assertEqual(self.run_cli(store, "check", *fresh, now=later),
+                         self.L.LOCKED)
+        # ... until the owner commits a newer reset.json.
+        store.files["reset.json"] = ({"at": "2026-10-09T13:00:00Z"}, "r1")
+        self.assertEqual(self.run_cli(store, "check", *fresh, now=later), 0)
 
     def test_claim_settle_and_check_through_the_store(self):
         store = FakeStore()
-        args = ["--pid", self.PID, "--pr", "7", "--branch", "claude/x",
-                "--sha", "a" * 40]
-        self.assertEqual(self.run_cli(store, "claim", *args), 0)
-        self.assertEqual(self.run_cli(store, "check", *args),
-                         review_ledger.BUSY)
-        self.assertEqual(self.run_cli(store, "settle", *args,
-                                      "--outcome", "failed"), 0)
-        self.assertEqual(self.run_cli(store, "claim", *args),
-                         review_ledger.FAILED)
-        self.assertIn("failed/ab.json", store.files)
-        self.assertEqual(len(store.files["recent.json"][0]["failures"]), 1)
-        # A second failure on the same branch, different change: capped.
-        other = ["--pid", "cd" + "2" * 38, "--pr", "8", "--branch",
-                 "claude/x", "--sha", "b" * 40]
+        self.assertEqual(self.run_cli(store, "claim", *self.args()), 0)
+        self.assertEqual(self.run_cli(store, "check", *self.args()),
+                         self.L.BUSY)
+        self.assertEqual(self.run_cli(store, "settle", *self.args(),
+                                      "--outcome", "pass"), 0)
+        self.assertEqual(self.run_cli(store, "check", "--patch-only",
+                                      *self.args()), 0)
+        self.assertEqual(self.L.day_failures(store.files["recent.json"][0],
+                                             self.NOW), 0)
+        other = self.args("cd" + "2" * 38, "8")
         self.assertEqual(self.run_cli(store, "claim", *other), 0)
         self.assertEqual(self.run_cli(store, "settle", *other,
                                       "--outcome", "failed"), 0)
-        third = ["--pid", "ef" + "3" * 38, "--pr", "9", "--branch",
-                 "claude/x", "--sha", "c" * 40]
-        self.assertEqual(self.run_cli(store, "claim", *third),
-                         review_ledger.CAPPED)
+        self.assertEqual(self.run_cli(store, "claim", *other),
+                         self.L.FAILED)
 
     def test_a_missing_or_malformed_ledger_fails_closed(self):
-        args = ["--pid", self.PID, "--pr", "7", "--branch", "b"]
         with mock.patch.dict(os.environ, {"LEDGER_REPO": "",
                                           "LEDGER_TOKEN": ""}):
-            self.assertEqual(self.run_cli(None, "check", *args),
-                             review_ledger.BROKEN)
+            self.assertEqual(self.run_cli(None, "check", *self.args()),
+                             self.L.BROKEN)
         store = FakeStore()
         store.files["failed/ab.json"] = ({"entries": []}, "s1")
-        self.assertEqual(self.run_cli(store, "check", *args),
-                         review_ledger.BROKEN)
+        self.assertEqual(self.run_cli(store, "check", *self.args()),
+                         self.L.BROKEN)
+
+    # N6: the public ledger holds patch-ids, PR numbers, a branch hash, a
+    # state word and timestamps. Nothing else, ever.
+    def test_the_ledger_schema_holds_nothing_sensitive(self):
+        store = FakeStore()
+        branch = "claude/jane-smith-at-12-high-street"
+        a = self.args(pr="7", branch=branch)
+        b = self.args("cd" + "2" * 38, "8", branch)
+        # Checked after EVERY write, so a field that lives only in a claim
+        # is caught too.
+        for args in (("claim", *a), ("settle", *a, "--outcome", "failed"),
+                     ("claim", *b), ("settle", *b, "--outcome", "error")):
+            self.run_cli(store, *args)
+            self.assert_schema(store, branch)
+        self.assertEqual(self.L.SHARD_FIELDS,
+                         {"state", "pr", "branch_hash", "at"})
+        self.assertEqual(self.L.RECENT_FIELDS,
+                         {"pid", "state", "pr", "branch_hash", "at"})
+
+    def assert_schema(self, store, branch):
+        ts = re.compile(r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$")
+        text = json.dumps({k: v[0] for k, v in store.files.items()})
+        self.assertNotIn("jane", text)
+        self.assertNotIn(branch, text)
+        for path, (value, _) in store.files.items():
+            if path.startswith("failed/"):
+                self.assertEqual(set(value), {"version", "entries"})
+                for pid, entry in value["entries"].items():
+                    self.assertRegex(pid, r"^[0-9a-f]{40}$")
+                    self.assertEqual(set(entry), set(self.L.SHARD_FIELDS))
+            elif path == "recent.json":
+                self.assertEqual(set(value), {"version", "failures"})
+                for entry in value["failures"]:
+                    self.assertEqual(set(entry), set(self.L.RECENT_FIELDS))
+                    self.assertRegex(entry["pid"], r"^[0-9a-f]{40}$")
+            elif path == "lock.json":
+                self.assertEqual(set(value), {"at"})
+            else:
+                self.fail("unexpected ledger file %s" % path)
+            for entry in (value.get("entries", {}).values()
+                          if path.startswith("failed/")
+                          else value.get("failures", [])):
+                self.assertIsInstance(entry["pr"], int)
+                self.assertRegex(entry["branch_hash"], r"^[0-9a-f]{16}$")
+                self.assertRegex(entry["at"], ts)
+                self.assertIn(entry["state"], self.L.STATES)
 
 
 DIFF = """diff --git a/tro/council/x.json b/tro/council/x.json

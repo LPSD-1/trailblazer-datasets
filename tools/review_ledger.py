@@ -1,43 +1,51 @@
 #!/usr/bin/env python3
-"""The review ledger: every change that failed review, and every one under
-review right now, by patch-id. It lives in a separate private repository.
+"""The review ledger: what failed review, what is under review, and whether
+review is paused. It lives in a separate PUBLIC repository.
 
     python tools/review_ledger.py patch-id DIFF          -> prints the id
-    python tools/review_ledger.py check  --pid P --pr N --branch B
-    python tools/review_ledger.py claim  --pid P --pr N --branch B --sha S
-    python tools/review_ledger.py settle --pid P --pr N --branch B --sha S \
-                                         --outcome failed|clear
+    python tools/review_ledger.py check  --pid P --pr N --branch B [--patch-only]
+    python tools/review_ledger.py claim  --pid P --pr N --branch B
+    python tools/review_ledger.py settle --pid P --pr N --branch B \
+                                         --outcome pass|failed|error
 
   check and claim exit 0 when the change may be reviewed, and otherwise:
-      3  this exact change has failed review before
+      3  this exact change has failed review (or its review never finished)
       4  an identical change is under review right now
       5  this pull request or branch has failed twice in 7 days
+      6  review paused: 4 failures (claims included) in the last 24 hours
+      7  review paused: 3 days running hit that cap; the owner must reset
       1  the ledger cannot be read or written (fails closed)
+  --patch-only checks the patch-id alone (3 or 0), for the final check
+  before success.
 
   LEDGER_REPO (owner/name) and LEDGER_TOKEN come from the environment.
 
 WHY. A model's verdict is not deterministic, so trying again until it says
-PASS is a way through any gate built on one. The workflow refuses re-runs
-outright, and runs one review at a time. This file closes the other ways in:
+PASS is a way through any gate built on one. Every agent pushes as the
+owner, so neither the pull request nor the branch is a reliable identity:
+  * the same change again (new commit, branch or PR): the key is
+    `git patch-id --stable`, the same whatever carries it;
+  * two identical changes at once: refused while one is claimed;
+  * one PR or branch re-rolling small edits: 2 failures in 7 days, then the
+    owner's;
+  * re-rolling through NEW branches and PRs: repo-wide, 4 failures in any
+    24 hours pauses all review ("review paused: too many failures today"),
+    and 3 consecutive UTC days that each reach 4 lock it until the owner
+    commits `reset.json` to the ledger repository.
 
-  * the same change pushed again, as a new commit, branch or pull request:
-    the key is `git patch-id --stable`, which is the same for the same
-    change whatever carries it;
-  * the same change in two pull requests at once: `claim` records it as
-    in progress BEFORE any model is asked, so the second one is refused;
-  * a trivial edit (new patch-id) re-rolled until it passes: after two
-    failures for the same pull request or the same head branch within 7
-    days, every further run is the owner's ("owner must review (repeated
-    failures)") and no model is asked.
+A CLAIM IS A FAILURE UNTIL A PASS SETTLES IT. `claim` writes the change into
+recent.json as a failure before any model is asked; only `settle --outcome
+pass` removes it. A run that is cancelled, times out or crashes therefore
+leaves a failure behind, and its claim, once 2 hours stale, marks the
+patch-id failed for good. Cancelling a run cannot erase a FAIL.
 
-WHERE. A private repository, LPSD-1/trailblazer-review-ledger, written only
-by the ledger app, which is installed on that repository alone: no token
-that can write the ledger can touch the data repository, and nobody working
-in the data repository can edit or delete the ledger. Failures are sharded
-by the first two hex characters of the patch-id (`failed/3f.json`), so no
-file nears the contents API's 1 MB limit; `recent.json` holds only the
-last 7 days' failures, for the cap. A write that loses a race re-reads and
-retries: the contents API refuses a stale `sha`.
+WHAT IS STORED: patch-ids, pull request numbers, a 16-hex-digit hash of the
+branch name (never the name), a state word, and UTC timestamps. Nothing
+else: the repository is public, so that its ruleset is enforced on the free
+plan (see docs/REVIEW-GATE-SETUP.md), and test_review_gate pins the schema.
+Failures are sharded by the first two hex characters of the patch-id
+(`failed/3f.json`), so no file nears the contents API's 1 MB limit;
+recent.json holds only the last 7 days.
 
 The ledger never makes anything pass. Missing, unreadable or malformed, it
 fails the review closed.
@@ -45,6 +53,7 @@ fails the review closed.
 import argparse
 import base64
 import datetime
+import hashlib
 import json
 import os
 import re
@@ -57,21 +66,34 @@ import urllib.request
 _ID = re.compile(r"^[0-9a-f]{40}$")
 API = "https://api.github.com"
 
-#: An in-progress claim older than this is from a run that died; ignore it.
+#: An unsettled claim older than this is from a run that never finished:
+#: the change counts as FAILED.
 STALE = datetime.timedelta(hours=2)
-#: The repeated-failure cap: this many failures ...
+#: Per pull request or head branch: this many failures in WINDOW.
 CAP = 2
-#: ... within this window, for one pull request or one head branch.
 WINDOW = datetime.timedelta(days=7)
+#: Repo-wide: this many failures in any DAY pauses review ...
+DAY_CAP = 4
+DAY = datetime.timedelta(hours=24)
+#: ... and this many consecutive UTC days at DAY_CAP locks it.
+LOCK_DAYS = 3
 
-CLEAR, FAILED, BUSY, CAPPED, BROKEN = 0, 3, 4, 5, 1
+CLEAR, BROKEN, FAILED, BUSY, CAPPED, PAUSED, LOCKED = 0, 1, 3, 4, 5, 6, 7
 REASONS = {
     FAILED: "This exact change already failed review",
     BUSY: "An identical change is under review now",
     CAPPED: "owner must review (repeated failures)",
+    PAUSED: "review paused: too many failures today",
+    LOCKED: "review paused until the owner resets the ledger",
     BROKEN: "The review ledger cannot be read or written",
 }
-RECENT = "recent.json"
+RECENT, LOCK, RESET = "recent.json", "lock.json", "reset.json"
+EPOCH = datetime.datetime(1970, 1, 1, tzinfo=datetime.timezone.utc)
+
+#: The only fields the ledger ever writes, and their shapes.
+SHARD_FIELDS = frozenset(("state", "pr", "branch_hash", "at"))
+RECENT_FIELDS = frozenset(("pid", "state", "pr", "branch_hash", "at"))
+STATES = frozenset(("in-progress", "failed", "claimed", "error"))
 
 
 def _ts(when):
@@ -83,8 +105,21 @@ def _parse_ts(text):
         tzinfo=datetime.timezone.utc)
 
 
+def _age(entry, now):
+    """now - entry["at"], or None when the entry has no readable time."""
+    try:
+        return now - _parse_ts(entry["at"])
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
 def now_utc():
     return datetime.datetime.now(datetime.timezone.utc)
+
+
+def branch_hash(branch):
+    """What the ledger keeps instead of a branch name."""
+    return hashlib.sha256(branch.encode("utf-8")).hexdigest()[:16]
 
 
 def patch_id(diff_text):
@@ -124,40 +159,85 @@ def valid_recent(data):
     return data
 
 
+def _stamp(data):
+    """lock.json / reset.json -> their time, or None when absent."""
+    if data is None:
+        return None
+    if not isinstance(data, dict):
+        raise ValueError("not a lock or reset file")
+    return _parse_ts(data["at"])
+
+
+# ---- decisions -----------------------------------------------------------
+
 def state_of(shard, pid, now):
-    """"failed", "busy" (a live in-progress claim) or "clear"."""
+    """"failed", "busy" (a live claim) or "clear". A claim older than STALE
+    was never settled: the change counts as failed."""
     entry = shard["entries"].get(pid)
     if not entry:
         return "clear"
     if entry.get("state") == "in-progress":
-        try:
-            if now - _parse_ts(entry["at"]) < STALE:
-                return "busy"
-        except (KeyError, TypeError, ValueError):
+        age = _age(entry, now)
+        if age is not None and age < STALE:
             return "busy"
-        return "clear"
-    return "failed"   # "failed", or anything unknown, counts against it
+    return "failed"
+
+
+def _counted(recent, now, within):
+    """recent.json entries no older than `within` (undated ones count)."""
+    out = []
+    for f in recent["failures"]:
+        age = _age(f, now)
+        if age is None or age <= within:
+            out.append(f)
+    return out
 
 
 def recent_failures(recent, pr, branch, now):
-    """How many failures in WINDOW were for this pull request or branch."""
-    count = 0
+    """Failures (claims included) in WINDOW for this PR or branch."""
+    bh = branch_hash(branch) if branch else None
+    return sum(1 for f in _counted(recent, now, WINDOW)
+               if str(f.get("pr")) == str(pr)
+               or (bh and f.get("branch_hash") == bh))
+
+
+def day_failures(recent, now):
+    """Failures (claims included) repo-wide in the last 24 hours."""
+    return len(_counted(recent, now, DAY))
+
+
+def streak(recent, after):
+    """True when LOCK_DAYS consecutive UTC dates each hold DAY_CAP or more
+    failures recorded after `after` (the last reset)."""
+    per_day = {}
     for f in recent["failures"]:
         try:
-            if now - _parse_ts(f["at"]) > WINDOW:
-                continue
+            when = _parse_ts(f["at"])
         except (KeyError, TypeError, ValueError):
-            pass   # an undated failure still counts
-        if str(f.get("pr")) == str(pr) or (branch and f.get("branch") == branch):
-            count += 1
-    return count
+            continue
+        if when > after:
+            per_day[when.date()] = per_day.get(when.date(), 0) + 1
+    full = {d for d, n in per_day.items() if n >= DAY_CAP}
+    one = datetime.timedelta(days=1)
+    return any(all(d - i * one in full for i in range(LOCK_DAYS))
+               for d in full)
 
 
-def decide(shard, recent, pid, pr, branch, now):
-    """-> CLEAR, FAILED, CAPPED or BUSY for a change about to be reviewed."""
+def locked(recent, lock, reset):
+    """lock/reset: their times or None. Locked until a reset newer than
+    the lock, and while a fresh streak stands."""
+    after = reset or EPOCH
+    return bool((lock and lock > after) or streak(recent, after))
+
+
+def decide(shard, recent, pid, pr, branch, now, lock=None, reset=None):
     state = state_of(shard, pid, now)
     if state == "failed":
         return FAILED
+    if locked(recent, lock, reset):
+        return LOCKED
+    if day_failures(recent, now) >= DAY_CAP:
+        return PAUSED
     if recent_failures(recent, pr, branch, now) >= CAP:
         return CAPPED
     if state == "busy":
@@ -165,41 +245,65 @@ def decide(shard, recent, pid, pr, branch, now):
     return CLEAR
 
 
-def claimed(shard, pid, pr, branch, sha, now):
+# ---- changes -------------------------------------------------------------
+
+def _prune(failures, now):
+    return [f for f in failures if (_age(f, now) or datetime.timedelta(0))
+            <= WINDOW]
+
+
+def claimed_shard(shard, pid, pr, branch, now):
     out = {"version": 1, "entries": dict(shard["entries"])}
     out["entries"][pid] = {"state": "in-progress", "pr": int(pr),
-                           "branch": branch, "sha": sha, "at": _ts(now)}
+                           "branch_hash": branch_hash(branch),
+                           "at": _ts(now)}
     return out
 
 
-def settled(shard, pid, outcome, pr, branch, sha, now):
-    """outcome "failed" marks the change failed for good; "clear" removes
-    an in-progress claim. A recorded failure is never removed."""
+def claimed_recent(recent, pid, pr, branch, now):
+    """The claim, counted as a failure from this moment."""
+    keep = _prune(recent["failures"], now)
+    keep.append({"pid": pid, "state": "claimed", "pr": int(pr),
+                 "branch_hash": branch_hash(branch), "at": _ts(now)})
+    return {"version": 1, "failures": keep}
+
+
+def settled_shard(shard, pid, outcome, pr, branch, now):
+    """failed: the change is failed for good. pass or error: the claim is
+    released. A recorded failure is never removed."""
     out = {"version": 1, "entries": dict(shard["entries"])}
     entry = out["entries"].get(pid)
     if outcome == "failed":
         if not entry or entry.get("state") != "failed":
             out["entries"][pid] = {"state": "failed", "pr": int(pr),
-                                   "branch": branch, "sha": sha,
+                                   "branch_hash": branch_hash(branch),
                                    "at": _ts(now)}
     elif entry and entry.get("state") == "in-progress":
         del out["entries"][pid]
     return out
 
 
-def with_failure(recent, pid, pr, branch, now):
-    """recent.json with this failure added and anything past WINDOW gone."""
-    keep = []
-    for f in recent["failures"]:
-        try:
-            if now - _parse_ts(f["at"]) > WINDOW:
-                continue
-        except (KeyError, TypeError, ValueError):
-            pass
-        keep.append(f)
-    keep.append({"pid": pid, "pr": int(pr), "branch": branch, "at": _ts(now)})
-    return {"version": 1, "failures": keep}
+def settled_recent(recent, pid, outcome, pr, branch, now):
+    """pass removes this change's open claim; failed and error turn it into
+    a failure that stays (adding one if the claim is missing)."""
+    failures = _prune(recent["failures"], now)
+    open_claims = [i for i, f in enumerate(failures)
+                   if f.get("pid") == pid and f.get("state") == "claimed"]
+    if outcome == "pass":
+        if open_claims:
+            del failures[open_claims[-1]]
+    else:
+        if open_claims:
+            failures[open_claims[-1]] = dict(failures[open_claims[-1]],
+                                             state=outcome)
+        else:
+            failures.append({"pid": pid, "state": outcome, "pr": int(pr),
+                             "branch_hash": branch_hash(branch),
+                             "at": _ts(now)})
+    return {"version": 1, "failures": failures}
 
+
+# ---- the repository ------------------------------------------------------
 
 class Store:
     """The ledger repository, through the contents API."""
@@ -274,36 +378,63 @@ def _store():
 def _read(store, pid):
     shard, _ = store.get(shard_path(pid))
     recent, _ = store.get(RECENT)
+    lock, _ = store.get(LOCK)
+    reset, _ = store.get(RESET)
     return (valid_shard(shard) if shard is not None else empty_shard(),
-            valid_recent(recent) if recent is not None else empty_recent())
+            valid_recent(recent) if recent is not None else empty_recent(),
+            _stamp(lock), _stamp(reset))
+
+
+def _lock_if_streak(store, now):
+    """Write lock.json when a streak since the last reset stands. It stays
+    after recent.json forgets the days, until the owner's reset."""
+    recent, _ = store.get(RECENT)
+    recent = valid_recent(recent) if recent is not None else empty_recent()
+    lock, lock_sha = store.get(LOCK)
+    reset, _ = store.get(RESET)
+    after = _stamp(reset) or EPOCH
+    if streak(recent, after) and not ((_stamp(lock) or EPOCH) > after):
+        return store.put(LOCK, {"at": _ts(now)}, lock_sha,
+                         "Review locked: %d days at the cap" % LOCK_DAYS)
+    return True
 
 
 def run(a, store, now):
     """One check / claim / settle against a store. -> exit code."""
     shard_path(a.pid)
+    msg = "PR #%s, %s" % (a.pr, a.pid)
     if a.command in ("check", "claim"):
-        code = decide(*_read(store, a.pid), a.pid, a.pr, a.branch, now)
-        if code == CLEAR and a.command == "claim":
-            ok = store.update(
-                shard_path(a.pid),
-                lambda s: claimed(s, a.pid, a.pr, a.branch, a.sha, now),
-                empty_shard, valid_shard,
-                "In review: PR #%s, %s" % (a.pr, a.pid))
-            code = CLEAR if ok else BROKEN
-        return code
+        shard, recent, lock, reset = _read(store, a.pid)
+        if a.command == "check" and a.patch_only:
+            return FAILED if state_of(shard, a.pid, now) == "failed" \
+                else CLEAR
+        code = decide(shard, recent, a.pid, a.pr, a.branch, now, lock, reset)
+        if code != CLEAR or a.command == "check":
+            return code
+        # Counted as a failure FIRST, so nothing after this can lose it.
+        ok = store.update(
+            RECENT, lambda r: claimed_recent(r, a.pid, a.pr, a.branch, now),
+            empty_recent, valid_recent, "Claimed: " + msg)
+        ok = ok and store.update(
+            shard_path(a.pid),
+            lambda s: claimed_shard(s, a.pid, a.pr, a.branch, now),
+            empty_shard, valid_shard, "In review: " + msg)
+        ok = ok and _lock_if_streak(store, now)
+        return CLEAR if ok else BROKEN
     ok = store.update(
         shard_path(a.pid),
-        lambda s: settled(s, a.pid, a.outcome, a.pr, a.branch, a.sha, now),
-        empty_shard, valid_shard,
-        "%s: PR #%s, %s" % (a.outcome, a.pr, a.pid))
-    if ok and a.outcome == "failed":
-        ok = store.update(
-            RECENT, lambda r: with_failure(r, a.pid, a.pr, a.branch, now),
-            empty_recent, valid_recent, "Failed: PR #%s, %s" % (a.pr, a.pid))
+        lambda s: settled_shard(s, a.pid, a.outcome, a.pr, a.branch, now),
+        empty_shard, valid_shard, "%s: %s" % (a.outcome, msg))
+    ok = ok and store.update(
+        RECENT,
+        lambda r: settled_recent(r, a.pid, a.outcome, a.pr, a.branch, now),
+        empty_recent, valid_recent, "%s: %s" % (a.outcome, msg))
+    if a.outcome != "pass":
+        ok = ok and _lock_if_streak(store, now)
     return CLEAR if ok else BROKEN
 
 
-def main(argv=None, store=None):
+def main(argv=None, store=None, now=None):
     argv = sys.argv[1:] if argv is None else argv
     if argv[:1] == ["patch-id"] and len(argv) == 2:
         with open(argv[1], encoding="utf-8", errors="replace") as fh:
@@ -317,13 +448,13 @@ def main(argv=None, store=None):
     ap.add_argument("--pid", required=True)
     ap.add_argument("--pr", required=True)
     ap.add_argument("--branch", required=True)
-    ap.add_argument("--sha", default="")
-    ap.add_argument("--outcome", choices=("failed", "clear"))
+    ap.add_argument("--patch-only", action="store_true")
+    ap.add_argument("--outcome", choices=("pass", "failed", "error"))
     a = ap.parse_args(argv)
     if a.command == "settle" and not a.outcome:
         ap.error("settle needs --outcome")
     try:
-        code = run(a, store or _store(), now_utc())
+        code = run(a, store or _store(), now or now_utc())
     except (urllib.error.URLError, ValueError, KeyError, TypeError,
             OSError) as e:
         sys.stderr.write("review ledger: %s\n" % e)

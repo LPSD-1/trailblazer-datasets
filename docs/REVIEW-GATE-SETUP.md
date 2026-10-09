@@ -45,23 +45,42 @@ a **private key**. Install it with **Only select repositories** set to
 ### A2. Create the ledger repository and its app
 
 The ledger records every change that failed review, by `git patch-id`, and
-every change under review right now. It refuses a repeat of a failed change,
-an identical change in a second pull request, and a third attempt by a pull
-request or branch that has failed twice in 7 days. It lives outside this
+every change under review right now. It refuses:
+
+- a repeat of a failed change;
+- an identical change in a second pull request;
+- a third attempt by a pull request or branch that has failed twice in 7 days.
+
+It also pauses all review after 4 failures in any 24 hours, repo-wide. Each
+claim counts as a failure until a PASS settles it. Three UTC days running at
+that cap lock review until you reset it (A8). The ledger lives outside this
 repository, so nobody working here can edit it.
 
-1. Create a **private** repository `LPSD-1/trailblazer-review-ledger` with a
+**It is public.** GitHub's free plan does not enforce rulesets on private
+repositories, and the ruleset below is what stops anyone, you included,
+from editing the ledger. It holds nothing sensitive: patch-ids, pull request
+numbers, a 16-hex-digit hash of each branch name, a state word, and UTC
+timestamps. `tools/test_review_gate.py` pins that schema.
+
+1. Create a **public** repository `LPSD-1/trailblazer-review-ledger` with a
    README, so that it has a `main` branch. The workflow writes
    `failed/<xx>.json` (sharded by the first two hex characters of the
-   patch-id) and `recent.json` itself.
+   patch-id), `recent.json` and `lock.json` itself.
 2. Create a second GitHub App, `trailblazer-review-ledger`, with webhook
    off. Its only repository permission is **Contents: Read and write**
    (Metadata: Read is automatic). Installable only on this account.
 3. Install it with **Only select repositories** set to
    `trailblazer-review-ledger`, **and nothing else**.
-4. On the ledger repository, add a ruleset for all branches: Restrict
-   deletions and Block force pushes, with no bypass. Add no other
-   collaborators.
+4. On the ledger repository, add a ruleset on the **default branch**,
+   enforcement Active, with these rules: **Restrict creations**, **Restrict
+   updates**, **Restrict deletions**, **Block force pushes**. The bypass
+   list is **only** the `trailblazer-review-ledger` app: **no owner bypass**,
+   no repository admin role, no deploy keys.
+5. **The Claude GitHub App must NOT be installed on the ledger repository.**
+   The routines act through it. Under GitHub Settings, Applications,
+   Installed GitHub Apps, open Claude, go to Repository access, and make
+   sure `trailblazer-review-ledger` is not listed. "All repositories" is
+   not acceptable. Add no collaborators.
 
 ### A3. The `review` environment
 
@@ -138,6 +157,26 @@ these steps in this order:
 - [ ] Merge.
 - [ ] Remove yourself from the bypass list, and confirm the list is back to
       the two pipeline apps.
+- [ ] Resume the routines.
+
+### A8. When review is paused
+
+"review paused: too many failures today" (4 failures in 24 hours,
+repo-wide) clears by itself as the failures age out of the 24 hours. Three
+UTC days running at that cap write `lock.json`. After that, every review
+fails with "review paused until the owner resets the ledger" until you
+reset it. Nothing an agent can do clears it, because the ledger's ruleset
+lets only the ledger app write. To reset:
+
+- [ ] **Pause every routine** first.
+- [ ] Find out why changes kept failing, from the review comments and
+      `recent.json`.
+- [ ] In the ledger repository's ruleset, add yourself as a bypass actor.
+- [ ] Commit `reset.json` to its `main` branch, containing
+      `{"at": "<now, UTC, as 2026-10-09T12:00:00Z>"}`. Only failures after
+      that time count toward a new lock.
+- [ ] Remove yourself from the bypass list. The ledger app must again be
+      the only entry.
 - [ ] Resume the routines.
 
 ## B. Pipeline pushes: the only bypass
