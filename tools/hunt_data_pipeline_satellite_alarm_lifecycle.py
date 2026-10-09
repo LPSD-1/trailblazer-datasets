@@ -621,8 +621,9 @@ def write_blocks(where, status=403):
     os.makedirs(os.path.join(where, "satellite"), exist_ok=True)
     with open(os.path.join(where, "satellite", "blocks.json"), "w",
               encoding="utf-8", newline="\n") as f:
-        json.dump({"areas": {"gb-wales-satellite": {
-            "at": "2026-10-09T02:41:00Z", "status": status,
+        json.dump({"hosts": {"tiles.maps.eox.at": {
+            "at": "2026-10-09T02:41:00Z", "area": "gb-wales-satellite",
+            "status": status,
             "retry_after": None, "until": UNTIL,
             "reason": "HTTP %s for z14/1/2" % status}}}, f)
 
@@ -702,7 +703,8 @@ def check_refusal(bash, problems):
     if "refused" not in told[0]["title"].lower():
         problems.append("a refused run's alarm does not say EOX refused us: "
                         "%r" % told[0]["title"])
-    if "2026-10-16" not in body or "403" not in body:
+    if "2026-10-16" not in body or "403" not in body or (
+            "tiles.maps.eox.at" not in body):
         problems.append("a refused run's alarm does not say when the area "
                         "comes due again, or why: %r" % body[:400])
     if "saved however a run ends" not in body:

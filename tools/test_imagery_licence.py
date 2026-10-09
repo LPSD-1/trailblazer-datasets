@@ -571,7 +571,7 @@ def service_checks(bs):
                      "retry_after": None, "until": "2026-10-08T00:00:00Z",
                      "reason": "earlier"}
             with open(blocks, "w", encoding="utf-8", newline="\n") as fh:
-                json.dump({"areas": {"gb-x-satellite": other}}, fh)
+                json.dump({"hosts": {"elsewhere.example": other}}, fh)
             staging2 = os.path.join(tmp, "staging2")
             out = os.path.join(tmp, "t.pmtiles")
             bs.Fetcher = make([(429, {})] * 100)
@@ -591,8 +591,8 @@ def service_checks(bs):
                                            len(opened[-1].calls),
                                            log.getvalue()[-300:]))
             with open(blocks, encoding="utf-8") as fh:
-                areas = json.load(fh).get("areas", {})
-            rec = areas.get("t") or {}
+                areas = json.load(fh).get("hosts", {})
+            rec = areas.get("tiles.maps.eox.at") or {}
 
             def when(s):
                 return dt.datetime.fromisoformat(
@@ -601,9 +601,10 @@ def service_checks(bs):
                 at, until = when(rec.get("at")), when(rec.get("until"))
             except (TypeError, ValueError):
                 at = until = None
-            check(areas.get("gb-x-satellite") == other,
-                  "the stop overwrote another area's block: %r" % areas)
+            check(areas.get("elsewhere.example") == other,
+                  "the stop overwrote another host's block: %r" % areas)
             check(rec.get("status") == 429 and rec.get("retry_after") is None
+                  and rec.get("area") == "t"
                   and at is not None
                   and abs((at - before).total_seconds()) < 120
                   and until - at == dt.timedelta(days=7),
@@ -616,7 +617,8 @@ def service_checks(bs):
                     contextlib.redirect_stderr(io.StringIO()):
                 rc = bs.main()
             with open(blocks, encoding="utf-8") as fh:
-                rec = json.load(fh).get("areas", {}).get("t") or {}
+                rec = (json.load(fh).get("hosts", {})
+                       .get("tiles.maps.eox.at") or {})
             try:
                 at, until = when(rec.get("at")), when(rec.get("until"))
             except (TypeError, ValueError):

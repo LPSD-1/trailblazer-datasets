@@ -92,6 +92,7 @@ import sys
 import threading
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 
@@ -668,17 +669,21 @@ def _planner():
 
 
 def record_block(path, area_id, block):
-    """Write the stop into `path` beside the other areas' records, and
+    """Write the stop into `path` under the tile host, beside any other
+    host's record, and
     return it. Retry-After is rounded UP: what EOX asked for is never cut."""
     plan = _planner()
     now = dt.datetime.now(dt.timezone.utc).replace(microsecond=0)
     asked = block.get("retry_after")
-    rec = {"at": plan.stamp(now), "status": block.get("status"),
+    rec = {"at": plan.stamp(now), "area": area_id,
+           "status": block.get("status"),
            "retry_after": None if asked is None else int(math.ceil(asked)),
            "reason": block.get("reason")}
     rec["until"] = plan.stamp(plan.blocked_until(rec))
-    data = plan.load_blocks(path) if os.path.exists(path) else {"areas": {}}
-    data.setdefault("areas", {})[area_id] = rec
+    data = plan.load_blocks(path)
+    # Keyed by HOST: EOX refused us, not this area, and the planner stops
+    # every area until the block ends.
+    data["hosts"][urllib.parse.urlparse(SOURCE).netloc] = rec
     os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
     with open(path, "w", encoding="utf-8", newline="\n") as f:
         json.dump(data, f, indent=2, sort_keys=True)

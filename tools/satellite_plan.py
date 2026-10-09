@@ -129,8 +129,19 @@ def wrong_attribution(catalogue, attribution):
                if pack.get("note") != attribution)
 
 
+def block_host():
+    """The host every imagery tile comes from, which a refusal blocks:
+    build_satellite's SOURCE, so there is one definition."""
+    import urllib.parse
+    return urllib.parse.urlparse(_build_satellite().SOURCE).netloc
+
+
 def build_satellite_attribution():
-    """build_satellite's ATTRIBUTION, loaded here rather than at the top:
+    return _build_satellite().ATTRIBUTION
+
+
+def _build_satellite():
+    """build_satellite, loaded here rather than at the top:
     height_plan imports this module, and its job installs no Pillow."""
     import importlib.util
     import os
@@ -139,15 +150,16 @@ def build_satellite_attribution():
             os.path.abspath(__file__)), "build_satellite.py"))
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
-    return mod.ATTRIBUTION
+    return mod
 
 
 # A REFUSAL IS REMEMBERED. When EOX stops an area, build_satellite.py writes
-# the stop to satellite/blocks.json (its time, the HTTP status or "network",
-# and any Retry-After), and the workflow commits it. Without that the next run,
-# twelve hours on, picked the same area and asked the same service again. An
-# area stays idle for at least BLOCK_DAYS, or until Retry-After when EOX asked
-# for longer; nothing shortens either.
+# the stop to satellite/blocks.json under EOX's HOST (its time, the area, the
+# HTTP status or "network", and any Retry-After), and the workflow commits it.
+# Without that the next run, twelve hours on, asked the same service again.
+# Every area comes from that one host, so none is planned for at least
+# BLOCK_DAYS, or until Retry-After when EOX asked for longer; nothing
+# shortens either.
 BLOCK_DAYS = 7
 NEVER = dt.datetime.max.replace(tzinfo=dt.timezone.utc)
 
@@ -164,7 +176,7 @@ def _when(text):
 
 
 def blocked_until(record):
-    """When an area refused at record["at"] may be asked for again. A
+    """When a host that refused us at record["at"] may be asked again. A
     record whose time cannot be read blocks until a person mends it."""
     try:
         at = _when(record["at"])
@@ -181,17 +193,17 @@ def blocked_until(record):
 
 
 def load_blocks(path):
-    """{"areas": {area id: record}} from `path`; no file is no blocks. A
+    """{"hosts": {host: record}} from `path`; no file is no blocks. A
     file that is there and cannot be read raises: taking it as "no blocks"
     would ask again of a service that refused us."""
     if not path or not os.path.exists(path):
-        return {"areas": {}}
+        return {"hosts": {}}
     with open(path, encoding="utf-8") as f:
         data = json.load(f)
-    if not isinstance(data, dict) or not isinstance(data.get("areas", {}),
+    if not isinstance(data, dict) or not isinstance(data.get("hosts", {}),
                                                     dict):
-        raise ValueError("%s is not {\"areas\": {...}}" % path)
-    data.setdefault("areas", {})
+        raise ValueError("%s is not {\"hosts\": {...}}" % path)
+    data.setdefault("hosts", {})
     return data
 
 
@@ -227,12 +239,12 @@ def main():
     # something to pick between.
     ap.add_argument("--max-zoom", type=int, default=14)
     ap.add_argument("--blocks",
-                    help="satellite/blocks.json: areas EOX refused, which "
-                         "are not planned until their block runs out")
+                    help="satellite/blocks.json: hosts that refused us; "
+                         "no area is planned until the block runs out")
     args = ap.parse_args()
 
     try:
-        blocks = load_blocks(args.blocks)["areas"]
+        blocks = load_blocks(args.blocks)["hosts"]
     except (OSError, ValueError) as e:
         print(json.dumps({"work": False,
                           "why": "cannot read the blocks file: %s" % e}))
@@ -249,15 +261,22 @@ def main():
     published = existing_satellite(catalogue)
     short = below_zoom(catalogue, args.max_zoom)
     relabel = wrong_attribution(catalogue, build_satellite_attribution())
-    candidates, refused = [], []
+    # ONE REFUSAL STOPS EVERY AREA. Every area is fetched from the same
+    # host, so planning the next area after EOX said no to this one would
+    # be working around the block.
+    host = block_host()
+    if host in blocks:
+        until = blocked_until(blocks[host])
+        if until > now:
+            print(json.dumps({"work": False, "why": (
+                "%s refused us (in %s), so no area is asked for until %s"
+                % (host, blocks[host].get("area", "an area"),
+                   "a person mends its record in the blocks file"
+                   if until == NEVER else stamp(until)))}))
+            return 0
+
+    candidates = []
     for area in areas_with_lanes(catalogue):
-        if area["id"] in blocks:
-            until = blocked_until(blocks[area["id"]])
-            if until > now:
-                refused.append("%s until %s" % (
-                    area["id"], "a person mends its record" if until == NEVER
-                    else stamp(until)))
-                continue
         age = age_days(published.get(area["id"]), now)
         # Built from another mosaic (the licence) comes first: that imagery
         # is being served under terms we may not use, which is a live
@@ -268,9 +287,7 @@ def main():
         candidates.append((rank, -(age or 0), area, age))
 
     if not candidates:
-        print(json.dumps({"work": False, "why": (
-            "EOX refused us, so these are not asked for again yet: %s"
-            % "; ".join(refused)) if refused else "no areas publish lanes"}))
+        print(json.dumps({"work": False, "why": "no areas publish lanes"}))
         return 0
 
     candidates.sort(key=lambda c: (c[0], c[1]))

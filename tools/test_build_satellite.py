@@ -249,7 +249,11 @@ def _plan(sp, catalogue, blocks):
 
 
 def check_blocks(sp):
+    """A refusal is EOX's, not one area's: EOX is a single host, so asking
+    for the next area twelve hours later would be working around its no.
+    Records are keyed by host, and a live one stops every area."""
     now = dt.datetime.now(dt.timezone.utc)
+    host = "tiles.maps.eox.at"
 
     def stamp(days_ago):
         return (now - dt.timedelta(days=days_ago)).strftime(
@@ -263,45 +267,51 @@ def check_blocks(sp):
     catalogue = {"continents": [{"countries": [{"label": "GB", "areas": [
         area("gb-a"), area("gb-b")]}]}]}
 
-    def rec(days_ago, status=403, retry_after=None):
-        return {"at": stamp(days_ago), "status": status,
-                "retry_after": retry_after}
+    def rec(days_ago, status=403, retry_after=None, where="gb-a-satellite"):
+        return {"hosts": {host: {"at": stamp(days_ago), "status": status,
+                                 "retry_after": retry_after,
+                                 "area": where}}}
 
     def picks(blocks):
         plan, _rc = _plan(sp, catalogue, blocks)
         return plan.get("id") if plan.get("work") else plan
 
+    check(getattr(sp, "block_host", lambda: None)() == host,
+          "the planner blocks %r, not EOX's tile host" % getattr(sp, "block_host", lambda: None)())
     got = picks(None)
     check(got == "gb-a-satellite",
           "with no blocks file gb-a is not planned: %r" % (got,))
-    got = picks({"areas": {"gb-a-satellite": rec(1)}})
-    check(got == "gb-b-satellite",
-          "an area EOX refused yesterday was planned again: %r" % (got,))
-    got = picks({"areas": {"gb-a-satellite": rec(6.9, status=429)}})
-    check(got == "gb-b-satellite",
-          "an area refused 6.9 days ago was planned again: %r" % (got,))
-    got = picks({"areas": {"gb-a-satellite": rec(7.1)}})
+    # Refused in gb-a twelve hours ago: gb-b must NOT be planned now.
+    got = picks(rec(0.5))
+    check(isinstance(got, dict) and got.get("work") is False
+          and host in got.get("why", "")
+          and stamp(0.5 - 7)[:10] in got.get("why", ""),
+          "12 hours after EOX refused gb-a, the plan is %r; nothing may be "
+          "asked of %s until the block ends" % (got, host))
+    got = picks(rec(6.9, status=429, where="gb-b-satellite"))
+    check(isinstance(got, dict) and got.get("work") is False,
+          "6.9 days after a refusal an area was planned: %r" % (got,))
+    got = picks(rec(7.1))
     check(got == "gb-a-satellite",
-          "an area refused 7.1 days ago with no Retry-After is still "
-          "skipped: %r" % (got,))
-    got = picks({"areas": {"gb-a-satellite": rec(8, retry_after=30 * 86400)}})
-    check(got == "gb-b-satellite",
+          "7.1 days after a refusal with no Retry-After nothing is "
+          "planned: %r" % (got,))
+    got = picks(rec(8, retry_after=30 * 86400))
+    check(isinstance(got, dict) and got.get("work") is False,
           "a Retry-After of 30 days was cut to 7: %r" % (got,))
-    got = picks({"areas": {"gb-a-satellite": rec(31, retry_after=30 * 86400)}})
+    got = picks(rec(31, retry_after=30 * 86400))
     check(got == "gb-a-satellite",
-          "an area is skipped after its 30-day Retry-After ran out: %r"
+          "nothing is planned after a 30-day Retry-After ran out: %r"
           % (got,))
+    # Another host's block does not stop EOX's areas.
+    other = rec(1)
+    other["hosts"] = {"elsewhere.example": other["hosts"][host]}
+    got = picks(other)
+    check(got == "gb-a-satellite",
+          "another host's block stopped the EOX areas: %r" % (got,))
     # A record whose time cannot be read is a block, not a pass.
-    got = picks({"areas": {"gb-a-satellite": {"at": "yesterday",
-                                              "status": 403}}})
-    check(got == "gb-b-satellite",
+    got = picks({"hosts": {host: {"at": "yesterday", "status": 403}}})
+    check(isinstance(got, dict) and got.get("work") is False,
           "a block record with an unreadable time was ignored: %r" % (got,))
-    # Every due area refused: no work, and it says why.
-    plan, rc = _plan(sp, catalogue, {"areas": {
-        "gb-a-satellite": rec(1), "gb-b-satellite": rec(2, status=429)}})
-    check(plan.get("work") is False and "refused" in plan.get("why", "")
-          and "gb-a-satellite" in plan.get("why", ""),
-          "with every area refused the plan is %r" % plan)
     # A blocks file that cannot be read stops the plan rather than being
     # taken as "no blocks".
     plan, rc = _plan(sp, catalogue, "{not json")

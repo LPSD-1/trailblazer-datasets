@@ -162,7 +162,9 @@ jobs:
       # and a run that packaged its area cleared the tiles and saves nothing
       # either, so the entries are one or two per area per monthly rebuild,
       # well inside the repository's 10 GB (the lane refresh's council cache
-      # shares it). GitHub drops an entry nobody has read for 7 days.
+      # shares it). GitHub drops an entry nobody has read for 7 days, so
+      # after a 7-day refusal the area usually starts again from nothing;
+      # that is expected, and at this pace re-fetching it is acceptable.
       #
       # Keyed by month as well as area, so a rebuild genuinely re-fetches
       # rather than repackaging stale imagery.
@@ -563,32 +565,38 @@ jobs:
           EOF
           )
           elif [ "$BLOCKED" = "true" ]; then
-            # What EOX said and when the area comes due again, from the
-            # record the build wrote.
+            # What EOX said and when any area comes due again, from the
+            # record the build wrote under this area's host.
             SAID=$(python -c '
           import json, sys
           try:
               with open("satellite/blocks.json", encoding="utf-8") as f:
-                  rec = json.load(f)["areas"][sys.argv[1]]
+                  hosts = json.load(f)["hosts"]
+              host, rec = next((h, r) for h, r in hosts.items()
+                               if r.get("area") == sys.argv[1])
               status = rec.get("status")
               what = ("connection failures" if status == "network"
                       else "HTTP %s" % status)
               if rec.get("retry_after") is not None:
                   what += ", Retry-After %s s" % rec["retry_after"]
-              print("%s|%s" % (what, rec.get("until") or "an unknown date"))
-          except (OSError, ValueError, KeyError, TypeError, AttributeError):
-              print("a refusal not on record|an unknown date")
+              print("%s|%s|%s" % (what, host,
+                                  rec.get("until") or "an unknown date"))
+          except (OSError, ValueError, KeyError, TypeError, AttributeError,
+                  StopIteration):
+              print("a refusal not on record|the tile host|an unknown date")
           ' "$KEY")
             WHAT="${SAID%%|*}"
-            UNTIL="${SAID#*|}"
+            REST="${SAID#*|}"
+            HOST="${REST%%|*}"
+            UNTIL="${REST#*|}"
             TITLE="Satellite build for $KEY stopped: EOX refused us"
             if [ "$REMEMBERED" = "true" ]; then
-              NEXT="Nothing retries around a refusal: the planner skips \`$KEY\` until **$UNTIL** (7 days, or longer when EOX's Retry-After asks for longer), as recorded in satellite/blocks.json."
+              NEXT="Nothing retries around a refusal: every area comes from $HOST, so the planner asks it for no area at all until **$UNTIL** (7 days, or longer when EOX's Retry-After asks for longer), as recorded in satellite/blocks.json."
             else
-              NEXT="**The refusal could not be recorded** in satellite/blocks.json, so the planner may pick \`$KEY\` again on the next run. Disable this workflow from the Actions tab until someone has looked into EOX's refusal."
+              NEXT="**The refusal could not be recorded** in satellite/blocks.json, so the planner may ask $HOST for an area again on the next run. Disable this workflow from the Actions tab until someone has looked into EOX's refusal."
             fi
             OUTCOME=$(cat <<EOF
-          EOX refused the tile service to us ($WHAT), so the build stopped
+          EOX ($HOST) refused us ($WHAT) in \`$KEY\`, so the build stopped
           and **nothing was published**. Riders keep the imagery they have.
 
           $NEXT
