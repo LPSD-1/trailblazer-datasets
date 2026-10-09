@@ -121,19 +121,25 @@ ATTRIBUTION = ("EOxCloudless https://cloudless.eox.at by EOX IT Services "
 # EOX's tile service has no bulk-download terms, but it rate-limits: it
 # answers a heavy user with HTTP errors and redirects to a "heavyload" page.
 # So this tool says who it is (no email address), keeps to a stated rate, and
-# treats a redirect, 401, 403, 429 or 5xx as EOX asking us to stop:
+# treats a redirect, 401, 403, 410, 429, 451 or 5xx as EOX asking us to stop:
 #
-#   - a 401 or 403 stops the area at once, with no retry;
+#   - a 401, 403, 410 or 451 stops the area at once, with no retry;
 #   - a Retry-After over RETRY_AFTER_CAP stops it at once too: what EOX asked
-#     for is recorded, never cut short to a wait we would rather make;
+#     for is recorded, never cut short to a wait we would rather make (one no
+#     clock can hold, such as inf, is read as RETRY_AFTER_ABSURD, a year);
+#   - TOO_MANY_429 429s within TOO_MANY_WINDOW stop it, even if each was
+#     cleared by waiting;
 #   - otherwise it waits (Retry-After, else a growing backoff), and the wait
-#     holds EVERY connection, not only the refused one; after REFUSED_TRIES
-#     refusals for one tile the area stops.
+#     holds EVERY connection, not only the refused one, including one already
+#     asleep for its slot; after REFUSED_TRIES refusals for one tile the area
+#     stops.
 #
 # Failures below HTTP count as well: a reset, a timeout, a TLS fault, or a 200
-# whose body is not a JPEG (a busy page served as success). Once a tile has
-# used its tries it counts as failed, and FAILED_RUNNING failed tiles in a
-# row, or more than FAILED_SHARE of the last FAILED_WINDOW, stop the area.
+# whose body is not a JPEG (a busy page served as success); so does a 404 or
+# any other 4xx. A network fault's backoff holds every connection too. Once a
+# tile has used its tries it counts as failed, and FAILED_RUNNING failed tiles
+# in a row, or more than FAILED_SHARE of the last FAILED_WINDOW, stop the
+# area.
 #
 # A stopped area writes no pack and leaves the published one alone. With
 # --block-out it also records the stop (time, status, Retry-After) where the
@@ -143,7 +149,16 @@ USER_AGENT = "TrailBlazer-data/1.0 (+https://lpsd-1.github.io/trailblazer-help/)
 MAX_REQUESTS_PER_SECOND = 4.0   # across every worker; 55,000 tiles ~ 4 hours
 REFUSED_TRIES = 4               # requests for one tile before the area stops
 RETRY_AFTER_CAP = 600           # seconds; a longer Retry-After stops the area
-STOP_AT_ONCE = (401, 403)       # "not you": no second request
+# "not you": no second request. 410 (gone) and 451 (unavailable for legal
+# reasons) are refusals as plain as a 403.
+STOP_AT_ONCE = (401, 403, 410, 451)
+# Every 429 is EOX saying "too many", even one a wait clears: this many
+# within TOO_MANY_WINDOW seconds stop the area, wherever they fell.
+TOO_MANY_429 = 3
+TOO_MANY_WINDOW = 3600
+# A Retry-After no clock can hold (inf, nan, or past a year) is read as a
+# year: still a refusal, recorded, never a crash that records nothing.
+RETRY_AFTER_ABSURD = 365 * 86400
 FAILED_RUNNING = 20             # failed tiles in a row that stop the area
 FAILED_WINDOW = 200             # the last this many tiles ...
 FAILED_SHARE = 0.05             # ... of which more than this share stops it
@@ -175,7 +190,16 @@ def layer_refused():
 
 
 def _is_refusal(code):
-    return 300 <= code < 400 or code in (401, 403, 429) or code >= 500
+    return (300 <= code < 400 or code in STOP_AT_ONCE or code == 429
+            or code >= 500)
+
+
+def _sane_wait(seconds):
+    """`seconds` as a wait a clock can hold: non-finite, or past a year,
+    is RETRY_AFTER_ABSURD; below zero is zero."""
+    if not math.isfinite(seconds) or seconds > RETRY_AFTER_ABSURD:
+        return float(RETRY_AFTER_ABSURD)
+    return max(0.0, seconds)
 
 
 def _is_jpeg(body):
@@ -269,6 +293,10 @@ class Fetcher:
         # "reason"}. status is the HTTP code, or "network".
         self.block = None
         self._next_start = 0.0
+        # No request leaves before this, whatever slot it was given: a
+        # pause set while a connection slept for its slot holds it too.
+        self._paused_until = 0.0
+        self._too_many = collections.deque()
         self._recent = collections.deque(maxlen=FAILED_WINDOW)
         self._running = 0
 
@@ -282,12 +310,22 @@ class Fetcher:
             self._next_start = start + self.interval
         if start > now:
             self.sleep(start - now)
+        # Right before the request leaves: a pause set while this one slept
+        # for its slot holds it as well.
+        while not self.stopped:
+            with self.lock:
+                wait = self._paused_until - self.clock()
+            if wait <= 0:
+                break
+            self.sleep(wait)
 
     def _hold(self, seconds):
         """No connection starts a request for `seconds`: a refusal is about
         us, not about the one connection that heard it."""
         with self.lock:
-            self._next_start = max(self._next_start, self.clock() + seconds)
+            until = self.clock() + seconds
+            self._next_start = max(self._next_start, until)
+            self._paused_until = max(self._paused_until, until)
 
     def _retry_after(self, error):
         """Seconds EOX asked us to wait, in either of Retry-After's forms
@@ -299,7 +337,7 @@ class Fetcher:
         if value is None:
             return None
         try:
-            return max(0.0, float(value))
+            return _sane_wait(float(value))
         except ValueError:
             pass
         try:
@@ -310,7 +348,7 @@ class Fetcher:
             return None
         if when.tzinfo is None:
             when = when.replace(tzinfo=dt.timezone.utc)
-        return max(0.0, when.timestamp() - self.wall())
+        return _sane_wait(when.timestamp() - self.wall())
 
     def _stop(self, status, retry_after, reason):
         with self.lock:
@@ -319,17 +357,27 @@ class Fetcher:
                 self.block = {"status": status, "retry_after": retry_after,
                               "reason": reason}
 
-    def _tile_done(self, failed):
-        """Count a tile's outcome; too many failures stop the area."""
+    def _too_many_429(self):
+        """Count a 429; True once TOO_MANY_429 fall within the window."""
+        with self.lock:
+            now = self.clock()
+            self._too_many.append(now)
+            while self._too_many and self._too_many[0] <= now - TOO_MANY_WINDOW:
+                self._too_many.popleft()
+            return len(self._too_many) >= TOO_MANY_429
+
+    def _tile_done(self, failed, status="network"):
+        """Count a tile's outcome; too many failures stop the area. `status`
+        is what a stop records: the HTTP code, or "network"."""
         with self.lock:
             self._recent.append(failed)
             self._running = self._running + 1 if failed else 0
             running, bad = self._running, sum(self._recent)
             full = len(self._recent) == FAILED_WINDOW
         if running >= FAILED_RUNNING:
-            self._stop("network", None, "%d tiles failed running" % running)
+            self._stop(status, None, "%d tiles failed running" % running)
         elif full and bad > FAILED_SHARE * FAILED_WINDOW:
-            self._stop("network", None, "%d of the last %d tiles failed"
+            self._stop(status, None, "%d of the last %d tiles failed"
                        % (bad, FAILED_WINDOW))
 
     def get(self, z, x, y):
@@ -351,14 +399,22 @@ class Fetcher:
                 tile = self._process(body)
             except urllib.error.HTTPError as e:
                 if not _is_refusal(e.code):
-                    # A 404 or other 4xx is about this tile, not about us.
+                    # A 404 or other 4xx is about this tile, not about us:
+                    # not retried, but a failed tile all the same, so a run
+                    # of them stops the area rather than reading as success.
                     with self.lock:
                         self.failed.append((z, x, y, "HTTP %d" % e.code))
+                    self._tile_done(True, e.code)
                     return None
                 asked = self._retry_after(e)
                 where = "HTTP %d for z%d/%d/%d" % (e.code, z, x, y)
                 if e.code in STOP_AT_ONCE:
                     self._stop(e.code, asked, where + ", which is not retried")
+                    return None
+                if e.code == 429 and self._too_many_429():
+                    self._stop(e.code, asked, where + ", %d HTTP 429s "
+                               "within %d s" % (TOO_MANY_429,
+                                                TOO_MANY_WINDOW))
                     return None
                 if asked is not None and asked > RETRY_AFTER_CAP:
                     self._stop(e.code, asked, where + ", asking us to wait "
@@ -377,8 +433,9 @@ class Fetcher:
                         self.failed.append((z, x, y, str(e)))
                     self._tile_done(True)
                     return None
-                # Backoff, and do not stampede a free service.
-                self.sleep(1.5 * (attempt + 1))
+                # Backoff, and do not stampede a free service: the wait holds
+                # every connection, as a Retry-After does.
+                self._hold(1.5 * (attempt + 1))
                 continue
             self._tile_done(False)
             return tile

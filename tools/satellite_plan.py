@@ -30,6 +30,7 @@ import argparse
 import datetime as dt
 import json
 import os
+import subprocess
 import sys
 
 
@@ -207,6 +208,79 @@ def load_blocks(path):
     return data
 
 
+# THE BLOCK ON MAIN, NOT ONLY THE ONE IN THIS CHECKOUT. A re-run of a refused
+# run checks out the commit it started from, and a manual run can start from
+# any branch: neither holds a stop committed to main since. So main's latest
+# copy is fetched at plan time and read as well, and for each host the record
+# that blocks for longer wins. If main's copy cannot be fetched or read,
+# nothing is planned: "could not look" is never "no block".
+BLOCKS_PATH = "satellite/blocks.json"
+
+# How git is run; the tests swap it for a stand-in.
+GIT_RUN = subprocess.run
+
+
+def _git(run, cwd, *args):
+    return run(["git"] + list(args), cwd=cwd, stdout=subprocess.PIPE,
+               stderr=subprocess.PIPE, universal_newlines=True)
+
+
+def blocks_on(ref, run=None, cwd=None, path=BLOCKS_PATH):
+    """{"hosts": {...}} from `ref`'s latest copy of `path` (ref is
+    remote/branch), fetched first. Not on `ref` at all is no blocks;
+    anything that cannot be fetched or read raises."""
+    run = run or GIT_RUN
+    remote, _, branch = ref.partition("/")
+    if not remote or not branch:
+        raise ValueError("%r is not remote/branch" % ref)
+    # A shallow clone (actions/checkout's) stays shallow: depth 1 is all
+    # this needs. In a full clone --depth would make it shallow, so not there.
+    shallow = _git(run, cwd, "rev-parse", "--is-shallow-repository")
+    depth = (["--depth=1"] if shallow.returncode == 0
+             and shallow.stdout.strip() == "true" else [])
+    fetched = _git(run, cwd, "fetch", "--quiet", *depth, remote,
+                   "+refs/heads/%s:refs/remotes/%s" % (branch, ref))
+    if fetched.returncode != 0:
+        raise OSError("cannot fetch %s: %s" % (ref, fetched.stderr.strip()))
+    listed = _git(run, cwd, "ls-tree", "--name-only", ref, "--", path)
+    if listed.returncode != 0:
+        raise OSError("cannot list %s on %s: %s"
+                      % (path, ref, listed.stderr.strip()))
+    if path not in listed.stdout.splitlines():
+        return {"hosts": {}}
+    shown = _git(run, cwd, "show", "%s:%s" % (ref, path))
+    if shown.returncode != 0:
+        raise OSError("cannot read %s on %s: %s"
+                      % (path, ref, shown.stderr.strip()))
+    data = json.loads(shown.stdout)
+    if not isinstance(data, dict) or not isinstance(data.get("hosts", {}),
+                                                    dict):
+        raise ValueError("%s on %s is not {\"hosts\": {...}}" % (path, ref))
+    data.setdefault("hosts", {})
+    return data
+
+
+def merge_blocks(*copies):
+    """Every host in any copy; where copies disagree, the record that
+    blocks for longer."""
+    hosts = {}
+    for data in copies:
+        for host, rec in data["hosts"].items():
+            if (host not in hosts
+                    or blocked_until(rec) > blocked_until(hosts[host])):
+                hosts[host] = rec
+    return {"hosts": hosts}
+
+
+def live_blocks(local, ref=None, run=None, cwd=None):
+    """The blocks that decide: this checkout's file, and `ref`'s latest
+    copy when a ref is given. Raises when either cannot be read."""
+    copies = [load_blocks(local)]
+    if ref:
+        copies.append(blocks_on(ref, run=run, cwd=cwd))
+    return merge_blocks(*copies)
+
+
 def age_days(stamp, now):
     if not stamp:
         return None
@@ -241,10 +315,14 @@ def main():
     ap.add_argument("--blocks",
                     help="satellite/blocks.json: hosts that refused us; "
                          "no area is planned until the block runs out")
+    ap.add_argument("--blocks-ref",
+                    help="also read the blocks file from this ref's latest "
+                         "copy (origin/main), fetched first; the later block "
+                         "wins, and a copy that cannot be read plans nothing")
     args = ap.parse_args()
 
     try:
-        blocks = load_blocks(args.blocks)["hosts"]
+        blocks = live_blocks(args.blocks, args.blocks_ref)["hosts"]
     except (OSError, ValueError) as e:
         print(json.dumps({"work": False,
                           "why": "cannot read the blocks file: %s" % e}))

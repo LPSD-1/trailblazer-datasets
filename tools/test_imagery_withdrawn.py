@@ -17,6 +17,8 @@ The non-commercial layer names and years are built from numbers, so
 test_imagery_licence.py's scan of tools/ does not read this file as naming
 them as a source.
 """
+import contextlib
+import io
 import json
 import os
 import re
@@ -167,6 +169,15 @@ def test_the_cli():
         check("the CLI refuses a missing index",
               iw.main(["--index", os.path.join(tmp, "none.json")]) == 1)
         check("the CLI refuses to check nothing", iw.main([]) == 2)
+        # A catalogue with no imagery in it at all, and no index: refused
+        # for want of the index, not passed because nothing was flagged.
+        write(cat, catalogue())
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            rc = iw.main(["--catalogue", cat])
+        check("the CLI refuses a catalogue without --index, saying why",
+              rc == 1 and "catalogue: cannot be checked without the index"
+              in err.getvalue(), "%r %r" % (rc, err.getvalue()))
         # As the workflow runs it: a script that exits 0 without checking
         # would let every run through.
         write(idx, {"packs": [pack(layer=NC_LAYER)]})
@@ -448,6 +459,132 @@ def test_verify_catalogue_refuses_withdrawn_imagery_in_every_path():
                           % (name, cmd, label),
                           run.returncode != 0 and "gb-wales-satellite-high"
                           in out, "%d %s" % (run.returncode, out[-300:]))
+
+
+def test_verify_catalogue_needs_the_satellite_index():
+    """No index is not "nothing to vouch for": a missing or unreadable
+    --satellite index fails verify_catalogue, even on a clean catalogue,
+    and so does a withdrawn pack checked against no index."""
+    verify = os.path.join(HERE, "verify_catalogue.py")
+    with tempfile.TemporaryDirectory() as tmp:
+        bad = os.path.join(tmp, "bad.json")
+        with open(bad, "w", encoding="utf-8", newline="\n") as f:
+            f.write("{not json")
+        wrong = os.path.join(tmp, "wrong.json")
+        with open(wrong, "w", encoding="utf-8", newline="\n") as f:
+            f.write("[]")
+        for label, cat in (("clean", load("catalogue.json")),
+                           ("withdrawn", _poisoned(load("catalogue.json"),
+                                                   "withdrawn"))):
+            path = os.path.join(tmp, "catalogue.json")
+            with open(path, "w", encoding="utf-8", newline="\n") as f:
+                json.dump(cat, f)
+            for how, idx in (("missing", os.path.join(tmp, "none.json")),
+                             ("unreadable", bad), ("not an object", wrong)):
+                run = subprocess.run(
+                    [sys.executable, verify, path, "--satellite", idx],
+                    cwd=ROOT, capture_output=True, text=True)
+                out = run.stdout + run.stderr
+                check("verify_catalogue fails a %s catalogue with the index "
+                      "%s" % (label, how),
+                      run.returncode != 0 and "satellite index" in out,
+                      "%d %s" % (run.returncode, out[-300:]))
+
+
+IMAGERY_CHECK = re.compile(
+    r"python tools/imagery_withdrawn\.py --index satellite/index\.json "
+    r"--catalogue dist/catalogue\.json")
+IMAGERY_STEP = re.compile(
+    r"run: \|?\s*python tools/imagery_withdrawn\.py "
+    r"--index satellite/index\.json")
+
+
+def imagery_checked_rebuilds(text):
+    """(rebuilds followed by the imagery check before their publish, all
+    rebuilds), over the uncommented lines of a workflow."""
+    code = [l for l in text.split("\n")
+            if l.strip() and not l.strip().startswith("#")]
+    rebuilds = [i for i, l in enumerate(code)
+                if "tools/rebuild_catalogue.sh" in l]
+    covered = 0
+    for n, i in enumerate(rebuilds):
+        end = rebuilds[n + 1] if n + 1 < len(rebuilds) else len(code)
+        for l in code[i + 1:end]:
+            if PUBLISH.search(l):
+                break
+            if IMAGERY_CHECK.search(l) and not any(x in l
+                                                   for x in SWALLOWED):
+                covered += 1
+                break
+    return covered, len(rebuilds)
+
+
+def imagery_step(text):
+    at = text.find("- name: Is every imagery pack one we may publish?")
+    if at < 0:
+        return None
+    nxt = text.find("- name:", at + 1)
+    return text[at:nxt if nxt > 0 else len(text)]
+
+
+def imagery_step_runs_the_check(step):
+    return (step is not None and IMAGERY_STEP.search(step) is not None
+            and "continue-on-error" not in step and "|| true" not in step
+            and not re.search(r"\bif:", step))
+
+
+def test_every_rebuild_runs_the_imagery_check():
+    """Each catalogue rebuild in refresh-data and satellite runs imagery_withdrawn.py on the rebuilt catalogue before it is
+    published, on the first path and the retry path alike; and refresh-data
+    has its named step that runs the real check, not a stand-in."""
+    texts = dict(_workflows())
+    # traffic-orders.yml has no call of its own: its verify_catalogue.py
+    # runs the same check (publish_problems), which
+    # test_verify_catalogue_refuses_withdrawn_imagery_in_every_path holds.
+    for name, want in (("refresh-data.yml", 3), ("satellite.yml", 2)):
+        covered, seen = imagery_checked_rebuilds(texts.get(name, ""))
+        check("%s runs the imagery check after each of its %d rebuilds "
+              "(found %d of %d)" % (name, want, covered, seen),
+              covered == seen == want)
+    check("refresh-data's imagery step runs the real check",
+          imagery_step_runs_the_check(
+              imagery_step(texts.get("refresh-data.yml", ""))))
+
+
+def test_the_imagery_check_hunt_can_fail():
+    real = ("- name: Is every imagery pack one we may publish?\n"
+            "        run: python tools/imagery_withdrawn.py --index "
+            "satellite/index.json --catalogue catalogue.json\n"
+            "      - name: next\n")
+    check("the real step passes", imagery_step_runs_the_check(
+        imagery_step(real)))
+    for label, fake in (
+            ("`run: true`", real.replace(real.split("run: ")[1].split(
+                "\n")[0], "true")),
+            ("continue-on-error", real.replace(
+                "        run:", "        continue-on-error: true\n"
+                               "        run:")),
+            ("no step", "- name: other\n        run: true\n")):
+        check("a step with %s is caught" % label,
+              not imagery_step_runs_the_check(imagery_step(fake)), fake)
+    rebuilt = ("bash tools/rebuild_catalogue.sh manifest.json "
+               "dist/catalogue.json\n")
+    check_line = ("python tools/imagery_withdrawn.py --index "
+                  "satellite/index.json --catalogue dist/catalogue.json\n")
+    publish = "mv dist/catalogue.json catalogue.json\n"
+    check("a rebuild without the imagery check is caught",
+          imagery_checked_rebuilds(rebuilt + publish) == (0, 1))
+    check("a rebuild with it passes",
+          imagery_checked_rebuilds(rebuilt + check_line + publish) == (1, 1))
+    check("a check after the publish does not count",
+          imagery_checked_rebuilds(rebuilt + publish + check_line) == (0, 1))
+    check("a check that fails the retry still counts",
+          imagery_checked_rebuilds(rebuilt + check_line.strip()
+                                   + " || return 1" + "\n" + publish)
+          == (1, 1))
+    check("a check made to pass does not count",
+          imagery_checked_rebuilds(rebuilt + check_line.strip()
+                                   + " || true\n" + publish) == (0, 1))
 
 
 def test_an_area_without_imagery_is_due():

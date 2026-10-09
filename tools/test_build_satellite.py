@@ -143,6 +143,7 @@ def main():
 
     check_root_limit()
     check_blocks(sp)
+    check_blocks_from_main(sp)
     check_workflow_wiring()
     check_layer_allowlist()
 
@@ -222,7 +223,7 @@ def check_root_limit():
 # satellite/blocks.json, and the planner skips that area for at least 7 days,
 # or until EOX's Retry-After if that is longer.
 
-def _plan(sp, catalogue, blocks):
+def _plan(sp, catalogue, blocks, extra=()):
     """satellite_plan's own main(), as the workflow runs it."""
     with tempfile.TemporaryDirectory() as tmp:
         cat = os.path.join(tmp, "catalogue.json")
@@ -235,7 +236,7 @@ def _plan(sp, catalogue, blocks):
                         else json.dumps(blocks))
         argv, out = sys.argv, io.StringIO()
         sys.argv = ["satellite_plan.py", "--catalogue", cat,
-                    "--blocks", path]
+                    "--blocks", path] + list(extra)
         try:
             with contextlib.redirect_stdout(out),                     contextlib.redirect_stderr(io.StringIO()):
                 rc = sp.main()
@@ -321,6 +322,113 @@ def check_blocks(sp):
           % (plan, rc))
 
 
+class _Git:
+    """Stands in for git: `main` is main's satellite/blocks.json text (None:
+    not on main); `fail` names the subcommand that fails."""
+
+    def __init__(self, main=None, fail=None):
+        self.main, self.fail, self.calls = main, fail, []
+
+    def __call__(self, argv, **kw):
+        import subprocess
+        self.calls.append(argv)
+        sub, out, rc = argv[1], "", 0
+        if sub == self.fail:
+            rc = 128
+        elif sub == "rev-parse":
+            out = "true" + LF
+        elif sub == "ls-tree":
+            out = ("satellite/blocks.json" + LF if self.main is not None
+                   else "")
+        elif sub == "show":
+            out = self.main or ""
+        return subprocess.CompletedProcess(argv, rc, out, "fatal: no")
+
+
+def check_blocks_from_main(sp):
+    """The block that decides is main's latest, fetched at plan time: a
+    re-run, or a run from a branch, has a checkout from before the stop was
+    committed. Main's copy unreadable plans nothing; where the two copies
+    differ, the later block wins."""
+    now = dt.datetime.now(dt.timezone.utc)
+    host = "tiles.maps.eox.at"
+
+    def rec(days_ago, retry_after=None):
+        return {"hosts": {host: {
+            "at": (now - dt.timedelta(days=days_ago)).strftime(
+                "%Y-%m-%dT%H:%M:%SZ"),
+            "status": 403, "retry_after": retry_after,
+            "area": "gb-a-satellite"}}}
+
+    def area(aid):
+        return {"id": aid, "label": aid, "bounds": {
+            "west": -1, "south": 51, "east": 0, "north": 52},
+            "packs": [{"kind": "lanes", "id": aid + "-ways"}]}
+    catalogue = {"continents": [{"countries": [{"label": "GB", "areas": [
+        area("gb-a")]}]}]}
+    real = getattr(sp, "GIT_RUN", None)
+
+    def plan(local, git):
+        sp.GIT_RUN = git
+        try:
+            return _plan(sp, catalogue, local,
+                         ["--blocks-ref", "origin/main"])
+        finally:
+            sp.GIT_RUN = real
+
+    blocked = lambda p: p.get("work") is False and host in p.get("why", "")
+    git = _Git(main=json.dumps(rec(0.5)))
+    got, rc = plan(None, git)
+    check(blocked(got),
+          "a block on main, absent from this checkout, did not stop the "
+          "plan: %r" % (got,))
+    check(any(c[1] == "fetch" and "origin" in c for c in git.calls)
+          and ["git", "show", "origin/main:satellite/blocks.json"]
+          in git.calls
+          and any(c[1] == "fetch" and "--depth=1" in c for c in git.calls),
+          "the planner did not fetch and read main's copy: %r" % git.calls)
+    for fail in ("rev-parse", "fetch", "ls-tree", "show"):
+        got, rc = plan(None, _Git(main=json.dumps(rec(0.5)), fail=fail))
+        if fail == "rev-parse":
+            # Not knowing whether the clone is shallow only costs depth.
+            check(blocked(got), "rev-parse failing lost the block: %r"
+                  % (got,))
+            continue
+        check(got.get("work") is not True and rc not in (0, None),
+              "git %s failing was read as no block: %r, rc %r"
+              % (fail, got, rc))
+    got, rc = plan(None, _Git(main="{not json"))
+    check(got.get("work") is not True and rc not in (0, None),
+          "main's unreadable copy was read as no block: %r, rc %r"
+          % (got, rc))
+    got, rc = plan(None, _Git(main=json.dumps({"hosts": []})))
+    check(got.get("work") is not True and rc not in (0, None),
+          "main's copy of the wrong shape was read as no block: %r" % (got,))
+    got, rc = plan(None, _Git())
+    check(got.get("id") == "gb-a-satellite",
+          "with no blocks anywhere nothing was planned: %r" % (got,))
+    # The later block wins, whichever copy holds it.
+    got, rc = plan(rec(8), _Git(main=json.dumps(rec(0.5))))
+    check(blocked(got), "an expired local block hid main's live one: %r"
+          % (got,))
+    got, rc = plan(rec(8, retry_after=30 * 86400),
+                   _Git(main=json.dumps(rec(7.5))))
+    check(blocked(got), "main's expired block hid this checkout's live "
+                        "one: %r" % (got,))
+    got, rc = plan(rec(8), _Git(main=json.dumps(rec(7.5))))
+    check(got.get("id") == "gb-a-satellite",
+          "two expired blocks still stopped the plan: %r" % (got,))
+    # Without --blocks-ref, git is never run (tests and local use).
+    git = _Git()
+    sp.GIT_RUN = git
+    try:
+        _plan(sp, catalogue, None)
+    finally:
+        sp.GIT_RUN = real
+    check(git.calls == [], "the planner ran git without --blocks-ref: %r"
+          % git.calls)
+
+
 # One shell command: the line naming the tool, and every line it continues
 # onto with a trailing backslash.
 CMD = r"python tools/%s\.py(?:[^\n]*\\\n)*[^\n]*"
@@ -336,9 +444,14 @@ def check_workflow_wiring():
         text = f.read()
     commands = re.findall(CMD % "satellite_plan", text)
     check(len(commands) == 2 and all(
-        "--blocks satellite/blocks.json" in c for c in commands),
-        "satellite.yml runs the planner without the blocks file: %r"
-        % commands)
+        "--blocks satellite/blocks.json" in c
+        and "--blocks-ref origin/main" in c for c in commands),
+        "satellite.yml runs the planner without the blocks file, or without "
+        "main's copy of it: %r" % commands)
+    # Each flag on a line of its own: a two-character backslash-n where a
+    # line continuation belongs hands the planner a stray argument.
+    check(not any("\\n" in c for c in commands),
+          "a planner command has a literal backslash-n: %r" % commands)
     builds = re.findall(CMD % "build_satellite", text)
     check(len(builds) == 1 and
           "--block-out satellite/blocks.json" in builds[0],

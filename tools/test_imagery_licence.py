@@ -151,6 +151,88 @@ def _guarded(name, fn):
         check(False, "%s could not be driven: %r" % (name, e))
 
 
+class FakeGit:
+    """Answers the planner's git commands: `main` is the text of main's
+    satellite/blocks.json (None: not on main), `fail` the subcommand that
+    fails. Records every command."""
+
+    def __init__(self, main=None, fail=None):
+        self.main, self.fail, self.calls = main, fail, []
+
+    def __call__(self, argv, **kw):
+        import subprocess
+        self.calls.append(argv)
+        sub = argv[1]
+        out, rc = "", 0
+        if sub == self.fail:
+            rc = 128
+        elif sub == "rev-parse":
+            out = "false\n"
+        elif sub == "ls-tree":
+            out = "satellite/blocks.json\n" if self.main is not None else ""
+        elif sub == "show":
+            out = self.main or ""
+        return subprocess.CompletedProcess(argv, rc, out, "fatal: no")
+
+
+def _live_block(days_ago=0.5):
+    at = (dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=days_ago))
+    return json.dumps({"hosts": {"tiles.maps.eox.at": {
+        "at": at.strftime("%Y-%m-%dT%H:%M:%SZ"), "status": 403,
+        "retry_after": None, "area": "gb-a-satellite"}}})
+
+
+def sample_honours_blocks(si):
+    """sample_imagery asks EOX for nothing while main records a live block,
+    nor when main's copy cannot be read; with no block it goes ahead."""
+    real = (si.FETCHER, si.GIT_RUN, si.BLOCKS, sys.argv)
+    asked = []
+
+    class Spy:
+        stopped, failed = None, []
+
+        def get(self, z, x, y):
+            asked.append((z, x, y))
+            return None   # the sample then stops; enough to see it asked
+
+    try:
+        with tempfile.TemporaryDirectory() as tmp:
+            si.FETCHER = Spy()
+            si.BLOCKS = os.path.join(tmp, "absent.json")
+            sys.argv = ["sample_imagery.py", "--lat", "52", "--lon", "-1",
+                        "--out", tmp]
+            for label, git, want_ask in (
+                    ("a live block on main", FakeGit(main=_live_block()),
+                     False),
+                    ("main unreadable", FakeGit(fail="fetch"), False),
+                    ("main's copy not JSON", FakeGit(main="{bad"), False),
+                    ("no block", FakeGit(), True),
+                    ("an expired block", FakeGit(main=_live_block(8)),
+                     True)):
+                si.GIT_RUN = git
+                del asked[:]
+                try:
+                    with contextlib.redirect_stdout(io.StringIO()), \
+                            contextlib.redirect_stderr(io.StringIO()):
+                        rc = si.main()
+                except SystemExit as e:
+                    rc = e.code
+                check(bool(asked) == want_ask
+                      and (want_ask or rc not in (0, None)),
+                      "sample_imagery with %s: asked %d tiles, rc %r"
+                      % (label, len(asked), rc))
+                check(any(c[1:2] == ["show"] or c[1:2] == ["fetch"]
+                          for c in git.calls),
+                      "sample_imagery did not read main's blocks (%s): %r"
+                      % (label, git.calls))
+    finally:
+        si.FETCHER, si.GIT_RUN, si.BLOCKS, sys.argv = real
+    # And the refusal reaches the shell as a non-zero exit.
+    with open(si.__file__, encoding="utf-8") as f:
+        check("sys.exit(main())" in f.read(),
+              "sample_imagery.py drops main()'s exit code")
+
+
 def service_checks(bs):
     # (c) Who we are, with no email address.
     check(bs.USER_AGENT ==
@@ -182,12 +264,14 @@ def service_checks(bs):
     def default_tries():
         # FOUR requests for one tile, then the area stops: the number is
         # pinned here through the default, with no retries= override.
-        for code in (429, 503):
+        # A 429 stops sooner: the third within the hour stops the area.
+        for code, tries in ((429, 3), (503, 4)):
             f, op, clock = fetcher([(code, {})] * 10)
             f.get(13, 1, 2)
-            check(len(op.calls) == 4 and f.stopped,
+            check(len(op.calls) == tries and f.stopped,
                   "HTTP %d with the default tries: %d requests, stopped=%r; "
-                  "expected 4 and a stop" % (code, len(op.calls), f.stopped))
+                  "expected %d and a stop" % (code, len(op.calls), f.stopped,
+                                              tries))
 
     def refusals():
         # (a) Refused every time: a bounded number of tries, then the whole
@@ -209,9 +293,12 @@ def service_checks(bs):
                   % (code, getattr(f, "block", None)))
 
     def stop_at_once():
-        # 401 and 403 say "not you": the area stops on the first one, with
-        # no retry and no wait.
-        for code in (401, 403):
+        # 401 and 403 say "not you", and 410 (gone) and 451 (unavailable for
+        # legal reasons) are refusals as plain: the area stops on the first
+        # one, with no retry and no wait.
+        check(set(bs.STOP_AT_ONCE) == {401, 403, 410, 451},
+              "STOP_AT_ONCE is %r" % (bs.STOP_AT_ONCE,))
+        for code in (401, 403, 410, 451):
             f, op, clock = fetcher([(code, {})] * 10)
             got = f.get(13, 1, 2)
             f.get(13, 1, 3)
@@ -287,6 +374,139 @@ def service_checks(bs):
               and f.stopped is None and len(f.failed) == 1,
               "a 404 was retried or stopped the run: %d calls, stopped=%r"
               % (len(op.calls), f.stopped))
+
+    def missing_tiles_count():
+        # A 404 (or any other 4xx that is not a refusal) is a failed tile:
+        # never retried, but it counts toward the streak and the share, so a
+        # run of them stops the area rather than reading as success.
+        for code in (404, 400):
+            f, op, clock = fetcher([(code, {})] * 30)
+            for y in range(19):
+                f.get(13, 1, y)
+            check(f.stopped is None and len(op.calls) == 19,
+                  "19 HTTP %d tiles stopped the area or were retried: "
+                  "stopped=%r, %d requests" % (code, f.stopped,
+                                               len(op.calls)))
+            f.get(13, 1, 19)
+            f.get(13, 1, 20)
+            block = getattr(f, "block", None) or {}
+            check(f.stopped and len(op.calls) == 20
+                  and block.get("status") == code,
+                  "20 HTTP %d tiles running did not stop the area: "
+                  "stopped=%r, %d requests, block %r"
+                  % (code, f.stopped, len(op.calls), block))
+        # And the share: 11 of the last 200 stop it.
+        f, op, clock = fetcher([(404, {}) if i % 15 == 0 else JPG
+                                for i in range(200)])
+        for i in range(200):
+            f.get(13, 1, i)
+        check(f.stopped, "11 missing tiles in the last 200 did not stop "
+                         "the area")
+
+    def too_many_requests():
+        # Every 429 is EOX saying "too many", even one that a wait clears:
+        # TOO_MANY_429 of them within TOO_MANY_WINDOW seconds stop the area
+        # and record the block, however the tiles they were about ended.
+        check(bs.TOO_MANY_429 == 3 and bs.TOO_MANY_WINDOW == 3600,
+              "the 429 limit is %r in %r s, not 3 in an hour"
+              % (getattr(bs, "TOO_MANY_429", None),
+                 getattr(bs, "TOO_MANY_WINDOW", None)))
+        ra = (429, {"Retry-After": "1"})
+        f, op, clock = fetcher([ra, JPG, ra, JPG, ra, JPG, JPG])
+        got = [f.get(13, 1, y) for y in range(3)]
+        block = getattr(f, "block", None) or {}
+        check(got[:2] == [JPG, JPG] and got[2] is None and f.stopped
+              and block.get("status") == 429 and len(op.calls) == 5,
+              "three 429s, each cleared by a wait, did not stop the area: "
+              "got %r, stopped=%r, block %r, %d requests"
+              % (got, f.stopped, block, len(op.calls)))
+        f, op, clock = fetcher([ra, JPG, ra, JPG, JPG])
+        got = [f.get(13, 1, y) for y in range(3)]
+        check(got == [JPG] * 3 and f.stopped is None,
+              "two 429s stopped the area: %r" % f.stopped)
+        # Outside the window they are not counted together.
+        f, op, clock = fetcher([ra, JPG, ra, JPG, ra, JPG])
+        for y in range(3):
+            f.get(13, 1, y)
+            clock.now += 1800
+        check(f.stopped is None,
+              "429s an hour and more apart stopped the area: %r" % f.stopped)
+
+    def absurd_retry_after():
+        # inf, 1e400 (inf as a float), nan and -inf are not waits a clock
+        # can hold. Each is a refusal asking for a long time: the area stops
+        # on the first, the block is RETRY_AFTER_ABSURD (a year), no crash.
+        check(bs.RETRY_AFTER_ABSURD == 365 * 86400,
+              "RETRY_AFTER_ABSURD is %r, not a year"
+              % getattr(bs, "RETRY_AFTER_ABSURD", None))
+        for ra in ("inf", "1e400", "nan", "-inf", "Infinity",
+                   str(10 ** 12)):
+            f, op, clock = fetcher([(429, {"Retry-After": ra}), JPG])
+            got = f.get(13, 1, 2)
+            block = getattr(f, "block", None) or {}
+            check(got is None and f.stopped and len(op.calls) == 1
+                  and block.get("retry_after") == bs.RETRY_AFTER_ABSURD,
+                  "Retry-After %r: got %r, %d requests, block %r"
+                  % (ra, got, len(op.calls), block))
+
+    def network_pause_is_host_wide():
+        # The backoff after a network fault holds every connection, as a
+        # Retry-After does: another worker asking during it leaves no
+        # sooner than the faulted one.
+        clock = _Clock()
+        starts = []
+        nested = []
+        box = {}
+
+        def sleep(s):
+            if s >= 1 and not nested:
+                nested.append(True)
+                box["f"].get(13, 5, 6)   # another worker, mid-backoff
+            clock.sleep(s)
+
+        op = _Opener([urllib.error.URLError("reset"), JPG, JPG])
+        real_open = op.open
+
+        def timed(req, timeout=None):
+            starts.append((req.full_url, clock.now))
+            return real_open(req, timeout)
+        op.open = timed
+        box["f"] = bs.Fetcher(sharpen=False, opener=op, sleep=sleep,
+                              clock=clock)
+        box["f"].get(13, 1, 2)
+        other = [t for u, t in starts if u.endswith("/13/6/5.jpg")]
+        check(nested and other and other[0] >= 1000.0 + 1.5,
+              "another worker asked during a network backoff: faulted at "
+              "1000, it asked at %s" % other)
+
+    def scheduled_request_waits():
+        # A request already given its slot, asleep until it, when another
+        # connection is told to wait: it waits too, rather than leaving at
+        # the slot it was given before the pause.
+        clock = _Clock()
+        box = {}
+        held = []
+
+        def sleep(s):
+            if not held:
+                held.append(True)
+                box["f"]._hold(7)   # what a refused connection does
+            clock.sleep(s)
+
+        op = _Opener([JPG, JPG])
+        starts = []
+        real_open = op.open
+
+        def timed(req, timeout=None):
+            starts.append(clock.now)
+            return real_open(req, timeout)
+        op.open = timed
+        box["f"] = bs.Fetcher(sharpen=False, opener=op, sleep=sleep,
+                              clock=clock)
+        box["f"].get(13, 1, 2)       # at 1000, no sleep
+        box["f"].get(13, 1, 3)       # slot 1000.25; the pause lands mid-sleep
+        check(held and len(starts) == 2 and starts[1] >= 1000.0 + 7,
+              "a scheduled request left during a pause: starts %s" % starts)
 
     def paced():
         # (b) A polite rate, stated and pinned: four a second.
@@ -460,6 +680,11 @@ def service_checks(bs):
                      ("the backoff", backoff_grows),
                      ("the network retry", network_retry),
                      ("the 404 case", not_found),
+                     ("missing tiles counted", missing_tiles_count),
+                     ("the 429 count", too_many_requests),
+                     ("an absurd Retry-After", absurd_retry_after),
+                     ("the network pause", network_pause_is_host_wide),
+                     ("the scheduled request", scheduled_request_waits),
                      ("the pacing", paced),
                      ("the pacing across threads", paced_across_threads),
                      ("the host-wide pause", pause_is_host_wide),
@@ -519,6 +744,9 @@ def service_checks(bs):
     finally:
         server.shutdown()
         server.server_close()
+
+    _guarded("sample_imagery and the blocks file",
+             lambda: sample_honours_blocks(si))
 
     # (a, d) The build end to end over a tiny area: staged tiles are never
     # fetched again, and a refusal stops the area with no pack written, so
@@ -629,6 +857,33 @@ def service_checks(bs):
                   and at is not None and until - at == dt.timedelta(days=30),
                   "a 403 asking for 30 days was not recorded as 30 days: "
                   "rc %r, %d requests, %r" % (rc, len(opened[-1].calls), rec))
+
+            # A Retry-After that is not a number of seconds a clock can
+            # hold: still a refusal, recorded, exit 3 - not a crash with
+            # nothing recorded and the next run asking again.
+            for ra in ("inf", "1e400", "nan", "-inf"):
+                bs.Fetcher = make([(503, {"Retry-After": ra})] * 100)
+                try:
+                    with contextlib.redirect_stdout(io.StringIO()), \
+                            contextlib.redirect_stderr(io.StringIO()):
+                        rc = bs.main()
+                except Exception as e:  # noqa: BLE001
+                    rc = repr(e)
+                with open(blocks, encoding="utf-8") as fh:
+                    rec = (json.load(fh).get("hosts", {})
+                           .get("tiles.maps.eox.at") or {})
+                try:
+                    at, until = when(rec.get("at")), when(rec.get("until"))
+                except (TypeError, ValueError):
+                    at = until = None
+                check(rc == 3 and len(opened[-1].calls) == 1
+                      and rec.get("retry_after") == bs.RETRY_AFTER_ABSURD
+                      and at is not None
+                      and until - at == dt.timedelta(
+                          seconds=bs.RETRY_AFTER_ABSURD),
+                      "Retry-After %r was not recorded as a long block: rc "
+                      "%r, %d requests, %r" % (ra, rc, len(opened[-1].calls),
+                                               rec))
     except (Exception, SystemExit) as e:  # noqa: BLE001 - argparse exits
         check(False, "the build could not be driven: %r" % e)
     finally:

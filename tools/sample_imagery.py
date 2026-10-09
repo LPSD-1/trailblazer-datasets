@@ -80,6 +80,32 @@ def ground_metres_per_pixel(lat, z):
 # and a refusal from EOX stops the run rather than being retried around.
 FETCHER = _bs.Fetcher(sharpen=False)
 
+# A refusal recorded in satellite/blocks.json holds here as it holds the
+# nightly build: this checkout's copy and main's latest (fetched now) are both
+# read, and if main's cannot be, nothing is asked of EOX.
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+BLOCKS = os.path.join(ROOT, "satellite", "blocks.json")
+GIT_RUN = None   # how git is run; None is the planner's own (subprocess)
+
+
+def refused_by_block():
+    """Why no tile may be asked for now, or None if they may."""
+    plan = _bs._planner()
+    try:
+        blocks = plan.live_blocks(BLOCKS, "origin/main", run=GIT_RUN,
+                                  cwd=ROOT)["hosts"]
+    except (OSError, ValueError) as e:
+        return "cannot read satellite/blocks.json on main (%s)" % e
+    host = plan.block_host()
+    if host in blocks:
+        import datetime as dt
+        until = plan.blocked_until(blocks[host])
+        if until > dt.datetime.now(dt.timezone.utc):
+            return "%s refused us, and is not asked again until %s" % (
+                host, "a person mends its record" if until == plan.NEVER
+                else plan.stamp(until))
+    return None
+
 
 def fetch(z, x, y):
     body = FETCHER.get(z, x, y)
@@ -107,6 +133,11 @@ def main():
     ap.add_argument("--size", type=int, default=512,
                     help="pixel size of each sample (default 512)")
     args = ap.parse_args()
+
+    why = refused_by_block()
+    if why:
+        print("REFUSED: %s. Nothing fetched." % why, file=sys.stderr)
+        return _bs.BLOCKED_EXIT
 
     os.makedirs(args.out, exist_ok=True)
 
@@ -188,4 +219,4 @@ def write_plates(out, made, where=None):
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

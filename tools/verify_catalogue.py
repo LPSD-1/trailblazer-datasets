@@ -165,8 +165,16 @@ def main():
     problems = []
 
     # --- imagery: every pack the index claims, by id -------------------------
-    sat = load(args.satellite, {"packs": []})
-    want = {p["id"] for p in sat.get("packs", []) if p.get("id")}
+    # No index is not "nothing to vouch for": the imagery check below reads
+    # it, so an index that is missing or unreadable fails the run.
+    sat = load(args.satellite)
+    if not isinstance(sat, dict) or not isinstance(sat.get("packs", []),
+                                                   list):
+        problems.append("the satellite index %s is missing or unreadable, "
+                        "so the imagery cannot be checked" % args.satellite)
+        sat = {"packs": []}
+    want = {p["id"] for p in sat.get("packs", [])
+            if isinstance(p, dict) and p.get("id")}
     missing = sorted(want - set(by_id))
     if missing:
         problems.append(

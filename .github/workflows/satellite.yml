@@ -113,10 +113,14 @@ jobs:
           if [ -n "$AREA" ]; then
             # A forced run honours a refusal too: an area EOX refused is not
             # planned, so it is "not the one due" below.
+            # --blocks-ref: main's latest blocks.json counts as well as this
+            # checkout's, so a re-run or a run from a branch sees a stop
+            # committed since; unreadable plans nothing.
             PLAN=$(python tools/satellite_plan.py --catalogue catalogue.json \
                      --refresh-after-days 0 \
                      --max-zoom "$MAX_ZOOM" \
-                     --blocks satellite/blocks.json)
+                     --blocks satellite/blocks.json \
+                     --blocks-ref origin/main)
             PLAN=$(python - "$PLAN" "$AREA" <<'PY'
           import json, sys
           plan = json.loads(sys.argv[1])
@@ -142,7 +146,8 @@ jobs:
             # a full pass "in under a week" had never once been true.
             PLAN=$(python tools/satellite_plan.py --catalogue catalogue.json \
                      --max-zoom "$MAX_ZOOM" \
-                     --blocks satellite/blocks.json)
+                     --blocks satellite/blocks.json \
+                     --blocks-ref origin/main)
           fi
           echo "$PLAN"
           echo "plan=$PLAN" >> "$GITHUB_OUTPUT"
