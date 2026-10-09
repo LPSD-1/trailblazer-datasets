@@ -10,8 +10,9 @@ its check by number ("FAIL  check 2: ...").
 Named hunt_* while it was a red proof, so the lane refresh's tools/test_*.py
 glob would not pick it up. It is green now, and that glob DOES run it: it is
 the premise of test_data_alarms_follow_up_fires_on_failure.py,
-test_data_alarms_follow_up_refuses_what_never_runs.py and
-test_data_alarms_premise_names_the_check.py. Those need the whole hunt green
+test_data_alarms_follow_up_refuses_what_never_runs.py,
+test_data_alarms_premise_names_the_check.py and
+test_data_alarms_check4_scope.py. Those need the whole hunt green
 on the unmodified workflows, so ANY check below going red stops lane data
 publishing at "Run every tool suite". Their PREMISE message names the red
 check and quotes its FAIL line: that is the defect to fix, in
@@ -50,6 +51,13 @@ the property is about the workflow and nothing else can be asked:
    to use" after 12 hours, and the owner is never told. The trips step next
    to it shows the shape that works: an id, and a follow-up step that opens
    an issue on `steps.trips.outcome == 'failure'`.
+
+   Check 4 guards what riders download, so it spares a job only when it is
+   on NON_PUBLISHING_JOBS below AND none of its steps publishes (PUBLISHES).
+   That list is reviewed by hand: a new job is held to check 4 until someone
+   adds it. "Only jobs that git push" was rejected as the scope: four
+   workflows publish release assets with `gh release upload` and push only
+   by coincidence, so a release-only job would slip through.
 """
 import os
 import re
@@ -58,6 +66,21 @@ import sys
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 WORKFLOWS = os.environ.get("HUNT_WORKFLOWS") or \
     os.path.join(ROOT, ".github", "workflows")
+
+# (workflow, job) pairs whose continue-on-error steps check 4 does not hold
+# to an issue, because the job publishes nothing riders download. Each entry
+# says why; each is re-checked against PUBLISHES on every run.
+NON_PUBLISHING_JOBS = {
+    # Posts a status, a check and a comment on the pull request, and writes
+    # a private ledger repository. Its soft steps fail closed: the step after
+    # each one fails and reports on the pull request.
+    ("independent-review.yml", "review"),
+}
+
+# Any of these in a step's run or uses means the job publishes.
+PUBLISHES = re.compile(
+    r"git push|gh release (upload|create|edit|delete)"
+    r"|gh api[^\n]*/contents/|deploy-pages|upload-pages-artifact|gh-pages")
 
 
 def jobs_of(path):
@@ -78,13 +101,17 @@ def jobs_of(path):
         elif job and bare.startswith("- name:") or \
                 (job and bare.startswith("- uses:")):
             step = {"name": bare.split(":", 1)[1].strip(), "if": "",
-                    "run": "", "indent": indent, "id": "", "soft": False}
+                    "run": "", "indent": indent, "id": "", "soft": False,
+                    "uses": bare.split(":", 1)[1].strip()
+                    if bare.startswith("- uses:") else ""}
             jobs[job].append(step)
         elif step is not None and bare.startswith("if:") \
                 and indent == step["indent"] + 2:
             step["if"] = bare[3:].strip()
         elif step is not None and bare.startswith("id:")                 and indent == step["indent"] + 2:
             step["id"] = bare[3:].strip()
+        elif step is not None and bare.startswith("uses:")                 and indent == step["indent"] + 2:
+            step["uses"] = bare[5:].strip()
         elif step is not None and bare == "continue-on-error: true"                 and indent == step["indent"] + 2:
             step["soft"] = True
         elif step is not None and bare == "run: |":
@@ -207,10 +234,16 @@ def main():
     soft_seen = 0
     for f, jobs in all_jobs.items():
         for job, steps in jobs.items():
+            spared = (f, job) in NON_PUBLISHING_JOBS and not any(
+                PUBLISHES.search(s["run"] + "\n" + s["uses"]) for s in steps)
             for n, s in enumerate(steps):
                 if not s["soft"]:
                     continue
                 soft_seen += 1
+                if spared:
+                    print("%-20s %-11s %-30s continue-on-error; job does not "
+                          "publish (reviewed)" % (f, job, s["name"][:30]))
+                    continue
                 told = s["id"] and any(
                     fires_on_failure(later["if"], s["id"])
                     and "gh issue" in later["run"] for later in steps[n + 1:])
