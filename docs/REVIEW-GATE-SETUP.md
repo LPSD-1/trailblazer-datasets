@@ -53,7 +53,8 @@ every change under review right now. It refuses:
 
 It also pauses all review after 4 failures in any 24 hours, repo-wide. Each
 claim counts as a failure until a PASS settles it. Three UTC days running at
-that cap lock review until you reset it (A8). The ledger lives outside this
+that cap, or 12 failures in any 7 days, lock review until you reset
+it (A8). The workflow reads and writes only the ledger's `main` branch. The ledger lives outside this
 repository, so nobody working here can edit it.
 
 **It is public.** GitHub's free plan does not enforce rulesets on private
@@ -71,8 +72,9 @@ timestamps. `tools/test_review_gate.py` pins that schema.
    (Metadata: Read is automatic). Installable only on this account.
 3. Install it with **Only select repositories** set to
    `trailblazer-review-ledger`, **and nothing else**.
-4. On the ledger repository, add a ruleset on the **default branch**,
-   enforcement Active, with these rules: **Restrict creations**, **Restrict
+4. On the ledger repository, add a ruleset targeting **all branches**
+   (not just the default one, so no other branch can be made to look like
+   the ledger), enforcement Active, with these rules: **Restrict creations**, **Restrict
    updates**, **Restrict deletions**, **Block force pushes**. The bypass
    list is **only** the `trailblazer-review-ledger` app: **no owner bypass**,
    no repository admin role, no deploy keys.
@@ -163,7 +165,8 @@ these steps in this order:
 
 "review paused: too many failures today" (4 failures in 24 hours,
 repo-wide) clears by itself as the failures age out of the 24 hours. Three
-UTC days running at that cap write `lock.json`. After that, every review
+UTC days running at that cap, or 12 failures in any 7 days, write
+`lock.json`. After that, every review
 fails with "review paused until the owner resets the ledger" until you
 reset it. Nothing an agent can do clears it, because the ledger's ruleset
 lets only the ledger app write. To reset:
@@ -174,7 +177,8 @@ lets only the ledger app write. To reset:
 - [ ] In the ledger repository's ruleset, add yourself as a bypass actor.
 - [ ] Commit `reset.json` to its `main` branch, containing
       `{"at": "<now, UTC, as 2026-10-09T12:00:00Z>"}`. Only failures after
-      that time count toward a new lock.
+      that time count toward a new lock. A time more than 5 minutes in
+      the future is refused, and the lock stays.
 - [ ] Remove yourself from the bypass list. The ledger app must again be
       the only entry.
 - [ ] Resume the routines.

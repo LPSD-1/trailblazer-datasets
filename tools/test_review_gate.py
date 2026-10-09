@@ -23,6 +23,7 @@ import os
 import re
 import sys
 import unittest
+import urllib.error
 from unittest import mock
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -442,6 +443,11 @@ class SetupDocument(unittest.TestCase):
         self.assertIn("**The Claude GitHub App must NOT be installed on the "
                       "ledger repository.**", section)
 
+    def test_the_ledger_ruleset_covers_every_branch(self):
+        section = self.doc[self.doc.index("### A2."):self.doc.index("### A3.")]
+        self.assertIn("add a ruleset targeting **all branches**", section)
+        self.assertNotIn("**default branch**", section)
+
     def test_a_locked_review_needs_the_owners_reset(self):
         section = self.doc[self.doc.index("### A8."):self.doc.index("## B.")]
         steps = re.findall(r"- \[ \] (.*)", section)
@@ -769,6 +775,62 @@ class Ledger(unittest.TestCase):
                 gap = L.settled_recent(gap, "%038x%02d" % (day, i), "failed",
                                        1, "g", start)
         self.assertFalse(L.streak(gap, L.EPOCH))
+
+    # Round 5: a steady pace just under the daily cap still locks.
+    def test_twelve_failures_in_7_days_lock_review(self):
+        L = self.L
+        start = (self.NOW - datetime.timedelta(days=4)).replace(hour=1)
+        recent = L.empty_recent()
+        n = 0
+        for day in range(4):          # 3 a day: never the daily cap
+            for i in range(3):
+                n += 1
+                recent = L.settled_recent(
+                    recent, "%040x" % n, "failed", 400 + n, "r%d" % n,
+                    start + datetime.timedelta(days=day, hours=i))
+        self.assertFalse(L.streak(recent, L.EPOCH))
+        self.assertTrue(L.rolling_total(recent, L.EPOCH))
+        new = "ee" + "4" * 38
+        self.assertEqual(L.decide(L.empty_shard(), recent, new, 1, "fresh",
+                                  self.NOW), L.LOCKED)
+        eleven = {"version": 1, "failures": recent["failures"][1:]}
+        self.assertFalse(L.rolling_total(eleven, L.EPOCH))
+        self.assertEqual(L.decide(L.empty_shard(), eleven, new, 1, "fresh",
+                                  self.NOW), L.CLEAR)
+
+    # Round 5: a reset dated in the future cannot disarm the lock early.
+    def test_a_reset_dated_in_the_future_is_ignored(self):
+        store = FakeStore()
+        store.files["lock.json"] = ({"at": "2026-10-09T10:00:00Z"}, "l1")
+        fresh = self.args("ff" + "5" * 38, "1", "z")
+        store.files["reset.json"] = ({"at": "2027-01-01T00:00:00Z"}, "r1")
+        with contextlib.redirect_stderr(io.StringIO()):
+            self.assertEqual(self.run_cli(store, "check", *fresh),
+                             self.L.LOCKED)
+        soon = self.NOW + datetime.timedelta(minutes=4)
+        store.files["reset.json"] = ({"at": self.L._ts(soon)}, "r2")
+        self.assertEqual(self.run_cli(store, "check", *fresh), 0)
+
+    # Round 5: every read names the ledger's main branch.
+    def test_every_ledger_read_and_write_names_main(self):
+        calls = []
+
+        class Recording(review_ledger.Store):
+            def _call(self, method, path, body=None):
+                calls.append((method, path, body))
+                if method == "GET":
+                    raise urllib.error.HTTPError(path, 404, "nf", {}, None)
+                return {}
+
+        store = Recording("LPSD-1/trailblazer-review-ledger", "t")
+        self.assertEqual(self.run_cli(store, "claim", *self.args()), 0)
+        gets = [c for c in calls if c[0] == "GET"]
+        puts = [c for c in calls if c[0] == "PUT"]
+        self.assertTrue(gets and puts)
+        for _, path, _ in gets:
+            self.assertTrue(path.endswith("?ref=main"), path)
+        for _, path, body in puts:
+            self.assertEqual(body["branch"], "main", path)
 
     def test_the_store_writes_the_lock_and_honours_a_reset(self):
         store = FakeStore()

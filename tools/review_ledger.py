@@ -30,8 +30,9 @@ owner, so neither the pull request nor the branch is a reliable identity:
     owner's;
   * re-rolling through NEW branches and PRs: repo-wide, 4 failures in any
     24 hours pauses all review ("review paused: too many failures today"),
-    and 3 consecutive UTC days that each reach 4 lock it until the owner
-    commits `reset.json` to the ledger repository.
+    and 3 consecutive UTC days that each reach 4, or 12 failures in any
+    7 days, lock it until the owner commits `reset.json` to the ledger
+    repository. A reset.json dated more than 5 minutes ahead is ignored.
 
 A CLAIM IS A FAILURE UNTIL A PASS SETTLES IT. `claim` writes the change into
 recent.json as a failure before any model is asked; only `settle --outcome
@@ -75,8 +76,15 @@ WINDOW = datetime.timedelta(days=7)
 #: Repo-wide: this many failures in any DAY pauses review ...
 DAY_CAP = 4
 DAY = datetime.timedelta(hours=24)
-#: ... and this many consecutive UTC days at DAY_CAP locks it.
+#: ... and this many consecutive UTC days at DAY_CAP locks it,
 LOCK_DAYS = 3
+#: ... as does this many failures in any rolling LOCK_SPAN, so a steady
+#: pace just under the daily cap (3 a day) cannot run for ever.
+LOCK_TOTAL = 12
+LOCK_SPAN = datetime.timedelta(days=7)
+#: A reset.json dated further ahead than this is refused: a reset set in
+#: the future would disarm the lock in advance.
+CLOCK_SKEW = datetime.timedelta(minutes=5)
 
 CLEAR, BROKEN, FAILED, BUSY, CAPPED, PAUSED, LOCKED = 0, 1, 3, 4, 5, 6, 7
 REASONS = {
@@ -223,11 +231,44 @@ def streak(recent, after):
                for d in full)
 
 
+def rolling_total(recent, after):
+    """True when LOCK_TOTAL or more failures recorded after `after` fall
+    within any LOCK_SPAN."""
+    times = []
+    for f in recent["failures"]:
+        try:
+            when = _parse_ts(f["at"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        if when > after:
+            times.append(when)
+    times.sort()
+    return any(times[i + LOCK_TOTAL - 1] - times[i] <= LOCK_SPAN
+               for i in range(len(times) - LOCK_TOTAL + 1))
+
+
+def lock_due(recent, after):
+    """Either lock rule: LOCK_DAYS capped days running, or LOCK_TOTAL
+    failures in a LOCK_SPAN."""
+    return streak(recent, after) or rolling_total(recent, after)
+
+
+def reset_time(data, now):
+    """reset.json -> its time, or None when absent or dated more than
+    CLOCK_SKEW in the future (refused, and said so)."""
+    when = _stamp(data)
+    if when is not None and when > now + CLOCK_SKEW:
+        sys.stderr.write("review ledger: reset.json is dated %s, in the "
+                         "future; ignored\n" % _ts(when))
+        return None
+    return when
+
+
 def locked(recent, lock, reset):
     """lock/reset: their times or None. Locked until a reset newer than
-    the lock, and while a fresh streak stands."""
+    the lock, and while a fresh lock rule holds."""
     after = reset or EPOCH
-    return bool((lock and lock > after) or streak(recent, after))
+    return bool((lock and lock > after) or lock_due(recent, after))
 
 
 def decide(shard, recent, pid, pr, branch, now, lock=None, reset=None):
@@ -327,28 +368,30 @@ class Store:
     def check_reachable(self):
         self._call("GET", "/repos/%s" % self.repo)
 
+    def path_of(self, path):
+        return "/repos/%s/contents/%s" % (self.repo, path)
+
     def get(self, path):
         """-> (parsed JSON or None when absent, blob sha or None)."""
         try:
-            data = self._call("GET",
-                              "/repos/%s/contents/%s" % (self.repo, path))
+            data = self._call("GET", self.path_of(path) + "?ref=main")
         except urllib.error.HTTPError as e:
             if e.code == 404:
+                e.close()
                 return None, None
             raise
         return json.loads(base64.b64decode(data["content"])), data["sha"]
 
     def put(self, path, value, sha, message):
         """False when the write lost a race (stale sha)."""
-        body = {"message": message,
+        body = {"message": message, "branch": "main",
                 "content": base64.b64encode(
                     (json.dumps(value, indent=1, sort_keys=True) + "\n")
                     .encode()).decode()}
         if sha:
             body["sha"] = sha
         try:
-            self._call("PUT", "/repos/%s/contents/%s" % (self.repo, path),
-                       body)
+            self._call("PUT", self.path_of(path), body)
             return True
         except urllib.error.HTTPError as e:
             if e.code in (409, 422):
@@ -375,14 +418,14 @@ def _store():
     return store
 
 
-def _read(store, pid):
+def _read(store, pid, now):
     shard, _ = store.get(shard_path(pid))
     recent, _ = store.get(RECENT)
     lock, _ = store.get(LOCK)
     reset, _ = store.get(RESET)
     return (valid_shard(shard) if shard is not None else empty_shard(),
             valid_recent(recent) if recent is not None else empty_recent(),
-            _stamp(lock), _stamp(reset))
+            _stamp(lock), reset_time(reset, now))
 
 
 def _lock_if_streak(store, now):
@@ -392,8 +435,8 @@ def _lock_if_streak(store, now):
     recent = valid_recent(recent) if recent is not None else empty_recent()
     lock, lock_sha = store.get(LOCK)
     reset, _ = store.get(RESET)
-    after = _stamp(reset) or EPOCH
-    if streak(recent, after) and not ((_stamp(lock) or EPOCH) > after):
+    after = reset_time(reset, now) or EPOCH
+    if lock_due(recent, after) and not ((_stamp(lock) or EPOCH) > after):
         return store.put(LOCK, {"at": _ts(now)}, lock_sha,
                          "Review locked: %d days at the cap" % LOCK_DAYS)
     return True
@@ -404,7 +447,7 @@ def run(a, store, now):
     shard_path(a.pid)
     msg = "PR #%s, %s" % (a.pr, a.pid)
     if a.command in ("check", "claim"):
-        shard, recent, lock, reset = _read(store, a.pid)
+        shard, recent, lock, reset = _read(store, a.pid, now)
         if a.command == "check" and a.patch_only:
             return FAILED if state_of(shard, a.pid, now) == "failed" \
                 else CLEAR
