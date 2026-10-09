@@ -136,9 +136,16 @@ class IndependentReviewNeverRunsThePullRequest(unittest.TestCase):
             self.assertNotRegex(code, bad)
 
     def test_posts_the_independent_review_context(self):
-        self.assertGreaterEqual(
-            len(re.findall(r"-f context=independent-review\b", self.text)), 2)
-        self.assertRegex(self.text, r'statuses/\$HEAD_SHA')
+        # The final verdict is posted by the last step, which runs unless the
+        # run was cancelled, and is the one step with GitHub's token.
+        post = [s for s in self.steps
+                if s.startswith("name: Post the status and the comment\n")]
+        self.assertEqual(len(post), 1)
+        self.assertIn("if: ${{ !cancelled() }}", post[0])
+        self.assertIn("GH_TOKEN: ${{ github.token }}", post[0])
+        self.assertRegex(post[0], r'statuses/\$HEAD_SHA" -f state="\$state"')
+        self.assertRegex(post[0], r"-f context=independent-review\s")
+        self.assertIs(self.steps[-1], post[0])
         # The head sha comes from GitHub's event, never from the capture.
         self.assertRegex(
             self.text,
