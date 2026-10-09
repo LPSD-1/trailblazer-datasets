@@ -26,7 +26,7 @@ Public open data for the TrailBlazer app, served by GitHub Pages at `https://lps
   - Written by `tools/build_catalogue.py`; checked by `tools/verify_catalogue.py` and `tools/validate_catalogue.py`.
   - `build_catalogue.py` also adds a `status` URL pointing at `published/status.json`.
 - `manifest.json` is **schema 1**, the legacy index that is still read. It has a top-level `packages` array. Anything that writes either index must keep both shapes valid.
-- GB areas: `gb-east-anglia gb-midlands gb-north gb-south-east gb-south-west gb-wales`, plus `gb-roads` for routing. Coverage is England and Wales only. Scotland and Northern Ireland are out of scope: different law, not a missing download.
+- GB areas: `gb-east-anglia gb-midlands gb-north gb-south-east gb-south-west gb-wales`, plus `gb-roads` for routing. Lanes and closures cover England and Wales only. Scotland and Northern Ireland are out of scope: different law, not a missing download. (Routing is the one exception; see Data sources.)
 - Files in git (served by Pages):
   - `containers/ways-<region>.tbmap` with a signed `.sig`, `ways-overview.tbmap`, and `containers/manifest.json`. These are SQLite containers; schema in `docs/WAYS-SCHEMA.md`.
   - `packages/ways-<region>.tbpack`: gzipped GeoJSON sealed with AES-256-GCM.
@@ -42,7 +42,7 @@ Public open data for the TrailBlazer app, served by GitHub Pages at `https://lps
   - `tro/council/`, `tro/register/` (only `approved` entries publish), `tro/streetworks/`;
   - `council-ways/`, `council-ucrs/`, `home-collected/`, `local-rules/rules.json`, `status/`;
   - `manual/<CODE>/`, for documents saved by hand or sent by a council (see `manual/README.md`).
-- Content: byways open to all traffic, OSM tracks, and unsurfaced unclassified roads (UCRs, class `ucr`, in their own table and tile layer). There are no footpaths, bridleways or restricted byways. Do not add context ways back to power a feature. Routing for all 41 countries stays listed. Do not trim it.
+- Content: byways open to all traffic and unsurfaced unclassified roads (UCRs, class `ucr`, in their own table and tile layer). An `osm_track` class exists in `tools/build_packages.py` but nothing produces it (0 rows published); do not add a producer, since lanes come only from public bodies. There are no footpaths, bridleways or restricted byways. Do not add context ways back to power a feature. Routing for all 41 countries stays listed (owner decision, 24 Sep 2026). Do not trim it.
 - UCRs pass the NERC test (`build_packages.ucr_lanes`). A council without its footpath, bridleway and restricted byway files in the cache publishes no UCRs.
 - Builds are reproducible: unchanged input gives identical bytes and a filename carries no date. A run stamp such as `built_at` or `generated` must never leak into a pack's content hash, or every rider is told to re-download.
 - Lane ids are stable. They are keyed by the council reference, never by read order or an optional field.
@@ -75,7 +75,8 @@ Public open data for the TrailBlazer app, served by GitHub Pages at `https://lps
 - Local fallback: `python tools/run_workflow_locally.py <workflow>` runs the workflow's own steps. Use a dedicated clone, because it hard-resets to `origin/main`.
 
 ## Data sources
-- **Only open data published by public bodies**: government, councils and national park authorities, plus rowmaps.com copies of councils' definitive maps (OGL, credited). Never user groups, campaign groups or other organisations, however good their data. Basemap and imagery sources predate this rule; ask before applying it to them.
+- **Lanes and closures come only from open data published by public bodies**: government, councils and national park authorities. rowmaps.com copies of councils' definitive maps are allowed, credited to the council (owner ruling, 9 Oct 2026), until the council's own publication replaces them. Never user groups, campaign groups or other organisations, however good their data.
+- **Owner ruling, 9 Oct 2026: the public-bodies rule covers lanes and closures only.** The basemap, imagery, height and routing may use other open data, such as OpenStreetMap and BRouter's routing tiles for countries outside Great Britain. These are deliberate, not provenance errors.
 - **Licence**: OGL sources are credited. Council UCR layers that state no licence are published with the council credited by name, and come down if that council objects. Layers whose terms forbid copying stay out.
 - Every request goes through `tools/polite_http.py`: an honest User-Agent naming this repo, robots.txt obeyed (RFC 9309), a minimum gap per host, read-only GETs (the single POST is Wiltshire's search form, `FORM_POSTS`), and `BLOCKED_HOSTS` never contacted.
 - **robots.txt overrides** apply only to the paths in `tools/robots_override.json`, the reviewed allowlist (editing it is SECURITY tier). Each path is read at most weekly, and every read is logged in `tro/register/override-reads.json` or `home-collected/override-reads.json`.
@@ -93,7 +94,7 @@ Public open data for the TrailBlazer app, served by GitHub Pages at `https://lps
   - "No source" means unknown, never clear.
 - **The code lags this rule.** `council_orders.PRECEDENCE` and `merge_council` still say "D-TRO always wins" when they fold a matched twin into `also`. Twins match only when their dates agree, and records whose dates differ are both kept, which must stay. Replace the rule with tests that fail on the old behaviour.
 - D-TRO geometry is an order's extent, not its route: 72% of orders are two-point lines. Never present it as a survey.
-- `seasonal` is a voluntary request and draws as rideable. A source that means a closure publishes `tro` or `closed`.
+- Two different `seasonal`s: a lane's usability `seasonal` (from council or UCR data) is a request to keep off and draws green; a TRO order's `oform: seasonal` is a dated order that shuts the way inside its dates and not outside them. A voluntary request is otype `voluntary`.
 - Voluntary closures (otype `voluntary`) are built but held: `PUBLISH_VOLUNTARY = False` in `tools/wiltshire_closures.py`, guarded by `test_the_switch_is_committed_off`. Flip it only on the owner's word, because older app builds draw a request as a closure.
 
 ## Review gate
