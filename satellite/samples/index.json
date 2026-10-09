@@ -1,0 +1,19 @@
+{
+  "attribution": "EOxCloudless https://cloudless.eox.at by EOX IT Services GmbH (Contains modified Copernicus Sentinel data 2016 & 2017), CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/). Resampled and sharpened by Trail Blazer.",
+  "files": {
+    "detailed.jpg": "13c1ddfc21dac2d6f2e6212913aceb5e8b55c8f2d7f6c7eaec93c78220c128e6",
+    "standard-sharpened.jpg": "b20cbc95ad18e0dd8239fa8ca73ffaa441552e426552aba1611d5dba059e195c",
+    "standard.jpg": "f1a8073cb1e5d78cdfd5cb634cd453e0767861d3f8398127d458e2021f247b3b",
+    "zoom-detailed.jpg": "8cb14a4a8bc99ecea087d11c7cd7adc923acc2de6254f3f3fc7289fcee5a3d23",
+    "zoom-sharpened.jpg": "24acd8433c6105e75fc17631036c14e95b9932efb5850cbf7e9a86b04002cd5d",
+    "zoom-standard.jpg": "e0a19c2624dd50d50741ceb51dfeef4e90cd3fdd762618fdc389b02066961813"
+  },
+  "lat": 52.12,
+  "layer": "s2cloudless_3857",
+  "lon": 1.4,
+  "source": "https://tiles.maps.eox.at/wmts/1.0.0/s2cloudless_3857/default/g/{z}/{y}/{x}.jpg",
+  "z13_tile": [
+    4127,
+    2701
+  ]
+}

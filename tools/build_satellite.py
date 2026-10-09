@@ -21,17 +21,21 @@ Esri, Bing, Google and Mapbox imagery all forbid the bulk offline caching this
 app is built on. None of them can go in a pack a rider carries up a moor.
 Sentinel-2 can, but only in the right YEAR. The Copernicus data is open, and
 EOX publish a cloudless mosaic of it per year - and the years are not licensed
-alike. By the abstracts in EOX's WMTS capabilities
-(https://tiles.maps.eox.at/wmts/1.0.0/WMTSCapabilities.xml, read 9 Oct 2026)
-and https://cloudless.eox.at/license-non-commercial, the 2016 and 2017
-mosaics are CC BY 4.0, and every later one (2018-2025) is CC BY-NC-SA 4.0.
-NonCommercial rules those out of a paid app. The 2018 layer holds 2017 data
-and is NC all the same, so it is the LAYER that matters, not the data year.
+alike. EOX's licence page, https://cloudless.eox.at/license-non-commercial,
+says "For the year 2016, EOxCloudless is licensed under the Creative Commons
+Attribution 4.0 International License", and puts 2018-2025 under
+CC BY-NC-SA 4.0, which NonCommercial rules out of a paid app. The 2016 layer's
+abstract in EOX's WMTS capabilities
+(https://tiles.maps.eox.at/wmts/1.0.0/WMTSCapabilities.xml) agrees. The 2017
+layer is CC BY in its abstract alone, not on the licence page, so it is not
+relied on; the 2018 layer holds 2017 data and is NC all the same. It is the
+LAYER that matters, not the data year.
 
-So this builds from the 2017 mosaic, the newest CC BY one, and may
-redistribute it with the attribution below. Until 9 Oct 2026 it built from the
-2024 mosaic and called that CC BY 4.0, which it is not.
-tools/test_imagery_licence.py holds the source to the CC BY layers.
+So this builds from s2cloudless_3857, the 2016 mosaic, and redistributes it
+with the attribution the licence page requires for 2016. Both sources are
+quoted, dated, in docs/licences/eox-s2cloudless-2026-10-09.md. Until
+9 Oct 2026 it built from the 2024 mosaic and called that CC BY 4.0, which it
+is not. tools/test_imagery_licence.py holds the source to the 2016 layer.
 
 It is 10 m/pixel. At British latitudes that is exactly zoom 13, so:
 
@@ -56,7 +60,7 @@ z13 + sharpen is the default recommendation.
 
 A NOTE ON PULLING THE TILES
 ---------------------------
-The 2017 mosaic's CC BY licence covers redistributing the IMAGERY. It does
+The 2016 mosaic's CC BY licence covers redistributing the IMAGERY. It does
 not entitle anyone to hammer EOX's public tile service, which is a free
 service run by a small company. This tool is polite by default - few
 connections, retries with backoff, an honest User-Agent - and is fine for
@@ -94,20 +98,21 @@ except ImportError:
     print("This needs Pillow:  pip install Pillow", file=sys.stderr)
     raise
 
-# EOxCloudless 2017: the newest year EOX license CC BY 4.0 (2018 onwards is
-# NonCommercial; see the docstring). Attribution is REQUIRED by CC BY 4.0
-# s.3(a) - creator, licence with its link, and that we MODIFIED it (we
-# resample, sharpen and recompress every tile) - and the app shows it. One
+# EOxCloudless 2016: the one year EOX license CC BY 4.0 on both its licence
+# page and its WMTS abstract (2018 onwards is NonCommercial; see the
+# docstring). Attribution is REQUIRED by CC BY 4.0 s.3(a): EOX's own words
+# for 2016, verbatim, then the licence with its link, and that we MODIFIED it
+# (we resample, sharpen and recompress every tile). The app shows it. One
 # constant: sample_imagery.py, make_detail_page.py and satellite.yml carry the
 # same words, and tools/test_imagery_licence.py holds them to it.
-LAYER = "s2cloudless-2017_3857"
+LAYER = "s2cloudless_3857"
 SOURCE = ("https://tiles.maps.eox.at/wmts/1.0.0/"
           + LAYER + "/default/g/{z}/{y}/{x}.jpg")
-ATTRIBUTION = ("EOxCloudless 2017 (https://cloudless.eox.at) by EOX IT "
-               "Services GmbH, CC BY 4.0 "
-               "(https://creativecommons.org/licenses/by/4.0/). Contains "
-               "modified Copernicus Sentinel data 2017; resampled and "
-               "sharpened by Trail Blazer.")
+ATTRIBUTION = ("EOxCloudless https://cloudless.eox.at by EOX IT Services "
+               "GmbH (Contains modified Copernicus Sentinel data 2016 & "
+               "2017), CC BY 4.0 "
+               "(https://creativecommons.org/licenses/by/4.0/). Resampled "
+               "and sharpened by Trail Blazer.")
 
 USER_AGENT = "trailblazer-offline-maps dataset builder (contact: the repo owner)"
 

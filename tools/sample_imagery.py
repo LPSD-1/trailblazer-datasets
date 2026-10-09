@@ -20,7 +20,7 @@ POLITE BY DESIGN
 ----------------
 Five tile requests per sample: one at z13 and the four at z14 that cover the
 same ground. The tiles come from build_satellite.SOURCE, so the plates are
-the same mosaic the packs are: EOxCloudless 2017, the newest year EOX license
+the same mosaic the packs are: EOxCloudless 2016, the year EOX license
 CC BY 4.0 (2018 onwards is NonCommercial; see build_satellite.py). That
 licence covers redistributing the imagery and does not entitle anyone to
 hammer EOX's free tile service; a handful of tiles to build a comparison
@@ -28,8 +28,10 @@ picture is well inside what that service is for.
 """
 
 import argparse
+import hashlib
 import importlib.util
 import io
+import json
 import math
 import os
 import sys
@@ -51,6 +53,12 @@ _spec = importlib.util.spec_from_file_location(
 _bs = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_bs)
 SOURCE = _bs.SOURCE
+
+# Every plate this makes, and so every plate satellite/samples may hold:
+# tools/test_imagery_licence.py checks the folder against this list and
+# against the index written beside it.
+SAMPLE_NAMES = ("standard", "standard-sharpened", "detailed",
+                "zoom-standard", "zoom-sharpened", "zoom-detailed")
 USER_AGENT = "trailblazer-offline-maps dataset builder (contact: the repo owner)"
 TILE = 256
 
@@ -112,22 +120,8 @@ def main():
     base = mosaic(13, x13, y13, 1)
     finer = mosaic(14, x13 * 2, y13 * 2, 2)
 
-    # Rendered at the SAME size on screen, which is how they will be compared.
-    # Upscaling the coarse one is not cheating: it is what the map does when a
-    # rider zooms past the level a pack holds, so this is the honest picture of
-    # what they would actually see.
-    plain = base.resize((args.size, args.size), Image.LANCZOS)
-    sharp = plain.filter(ImageFilter.UnsharpMask(radius=1.0, percent=60,
-                                                 threshold=3))
-    detail = finer.resize((args.size, args.size), Image.LANCZOS)
-
-    written = []
-    for name, img in (("standard", plain), ("standard-sharpened", sharp),
-                      ("detailed", detail)):
-        path = os.path.join(args.out, f"{name}.jpg")
-        img.save(path, format="JPEG", quality=85, optimize=True,
-                 progressive=True)
-        written.append((name, path, os.path.getsize(path)))
+    written = write_plates(args.out, plates(base, finer, args.size), {
+        "lat": args.lat, "lon": args.lon, "z13_tile": [x13, y13]})
 
     print(f"Same ground in every one: z13 tile {x13},{y13} at "
           f"{args.lat},{args.lon}")
@@ -137,6 +131,64 @@ def main():
           f"(oversampled: no new information, four times the tiles)")
     for name, path, size in written:
         print(f"  {name:20s} {size / 1024:6.1f} KB  {path}")
+
+
+def _centre(img):
+    """The centre quarter of the ground: half the width, half the height."""
+    w, h = img.size
+    return img.crop((w // 4, h // 4, w - w // 4, h - h // 4))
+
+
+def plates(base, finer, size):
+    """name -> image for every plate in SAMPLE_NAMES.
+
+    `base` is the z13 tile, `finer` the four z14 tiles under it as one image.
+    All are rendered at the SAME size, which is how they will be compared.
+    Upscaling the coarse one is not cheating: it is what the map does when a
+    rider zooms past the level a pack holds. The zoom plates are the centre
+    quarter of the same ground blown up - one lane rather than one county.
+    """
+    def sharpen(img):
+        return img.filter(ImageFilter.UnsharpMask(radius=1.0, percent=60,
+                                                  threshold=3))
+
+    def fit(img):
+        return img.resize((size, size), Image.LANCZOS)
+
+    plain = fit(base)
+    zoomed = fit(_centre(base))
+    return {
+        "standard": plain,
+        "standard-sharpened": sharpen(plain),
+        "detailed": fit(finer),
+        "zoom-standard": zoomed,
+        "zoom-sharpened": sharpen(zoomed),
+        "zoom-detailed": fit(_centre(finer)),
+    }
+
+
+def write_plates(out, made, where=None):
+    """Write each plate and an index.json saying which layer they came from,
+    with each file's sha256, so a plate cut from any other mosaic year shows.
+    Returns [(name, path, bytes)]."""
+    os.makedirs(out, exist_ok=True)
+    written, files = [], {}
+    for name in SAMPLE_NAMES:
+        path = os.path.join(out, f"{name}.jpg")
+        made[name].save(path, format="JPEG", quality=85, optimize=True,
+                        progressive=True)
+        with open(path, "rb") as f:
+            files[f"{name}.jpg"] = hashlib.sha256(f.read()).hexdigest()
+        written.append((name, path, os.path.getsize(path)))
+    index = {"layer": _bs.LAYER, "source": SOURCE,
+             "attribution": _bs.ATTRIBUTION}
+    index.update(where or {})
+    index["files"] = files
+    with open(os.path.join(out, "index.json"), "w", encoding="utf-8",
+              newline="\n") as f:
+        json.dump(index, f, indent=2, sort_keys=True)
+        f.write("\n")
+    return written
 
 
 if __name__ == "__main__":

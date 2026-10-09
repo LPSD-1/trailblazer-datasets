@@ -115,6 +115,32 @@ def below_zoom(catalogue, max_zoom):
     return set(k for k, z in best.items() if z < max_zoom)
 
 
+def wrong_attribution(catalogue, attribution):
+    """Areas with any imagery pack published under other words than
+    `attribution`: built from another mosaic, so due now, however young.
+
+    This is how the 2024 mosaic, which is CC BY-NC-SA and so cannot ship in
+    a paid app, is replaced: its packs say so in their `note`, and every one
+    is due the day build_satellite.py's ATTRIBUTION changes, rather than when
+    it happens to turn 25 days old.
+    """
+    return set(key for key, _pid, pack in _satellite_packs(catalogue)
+               if pack.get("note") != attribution)
+
+
+def build_satellite_attribution():
+    """build_satellite's ATTRIBUTION, loaded here rather than at the top:
+    height_plan imports this module, and its job installs no Pillow."""
+    import importlib.util
+    import os
+    spec = importlib.util.spec_from_file_location(
+        "build_satellite", os.path.join(os.path.dirname(
+            os.path.abspath(__file__)), "build_satellite.py"))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod.ATTRIBUTION
+
+
 def age_days(stamp, now):
     if not stamp:
         return None
@@ -158,13 +184,16 @@ def main():
     now = dt.datetime.now(dt.timezone.utc)
     published = existing_satellite(catalogue)
     short = below_zoom(catalogue, args.max_zoom)
+    relabel = wrong_attribution(catalogue, build_satellite_attribution())
     candidates = []
     for area in areas_with_lanes(catalogue):
         age = age_days(published.get(area["id"]), now)
-        # Never built comes first, then built below the agreed zoom, then
-        # oldest. `None` sorts ahead of any number, which is what we want
-        # and is worth being explicit about.
-        rank = 0 if age is None else 1 if area["id"] in short else 2
+        # Never built comes first, then built from another mosaic (the
+        # licence), then built below the agreed zoom, then oldest. `None`
+        # sorts ahead of any number, which is what we want and is worth
+        # being explicit about.
+        rank = (0 if age is None else 1 if area["id"] in relabel
+                else 2 if area["id"] in short else 3)
         candidates.append((rank, -(age or 0), area, age))
 
     if not candidates:
@@ -174,7 +203,7 @@ def main():
     candidates.sort(key=lambda c: (c[0], c[1]))
     rank, _, area, age = candidates[0]
 
-    if rank == 2 and age is not None and age < args.refresh_after_days:
+    if rank == 3 and age is not None and age < args.refresh_after_days:
         print(json.dumps({
             "work": False,
             "why": "everything was rebuilt within %d days (oldest is %.1f)"
