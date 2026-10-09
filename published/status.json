@@ -1,0 +1,3387 @@
+{
+ "schema": 1,
+ "generated": "2026-10-09T05:07:29Z",
+ "datasets": [
+  {
+   "id": "lanes",
+   "name": "Byways and unsurfaced roads",
+   "what": "The lanes on the map, from councils' rights of way and highway records",
+   "schedule": "Every 6 hours",
+   "last_run": "2026-10-09T01:17:07Z",
+   "result": "ok",
+   "last_ok": "2026-10-09T01:17:07Z",
+   "data_as_of": "2026-10-08"
+  },
+  {
+   "id": "orders",
+   "name": "Traffic orders and closures",
+   "what": "Legal orders and closures on the lanes, from the Department for Transport's D-TRO service and councils' own notices",
+   "schedule": "Every 6 hours",
+   "last_run": "2026-10-09T00:28:22Z",
+   "result": "ok",
+   "last_ok": "2026-10-09T00:28:22Z",
+   "data_as_of": "2026-10-08"
+  },
+  {
+   "id": "council-closures",
+   "name": "Council closures",
+   "what": "Closures and orders read from councils' own websites and maps",
+   "schedule": "Every 6 hours",
+   "last_run": "2026-10-08T23:58:57Z",
+   "result": "ok",
+   "last_ok": "2026-10-08T23:58:57Z",
+   "data_as_of": "2026-10-08"
+  },
+  {
+   "id": "council-roads",
+   "name": "Unsurfaced roads from councils",
+   "what": "Byways and unsurfaced roads read straight from councils' own maps",
+   "schedule": "Daily",
+   "last_run": "2026-10-08T10:40:21Z",
+   "result": "ok",
+   "last_ok": "2026-10-08T10:40:21Z",
+   "data_as_of": "2026-10-08"
+  },
+  {
+   "id": "street-works",
+   "name": "Street works",
+   "what": "Road closures for street works, from the Department for Transport's Street Manager",
+   "schedule": "Monthly",
+   "last_run": "2026-10-07T10:39:56Z",
+   "result": "ok",
+   "last_ok": "2026-10-07T10:39:56Z",
+   "data_as_of": "2026-09-30"
+  },
+  {
+   "id": "order-lists",
+   "name": "Councils' lists of orders",
+   "what": "Long-standing and seasonal byway orders that councils list on their websites, each checked by a person",
+   "schedule": "Every 3 months",
+   "last_run": "2026-10-07T11:41:24Z",
+   "result": "ok",
+   "last_ok": "2026-10-07T11:41:24Z",
+   "data_as_of": null
+  },
+  {
+   "id": "status-changes",
+   "name": "Changes to the map",
+   "what": "Planning Inspectorate decisions on byways, applications to change the map, and military firing times",
+   "schedule": "Weekly",
+   "last_run": "2026-10-07T12:00:35Z",
+   "result": "ok",
+   "last_ok": "2026-10-07T12:00:35Z",
+   "data_as_of": null
+  },
+  {
+   "id": "height",
+   "name": "Ground height",
+   "what": "Hill shading and 3D ground, from Environment Agency height data",
+   "schedule": "Daily",
+   "last_run": "2026-10-08T10:43:13Z",
+   "result": "ok",
+   "last_ok": "2026-10-08T10:43:13Z",
+   "data_as_of": null
+  },
+  {
+   "id": "imagery",
+   "name": "Satellite imagery",
+   "what": "Satellite photos of the ground, from the 2024 Sentinel-2 cloudless mosaic",
+   "schedule": "Twice a day",
+   "last_run": "2026-10-08T20:04:44Z",
+   "result": "ok",
+   "last_ok": "2026-10-08T20:04:44Z",
+   "data_as_of": null
+  },
+  {
+   "id": "routing",
+   "name": "Route planning",
+   "what": "The road and track network routes are planned on, from OpenStreetMap via BRouter",
+   "schedule": "Weekly",
+   "last_run": "2026-10-06T11:21:58Z",
+   "result": "ok",
+   "last_ok": "2026-10-06T11:21:58Z",
+   "data_as_of": null
+  }
+ ],
+ "authorities": [
+  {
+   "name": "Barking and Dagenham",
+   "full_name": "London Borough of Barking and Dagenham",
+   "country": "England",
+   "kind": "council",
+   "byways": 0,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "Barnet",
+   "full_name": "London Borough of Barnet",
+   "country": "England",
+   "kind": "council",
+   "byways": 0,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "Barnsley",
+   "full_name": "Barnsley Metropolitan Borough Council",
+   "country": "England",
+   "kind": "council",
+   "byways": 0,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "Bath and North East Somerset",
+   "full_name": "Bath and North East Somerset Council",
+   "country": "England",
+   "kind": "council",
+   "byways": 72,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [
+    {
+     "what": "Byways",
+     "from": "Bath and North East Somerset Council, via rowmaps.com",
+     "as_of": null
+    }
+   ],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "Bedford",
+   "full_name": "Bedford Borough Council",
+   "country": "England",
+   "kind": "council",
+   "byways": 28,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [
+    {
+     "what": "Byways",
+     "from": "Bedford Borough Council, via rowmaps.com",
+     "as_of": null
+    }
+   ],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "Bexley",
+   "full_name": "London Borough of Bexley",
+   "country": "England",
+   "kind": "council",
+   "byways": 15,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [
+    {
+     "what": "Byways",
+     "from": "London Borough of Bexley, via rowmaps.com",
+     "as_of": null
+    }
+   ],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "Birmingham",
+   "full_name": "Birmingham City Council",
+   "country": "England",
+   "kind": "council",
+   "byways": 17,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [
+    {
+     "what": "Byways",
+     "from": "Birmingham City Council, via rowmaps.com",
+     "as_of": null
+    }
+   ],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "Blackburn with Darwen",
+   "full_name": "Blackburn with Darwen Borough Council",
+   "country": "England",
+   "kind": "council",
+   "byways": 3,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [
+    {
+     "what": "Byways",
+     "from": "Blackburn with Darwen Borough Council, via rowmaps.com",
+     "as_of": null
+    }
+   ],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "Blackpool",
+   "full_name": "Blackpool Borough Council",
+   "country": "England",
+   "kind": "council",
+   "byways": 0,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "Bolton",
+   "full_name": "Bolton Metropolitan Borough Council",
+   "country": "England",
+   "kind": "council",
+   "byways": 0,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "Bournemouth, Christchurch and Poole",
+   "full_name": "Bournemouth, Christchurch and Poole Council",
+   "country": "England",
+   "kind": "council",
+   "byways": 15,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [
+    {
+     "what": "Byways",
+     "from": "Bournemouth, Christchurch and Poole Council, via rowmaps.com",
+     "as_of": null
+    }
+   ],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "Bracknell Forest",
+   "full_name": "Bracknell Forest Council",
+   "country": "England",
+   "kind": "council",
+   "byways": 17,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [
+    {
+     "what": "Byways",
+     "from": "Bracknell Forest Council",
+     "as_of": "2026-10-08"
+    },
+    {
+     "what": "Traffic orders",
+     "from": "Bracknell Forest Council - public rights of way TROs",
+     "as_of": "2026-10-08"
+    }
+   ],
+   "honours": [
+    "Shares its own data openly",
+    "Open Government Licence"
+   ],
+   "activity": []
+  },
+  {
+   "name": "Bradford",
+   "full_name": "City of Bradford Metropolitan District Council",
+   "country": "England",
+   "kind": "council",
+   "byways": 0,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "Brent",
+   "full_name": "London Borough of Brent",
+   "country": "England",
+   "kind": "council",
+   "byways": 0,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "Brighton & Hove",
+   "full_name": "Brighton & Hove City Council",
+   "country": "England",
+   "kind": "council",
+   "byways": 8,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [
+    {
+     "what": "Byways",
+     "from": "Brighton & Hove City Council, via rowmaps.com",
+     "as_of": null
+    }
+   ],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "Bristol",
+   "full_name": "Bristol City Council",
+   "country": "England",
+   "kind": "council",
+   "byways": 0,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "Bromley",
+   "full_name": "London Borough of Bromley",
+   "country": "England",
+   "kind": "council",
+   "byways": 21,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [
+    {
+     "what": "Byways",
+     "from": "London Borough of Bromley, via rowmaps.com",
+     "as_of": null
+    }
+   ],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "Buckinghamshire",
+   "full_name": "Buckinghamshire Council",
+   "country": "England",
+   "kind": "council",
+   "byways": 61,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [
+    {
+     "what": "Byways",
+     "from": "Buckinghamshire Council, via rowmaps.com",
+     "as_of": null
+    }
+   ],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "Bury",
+   "full_name": "Bury Metropolitan Borough Council",
+   "country": "England",
+   "kind": "council",
+   "byways": 14,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [
+    {
+     "what": "Byways",
+     "from": "Bury Metropolitan Borough Council, via rowmaps.com",
+     "as_of": null
+    }
+   ],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "Calderdale",
+   "full_name": "Calderdale Metropolitan Borough Council",
+   "country": "England",
+   "kind": "council",
+   "byways": 17,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [
+    {
+     "what": "Byways",
+     "from": "Calderdale Metropolitan Borough Council, via rowmaps.com",
+     "as_of": null
+    }
+   ],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "Cambridgeshire",
+   "full_name": "Cambridgeshire County Council",
+   "country": "England",
+   "kind": "council",
+   "byways": 385,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [
+    {
+     "what": "Byways",
+     "from": "Cambridgeshire County Council",
+     "as_of": "2026-10-08"
+    }
+   ],
+   "honours": [
+    "Shares its own data openly",
+    "Open Government Licence"
+   ],
+   "activity": []
+  },
+  {
+   "name": "Camden",
+   "full_name": "London Borough of Camden",
+   "country": "England",
+   "kind": "council",
+   "byways": 0,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "Central Bedfordshire",
+   "full_name": "Central Bedfordshire Council",
+   "country": "England",
+   "kind": "council",
+   "byways": 31,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [
+    {
+     "what": "Byways",
+     "from": "Central Bedfordshire Council",
+     "as_of": "2026-10-08"
+    },
+    {
+     "what": "Traffic orders",
+     "from": "Central Bedfordshire Council - byway orders listed on its website",
+     "as_of": null
+    }
+   ],
+   "honours": [
+    "Shares its own data openly",
+    "Open Government Licence"
+   ],
+   "activity": []
+  },
+  {
+   "name": "Cheshire East",
+   "full_name": "Cheshire East Council",
+   "country": "England",
+   "kind": "council",
+   "byways": 28,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [
+    {
+     "what": "Byways",
+     "from": "Cheshire East Council",
+     "as_of": "2026-10-08"
+    }
+   ],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "Cheshire West and Chester",
+   "full_name": "Cheshire West and Chester Council",
+   "country": "England",
+   "kind": "council",
+   "byways": 34,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [
+    {
+     "what": "Byways",
+     "from": "Cheshire West and Chester Council",
+     "as_of": "2026-10-08"
+    }
+   ],
+   "honours": [
+    "Shares its own data openly",
+    "Open Government Licence"
+   ],
+   "activity": []
+  },
+  {
+   "name": "City of London",
+   "full_name": "City of London Corporation",
+   "country": "England",
+   "kind": "council",
+   "byways": 0,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "Cornwall",
+   "full_name": "Cornwall Council",
+   "country": "England",
+   "kind": "council",
+   "byways": 727,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [
+    {
+     "what": "Byways",
+     "from": "Cornwall Council, via rowmaps.com",
+     "as_of": null
+    }
+   ],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "Coventry",
+   "full_name": "Coventry City Council",
+   "country": "England",
+   "kind": "council",
+   "byways": 0,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "Croydon",
+   "full_name": "London Borough of Croydon",
+   "country": "England",
+   "kind": "council",
+   "byways": 0,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "Cumberland",
+   "full_name": "Cumberland Council",
+   "country": "England",
+   "kind": "council",
+   "byways": 15,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [
+    {
+     "what": "Byways",
+     "from": "Cumbria, via rowmaps.com",
+     "as_of": null
+    }
+   ],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "Darlington",
+   "full_name": "Darlington Borough Council",
+   "country": "England",
+   "kind": "council",
+   "byways": 0,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "Derby",
+   "full_name": "Derby City Council",
+   "country": "England",
+   "kind": "council",
+   "byways": 0,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "Derbyshire",
+   "full_name": "Derbyshire County Council",
+   "country": "England",
+   "kind": "council",
+   "byways": 158,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [
+    {
+     "what": "Byways",
+     "from": "Derbyshire County Council, via rowmaps.com",
+     "as_of": null
+    },
+    {
+     "what": "Traffic orders",
+     "from": "Derbyshire County Council - byway orders listed on its website",
+     "as_of": null
+    }
+   ],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "Devon",
+   "full_name": "Devon County Council",
+   "country": "England",
+   "kind": "council",
+   "byways": 117,
+   "unsurfaced_roads": 952,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [
+    {
+     "what": "Byways",
+     "from": "Devon County Council",
+     "as_of": "2026-10-08"
+    },
+    {
+     "what": "Unsurfaced roads",
+     "from": "Devon County Council",
+     "as_of": "2026-10-08"
+    },
+    {
+     "what": "Closures",
+     "from": "Devon County Council - temporary path closures",
+     "as_of": "2026-10-08"
+    }
+   ],
+   "honours": [
+    "Shares its own data openly",
+    "Open Government Licence"
+   ],
+   "activity": []
+  },
+  {
+   "name": "Doncaster",
+   "full_name": "City of Doncaster Council",
+   "country": "England",
+   "kind": "council",
+   "byways": 12,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [
+    {
+     "what": "Byways",
+     "from": "City of Doncaster Council, via rowmaps.com",
+     "as_of": null
+    }
+   ],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "Dorset",
+   "full_name": "Dorset Council",
+   "country": "England",
+   "kind": "council",
+   "byways": 51,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [
+    {
+     "what": "Byways",
+     "from": "Dorset Council, via rowmaps.com",
+     "as_of": null
+    },
+    {
+     "what": "Closures",
+     "from": "Dorset Council - rights of way closures (WFS)",
+     "as_of": "2026-10-08"
+    }
+   ],
+   "honours": [
+    "Shares its own data openly",
+    "Open Government Licence"
+   ],
+   "activity": []
+  },
+  {
+   "name": "Dudley",
+   "full_name": "Dudley Metropolitan Borough Council",
+   "country": "England",
+   "kind": "council",
+   "byways": 1,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [
+    {
+     "what": "Byways",
+     "from": "Dudley Metropolitan Borough Council, via rowmaps.com",
+     "as_of": null
+    }
+   ],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "Durham",
+   "full_name": "Durham County Council",
+   "country": "England",
+   "kind": "council",
+   "byways": 59,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [
+    {
+     "what": "Byways",
+     "from": "Durham County Council, via rowmaps.com",
+     "as_of": null
+    }
+   ],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "Ealing",
+   "full_name": "London Borough of Ealing",
+   "country": "England",
+   "kind": "council",
+   "byways": 0,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "East Riding of Yorkshire",
+   "full_name": "East Riding of Yorkshire Council",
+   "country": "England",
+   "kind": "council",
+   "byways": 26,
+   "unsurfaced_roads": 101,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [
+    {
+     "what": "Byways",
+     "from": "East Riding of Yorkshire Council, via rowmaps.com",
+     "as_of": null
+    },
+    {
+     "what": "Unsurfaced roads",
+     "from": "East Riding of Yorkshire Council",
+     "as_of": "2026-10-08"
+    }
+   ],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "East Sussex",
+   "full_name": "East Sussex County Council",
+   "country": "England",
+   "kind": "council",
+   "byways": 189,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [
+    {
+     "what": "Byways",
+     "from": "East Sussex County Council",
+     "as_of": "2026-10-08"
+    },
+    {
+     "what": "Traffic orders",
+     "from": "East Sussex County Council - byway orders listed on its website",
+     "as_of": null
+    }
+   ],
+   "honours": [
+    "Shares its own data openly",
+    "Open Government Licence"
+   ],
+   "activity": []
+  },
+  {
+   "name": "Enfield",
+   "full_name": "London Borough of Enfield",
+   "country": "England",
+   "kind": "council",
+   "byways": 0,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "Essex",
+   "full_name": "Essex County Council",
+   "country": "England",
+   "kind": "council",
+   "byways": 289,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [
+    {
+     "what": "Byways",
+     "from": "Essex County Council",
+     "as_of": "2026-10-08"
+    },
+    {
+     "what": "Traffic orders",
+     "from": "Essex County Council - PRoW traffic regulation orders",
+     "as_of": "2026-10-08"
+    }
+   ],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "Gateshead",
+   "full_name": "Gateshead Metropolitan Borough Council",
+   "country": "England",
+   "kind": "council",
+   "byways": 3,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [
+    {
+     "what": "Byways",
+     "from": "Gateshead Metropolitan Borough Council, via rowmaps.com",
+     "as_of": null
+    }
+   ],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "Gloucestershire",
+   "full_name": "Gloucestershire County Council",
+   "country": "England",
+   "kind": "council",
+   "byways": 8,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [
+    {
+     "what": "Byways",
+     "from": "Gloucestershire County Council, via rowmaps.com",
+     "as_of": null
+    }
+   ],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "Greenwich",
+   "full_name": "Royal Borough of Greenwich",
+   "country": "England",
+   "kind": "council",
+   "byways": 0,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "Hackney",
+   "full_name": "London Borough of Hackney",
+   "country": "England",
+   "kind": "council",
+   "byways": 0,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "Halton",
+   "full_name": "Halton Borough Council",
+   "country": "England",
+   "kind": "council",
+   "byways": 0,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "Hammersmith & Fulham",
+   "full_name": "London Borough of Hammersmith & Fulham",
+   "country": "England",
+   "kind": "council",
+   "byways": 0,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "Hampshire",
+   "full_name": "Hampshire County Council",
+   "country": "England",
+   "kind": "council",
+   "byways": 612,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [
+    {
+     "what": "Byways",
+     "from": "Hampshire County Council, via rowmaps.com",
+     "as_of": null
+    }
+   ],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "Haringey",
+   "full_name": "London Borough of Haringey",
+   "country": "England",
+   "kind": "council",
+   "byways": 0,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "Harrow",
+   "full_name": "London Borough of Harrow",
+   "country": "England",
+   "kind": "council",
+   "byways": 0,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "Hartlepool",
+   "full_name": "Hartlepool Borough Council",
+   "country": "England",
+   "kind": "council",
+   "byways": 0,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "Havering",
+   "full_name": "London Borough of Havering",
+   "country": "England",
+   "kind": "council",
+   "byways": 0,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "Herefordshire",
+   "full_name": "Herefordshire Council",
+   "country": "England",
+   "kind": "council",
+   "byways": 67,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [
+    {
+     "what": "Byways",
+     "from": "Herefordshire Council, via rowmaps.com",
+     "as_of": null
+    }
+   ],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "Hertfordshire",
+   "full_name": "Hertfordshire County Council",
+   "country": "England",
+   "kind": "council",
+   "byways": 209,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [
+    {
+     "what": "Byways",
+     "from": "Hertfordshire County Council",
+     "as_of": "2026-10-08"
+    },
+    {
+     "what": "Traffic orders",
+     "from": "Hertfordshire County Council - rights of way layer (permanent traffic regulation orders)",
+     "as_of": "2026-10-08"
+    }
+   ],
+   "honours": [
+    "Shares its own data openly",
+    "Open Government Licence"
+   ],
+   "activity": []
+  },
+  {
+   "name": "Hillingdon",
+   "full_name": "London Borough of Hillingdon",
+   "country": "England",
+   "kind": "council",
+   "byways": 10,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [
+    {
+     "what": "Byways",
+     "from": "London Borough of Hillingdon, via rowmaps.com",
+     "as_of": null
+    }
+   ],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "Hounslow",
+   "full_name": "London Borough of Hounslow",
+   "country": "England",
+   "kind": "council",
+   "byways": 8,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [
+    {
+     "what": "Byways",
+     "from": "London Borough of Hounslow, via rowmaps.com",
+     "as_of": null
+    }
+   ],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "Hull",
+   "full_name": "Hull City Council",
+   "country": "England",
+   "kind": "council",
+   "byways": 0,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "Isle of Wight",
+   "full_name": "Isle of Wight Council",
+   "country": "England",
+   "kind": "council",
+   "byways": 51,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [
+    {
+     "what": "Byways",
+     "from": "Isle of Wight Council, via rowmaps.com",
+     "as_of": null
+    },
+    {
+     "what": "Notices",
+     "from": "Isle of Wight Council - public rights of way map (byway comments, held for review)",
+     "as_of": "2026-10-08"
+    }
+   ],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "Isles of Scilly",
+   "full_name": "Council of the Isles of Scilly",
+   "country": "England",
+   "kind": "council",
+   "byways": 0,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "Islington",
+   "full_name": "London Borough of Islington",
+   "country": "England",
+   "kind": "council",
+   "byways": 0,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "Kensington and Chelsea",
+   "full_name": "Royal Borough of Kensington and Chelsea",
+   "country": "England",
+   "kind": "council",
+   "byways": 0,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "Kent",
+   "full_name": "Kent County Council",
+   "country": "England",
+   "kind": "council",
+   "byways": 230,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [
+    {
+     "what": "Byways",
+     "from": "Kent County Council, via rowmaps.com",
+     "as_of": null
+    }
+   ],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "Kingston upon Thames",
+   "full_name": "Royal Borough of Kingston upon Thames",
+   "country": "England",
+   "kind": "council",
+   "byways": 0,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "Kirklees",
+   "full_name": "Kirklees Council",
+   "country": "England",
+   "kind": "council",
+   "byways": 89,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [
+    {
+     "what": "Byways",
+     "from": "Kirklees Council, via rowmaps.com",
+     "as_of": null
+    }
+   ],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "Knowsley",
+   "full_name": "Knowsley Metropolitan Borough Council",
+   "country": "England",
+   "kind": "council",
+   "byways": 0,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "Lake District National Park",
+   "full_name": "Lake District National Park Authority",
+   "country": "England",
+   "kind": "park",
+   "byways": 37,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [
+    {
+     "what": "Byways",
+     "from": "Lake District National Park Authority, via rowmaps.com",
+     "as_of": null
+    },
+    {
+     "what": "Traffic orders",
+     "from": "Lake District National Park Authority - byway orders listed on its website",
+     "as_of": null
+    }
+   ],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "Lambeth",
+   "full_name": "London Borough of Lambeth",
+   "country": "England",
+   "kind": "council",
+   "byways": 0,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "Lancashire",
+   "full_name": "Lancashire County Council",
+   "country": "England",
+   "kind": "council",
+   "byways": 46,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [
+    {
+     "what": "Byways",
+     "from": "Lancashire County Council",
+     "as_of": "2026-10-08"
+    },
+    {
+     "what": "Closures",
+     "from": "Lancashire County Council - public rights of way (temporary closures)",
+     "as_of": "2026-10-08"
+    }
+   ],
+   "honours": [
+    "Shares its own data openly",
+    "Open Government Licence"
+   ],
+   "activity": []
+  },
+  {
+   "name": "Leeds",
+   "full_name": "Leeds City Council",
+   "country": "England",
+   "kind": "council",
+   "byways": 14,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [
+    {
+     "what": "Byways",
+     "from": "Leeds City Council, via rowmaps.com",
+     "as_of": null
+    }
+   ],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "Leicester",
+   "full_name": "Leicester City Council",
+   "country": "England",
+   "kind": "council",
+   "byways": 0,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "Leicestershire",
+   "full_name": "Leicestershire County Council",
+   "country": "England",
+   "kind": "council",
+   "byways": 169,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [
+    {
+     "what": "Byways",
+     "from": "Leicestershire County Council, via rowmaps.com",
+     "as_of": null
+    }
+   ],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "Lewisham",
+   "full_name": "London Borough of Lewisham",
+   "country": "England",
+   "kind": "council",
+   "byways": 0,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "Lincolnshire",
+   "full_name": "Lincolnshire County Council",
+   "country": "England",
+   "kind": "council",
+   "byways": 55,
+   "unsurfaced_roads": 370,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [
+    {
+     "what": "Byways",
+     "from": "Lincolnshire County Council, via rowmaps.com",
+     "as_of": null
+    },
+    {
+     "what": "Unsurfaced roads",
+     "from": "Lincolnshire County Council",
+     "as_of": "2026-10-08"
+    }
+   ],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "Liverpool",
+   "full_name": "Liverpool City Council",
+   "country": "England",
+   "kind": "council",
+   "byways": 0,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "Luton",
+   "full_name": "Luton Borough Council",
+   "country": "England",
+   "kind": "council",
+   "byways": 0,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "Manchester",
+   "full_name": "Manchester City Council",
+   "country": "England",
+   "kind": "council",
+   "byways": 0,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "Medway",
+   "full_name": "Medway Council",
+   "country": "England",
+   "kind": "council",
+   "byways": 10,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [
+    {
+     "what": "Byways",
+     "from": "Medway Council, via rowmaps.com",
+     "as_of": null
+    }
+   ],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "Merton",
+   "full_name": "London Borough of Merton",
+   "country": "England",
+   "kind": "council",
+   "byways": 0,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "Middlesbrough",
+   "full_name": "Middlesbrough Borough Council",
+   "country": "England",
+   "kind": "council",
+   "byways": 0,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "Milton Keynes",
+   "full_name": "Milton Keynes City Council",
+   "country": "England",
+   "kind": "council",
+   "byways": 4,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [
+    {
+     "what": "Byways",
+     "from": "Milton Keynes City Council, via rowmaps.com",
+     "as_of": null
+    }
+   ],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "Newcastle",
+   "full_name": "Newcastle City Council",
+   "country": "England",
+   "kind": "council",
+   "byways": 0,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "Newham",
+   "full_name": "London Borough of Newham",
+   "country": "England",
+   "kind": "council",
+   "byways": 0,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "Norfolk",
+   "full_name": "Norfolk County Council",
+   "country": "England",
+   "kind": "council",
+   "byways": 75,
+   "unsurfaced_roads": 545,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [
+    {
+     "what": "Byways",
+     "from": "Norfolk County Council, via rowmaps.com",
+     "as_of": null
+    },
+    {
+     "what": "Unsurfaced roads",
+     "from": "Norfolk County Council",
+     "as_of": "2026-10-08"
+    }
+   ],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "North East Lincolnshire",
+   "full_name": "North East Lincolnshire Council",
+   "country": "England",
+   "kind": "council",
+   "byways": 0,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "North Lincolnshire",
+   "full_name": "North Lincolnshire Council",
+   "country": "England",
+   "kind": "council",
+   "byways": 7,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [
+    {
+     "what": "Byways",
+     "from": "North Lincolnshire Council, via rowmaps.com",
+     "as_of": null
+    }
+   ],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "North Northamptonshire",
+   "full_name": "North Northamptonshire Council",
+   "country": "England",
+   "kind": "council",
+   "byways": 64,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [
+    {
+     "what": "Byways",
+     "from": "North Northamptonshire Council, via rowmaps.com",
+     "as_of": null
+    },
+    {
+     "what": "Traffic orders",
+     "from": "North Northamptonshire Council - byway orders listed on its website",
+     "as_of": null
+    }
+   ],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "North Somerset",
+   "full_name": "North Somerset Council",
+   "country": "England",
+   "kind": "council",
+   "byways": 2,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [
+    {
+     "what": "Byways",
+     "from": "North Somerset Council, via rowmaps.com",
+     "as_of": null
+    }
+   ],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "North Tyneside",
+   "full_name": "North Tyneside Council",
+   "country": "England",
+   "kind": "council",
+   "byways": 0,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "North Yorkshire",
+   "full_name": "North Yorkshire Council",
+   "country": "England",
+   "kind": "council",
+   "byways": 62,
+   "unsurfaced_roads": 633,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [
+    {
+     "what": "Byways",
+     "from": "North Yorkshire Council, via rowmaps.com",
+     "as_of": null
+    },
+    {
+     "what": "Unsurfaced roads",
+     "from": "North Yorkshire Council",
+     "as_of": "2026-10-08"
+    }
+   ],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "Northumberland",
+   "full_name": "Northumberland County Council",
+   "country": "England",
+   "kind": "council",
+   "byways": 429,
+   "unsurfaced_roads": 75,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [
+    {
+     "what": "Byways",
+     "from": "Northumberland County Council",
+     "as_of": "2026-10-08"
+    },
+    {
+     "what": "Unsurfaced roads",
+     "from": "Northumberland County Council",
+     "as_of": "2026-10-08"
+    },
+    {
+     "what": "Closures",
+     "from": "Northumberland County Council - rights of way closures and TTROs",
+     "as_of": "2026-10-08"
+    }
+   ],
+   "honours": [
+    "Shares its own data openly",
+    "Open Government Licence"
+   ],
+   "activity": []
+  },
+  {
+   "name": "Nottingham",
+   "full_name": "Nottingham City Council",
+   "country": "England",
+   "kind": "council",
+   "byways": 1,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [
+    {
+     "what": "Byways",
+     "from": "Nottingham City Council, via rowmaps.com",
+     "as_of": null
+    }
+   ],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "Nottinghamshire",
+   "full_name": "Nottinghamshire County Council",
+   "country": "England",
+   "kind": "council",
+   "byways": 137,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [
+    {
+     "what": "Byways",
+     "from": "Nottinghamshire County Council, via rowmaps.com",
+     "as_of": null
+    }
+   ],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "Oldham",
+   "full_name": "Oldham Metropolitan Borough Council",
+   "country": "England",
+   "kind": "council",
+   "byways": 2,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [
+    {
+     "what": "Byways",
+     "from": "Oldham Metropolitan Borough Council, via rowmaps.com",
+     "as_of": null
+    }
+   ],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "Oxfordshire",
+   "full_name": "Oxfordshire County Council",
+   "country": "England",
+   "kind": "council",
+   "byways": 218,
+   "unsurfaced_roads": 41,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [
+    {
+     "what": "Byways",
+     "from": "Oxfordshire County Council",
+     "as_of": "2026-10-08"
+    },
+    {
+     "what": "Unsurfaced roads",
+     "from": "Oxfordshire County Council",
+     "as_of": "2026-10-08"
+    }
+   ],
+   "honours": [
+    "Shares its own data openly",
+    "Open Government Licence"
+   ],
+   "activity": []
+  },
+  {
+   "name": "Peterborough",
+   "full_name": "Peterborough City Council",
+   "country": "England",
+   "kind": "council",
+   "byways": 7,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [
+    {
+     "what": "Byways",
+     "from": "Peterborough City Council, via rowmaps.com",
+     "as_of": null
+    }
+   ],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "Plymouth",
+   "full_name": "Plymouth City Council",
+   "country": "England",
+   "kind": "council",
+   "byways": 0,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "Portsmouth",
+   "full_name": "Portsmouth City Council",
+   "country": "England",
+   "kind": "council",
+   "byways": 0,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "Reading",
+   "full_name": "Reading Borough Council",
+   "country": "England",
+   "kind": "council",
+   "byways": 0,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "Redbridge",
+   "full_name": "London Borough of Redbridge",
+   "country": "England",
+   "kind": "council",
+   "byways": 7,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [
+    {
+     "what": "Byways",
+     "from": "London Borough of Redbridge, via rowmaps.com",
+     "as_of": null
+    }
+   ],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "Redcar and Cleveland",
+   "full_name": "Redcar and Cleveland Borough Council",
+   "country": "England",
+   "kind": "council",
+   "byways": 25,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [
+    {
+     "what": "Byways",
+     "from": "Redcar and Cleveland Borough Council, via rowmaps.com",
+     "as_of": null
+    }
+   ],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "Richmond upon Thames",
+   "full_name": "London Borough of Richmond upon Thames",
+   "country": "England",
+   "kind": "council",
+   "byways": 0,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "Rochdale",
+   "full_name": "Rochdale Borough Council",
+   "country": "England",
+   "kind": "council",
+   "byways": 0,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "Rotherham",
+   "full_name": "Rotherham Metropolitan Borough Council",
+   "country": "England",
+   "kind": "council",
+   "byways": 2,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [
+    {
+     "what": "Byways",
+     "from": "Rotherham Metropolitan Borough Council, via rowmaps.com",
+     "as_of": null
+    }
+   ],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "Rutland",
+   "full_name": "Rutland County Council",
+   "country": "England",
+   "kind": "council",
+   "byways": 12,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [
+    {
+     "what": "Byways",
+     "from": "Rutland County Council, via rowmaps.com",
+     "as_of": null
+    }
+   ],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "Salford",
+   "full_name": "Salford City Council",
+   "country": "England",
+   "kind": "council",
+   "byways": 0,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "Sandwell",
+   "full_name": "Sandwell Metropolitan Borough Council",
+   "country": "England",
+   "kind": "council",
+   "byways": 0,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "Sefton",
+   "full_name": "Sefton Metropolitan Borough Council",
+   "country": "England",
+   "kind": "council",
+   "byways": 10,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [
+    {
+     "what": "Byways",
+     "from": "Sefton Metropolitan Borough Council, via rowmaps.com",
+     "as_of": null
+    }
+   ],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "Sheffield",
+   "full_name": "Sheffield City Council",
+   "country": "England",
+   "kind": "council",
+   "byways": 24,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [
+    {
+     "what": "Byways",
+     "from": "Sheffield City Council, via rowmaps.com",
+     "as_of": null
+    }
+   ],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "Shropshire",
+   "full_name": "Shropshire Council",
+   "country": "England",
+   "kind": "council",
+   "byways": 239,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [
+    {
+     "what": "Byways",
+     "from": "Shropshire Council, via rowmaps.com",
+     "as_of": null
+    }
+   ],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "Slough",
+   "full_name": "Slough Borough Council",
+   "country": "England",
+   "kind": "council",
+   "byways": 0,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "Solihull",
+   "full_name": "Solihull Metropolitan Borough Council",
+   "country": "England",
+   "kind": "council",
+   "byways": 1,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [
+    {
+     "what": "Byways",
+     "from": "Solihull Metropolitan Borough Council, via rowmaps.com",
+     "as_of": null
+    }
+   ],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "Somerset",
+   "full_name": "Somerset Council",
+   "country": "England",
+   "kind": "council",
+   "byways": 16,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [
+    {
+     "what": "Byways",
+     "from": "Somerset Council, via rowmaps.com",
+     "as_of": null
+    },
+    {
+     "what": "Closures",
+     "from": "Somerset Council - rights of way closures and traffic orders",
+     "as_of": "2026-10-08"
+    }
+   ],
+   "honours": [
+    "Shares its own data openly",
+    "Open Government Licence"
+   ],
+   "activity": []
+  },
+  {
+   "name": "South Gloucestershire",
+   "full_name": "South Gloucestershire Council",
+   "country": "England",
+   "kind": "council",
+   "byways": 1,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [
+    {
+     "what": "Byways",
+     "from": "South Gloucestershire Council, via rowmaps.com",
+     "as_of": null
+    }
+   ],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "South Tyneside",
+   "full_name": "South Tyneside Council",
+   "country": "England",
+   "kind": "council",
+   "byways": 0,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "Southampton",
+   "full_name": "Southampton City Council",
+   "country": "England",
+   "kind": "council",
+   "byways": 1,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [
+    {
+     "what": "Byways",
+     "from": "Southampton City Council, via rowmaps.com",
+     "as_of": null
+    }
+   ],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "Southend-on-Sea",
+   "full_name": "Southend-on-Sea City Council",
+   "country": "England",
+   "kind": "council",
+   "byways": 0,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "Southwark",
+   "full_name": "London Borough of Southwark",
+   "country": "England",
+   "kind": "council",
+   "byways": 0,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "St Helens",
+   "full_name": "St Helens Council",
+   "country": "England",
+   "kind": "council",
+   "byways": 14,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [
+    {
+     "what": "Byways",
+     "from": "St Helens Council, via rowmaps.com",
+     "as_of": null
+    }
+   ],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "Staffordshire",
+   "full_name": "Staffordshire County Council",
+   "country": "England",
+   "kind": "council",
+   "byways": 69,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [
+    {
+     "what": "Byways",
+     "from": "Staffordshire County Council, via rowmaps.com",
+     "as_of": null
+    }
+   ],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "Stockport",
+   "full_name": "Stockport Metropolitan Borough Council",
+   "country": "England",
+   "kind": "council",
+   "byways": 11,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [
+    {
+     "what": "Byways",
+     "from": "Stockport Metropolitan Borough Council, via rowmaps.com",
+     "as_of": null
+    }
+   ],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "Stockton-on-Tees",
+   "full_name": "Stockton-on-Tees Borough Council",
+   "country": "England",
+   "kind": "council",
+   "byways": 3,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [
+    {
+     "what": "Byways",
+     "from": "Stockton-on-Tees Borough Council, via rowmaps.com",
+     "as_of": null
+    }
+   ],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "Stoke-on-Trent",
+   "full_name": "Stoke-on-Trent City Council",
+   "country": "England",
+   "kind": "council",
+   "byways": 0,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "Suffolk",
+   "full_name": "Suffolk County Council",
+   "country": "England",
+   "kind": "council",
+   "byways": 327,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [
+    {
+     "what": "Byways",
+     "from": "Suffolk County Council, via rowmaps.com",
+     "as_of": null
+    },
+    {
+     "what": "Traffic orders",
+     "from": "Suffolk County Council - PROW traffic regulation orders",
+     "as_of": "2026-10-08"
+    },
+    {
+     "what": "Closures",
+     "from": "Suffolk County Council - live temporary PROW closures",
+     "as_of": "2026-10-08"
+    }
+   ],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "Sunderland",
+   "full_name": "Sunderland City Council",
+   "country": "England",
+   "kind": "council",
+   "byways": 0,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "Surrey",
+   "full_name": "Surrey County Council",
+   "country": "England",
+   "kind": "council",
+   "byways": 137,
+   "unsurfaced_roads": 41,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [
+    {
+     "what": "Byways",
+     "from": "Surrey County Council, via rowmaps.com",
+     "as_of": null
+    },
+    {
+     "what": "Unsurfaced roads",
+     "from": "Surrey County Council",
+     "as_of": "2026-10-08"
+    },
+    {
+     "what": "Traffic orders",
+     "from": "Surrey County Council - byway orders listed on its website",
+     "as_of": null
+    }
+   ],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "Sutton",
+   "full_name": "London Borough of Sutton",
+   "country": "England",
+   "kind": "council",
+   "byways": 3,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [
+    {
+     "what": "Byways",
+     "from": "London Borough of Sutton, via rowmaps.com",
+     "as_of": null
+    }
+   ],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "Swindon",
+   "full_name": "Swindon Borough Council",
+   "country": "England",
+   "kind": "council",
+   "byways": 7,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [
+    {
+     "what": "Byways",
+     "from": "Swindon Borough Council, via rowmaps.com",
+     "as_of": null
+    }
+   ],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "Tameside",
+   "full_name": "Tameside Metropolitan Borough Council",
+   "country": "England",
+   "kind": "council",
+   "byways": 0,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "Telford & Wrekin",
+   "full_name": "Telford & Wrekin Council",
+   "country": "England",
+   "kind": "council",
+   "byways": 8,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [
+    {
+     "what": "Byways",
+     "from": "Telford & Wrekin Council, via rowmaps.com",
+     "as_of": null
+    }
+   ],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "Thurrock",
+   "full_name": "Thurrock Council",
+   "country": "England",
+   "kind": "council",
+   "byways": 1,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [
+    {
+     "what": "Byways",
+     "from": "Thurrock Council, via rowmaps.com",
+     "as_of": null
+    }
+   ],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "Torbay",
+   "full_name": "Torbay Council",
+   "country": "England",
+   "kind": "council",
+   "byways": 0,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "Tower Hamlets",
+   "full_name": "London Borough of Tower Hamlets",
+   "country": "England",
+   "kind": "council",
+   "byways": 0,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "Trafford",
+   "full_name": "Trafford Metropolitan Borough Council",
+   "country": "England",
+   "kind": "council",
+   "byways": 0,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "Wakefield",
+   "full_name": "City of Wakefield Metropolitan District Council",
+   "country": "England",
+   "kind": "council",
+   "byways": 3,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [
+    {
+     "what": "Byways",
+     "from": "City of Wakefield Metropolitan District Council, via rowmaps.com",
+     "as_of": null
+    }
+   ],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "Walsall",
+   "full_name": "Walsall Metropolitan Borough Council",
+   "country": "England",
+   "kind": "council",
+   "byways": 12,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [
+    {
+     "what": "Byways",
+     "from": "Walsall Metropolitan Borough Council, via rowmaps.com",
+     "as_of": null
+    }
+   ],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "Waltham Forest",
+   "full_name": "London Borough of Waltham Forest",
+   "country": "England",
+   "kind": "council",
+   "byways": 0,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "Wandsworth",
+   "full_name": "London Borough of Wandsworth",
+   "country": "England",
+   "kind": "council",
+   "byways": 0,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "Warrington",
+   "full_name": "Warrington Borough Council",
+   "country": "England",
+   "kind": "council",
+   "byways": 0,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "Warwickshire",
+   "full_name": "Warwickshire County Council",
+   "country": "England",
+   "kind": "council",
+   "byways": 20,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [
+    {
+     "what": "Byways",
+     "from": "Warwickshire County Council, via rowmaps.com",
+     "as_of": null
+    }
+   ],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "West Berkshire",
+   "full_name": "West Berkshire Council",
+   "country": "England",
+   "kind": "council",
+   "byways": 484,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [
+    {
+     "what": "Byways",
+     "from": "West Berkshire Council",
+     "as_of": "2026-10-08"
+    },
+    {
+     "what": "Traffic orders",
+     "from": "West Berkshire Council - public rights of way orders layer",
+     "as_of": "2026-10-08"
+    }
+   ],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "West Northamptonshire",
+   "full_name": "West Northamptonshire Council",
+   "country": "England",
+   "kind": "council",
+   "byways": 60,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [
+    {
+     "what": "Byways",
+     "from": "West Northamptonshire Council, via rowmaps.com",
+     "as_of": null
+    },
+    {
+     "what": "Traffic orders",
+     "from": "West Northamptonshire Council - byway orders listed on its website",
+     "as_of": null
+    }
+   ],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "West Sussex",
+   "full_name": "West Sussex County Council",
+   "country": "England",
+   "kind": "council",
+   "byways": 46,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [
+    {
+     "what": "Byways",
+     "from": "West Sussex County Council, via rowmaps.com",
+     "as_of": null
+    }
+   ],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "Westminster",
+   "full_name": "City of Westminster",
+   "country": "England",
+   "kind": "council",
+   "byways": 0,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "Westmorland and Furness",
+   "full_name": "Westmorland and Furness Council",
+   "country": "England",
+   "kind": "council",
+   "byways": 94,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [
+    {
+     "what": "Byways",
+     "from": "Cumbria, via rowmaps.com",
+     "as_of": null
+    },
+    {
+     "what": "Byways",
+     "from": "Westmorland and Furness Council, via rowmaps.com",
+     "as_of": null
+    }
+   ],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "Wigan",
+   "full_name": "Wigan Metropolitan Borough Council",
+   "country": "England",
+   "kind": "council",
+   "byways": 0,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "Wiltshire",
+   "full_name": "Wiltshire Council",
+   "country": "England",
+   "kind": "council",
+   "byways": 602,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [
+    {
+     "what": "Byways",
+     "from": "Wiltshire Council",
+     "as_of": "2026-10-08"
+    },
+    {
+     "what": "Closures",
+     "from": "Wiltshire Council - rights of way closures register",
+     "as_of": "2026-10-08"
+    }
+   ],
+   "honours": [
+    "Shares its own data openly",
+    "Open Government Licence"
+   ],
+   "activity": []
+  },
+  {
+   "name": "Windsor and Maidenhead",
+   "full_name": "Royal Borough of Windsor and Maidenhead",
+   "country": "England",
+   "kind": "council",
+   "byways": 36,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [
+    {
+     "what": "Byways",
+     "from": "Royal Borough of Windsor and Maidenhead, via rowmaps.com",
+     "as_of": null
+    }
+   ],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "Wirral",
+   "full_name": "Wirral Borough Council",
+   "country": "England",
+   "kind": "council",
+   "byways": 11,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [
+    {
+     "what": "Byways",
+     "from": "Wirral Borough Council, via rowmaps.com",
+     "as_of": null
+    }
+   ],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "Wokingham",
+   "full_name": "Wokingham Borough Council",
+   "country": "England",
+   "kind": "council",
+   "byways": 57,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [
+    {
+     "what": "Byways",
+     "from": "Wokingham Borough Council",
+     "as_of": "2026-10-08"
+    }
+   ],
+   "honours": [
+    "Shares its own data openly",
+    "Open Government Licence"
+   ],
+   "activity": []
+  },
+  {
+   "name": "Wolverhampton",
+   "full_name": "City of Wolverhampton Council",
+   "country": "England",
+   "kind": "council",
+   "byways": 0,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "Worcestershire",
+   "full_name": "Worcestershire County Council",
+   "country": "England",
+   "kind": "council",
+   "byways": 24,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [
+    {
+     "what": "Byways",
+     "from": "Worcestershire County Council, via rowmaps.com",
+     "as_of": null
+    }
+   ],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "York",
+   "full_name": "City of York Council",
+   "country": "England",
+   "kind": "council",
+   "byways": 0,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "Bannau Brycheiniog National Park",
+   "full_name": "Bannau Brycheiniog National Park Authority",
+   "country": "Wales",
+   "kind": "park",
+   "byways": 0,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "Blaenau Gwent",
+   "full_name": "Blaenau Gwent County Borough Council",
+   "country": "Wales",
+   "kind": "council",
+   "byways": 13,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [
+    {
+     "what": "Byways",
+     "from": "Blaenau Gwent County Borough Council, via rowmaps.com",
+     "as_of": null
+    }
+   ],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "Bridgend",
+   "full_name": "Bridgend County Borough Council",
+   "country": "Wales",
+   "kind": "council",
+   "byways": 17,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [
+    {
+     "what": "Byways",
+     "from": "Bridgend County Borough Council, via rowmaps.com",
+     "as_of": null
+    }
+   ],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "Caerphilly",
+   "full_name": "Caerphilly County Borough Council",
+   "country": "Wales",
+   "kind": "council",
+   "byways": 21,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [
+    {
+     "what": "Byways",
+     "from": "Caerphilly County Borough Council, via rowmaps.com",
+     "as_of": null
+    }
+   ],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "Cardiff",
+   "full_name": "City of Cardiff Council",
+   "country": "Wales",
+   "kind": "council",
+   "byways": 0,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "Carmarthenshire",
+   "full_name": "Carmarthenshire County Council",
+   "country": "Wales",
+   "kind": "council",
+   "byways": 167,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [
+    {
+     "what": "Byways",
+     "from": "Carmarthenshire County Council, via rowmaps.com",
+     "as_of": null
+    }
+   ],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "Ceredigion",
+   "full_name": "Ceredigion County Council",
+   "country": "Wales",
+   "kind": "council",
+   "byways": 18,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [
+    {
+     "what": "Byways",
+     "from": "Ceredigion County Council, via rowmaps.com",
+     "as_of": null
+    },
+    {
+     "what": "Closures",
+     "from": "Ceredigion County Council - live road closures (WFS)",
+     "as_of": "2026-10-08"
+    }
+   ],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "Conwy",
+   "full_name": "Conwy County Borough Council",
+   "country": "Wales",
+   "kind": "council",
+   "byways": 16,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [
+    {
+     "what": "Byways",
+     "from": "Conwy County Borough Council, via rowmaps.com",
+     "as_of": null
+    }
+   ],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "Denbighshire",
+   "full_name": "Denbighshire County Council",
+   "country": "Wales",
+   "kind": "council",
+   "byways": 24,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [
+    {
+     "what": "Byways",
+     "from": "Denbighshire County Council, via rowmaps.com",
+     "as_of": null
+    }
+   ],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "Flintshire",
+   "full_name": "Flintshire County Council",
+   "country": "Wales",
+   "kind": "council",
+   "byways": 16,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [
+    {
+     "what": "Byways",
+     "from": "Flintshire County Council, via rowmaps.com",
+     "as_of": null
+    }
+   ],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "Gwynedd",
+   "full_name": "Gwynedd Council",
+   "country": "Wales",
+   "kind": "council",
+   "byways": 59,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [
+    {
+     "what": "Byways",
+     "from": "Gwynedd Council, via rowmaps.com",
+     "as_of": null
+    }
+   ],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "Isle of Anglesey",
+   "full_name": "Isle of Anglesey County Council",
+   "country": "Wales",
+   "kind": "council",
+   "byways": 17,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [
+    {
+     "what": "Byways",
+     "from": "Isle of Anglesey County Council, via rowmaps.com",
+     "as_of": null
+    }
+   ],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "Merthyr Tydfil",
+   "full_name": "Merthyr Tydfil County Borough Council",
+   "country": "Wales",
+   "kind": "council",
+   "byways": 4,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [
+    {
+     "what": "Byways",
+     "from": "Merthyr Tydfil County Borough Council, via rowmaps.com",
+     "as_of": null
+    }
+   ],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "Monmouthshire",
+   "full_name": "Monmouthshire County Council",
+   "country": "Wales",
+   "kind": "council",
+   "byways": 6,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [
+    {
+     "what": "Byways",
+     "from": "Monmouthshire County Council, via rowmaps.com",
+     "as_of": null
+    }
+   ],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "Neath Port Talbot",
+   "full_name": "Neath Port Talbot County Borough Council",
+   "country": "Wales",
+   "kind": "council",
+   "byways": 54,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [
+    {
+     "what": "Byways",
+     "from": "Neath Port Talbot County Borough Council, via rowmaps.com",
+     "as_of": null
+    }
+   ],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "Newport",
+   "full_name": "Newport City Council",
+   "country": "Wales",
+   "kind": "council",
+   "byways": 3,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [
+    {
+     "what": "Byways",
+     "from": "Newport City Council, via rowmaps.com",
+     "as_of": null
+    }
+   ],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "Pembrokeshire",
+   "full_name": "Pembrokeshire County Council",
+   "country": "Wales",
+   "kind": "council",
+   "byways": 62,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [
+    {
+     "what": "Byways",
+     "from": "Pembrokeshire County Council, via rowmaps.com",
+     "as_of": null
+    }
+   ],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "Powys",
+   "full_name": "Powys County Council",
+   "country": "Wales",
+   "kind": "council",
+   "byways": 415,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [
+    {
+     "what": "Byways",
+     "from": "Powys County Council, via rowmaps.com",
+     "as_of": null
+    }
+   ],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "Rhondda Cynon Taf",
+   "full_name": "Rhondda Cynon Taf County Borough Council",
+   "country": "Wales",
+   "kind": "council",
+   "byways": 41,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [
+    {
+     "what": "Byways",
+     "from": "Rhondda Cynon Taf County Borough Council, via rowmaps.com",
+     "as_of": null
+    }
+   ],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "Swansea",
+   "full_name": "City and County of Swansea Council",
+   "country": "Wales",
+   "kind": "council",
+   "byways": 5,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [
+    {
+     "what": "Byways",
+     "from": "City and County of Swansea Council, via rowmaps.com",
+     "as_of": null
+    }
+   ],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "Torfaen",
+   "full_name": "Torfaen County Borough Council",
+   "country": "Wales",
+   "kind": "council",
+   "byways": 2,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [
+    {
+     "what": "Byways",
+     "from": "Torfaen County Borough Council, via rowmaps.com",
+     "as_of": null
+    }
+   ],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "Vale of Glamorgan",
+   "full_name": "Vale of Glamorgan Council",
+   "country": "Wales",
+   "kind": "council",
+   "byways": 0,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "Wrexham",
+   "full_name": "Wrexham County Borough Council",
+   "country": "Wales",
+   "kind": "council",
+   "byways": 15,
+   "unsurfaced_roads": 0,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [
+    {
+     "what": "Byways",
+     "from": "Wrexham County Borough Council, via rowmaps.com",
+     "as_of": null
+    }
+   ],
+   "honours": [],
+   "activity": []
+  }
+ ],
+ "honours": [
+  {
+   "name": "Bracknell Forest",
+   "reasons": [
+    "Shares its own data openly",
+    "Open Government Licence"
+   ]
+  },
+  {
+   "name": "Cambridgeshire",
+   "reasons": [
+    "Shares its own data openly",
+    "Open Government Licence"
+   ]
+  },
+  {
+   "name": "Central Bedfordshire",
+   "reasons": [
+    "Shares its own data openly",
+    "Open Government Licence"
+   ]
+  },
+  {
+   "name": "Cheshire West and Chester",
+   "reasons": [
+    "Shares its own data openly",
+    "Open Government Licence"
+   ]
+  },
+  {
+   "name": "Devon",
+   "reasons": [
+    "Shares its own data openly",
+    "Open Government Licence"
+   ]
+  },
+  {
+   "name": "Dorset",
+   "reasons": [
+    "Shares its own data openly",
+    "Open Government Licence"
+   ]
+  },
+  {
+   "name": "East Sussex",
+   "reasons": [
+    "Shares its own data openly",
+    "Open Government Licence"
+   ]
+  },
+  {
+   "name": "Hertfordshire",
+   "reasons": [
+    "Shares its own data openly",
+    "Open Government Licence"
+   ]
+  },
+  {
+   "name": "Lancashire",
+   "reasons": [
+    "Shares its own data openly",
+    "Open Government Licence"
+   ]
+  },
+  {
+   "name": "Northumberland",
+   "reasons": [
+    "Shares its own data openly",
+    "Open Government Licence"
+   ]
+  },
+  {
+   "name": "Oxfordshire",
+   "reasons": [
+    "Shares its own data openly",
+    "Open Government Licence"
+   ]
+  },
+  {
+   "name": "Somerset",
+   "reasons": [
+    "Shares its own data openly",
+    "Open Government Licence"
+   ]
+  },
+  {
+   "name": "Wiltshire",
+   "reasons": [
+    "Shares its own data openly",
+    "Open Government Licence"
+   ]
+  },
+  {
+   "name": "Wokingham",
+   "reasons": [
+    "Shares its own data openly",
+    "Open Government Licence"
+   ]
+  }
+ ],
+ "notes": [
+  {
+   "date": "2026-10-08",
+   "text": "Unsurfaced roads added for eight councils: Devon, East Riding of Yorkshire, Lincolnshire, Norfolk, North Yorkshire, Northumberland, Oxfordshire and Surrey."
+  },
+  {
+   "date": "2026-10-08",
+   "text": "Ceredigion County Council's live road closures are now on the map."
+  },
+  {
+   "date": "2026-10-07",
+   "text": "Wiltshire Council's rights of way closures are now on the map."
+  },
+  {
+   "date": "2026-10-07",
+   "text": "Lanes are now checked for changes four times a day, the same as closures."
+  },
+  {
+   "date": "2026-10-07",
+   "text": "Byways for fifteen councils now come straight from the councils' own maps, which are often newer than other copies."
+  },
+  {
+   "date": "2026-10-07",
+   "text": "Long-standing and seasonal byway orders that councils list on their websites have been added, each one checked by a person."
+  },
+  {
+   "date": "2026-10-07",
+   "text": "Closures and orders that councils publish on their own websites are now shown alongside the national records."
+  },
+  {
+   "date": "2026-10-02",
+   "text": "New traffic orders now reach the map the same day they are published to the Department for Transport."
+  },
+  {
+   "date": "2026-09-24",
+   "text": "Bridleways and restricted byways are no longer on the map, because motor vehicles may not use them. Byways open to all traffic stay."
+  }
+ ]
+}

@@ -607,6 +607,9 @@ def _wrap(geometry, first, feature, dtro_id):
 # D-TRO code seen) and is not written into the pack.
 AUTHORITY_TABLE = os.path.join(HERE, "tro_authorities.csv")
 _TABLE_COLUMNS = ("swa_code", "display_name", "lane_names")
+# The pack's `authorities` rows, also written beside tro/index.json for the
+# public status page (tools/build_status.py); see the end of main().
+PUBLISHERS_NAME = "publishers.json"
 
 # `newest`, AND WHAT IT IS THE NEWEST OF.
 #
@@ -1630,11 +1633,37 @@ def main():
         json.dump(index, handle, indent=2, sort_keys=True)
         handle.write(chr(10))
 
+    # WHO PUBLISHES TO D-TRO, FOR THE PUBLIC STATUS PAGE.
+    #
+    # tools/build_status.py says, per authority, how many records it has
+    # published to D-TRO. The count is in the pack's `authorities` block, but
+    # the pack is sealed and a release asset, and the status job has neither
+    # the key nor any reason to fetch megabytes every hour. So the same rows
+    # go beside the index, committed with it by traffic-orders.yml. Nothing
+    # new is said: these four fields are in every rider's pack.
+    #
+    # Beside the INDEX, wherever it is, rather than at a fixed tro/ path: a
+    # test that points --index at a temporary directory must not write into
+    # the checkout.
+    publishers = {
+        "generated": day,
+        "authorities": [{"swa": a["swa"], "name": a["name"],
+                         "records": a["records"], "newest": a["newest"]}
+                        for a in authorities],
+    }
+    publishers_path = os.path.join(
+        os.path.dirname(os.path.abspath(args.index)), PUBLISHERS_NAME)
+    with open(publishers_path, "w", encoding="utf-8",
+              newline="\n") as handle:
+        json.dump(publishers, handle, indent=1, sort_keys=True)
+        handle.write("\n")
+
     print("wrote %s" % out)
     print("  %.2f MB plain, %.2f MB sealed"
           % (len(body) / 1e6, len(sealed) / 1e6))
     print("  sha256 %s" % digest)
     print("wrote %s" % args.index)
+    print("wrote %s" % publishers_path)
     return 0
 
 

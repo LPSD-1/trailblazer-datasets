@@ -559,6 +559,9 @@ CONDITION_FEEDS = (("wet", "wet"), ("rivers", "rivers"))
 #: `updates` does for every pack kind.
 CONDITIONS_UPDATES = "sixHourly"
 
+#: The public data status file, under baseUrl (tools/build_status.py OUT).
+STATUS_PATH = "published/status.json"
+
 
 def _served_prefix(conditions_dir):
     """The path a feed directory is served at, under baseUrl.
@@ -1046,6 +1049,12 @@ def build(lanes_manifest, base_url, stamp, satellite_index=None,
         # so "we published none" and "this build had never heard of them" are
         # different things on the wire.
         "conditions": conditions,
+        # WHERE OUR DATA COMES FROM, AND HOW FRESH IT IS: the public status
+        # file (tools/build_status.py, rebuilt hourly by status.yml). A URL,
+        # not a pack: nothing to download or hash, and always present, so the
+        # app never has to guess where it lives. Committed under published/,
+        # which Pages serves at the root exactly as it serves the feeds above.
+        "status": urllib.parse.urljoin(base_url, STATUS_PATH),
         # How often the app should CHECK each kind, published here so it can
         # be changed without shipping an app. They move on different clocks:
         # the road network is rebuilt monthly, while ready-made routes are
