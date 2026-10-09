@@ -18,7 +18,7 @@ Flag only correctness, requirement gaps, security and owner-rule breaks. Nothing
 - Secrets: anything that reads, prints, logs or sends .env, keys, keystores, tokens or android/key.properties.
 
 Owner rules; breaking one is a finding:
-- Data only from government, councils and national parks. No TRF, GLASS, LARA or HoTR, and nothing commercial.
+- Lanes and closures: only government, council and national-park data (council-credited rowmaps.com copies allowed); never TRF, GLASS, LARA, HoTR or commercial. Other layers may use open data like OSM.
 - No server of ours except the one collector VM.
 - robots.txt is respected, except for the reviewed allowlist tools/robots_override.json. A block is never bypassed.
 - England and Wales only. The app's TRO caveat always stays. No new floating map buttons. No route for riders to contribute data.

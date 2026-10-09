@@ -14,10 +14,10 @@ Flag only these four kinds of problem. Do not comment on style, naming, formatti
 2. Requirement gaps: the change claims (in its title or comments) to do something the diff does not do.
 3. Security: secrets or tokens read, printed or sent anywhere; untrusted input pasted into a shell script (a `${{ }}` expression inside `run:`); a new network destination; widened workflow permissions; code that runs pull request content with secrets.
 4. Owner-rule breaks. The owner's rules:
-   - Data only from government, councils and national parks. No TRF, GLASS, LARA or HoTR, and nothing commercial.
+   - Lanes and closures: only government, council and national-park data (council-credited rowmaps.com copies allowed); never TRF, GLASS, LARA, HoTR or commercial. Basemap, imagery, height and routing may use open data like OSM (owner, 9 Oct 2026).
    - No server of ours except the one collector VM.
    - robots.txt is respected, except for the reviewed allowlist tools/robots_override.json. A block is never bypassed.
-   - England and Wales only. The app's TRO caveat always stays. No new floating map buttons. No route for riders to contribute data.
+   - England and Wales only (foreign routing tiles are deliberate). The app's TRO caveat always stays. No new floating map buttons. No route for riders to contribute data.
    - Email to councils is polite and formal, digital only, never mentions fees. Credit is stated, not offered.
    - Code before models; the cheapest model that passes; nothing re-read that has not changed.
    - Every change brings a test that FAILS without it.
