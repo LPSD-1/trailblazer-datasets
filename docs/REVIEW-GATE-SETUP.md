@@ -199,7 +199,7 @@ deploy key on the VM is removed once B2 is done.
 Both apps have **Contents: Read and write** (Metadata: Read), webhook off,
 and are installed on `trailblazer-datasets` only.
 
-### B1. The 10 pipeline workflows
+### B1. The 11 pipeline workflows
 
 For each job below:
 
@@ -251,15 +251,18 @@ before editing.
       release), checkout at :68. Pushes at :352 and :393, in "Publish", and
       at :429, in "Prune what is no longer published". These are two steps,
       so mint before each.
+- [ ] `status.yml`: job `status`. Permissions at :36 (contents: write; set
+      read), checkout at :54. Push at :95, in "Commit it if anything but the
+      time moved".
 - [ ] `status-changes.yml`: job `status`. Permissions at :22, checkout at
       :35. Push at :86, in "Commit what changed".
 - [ ] `street-manager.yml`: job `streetworks`. Permissions at :24, checkout
       at :37. Push at :81, in "Commit what changed".
 - [ ] `traffic-orders.yml`: job `build`. Permissions at :28 (keep write:
-      release), checkout at :53. Push at :542, in "Commit the index and the
+      release), checkout at :53. Push at :554, in "Commit the index and the
       catalogue".
 
-That is 10 workflows, 11 jobs, 14 pushing steps and 15 push lines.
+That is 11 workflows, 12 jobs, 14 pushing steps and 15 push lines.
 
 ### B2. The collector VM
 
