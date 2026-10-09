@@ -46,6 +46,8 @@
  },
  "hertfordshire-ptros": {
   "authority": "Hertfordshire",
+  "error": "robots.txt on gis.hertfordshire.gov.uk disallows https://gis.hertfordshire.gov.uk/webmaps/rest/services/public/row/MapServer/3/query?where=VALCHAR%3D%27BOAT%27&outFields=PATHNAME%2CPARISH%2CPATHNUMB%2CUNITID%2CPTROTYPE%2CPTROYEAR%2CPTROURL%2COBJECTID&f=json&returnGeometry=true&outSR=27700&resultOffs",
+  "failing_since": "2026-10-08",
   "items": 26,
   "last_ok": "2026-10-08",
   "name": "Hertfordshire County Council - rights of way layer (permanent traffic regulation orders)",
@@ -76,7 +78,7 @@
   "items": 7,
   "last_ok": "2026-10-08",
   "name": "Northumberland County Council - rights of way closures and TTROs",
-  "records": 34,
+  "records": 32,
   "review": 0,
   "unmatched": 0
  },
@@ -103,7 +105,7 @@
   "items": 2,
   "last_ok": "2026-10-08",
   "name": "Suffolk County Council - live temporary PROW closures",
-  "records": 71,
+  "records": 82,
   "review": 0,
   "unmatched": 0
  },
