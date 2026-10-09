@@ -92,9 +92,9 @@ import sys
 import threading
 import time
 import urllib.error
-import urllib.parse
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
+from urllib.parse import urlparse
 
 try:
     from PIL import Image, ImageFilter
@@ -683,7 +683,7 @@ def record_block(path, area_id, block):
     data = plan.load_blocks(path)
     # Keyed by HOST: EOX refused us, not this area, and the planner stops
     # every area until the block ends.
-    data["hosts"][urllib.parse.urlparse(SOURCE).netloc] = rec
+    data["hosts"][urlparse(SOURCE).netloc] = rec
     os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
     with open(path, "w", encoding="utf-8", newline="\n") as f:
         json.dump(data, f, indent=2, sort_keys=True)
