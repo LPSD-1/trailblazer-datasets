@@ -170,7 +170,7 @@ older one, even when forced.
 **What happened.** Since 8 Oct 2026, `tools/run_workflow_locally.py` runs a workflow's own steps
 on a local machine as a fallback. It hard-resets to `origin/main` on every run.
 **Rule.** Run it only in a dedicated clone, never in a working checkout. It is a fallback, not the
-normal path. The first local run of a cached job is slow (the D-TRO extract is 537 MB).
+normal path. The first local run of a cached job is slow, because it fetches the whole D-TRO extract.
 **Guarded by.** `tools/test_run_workflow_locally.py` (the condition evaluator).
 
 ## Alarms and the review gate
@@ -262,7 +262,8 @@ becomes mandatory, it becomes the main channel, and council sources keep filling
 their tests.
 
 ### 25. D-TRO geometry is an order's extent, not its route
-**What happened.** 14 Sep 2026, measured over 34,021 live orders: 13% were a bare point, and 72%
+**What happened.** A one-off measurement on 14 Sep 2026, over 34,021 live orders (the script is not
+in this repo, so re-measure before relying on the figures): 13% were a bare point, and 72%
 were a two-point line. The median segment is 13 m, but 21.6% of orders contain a chord over 250
 m, drawn across ground no road follows.
 **Rule.** Never present order geometry as a survey. Drawing the true route needs map-matching
