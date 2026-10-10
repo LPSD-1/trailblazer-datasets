@@ -152,6 +152,8 @@ def main():
     check_incomplete_run_is_green()
     check_failures_within_budget_fail()
     check_refusal_goes_to_main(sp)
+    check_network_block_is_a_day(sp)
+    check_pacing()
 
     if failures:
         for f in failures:
@@ -226,8 +228,9 @@ def check_root_limit():
 # A STOP USED TO BE FORGOTTEN BY THE NEXT RUN. EOX refused us, the area stopped
 # with no pack, and twelve hours later the planner picked the same area again
 # and asked the same service for the same tiles. A stop now writes a record in
-# satellite/blocks.json, and the planner skips that area for at least 7 days,
-# or until EOX's Retry-After if that is longer.
+# satellite/blocks.json, and the planner skips that area for at least 7 days
+# (24 hours for a "network" stop), or until EOX's Retry-After if that is
+# longer.
 
 def _plan(sp, catalogue, blocks, extra=()):
     """satellite_plan's own main(), as the workflow runs it."""
@@ -505,6 +508,121 @@ CMD = r"python tools/%s\.py(?:[^\n]*\\\n)*[^\n]*"
 LF = "\n"
 
 
+# --- a network fault pauses for a day; a refusal still for a week ------------
+#
+# On 10 Oct 2026 gb-east-anglia fetched 16,200 tiles, then 11 of the last 200
+# failed with connection errors: no 403, no 429, no Retry-After. That was
+# recorded as a 7-day block, the same as EOX saying no. The owner's decision:
+# a "network" stop (we could not connect; nobody refused us) pauses for 24
+# hours, and every explicit refusal keeps the rules it had.
+
+def check_network_block_is_a_day(sp):
+    at = "2026-10-10T08:54:38Z"
+    t0 = dt.datetime(2026, 10, 10, 8, 54, 38, tzinfo=dt.timezone.utc)
+    day, week = dt.timedelta(hours=24), dt.timedelta(days=7)
+
+    def until(status, retry_after=None, **extra):
+        rec = {"at": at, "status": status, "retry_after": retry_after}
+        rec.update(extra)
+        return sp.blocked_until(rec) - t0
+
+    got = until("network")
+    check(got == day, "a network stop blocks for %s, not 24 hours" % got)
+    # Every refusal, and a failed-tile stop recorded under an HTTP code,
+    # keeps the week.
+    for status in (401, 403, 410, 451, 429, 404, 500, 503, 302):
+        got = until(status)
+        check(got == week, "a stop with status %r blocks for %s, not 7 days"
+              % (status, got))
+    # Retry-After still wins when longer, and is never cut: over the 600 s
+    # cap, a month, and the absurd clamp of a year.
+    for status, asked, want in (
+            (429, 1200, week), (503, 601, week),
+            (403, 2592000, dt.timedelta(seconds=2592000)),
+            (429, bs.RETRY_AFTER_ABSURD,
+             dt.timedelta(seconds=bs.RETRY_AFTER_ABSURD))):
+        got = until(status, asked)
+        check(got == want, "status %r with Retry-After %r blocks for %s, "
+              "not %s" % (status, asked, got, want))
+    # A network stop is a day only by default: a recorded `until` later than
+    # that (a person extending it) still holds.
+    got = until("network", until="2026-10-17T08:54:38Z")
+    check(got == week, "a network stop dropped its recorded until: %s" % got)
+    check(sp.blocked_until({"status": "network"}) == sp.NEVER,
+          "a network stop with no time no longer blocks until mended")
+
+    # End to end: the Fetcher's own network stop, written by record_block.
+    class Down:
+        def open(self, req, timeout=0):
+            raise OSError("connection reset by peer")
+    now = [0.0]
+
+    def nap(s):
+        now[0] += s
+    f = bs.Fetcher(sharpen=False, opener=Down(), sleep=nap,
+                   clock=lambda: now[0])
+    for i in range(bs.FAILED_RUNNING + 5):
+        f.get(14, i, i)
+    with tempfile.TemporaryDirectory() as tmp:
+        path = os.path.join(tmp, "blocks.json")
+        rec = bs.record_block(path, "t", f.block or {})
+        refused = bs.record_block(os.path.join(tmp, "b2.json"), "t",
+                                  {"status": 403, "retry_after": None,
+                                   "reason": "HTTP 403"})
+    span = sp._when(rec["until"]) - sp._when(rec["at"])
+    check(f.stopped and rec.get("status") == "network" and span == day,
+          "the Fetcher's network stop was recorded as %r for %s"
+          % (rec.get("status"), span))
+    span = sp._when(refused["until"]) - sp._when(refused["at"])
+    check(span == week, "a recorded 403 blocks for %s, not 7 days" % span)
+
+    # The committed blocks file agrees with the rule: each host's `until` is
+    # what record_block would write for that record today. A network stop
+    # recorded under the old 7-day rule fails here until it is moved.
+    blocks = sp.load_blocks(os.path.join(os.path.dirname(HERE),
+                                         sp.BLOCKS_PATH))
+    for host, rec in blocks["hosts"].items():
+        rule = {k: v for k, v in rec.items() if k != "until"}
+        want = sp.stamp(sp.blocked_until(rule))
+        check(rec.get("until") == want,
+              "satellite/blocks.json: %s is blocked until %r; its %r stop at "
+              "%r gives %s" % (host, rec.get("until"), rec.get("status"),
+                               rec.get("at"), want))
+
+
+# --- the overall request rate, and a run that fits its timeout ----------------
+#
+# The same run asked for 10-14 tiles a second before the failures began. The
+# owner asked for slower: about 2-3 a second across every connection. The
+# budget must then still finish inside the job's timeout, with time left for
+# setup, packaging and publishing.
+
+PACKAGE_RESERVE_MINUTES = 45   # setup, cache, packaging, publish, backoff
+
+
+def check_pacing():
+    rate = bs.MAX_REQUESTS_PER_SECOND
+    check(2.0 <= rate <= 3.0, "MAX_REQUESTS_PER_SECOND is %r, not 2-3" % rate)
+    # The Fetcher's spacing at this rate, alone and across threads, is
+    # pinned in test_imagery_licence.py.
+    here = os.path.dirname(HERE)
+    with open(os.path.join(here, ".github", "workflows", "satellite.yml"),
+              encoding="utf-8") as fh:
+        text = fh.read()
+    budgets = re.findall(r"--budget (\d+)", text)
+    timeout = re.findall(r"^    timeout-minutes: (\d+)", text, re.M)
+    if len(budgets) != 1 or len(timeout) != 1:
+        check(False, "satellite.yml: budgets %r, job timeouts %r"
+              % (budgets, timeout))
+        return
+    budget, minutes = int(budgets[0]), int(timeout[0])
+    fetch = budget / rate / 60.0
+    check(fetch + PACKAGE_RESERVE_MINUTES <= minutes,
+          "a %s-tile run at %s tiles/s is %.0f minutes of fetching; with "
+          "%d minutes for the rest it overruns the %d-minute timeout"
+          % (budget, rate, fetch, PACKAGE_RESERVE_MINUTES, minutes))
+
+
 def check_workflow_wiring():
     """satellite.yml hands the planner the blocks file on both of its paths,
     and the build writes there."""
@@ -643,7 +761,7 @@ def check_layer_allowlist():
 
 # --- a run that fetched part of an area is not a failure -------------------
 #
-# gb-north is 78,026 tiles at z14 and a run fetches 55,000, so it takes two
+# gb-north is 78,026 tiles at z14 and a run fetches 45,000, so it takes two
 # runs and the first writes no pack. On 9 Oct 2026 "Would the app be able to
 # read it?" read that as "no packs were written" and failed both scheduled
 # runs. The build now says which it was (--state-out): "incomplete" skips the

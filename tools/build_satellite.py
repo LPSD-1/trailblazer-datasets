@@ -146,7 +146,7 @@ ATTRIBUTION = ("EOxCloudless https://cloudless.eox.at by EOX IT Services "
 # planner reads it, so nothing asks again before it may. It never follows the
 # redirect and never retries around a block.
 USER_AGENT = "TrailBlazer-data/1.0 (+https://lpsd-1.github.io/trailblazer-help/)"
-MAX_REQUESTS_PER_SECOND = 4.0   # across every worker; 55,000 tiles ~ 4 hours
+MAX_REQUESTS_PER_SECOND = 2.5   # across every worker; 45,000 tiles = 5 hours
 REFUSED_TRIES = 4               # requests for one tile before the area stops
 RETRY_AFTER_CAP = 600           # seconds; a longer Retry-After stops the area
 # "not you": no second request. 410 (gone) and 451 (unavailable for legal
