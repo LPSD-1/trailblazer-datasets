@@ -441,9 +441,42 @@ class Ceredigion(unittest.TestCase):
         self.assertNotIn("restricted", url.lower())
         self.assertNotIn("bridleway", url.lower())
 
+    def test_the_councils_test_record_is_left_out(self):
+        # "2/Test 15 BOAT", no path category: a record left in the layer by
+        # testing, not a byway. A way that may not exist would tell a rider
+        # a route is legal; a missing one only shows as unknown.
+        records, ways = self.layer["read"](_Answers(self.answer), self.layer)
+        self.assertEqual(records, 4)
+        self.assertNotIn("2/Test 15 BOAT", [w["id"] for w in ways])
+        self.assertEqual(len(ways), 3)
+
+    def test_only_a_test_code_with_no_category_is_left_out(self):
+        answer = copy.deepcopy(self.answer)
+        for f in answer["features"]:
+            p = f["properties"]
+            if "Test" in p["routecode"]:
+                p["path_category"] = "2 "          # a category: kept
+            elif p["routecode"].strip() == "2/4":
+                p["path_category"] = None          # no test code: kept
+            elif p["routecode"].strip() == "14/76":
+                p["routecode"] = "14/TEST 9"       # any case, no category
+                p["path_category"] = "  "
+        _r, ways = self.layer["read"](_Answers(answer), self.layer)
+        self.assertEqual(sorted(w["id"] for w in ways),
+                         ["2/4", "2/Test 15 BOAT", "24/14/A"])
+
+    def test_the_exclusion_is_said_in_the_run_output(self):
+        import contextlib
+        import io
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            self.layer["read"](_Answers(self.answer), self.layer)
+        self.assertIn("excluded", out.getvalue())
+        self.assertIn("2/Test 15 BOAT", out.getvalue())
+
     def test_each_byway_reads_as_rowmaps_names_it(self):
         records, ways = self.layer["read"](_Answers(self.answer), self.layer)
-        self.assertEqual(records, 3)
+        self.assertEqual(records, 4)
         # rowmaps' Ceredigion file names these CE|14|76, CE|2|4, CE|24|14/A.
         self.assertEqual(sorted((w["parish"], w["number"]) for w in ways),
                          [("14", "76"), ("2", "4"), ("24", "14/A")])

@@ -203,6 +203,18 @@ def _ref_ceredigion(a):
     return tuple(code.split("/", 1)) if "/" in code else ("", code)
 
 
+def _skip_ceredigion(a):
+    """Why a Ceredigion record is not a byway, or None. "2/Test 15 BOAT"
+    (no path category) was left in the layer by testing: a way that may not
+    exist would tell a rider a route is legal, while a missing one only
+    shows as unknown. Only a route code saying "test" with no category."""
+    code = str(a.get("routecode") or "").strip()
+    if "test" in code.lower() and not str(a.get("path_category")
+                                          or "").strip():
+        return "a test record (%r, no path category)" % code
+    return None
+
+
 def _ref_bracknell(a):
     m = re.search(r"(\d+\w*)\s*$", str(a.get("UniqueID") or ""))
     return (a.get("Parish") or "").strip().upper(), m.group(1) if m else ""
@@ -251,6 +263,11 @@ def read_wfs_json(client, layer):
     ways = []
     for f in feats:
         a = f.get("properties") or {}
+        why = layer["skip"](a) if layer.get("skip") else None
+        if why:
+            # Said in the run output, never dropped silently.
+            print("  %s: excluded %s" % (layer["code"], why))
+            continue
         lines = geojson_lines(f.get("geometry"))
         if lines:
             if layer.get("id_field"):
@@ -424,15 +441,16 @@ LAYERS = [
     # AccessConstraints NONE. Read 10 October 2026: 18 byways, the same 18
     # route codes as rowmaps' copy (dated 15 August 2025). The table has no
     # key: GeoServer numbers its features afresh on every request, so a
-    # way's id is its route code. Only the route code and the line are asked
-    # for (the rest is a disclaimer and a link, repeated on every row).
+    # way's id is its route code. Only the route code, the path category and
+    # the line are asked for (the rest is a disclaimer and a link, repeated
+    # on every row). Its "2/Test 15 BOAT" is left out (_skip_ceredigion).
     {"code": "CE", "council": "Ceredigion County Council",
      "licence": None, "read": read_wfs_json, "ref": _ref_ceredigion,
-     "id_field": "routecode",
+     "id_field": "routecode", "skip": _skip_ceredigion,
      "url": "https://wms.ceredigion.gov.uk/geoserver/CeredigionMaps/wfs?",
      "params": dict(_GEOSERVER_20, typeNames="CeredigionMaps:"
                     "prow_byway_open_to_all_traffic_ctc",
-                    propertyName="routecode,geom")},
+                    propertyName="routecode,path_category,geom")},
     {"code": "BC", "council": "Bracknell Forest Council",
      "licence": "OGL-3.0", "read": read_arcgis, "ref": _ref_bracknell,
      "url": "https://services9.arcgis.com/5eO9hmsd8SoBl0Cj/arcgis/rest/"
