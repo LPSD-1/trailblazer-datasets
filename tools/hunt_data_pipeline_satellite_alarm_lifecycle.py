@@ -721,13 +721,18 @@ def check_refusal(bash, problems):
     # nothing (10 Oct 2026); the issue must not say it did, and must say the
     # pause is a day. A busy page served as success is a refusal and keeps
     # the refusal's title.
-    for status, want, must_not in (
+    # With no record at all, it is still told as a refusal, and says so.
+    for status, want, must_not, says in (
             ("network", "paused: connection failures from EOX (retrying "
-                        "after 24 hours)", "refused"),
-            ("busy", "stopped: EOX refused us", None)):
+                        "after 24 hours)", "refused", "connection failures"),
+            ("busy", "stopped: EOX refused us", None,
+             "a busy page served as success"),
+            (None, "stopped: EOX refused us", None,
+             "refused us (a refusal not on record)")):
         ws = Workspace(bash, CATALOGUE)
         try:
-            write_blocks(ws.dir, status=status)
+            if status is not None:
+                write_blocks(ws.dir, status=status)
             ws.run(FAIL_STEP, dict(blocked, blocked="true", remembered="true"))
             got = about(ws.issues(), "gb-wales-satellite", "open")
         finally:
@@ -736,11 +741,11 @@ def check_refusal(bash, problems):
             raise Premise("a %s stop raised no alarm" % status)
         title, body = got[0]["title"], got[0]["body"]
         print("  %s stop: %s" % (status, title))
-        if want not in title or (must_not and (
+        if want not in title or says not in body or (must_not and (
                 must_not in title.lower() or "refused us" in body)):
             problems.append("a %s stop's alarm is titled %r (body %r); it "
-                            "should say %r" % (status, title, body[:200],
-                                               want))
+                            "should say %r and %r" % (
+                                status, title, body[:200], want, says))
 
 
 def check_remember_commits(bash, problems, blocked):

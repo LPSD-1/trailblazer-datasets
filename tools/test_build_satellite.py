@@ -158,6 +158,7 @@ def main():
     check_pacing()
     check_busy_page_is_a_refusal(sp)
     check_log_counts_requests()
+    check_progress_counts_requests()
     check_real_rate_across_connections()
 
     if failures:
@@ -765,6 +766,27 @@ def check_log_counts_requests():
     check("tiles/s" not in log,
           "the log still divides tiles never asked for into a rate: %r"
           % [l for l in log.split(LF) if "tiles/s" in l])
+
+
+def check_progress_counts_requests():
+    """The progress line every 200 tiles gives requests and requests/s."""
+    box = (-1.0, 52.0, -0.3, 52.4)
+
+    def factory(sharpen):
+        clock = _FakeClock()
+        return REAL_FETCHER(sharpen=sharpen, opener=_Script([]),
+                            sleep=clock.sleep, clock=clock)
+    try:
+        rc, log = _run_main(factory, box)
+    except Exception as e:  # noqa: BLE001
+        check(False, "the progress line could not be checked: %r" % e)
+        return
+    m = re.search(r"  200/[\d,]+ tiles, 200 requests, ([\d.]+) requests/s",
+                  log)
+    check(m is not None and 0 < float(m.group(1))
+          <= bs.MAX_REQUESTS_PER_SECOND * 1.02 and "tiles/s" not in log,
+          "the progress line does not count requests: %r"
+          % [l for l in log.split(LF) if "/s" in l][:3])
 
 
 def check_real_rate_across_connections():
