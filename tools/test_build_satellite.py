@@ -145,10 +145,13 @@ def main():
     check_root_limit()
     check_blocks(sp)
     check_blocks_from_main(sp)
+    check_blocks_ref_not_shadowed(sp)
     check_workflow_wiring()
     check_layer_allowlist()
     check_state_out()
     check_incomplete_run_is_green()
+    check_failures_within_budget_fail()
+    check_refusal_goes_to_main(sp)
 
     if failures:
         for f in failures:
@@ -329,8 +332,9 @@ class _Git:
     """Stands in for git: `main` is main's satellite/blocks.json text (None:
     not on main); `fail` names the subcommand that fails."""
 
-    def __init__(self, main=None, fail=None):
+    def __init__(self, main=None, fail=None, shallow=True):
         self.main, self.fail, self.calls = main, fail, []
+        self.shallow = shallow
 
     def __call__(self, argv, **kw):
         import subprocess
@@ -339,7 +343,7 @@ class _Git:
         if sub == self.fail:
             rc = 128
         elif sub == "rev-parse":
-            out = "true" + LF
+            out = ("true" if self.shallow else "false") + LF
         elif sub == "ls-tree":
             out = ("satellite/blocks.json" + LF if self.main is not None
                    else "")
@@ -386,10 +390,19 @@ def check_blocks_from_main(sp):
           "a block on main, absent from this checkout, did not stop the "
           "plan: %r" % (got,))
     check(any(c[1] == "fetch" and "origin" in c for c in git.calls)
-          and ["git", "show", "origin/main:satellite/blocks.json"]
+          and ["git", "show",
+               "refs/remotes/origin/main:satellite/blocks.json"]
           in git.calls
           and any(c[1] == "fetch" and "--depth=1" in c for c in git.calls),
           "the planner did not fetch and read main's copy: %r" % git.calls)
+    # A full clone (the owner's own) is never made shallow: no --depth.
+    git = _Git(main=json.dumps(rec(0.5)), shallow=False)
+    got, rc = plan(None, git)
+    fetches = [c for c in git.calls if c[1] == "fetch"]
+    check(blocked(got) and fetches and not any(
+        a.startswith("--depth") for c in fetches for a in c),
+        "on a full clone the planner fetched with --depth, which makes the "
+        "clone shallow: %r" % git.calls)
     for fail in ("rev-parse", "fetch", "ls-tree", "show"):
         got, rc = plan(None, _Git(main=json.dumps(rec(0.5)), fail=fail))
         if fail == "rev-parse":
@@ -430,6 +443,60 @@ def check_blocks_from_main(sp):
         sp.GIT_RUN = real
     check(git.calls == [], "the planner ran git without --blocks-ref: %r"
           % git.calls)
+
+
+def check_blocks_ref_not_shadowed(sp):
+    """A local branch named origin/main must not stand in for main's copy:
+    git resolves refs/heads/origin/main before refs/remotes/origin/main, so
+    a bare "origin/main" would read the branch. A real scratch repository,
+    because the fake cannot show git's ref resolution."""
+    import shutil
+    import subprocess
+    if shutil.which("git") is None:
+        check(False, "git is not on PATH; the shadowing check cannot run")
+        return
+    now = dt.datetime.now(dt.timezone.utc)
+    live = {"hosts": {"tiles.maps.eox.at": {
+        "at": (now - dt.timedelta(hours=12)).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "status": 403, "retry_after": None, "area": "gb-a-satellite"}}}
+
+    def git(cwd, *args):
+        r = subprocess.run(["git", "-c", "user.name=t", "-c",
+                            "user.email=t@example.invalid", "-c",
+                            "init.defaultBranch=main", "-c",
+                            "core.autocrlf=false"] + list(args), cwd=cwd,
+                           stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                           universal_newlines=True)
+        if r.returncode != 0:
+            raise OSError("git %s: %s" % (" ".join(args), r.stderr))
+        return r.stdout
+
+    def commit(cwd, data, msg):
+        os.makedirs(os.path.join(cwd, "satellite"), exist_ok=True)
+        with open(os.path.join(cwd, "satellite", "blocks.json"), "w",
+                  encoding="utf-8", newline=LF) as f:
+            json.dump(data, f)
+        git(cwd, "add", "satellite/blocks.json")
+        git(cwd, "commit", "-q", "-m", msg)
+
+    try:
+        with tempfile.TemporaryDirectory() as tmp:
+            remote = os.path.join(tmp, "remote.git")
+            work = os.path.join(tmp, "work")
+            git(tmp, "init", "-q", "--bare", "-b", "main", remote)
+            git(tmp, "clone", "-q", remote, work)
+            git(work, "checkout", "-q", "-b", "main")
+            commit(work, live, "main records a block")
+            git(work, "push", "-q", "origin", "main")
+            # The shadow: a branch called origin/main holding no block.
+            git(work, "checkout", "-q", "-b", "origin/main")
+            commit(work, {"hosts": {}}, "a branch that shadows main")
+            got = sp.blocks_on("origin/main", run=subprocess.run, cwd=work)
+            check("tiles.maps.eox.at" in got.get("hosts", {}),
+                  "a local branch named origin/main hid main's block: %r"
+                  % (got,))
+    except (Exception, SystemExit) as e:  # noqa: BLE001
+        check(False, "the shadowing check could not be driven: %r" % e)
 
 
 # One shell command: the line naming the tool, and every line it continues
@@ -709,6 +776,111 @@ def check_incomplete_run_is_green():
             check(got == runs,
                   "state %r: step %r runs=%r, want %r (if: %s)"
                   % (state, name, got, runs, steps[name][0]))
+
+
+# --- tiles that keep failing are not "incomplete" ---------------------------
+#
+# "incomplete" means the area is bigger than one run may fetch. An area that
+# fitted inside the budget, with tiles that failed (a steady 404 below the
+# stop thresholds), is not progress: written as "incomplete" every run would
+# go green, nothing would publish and nothing would ring. It fails instead.
+
+def check_failures_within_budget_fail():
+    real = (bs.Fetcher, sys.argv)
+    try:
+        with tempfile.TemporaryDirectory() as tmp:
+            staging = os.path.join(tmp, "s")
+            state = os.path.join(tmp, "state")
+            out = os.path.join(tmp, "t.pmtiles")
+            box = (-1.0, 52.0, -0.9, 52.1)
+            tiles = sorted(bs.tiles_in(box, 13, 13))
+
+            class OneInSeven:
+                """Every seventh tile always answers 404; the rest arrive."""
+                lock = threading.Lock()
+
+                def __init__(self, *a, **k):
+                    self.done, self.failed, self.stopped = 0, [], None
+
+                def get(self, z, x, y):
+                    if tiles.index((z, x, y)) % 7 == 0:
+                        with self.lock:
+                            self.failed.append((z, x, y))
+                        return None
+                    return JPEG
+            bs.Fetcher = OneInSeven
+            argv = ["build_satellite.py", "--bbox"] + [str(v) for v in box]                 + ["--id", "t", "--label", "T", "--min-zoom", "13",
+                   "--max-zoom", "13", "--staging", staging, "--package",
+                   "--out", out, "--state-out", state]
+            for budget, want_fail in ((len(tiles), True),
+                                      (len(tiles) + 50, True),
+                                      (len(tiles) - 1, False)):
+                if os.path.exists(state):
+                    os.remove(state)
+                for z, x, y in tiles:
+                    p = bs.staged_path(staging, z, x, y)
+                    if os.path.exists(p):
+                        os.remove(p)
+                sys.argv = argv + ["--budget", str(budget)]
+                with contextlib.redirect_stdout(io.StringIO()),                         contextlib.redirect_stderr(io.StringIO()):
+                    rc = bs.main()
+                got = open(state, encoding="utf-8").read().strip()                     if os.path.exists(state) else None
+                if want_fail:
+                    check(len(tiles) >= 7 and rc not in (0, None)
+                          and got != "incomplete" and not os.path.exists(out),
+                          "%d of %d tiles kept failing inside a budget of "
+                          "%d: rc %r, state %r, pack %s"
+                          % (len(tiles[::7]), len(tiles), budget, rc, got,
+                             os.path.exists(out)))
+                else:
+                    check(rc == 0 and got == "incomplete"
+                          and not os.path.exists(out),
+                          "an area bigger than its budget of %d: rc %r, "
+                          "state %r" % (budget, rc, got))
+    except (Exception, SystemExit) as e:  # noqa: BLE001
+        check(False, "failures within the budget could not be driven: %r"
+              % e)
+    finally:
+        bs.Fetcher, sys.argv = real
+
+
+# --- a refusal is remembered on main ----------------------------------------
+#
+# A bare `git push` in "Remember the refusal" sent the record to the branch a
+# manual run started from; scheduled runs plan from main and would ask EOX
+# again before the block ended. The hunt runs the step for real; this holds
+# the text, and the merge it relies on, in the suite every run executes.
+
+def check_refusal_goes_to_main(sp):
+    with open(os.path.join(os.path.dirname(HERE), ".github", "workflows",
+                           "satellite.yml"), encoding="utf-8") as f:
+        steps = _steps(f.read())
+    body = steps.get("Remember the refusal", ("", ""))[1]
+    lines = [l.strip() for l in body.split(LF)]
+    check(body and not any(re.match(r"(if )?git push( *;.*| *)$", l)
+                           or re.search(r"\bgit pull\b", l) for l in lines),
+          "Remember the refusal pushes to whatever branch the run started "
+          "from: %r" % [l for l in lines if "git p" in l])
+    check("push origin HEAD:refs/heads/main" in body
+          and "worktree add --quiet --detach" in body
+          and "refs/remotes/origin/main" in body
+          and "merge_block_files" in body,
+          "Remember the refusal does not merge the record into main's copy "
+          "and push that to main")
+    with tempfile.TemporaryDirectory() as tmp:
+        into, mine = os.path.join(tmp, "main.json"), os.path.join(tmp, "r")
+        old = {"at": "2026-10-01T00:00:00Z", "status": 403}
+        new = {"at": "2026-10-09T00:00:00Z", "status": 403}
+        with open(into, "w", encoding="utf-8") as f:
+            json.dump({"hosts": {"a.example": old, "b.example": new}}, f)
+        with open(mine, "w", encoding="utf-8") as f:
+            json.dump({"hosts": {"a.example": new, "b.example": old}}, f)
+        sp.merge_block_files(into, mine)
+        with open(into, encoding="utf-8") as f:
+            got = json.load(f)["hosts"]
+        check(got == {"a.example": new, "b.example": new},
+              "merging a refusal into main's blocks kept the shorter block "
+              "or lost a host: %r" % got)
 
 
 if __name__ == "__main__":

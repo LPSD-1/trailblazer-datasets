@@ -48,6 +48,7 @@ plan.py. The real `if:` of each step is evaluated under each job status.
       served). A second green run must not comment again. An unreadable or
       empty catalogue must close nothing.
 """
+import ast
 import json
 import os
 import re
@@ -680,6 +681,7 @@ def check_refusal(bash, problems):
             problems.append("%r runs on a run that was not refused"
                             % REMEMBER_STEP)
         check_remember_commits(bash, problems, blocked)
+        check_remember_from_branch(bash, problems, blocked)
 
     # The alarm: when the area comes due again, and that nothing retries.
     ws = Workspace(bash, CATALOGUE)
@@ -759,12 +761,108 @@ def check_remember_commits(bash, problems, blocked):
                         % REMEMBER_STEP)
 
 
+def check_remember_from_branch(bash, problems, blocked):
+    """A run started from a branch still records the refusal on MAIN, which
+    is what every scheduled run plans from. A bare `git push` sent it to the
+    branch, where no scheduled run would ever read it. Main's other records
+    survive, and none of the branch's own commits reach main."""
+    ws = Workspace(bash, CATALOGUE)
+    remote = tempfile.mkdtemp(prefix="hunt-sat-remote-")
+    try:
+        git(remote, "init", "--bare", "-q", "-b", "main", ".")
+        git(ws.dir, "init", "-q", "-b", "main")
+        os.makedirs(os.path.join(ws.dir, "satellite"))
+        with open(os.path.join(ws.dir, "satellite", "blocks.json"), "w",
+                  encoding="utf-8", newline="\n") as f:
+            json.dump({"hosts": {"other.example": {
+                "at": "2026-10-08T00:00:00Z", "status": 403,
+                "retry_after": None, "area": "x"}}}, f)
+        git(ws.dir, "add", "-A")
+        git(ws.dir, "commit", "-q", "-m", "start")
+        git(ws.dir, "remote", "add", "origin", remote)
+        git(ws.dir, "push", "-q", "origin", "main")
+        git(ws.dir, "checkout", "-q", "-b", "fix/branch-run")
+        with open(os.path.join(ws.dir, "branch-only.txt"), "w") as f:
+            f.write("work in progress on a branch\n")
+        git(ws.dir, "add", "branch-only.txt")
+        git(ws.dir, "commit", "-q", "-m", "branch-only work")
+        git(ws.dir, "push", "-q", "-u", "origin", "fix/branch-run")
+        write_blocks(ws.dir)   # what the build wrote: EOX's record only
+        ws.run(REMEMBER_STEP, dict(blocked, blocked="true"),
+               prelude_extra="sleep() { :; }\n")
+        said = open(ws.output).read() if os.path.exists(ws.output) else ""
+        log = git(remote, "log", "--format=%s", "main")
+        try:
+            kept = json.loads(git(remote, "show",
+                                  "main:satellite/blocks.json"))
+        except (subprocess.CalledProcessError, ValueError):
+            kept = {}
+    except Premise as e:
+        problems.append("%r from a branch failed: %s" % (REMEMBER_STEP, e))
+        return
+    finally:
+        ws.close()
+        shutil.rmtree(remote, ignore_errors=True)
+    hosts = kept.get("hosts", {})
+    print("  from a branch, main: %s" % log.replace("\n", " | ").strip(" |"))
+    if hosts.get("tiles.maps.eox.at", {}).get("until") != UNTIL:
+        problems.append("a refusal learned on a branch run never reached "
+                        "main's satellite/blocks.json: main has %r" % kept)
+    if "other.example" not in hosts:
+        problems.append("recording the refusal on main dropped main's other "
+                        "records: %r" % kept)
+    if "branch-only work" in log:
+        problems.append("recording the refusal pushed the branch's own "
+                        "commits to main: %r" % log)
+    if "remembered=true" not in said.split("\n"):
+        problems.append("%r from a branch does not say it remembered the "
+                        "refusal" % REMEMBER_STEP)
+
+
+def uncalled_checks(source):
+    """Every top-level check_* in `source` that main() never reaches, by
+    calling it or calling a function that does. A check written and never
+    wired in is a hunt that stays green whatever the workflow does."""
+    tree = ast.parse(source)
+    funcs = {n.name: n for n in tree.body if isinstance(n, ast.FunctionDef)}
+
+    def called(fn):
+        return {c.func.id for c in ast.walk(fn) if isinstance(c, ast.Call)
+                and isinstance(c.func, ast.Name) and c.func.id in funcs}
+    seen, todo = set(), ["main"] if "main" in funcs else []
+    while todo:
+        name = todo.pop()
+        if name in seen:
+            continue
+        seen.add(name)
+        todo.extend(called(funcs[name]) - seen)
+    return sorted(n for n in funcs if n.startswith("check_") and n not in seen)
+
+
+def check_wiring(problems):
+    """main() reaches every check_* here; and the test of that can fail."""
+    orphan = ("def check_a(p):\n    pass\n"
+              "def check_b(p):\n    check_c(p)\n"
+              "def check_c(p):\n    pass\n"
+              "def check_orphan(p):\n    pass\n"
+              "def main():\n    check_a([])\n    check_b([])\n")
+    if uncalled_checks(orphan) != ["check_orphan"]:
+        problems.append("the wiring check cannot see an uncalled check: %r"
+                        % uncalled_checks(orphan))
+    with open(os.path.abspath(__file__), encoding="utf-8") as f:
+        missing = uncalled_checks(f.read())
+    if missing:
+        problems.append("main() never runs %s, so this hunt is green "
+                        "whatever it would find" % ", ".join(missing))
+
+
 def main():
     bash = find_bash()
     if not bash:
         print("BLIND: bash is needed to run the steps as the runner does")
         return 2
     problems = []
+    check_wiring(problems)
     # Nothing else runs this hunt: satellite.yml must, before it plans, or a
     # regression in the steps above ships with this file still green.
     lines = [l.strip() for l in open(WORKFLOW, encoding="utf-8")]

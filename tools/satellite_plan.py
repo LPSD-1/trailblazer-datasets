@@ -238,17 +238,21 @@ def blocks_on(ref, run=None, cwd=None, path=BLOCKS_PATH):
     shallow = _git(run, cwd, "rev-parse", "--is-shallow-repository")
     depth = (["--depth=1"] if shallow.returncode == 0
              and shallow.stdout.strip() == "true" else [])
+    # The full ref name everywhere: git resolves a bare "origin/main" to a
+    # local branch or tag of that name before the remote-tracking ref, so a
+    # stray refs/heads/origin/main would otherwise stand in for main.
+    tracking = "refs/remotes/%s" % ref
     fetched = _git(run, cwd, "fetch", "--quiet", *depth, remote,
-                   "+refs/heads/%s:refs/remotes/%s" % (branch, ref))
+                   "+refs/heads/%s:%s" % (branch, tracking))
     if fetched.returncode != 0:
         raise OSError("cannot fetch %s: %s" % (ref, fetched.stderr.strip()))
-    listed = _git(run, cwd, "ls-tree", "--name-only", ref, "--", path)
+    listed = _git(run, cwd, "ls-tree", "--name-only", tracking, "--", path)
     if listed.returncode != 0:
         raise OSError("cannot list %s on %s: %s"
                       % (path, ref, listed.stderr.strip()))
     if path not in listed.stdout.splitlines():
         return {"hosts": {}}
-    shown = _git(run, cwd, "show", "%s:%s" % (ref, path))
+    shown = _git(run, cwd, "show", "%s:%s" % (tracking, path))
     if shown.returncode != 0:
         raise OSError("cannot read %s on %s: %s"
                       % (path, ref, shown.stderr.strip()))
@@ -270,6 +274,19 @@ def merge_blocks(*copies):
                     or blocked_until(rec) > blocked_until(hosts[host])):
                 hosts[host] = rec
     return {"hosts": hosts}
+
+
+def merge_block_files(into, *sources):
+    """Rewrite `into` as the merge of itself and every source file: each
+    host from any of them, the longer block where they disagree. "Remember
+    the refusal" uses it to put a record onto main's copy, wherever the run
+    started, without dropping a record main already holds."""
+    data = merge_blocks(load_blocks(into), *[load_blocks(p) for p in sources])
+    os.makedirs(os.path.dirname(os.path.abspath(into)), exist_ok=True)
+    with open(into, "w", encoding="utf-8", newline="\n") as f:
+        json.dump(data, f, indent=2, sort_keys=True)
+        f.write("\n")
+    return data
 
 
 def live_blocks(local, ref=None, run=None, cwd=None):

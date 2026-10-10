@@ -156,8 +156,9 @@ STOP_AT_ONCE = (401, 403, 410, 451)
 # within TOO_MANY_WINDOW seconds stop the area, wherever they fell.
 TOO_MANY_429 = 3
 TOO_MANY_WINDOW = 3600
-# A Retry-After no clock can hold (inf, nan, or past a year) is read as a
-# year: still a refusal, recorded, never a crash that records nothing.
+# A Retry-After no clock can hold (inf, -inf, nan, or past a year) is read as
+# a year: still a refusal, recorded, never a crash that records nothing. A
+# finite negative one, or an HTTP date already past, is 0, not a year.
 RETRY_AFTER_ABSURD = 365 * 86400
 FAILED_RUNNING = 20             # failed tiles in a row that stop the area
 FAILED_WINDOW = 200             # the last this many tiles ...
@@ -195,8 +196,8 @@ def _is_refusal(code):
 
 
 def _sane_wait(seconds):
-    """`seconds` as a wait a clock can hold: non-finite, or past a year,
-    is RETRY_AFTER_ABSURD; below zero is zero."""
+    """`seconds` as a wait a clock can hold: non-finite (-inf included),
+    or past a year, is RETRY_AFTER_ABSURD; finite and below zero is 0."""
     if not math.isfinite(seconds) or seconds > RETRY_AFTER_ABSURD:
         return float(RETRY_AFTER_ABSURD)
     return max(0.0, seconds)
@@ -760,13 +761,15 @@ def _planner():
 def record_block(path, area_id, block):
     """Write the stop into `path` under the tile host, beside any other
     host's record, and
-    return it. Retry-After is rounded UP: what EOX asked for is never cut."""
+    return it. Retry-After is rounded UP: what EOX asked for is never cut.
+    Below zero is recorded as 0, never as a negative wait."""
     plan = _planner()
     now = dt.datetime.now(dt.timezone.utc).replace(microsecond=0)
     asked = block.get("retry_after")
     rec = {"at": plan.stamp(now), "area": area_id,
            "status": block.get("status"),
-           "retry_after": None if asked is None else int(math.ceil(asked)),
+           "retry_after": (None if asked is None
+                           else max(0, int(math.ceil(asked)))),
            "reason": block.get("reason")}
     rec["until"] = plan.stamp(plan.blocked_until(rec))
     data = plan.load_blocks(path)
@@ -887,6 +890,16 @@ def main():
                   file=sys.stderr)
 
         still = len(missing) - (len(batch) - len(fetcher.failed))
+        if still > 0 and len(missing) <= args.budget:
+            # The whole area fitted inside this run's budget, so what is left
+            # is tiles that kept failing, not work this run was not allowed
+            # to do. Read as "incomplete", every run would end green with no
+            # pack and no alarm; it is a failure, and the workflow says so.
+            print("FAILED: %s of %s's tiles did not arrive though the area "
+                  "fits one run's budget. No pack written." % (
+                      format(still, ","), args.id), file=sys.stderr)
+            _write_state(args.state_out, "failed")
+            return 1
         if still > 0:
             days = int(math.ceil(still / float(max(1, args.budget))))
             print("")

@@ -38,6 +38,12 @@ def too_long(workflow, limit=RUN_LIMIT):
 
 def main():
     problems = []
+    # The policy number itself is pinned: bash -c on Windows stops near
+    # 8 KB, and 7,500 is the margin chosen under it. Raising it here would
+    # pass every step this check exists to catch.
+    if RUN_LIMIT != 7500:
+        problems.append("RUN_LIMIT is %r; the policy is 7500 bytes, a margin "
+                        "under bash -c's ~8 KB on Windows" % RUN_LIMIT)
     # The check can fail: a body one byte over is caught, one at the limit
     # is not.
     over = {"jobs": {"j": {"steps": [

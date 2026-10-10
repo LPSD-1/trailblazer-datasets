@@ -243,9 +243,16 @@ jobs:
       # satellite/blocks.json and leaves the area alone for at least 7 days,
       # or until EOX's Retry-After when that is longer.
       #
-      # Only this workflow writes the file, and its concurrency group lets
-      # one run at a time, so a rebase onto another job's commit cannot
-      # conflict.
+      # ON MAIN, WHEREVER THE RUN STARTED. Every scheduled run plans from
+      # main, so that is where the record must land. A bare `git push` sent
+      # it to the branch a manual run started from, where no scheduled run
+      # reads it, and they would ask EOX again before the block ended. So
+      # the record is merged into main's newest copy in a worktree of
+      # origin/main (main's other records kept, the longer block winning),
+      # committed there alone, and pushed to main, as the other data jobs
+      # commit to main; nothing of the branch goes with it. A lost race
+      # fetches main again and redoes the merge.
+      # tools/hunt_data_pipeline_satellite_alarm_lifecycle.py holds this.
       - name: Remember the refusal
         id: remember
         if: always() && steps.fetch.outputs.blocked == 'true'
@@ -254,24 +261,36 @@ jobs:
         run: |
           git config user.name  'Trail Blazer data bot'
           git config user.email 'noreply@github.com'
-          git add satellite/blocks.json
-          if git diff --cached --quiet; then
-            echo "the refusal is already recorded"
-          else
-            git commit -m "Satellite: EOX refused $AREA_ID; not asked again until its block ends" \
-                       -m "Recorded in satellite/blocks.json by tools/build_satellite.py."
-          fi
+          RECORD=$(mktemp)
+          cp satellite/blocks.json "$RECORD"
+          MAIN="$(mktemp -d)/main"
+          trap 'git worktree remove --force "$MAIN" 2>/dev/null || true' EXIT
+          DEPTH=
+          if [ "$(git rev-parse --is-shallow-repository)" = true ]; then DEPTH=--depth=1; fi
           for attempt in 1 2 3; do
-            if git push; then
+            git fetch --quiet $DEPTH origin +refs/heads/main:refs/remotes/origin/main
+            git worktree remove --force "$MAIN" 2>/dev/null || true
+            git worktree add --quiet --detach "$MAIN" refs/remotes/origin/main
+            python -c 'import sys; sys.path.insert(0, "tools"); import satellite_plan as p; p.merge_block_files(*sys.argv[1:])' \
+              "$MAIN/satellite/blocks.json" "$RECORD"
+            git -C "$MAIN" add satellite/blocks.json
+            if git -C "$MAIN" diff --cached --quiet; then
+              echo "main already holds this refusal"
               echo "remembered=true" >> "$GITHUB_OUTPUT"
               exit 0
             fi
-            echo "push rejected; replaying the record on top of origin/main"
+            git -C "$MAIN" commit --quiet \
+              -m "Satellite: EOX refused $AREA_ID; not asked again until its block ends" \
+              -m "Recorded in satellite/blocks.json by tools/build_satellite.py."
+            if git -C "$MAIN" push origin HEAD:refs/heads/main; then
+              echo "remembered=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            echo "push rejected; merging the record into main's newest copy again"
             sleep $((attempt * 5))
-            git pull --rebase origin main
           done
-          git push
-          echo "remembered=true" >> "$GITHUB_OUTPUT"
+          echo "the refusal could not be recorded on main" >&2
+          exit 1
 
       # The one check worth having: the app's own reader must be able to open
       # it. A pack that packages cleanly and will not open is a pack every

@@ -225,6 +225,12 @@ def sample_honours_blocks(si):
                           for c in git.calls),
                       "sample_imagery did not read main's blocks (%s): %r"
                       % (label, git.calls))
+                # FakeGit says the clone is full: a --depth would make the
+                # owner's clone shallow.
+                check(not any(a.startswith("--depth") for c in git.calls
+                              if c[1:2] == ["fetch"] for a in c),
+                      "sample_imagery fetched with --depth on a full clone "
+                      "(%s): %r" % (label, git.calls))
     finally:
         si.FETCHER, si.GIT_RUN, si.BLOCKS, sys.argv = real
     # And the refusal reaches the shell as a non-zero exit.
@@ -448,6 +454,33 @@ def service_checks(bs):
                   and block.get("retry_after") == bs.RETRY_AFTER_ABSURD,
                   "Retry-After %r: got %r, %d requests, block %r"
                   % (ra, got, len(op.calls), block))
+
+    def negative_retry_after():
+        # A finite negative Retry-After, or an HTTP date already past, is
+        # "now": 0, never a negative wait and never a negative record.
+        base = 1800000000.0
+        past = email.utils.formatdate(base - 3600, usegmt=True)
+        for ra in ("-30", "-0.5", past):
+            f, op, clock = fetcher([(403, {"Retry-After": ra}), JPG],
+                                   wall=lambda: base)
+            f.get(13, 1, 2)
+            block = getattr(f, "block", None) or {}
+            check(f.stopped and block.get("retry_after") == 0,
+                  "Retry-After %r on a 403 recorded %r, not 0"
+                  % (ra, block.get("retry_after")))
+            f, op, clock = fetcher([(429, {"Retry-After": ra}), JPG],
+                                   wall=lambda: base)
+            got = f.get(13, 1, 2)
+            check(got == JPG and all(s >= 0 for s in clock.slept),
+                  "Retry-After %r on a 429: got %r, slept %s"
+                  % (ra, got, clock.slept))
+        # And the record never holds a negative wait, whatever it is handed.
+        with tempfile.TemporaryDirectory() as tmp:
+            rec = bs.record_block(os.path.join(tmp, "b.json"), "a",
+                                  {"status": 403, "retry_after": -5.0,
+                                   "reason": "r"})
+        check(rec.get("retry_after") == 0,
+              "record_block wrote a negative retry_after: %r" % rec)
 
     def network_pause_is_host_wide():
         # The backoff after a network fault holds every connection, as a
@@ -683,6 +716,7 @@ def service_checks(bs):
                      ("missing tiles counted", missing_tiles_count),
                      ("the 429 count", too_many_requests),
                      ("an absurd Retry-After", absurd_retry_after),
+                     ("a negative Retry-After", negative_retry_after),
                      ("the network pause", network_pause_is_host_wide),
                      ("the scheduled request", scheduled_request_waits),
                      ("the pacing", paced),
@@ -1017,9 +1051,13 @@ def main():
 
     # 4b'. main() end to end, with the network replaced by flat tiles: it
     #      must write all six plates and the index, with where they are of.
+    #      Git is a stand-in too: the real one would fetch origin into
+    #      whatever clone the suite runs in (on 10 Oct 2026 a mutant of the
+    #      planner's --depth made the owner's clone shallow that way).
     with tempfile.TemporaryDirectory() as tmp:
-        fetch, argv = si.fetch, sys.argv
+        fetch, argv, git_run = si.fetch, sys.argv, si.GIT_RUN
         si.fetch = lambda z, x, y: Image.new("RGB", (256, 256), blue)
+        si.GIT_RUN = no_block = FakeGit()
         sys.argv = ["sample_imagery.py", "--lat", "52.12", "--lon", "1.40",
                     "--out", tmp, "--size", "64"]
         try:
@@ -1030,7 +1068,10 @@ def main():
         except Exception as e:  # noqa: BLE001
             ran = {"error": repr(e)}
         finally:
-            si.fetch, sys.argv = fetch, argv
+            si.fetch, sys.argv, si.GIT_RUN = fetch, argv, git_run
+        check(any(c[1:2] == ["fetch"] for c in no_block.calls),
+              "sample_imagery's end-to-end run used the real git, not the "
+              "stand-in: %r" % no_block.calls)
         check(ran.get("layer") == layer and ran.get("lat") == 52.12
               and ran.get("z13_tile") == [4127, 2701]
               and sorted(ran.get("files", {})) == sorted(
