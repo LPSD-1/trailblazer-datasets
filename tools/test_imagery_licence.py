@@ -647,14 +647,14 @@ def service_checks(bs):
               % len(op.calls))
 
     def connection_failures():
-        # Resets, timeouts, TLS faults and a 200 that is not an image are
-        # refusals too, counted per tile: 20 tiles running, or more than 5%
-        # of the last 200, stop the area as an HTTP refusal does.
+        # Resets, timeouts and TLS faults count per tile: 20 tiles running,
+        # or more than 5% of the last 200, stop the area. A 200 that is not
+        # an image is EOX's busy page, a refusal handled as a 429 (since
+        # 10 Oct 2026; test_build_satellite checks it), so it is not here.
         faults = [ConnectionResetError("reset"), TimeoutError("timed out"),
                   ssl.SSLError("bad record mac"),
-                  urllib.error.URLError("refused"),
-                  b"<html>heavyload</html>"]
-        f, op, clock = fetcher([faults[i % 5] for i in range(20)]
+                  urllib.error.URLError("refused")]
+        f, op, clock = fetcher([faults[i % 4] for i in range(20)]
                                + [JPG] * 5, retries=1)
         for y in range(19):
             f.get(13, 1, y)
@@ -669,8 +669,8 @@ def service_checks(bs):
               "20 failed tiles running did not stop the area: stopped=%r, "
               "%d requests, block %r" % (f.stopped, len(op.calls), block))
 
-        f, op, clock = fetcher([faults[i % 5] for i in range(19)] + [JPG]
-                               + [faults[i % 5] for i in range(19)],
+        f, op, clock = fetcher([faults[i % 4] for i in range(19)] + [JPG]
+                               + [faults[i % 4] for i in range(19)],
                                retries=1)
         for y in range(39):
             f.get(13, 1, y)
@@ -703,8 +703,10 @@ def service_checks(bs):
 
         # And the busy page is never kept as a tile.
         f, op, clock = fetcher([b"<html>busy</html>"], retries=1)
-        check(f.get(13, 1, 2) is None and len(f.failed) == 1,
-              "a 200 that is not an image was kept as a tile")
+        check(f.get(13, 1, 2) is None and f.stopped
+              and (f.block or {}).get("status") == "busy",
+              "a 200 that is not an image was kept as a tile, or was not "
+              "a refusal: %r" % f.block)
 
     for name, fn in (("the Retry-After wait", waited_out),
                      ("the default tries", default_tries),

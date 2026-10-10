@@ -717,6 +717,31 @@ def check_refusal(bash, problems):
                         "for the workflow to be disabled: %r"
                         % lost[0]["body"][:400])
 
+    # A NETWORK STOP IS NOT A REFUSAL. Connections failed and EOX refused
+    # nothing (10 Oct 2026); the issue must not say it did, and must say the
+    # pause is a day. A busy page served as success is a refusal and keeps
+    # the refusal's title.
+    for status, want, must_not in (
+            ("network", "paused: connection failures from EOX (retrying "
+                        "after 24 hours)", "refused"),
+            ("busy", "stopped: EOX refused us", None)):
+        ws = Workspace(bash, CATALOGUE)
+        try:
+            write_blocks(ws.dir, status=status)
+            ws.run(FAIL_STEP, dict(blocked, blocked="true", remembered="true"))
+            got = about(ws.issues(), "gb-wales-satellite", "open")
+        finally:
+            ws.close()
+        if not got:
+            raise Premise("a %s stop raised no alarm" % status)
+        title, body = got[0]["title"], got[0]["body"]
+        print("  %s stop: %s" % (status, title))
+        if want not in title or (must_not and (
+                must_not in title.lower() or "refused us" in body)):
+            problems.append("a %s stop's alarm is titled %r (body %r); it "
+                            "should say %r" % (status, title, body[:200],
+                                               want))
+
 
 def check_remember_commits(bash, problems, blocked):
     """Run the real step in a clone whose push loses a race once."""
