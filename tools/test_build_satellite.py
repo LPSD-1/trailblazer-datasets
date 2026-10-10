@@ -576,6 +576,18 @@ def check_network_block_is_a_day(sp):
     span = sp._when(refused["until"]) - sp._when(refused["at"])
     check(span == week, "a recorded 403 blocks for %s, not 7 days" % span)
 
+    # The issue a stop raises says how long each kind of stop lasts.
+    with open(os.path.join(os.path.dirname(HERE), ".github", "workflows",
+                           "satellite.yml"), encoding="utf-8") as fh:
+        said = [l for l in fh.read().split(LF)
+                if l.strip().startswith('NEXT="Nothing retries around')]
+    check(len(said) == 1
+          and "%d hours after a network fault" % sp.NETWORK_BLOCK_HOURS
+          in said[0]
+          and "%d days after a refusal" % sp.BLOCK_DAYS in said[0],
+          "satellite.yml's refusal issue does not give the network pause "
+          "and the refusal block: %r" % said)
+
     # The committed blocks file agrees with the rule: each host's `until` is
     # what record_block would write for that record today. A network stop
     # recorded under the old 7-day rule fails here until it is moved.
