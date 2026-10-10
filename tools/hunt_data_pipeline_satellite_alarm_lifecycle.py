@@ -722,6 +722,24 @@ def check_refusal(bash, problems):
     # nothing (10 Oct 2026); the issue must not say it did, and must say the
     # pause is a day. A busy page served as success is a refusal and keeps
     # the refusal's title.
+    # A network stop that could not be recorded asks for the workflow to
+    # be disabled, without calling it a refusal.
+    ws = Workspace(bash, CATALOGUE)
+    try:
+        write_blocks(ws.dir, status="network")
+        ws.run(FAIL_STEP, dict(blocked, run="42", blocked="true"))
+        unrecorded = about(ws.issues(), "gb-wales-satellite", "open")
+    finally:
+        ws.close()
+    if not unrecorded:
+        raise Premise("an unrecorded network stop raised no alarm")
+    body = unrecorded[0]["body"]
+    if ("The pause could not be recorded" not in body
+            or "Disable this workflow" not in body
+            or "refused us" in body):
+        problems.append("an unrecorded network stop's alarm does not say the "
+                        "pause was not recorded: %r" % body[:300])
+
     # With no record at all, it is still told as a refusal, and says so.
     for status, want, must_not, says in (
             ("network", "paused: connection failures from EOX (retrying "

@@ -908,7 +908,9 @@ def main():
         started = fetcher.clock()
 
         def network_rate():
-            return fetcher.requests / max(1e-9, fetcher.clock() - started)
+            # Over at least a second: a run stopped by its first answer
+            # has no elapsed time to divide by.
+            return fetcher.requests / max(1.0, fetcher.clock() - started)
 
         def work(t):
             z, x, y = t

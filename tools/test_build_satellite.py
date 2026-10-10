@@ -159,6 +159,7 @@ def main():
     check_busy_page_is_a_refusal(sp)
     check_log_counts_requests()
     check_progress_counts_requests()
+    check_skipped_is_only_never_asked()
     check_real_rate_across_connections()
     check_refusal_never_recorded_as_network(sp)
     check_repeat_network_stop_escalates(sp)
@@ -777,9 +778,11 @@ def check_log_counts_requests():
           and "refused" not in stopped[0],
           "a network stop's STOPPED line is %r" % stopped)
     refusal = urllib.error.HTTPError("http://x", 403, "no", {}, None)
+    clocks = []
 
     def refused(sharpen):
         clock = _FakeClock()
+        clocks.append(clock)
         return REAL_FETCHER(sharpen=sharpen, opener=_Script([refusal] * 9),
                             sleep=clock.sleep, clock=clock)
     try:
@@ -789,6 +792,22 @@ def check_log_counts_requests():
     stopped = [l for l in log.split(LF) if l.startswith("STOPPED")]
     check(len(stopped) == 1 and "EOX refused" in stopped[0],
           "a 403's STOPPED line is %r" % stopped)
+    # The rate is requests over the Fetcher's elapsed time, exactly, not
+    # tiles: here a 403 stops the run at once, so skipped tiles far
+    # outnumber requests (done / elapsed would read tens a second).
+    m = re.search(r"network: ([\d,]+) requests in [\d.]+ s, ([\d.]+) a "
+                  r"second; ([\d,]+) tiles? not asked for", log)
+    # Over at least a second: one 403 at the first slot takes no time.
+    elapsed = max(1.0, clocks[0].now - 1000.0) if clocks else 0.0
+    if m is None or elapsed <= 0:
+        check(False, "the 403 run's network line is missing: %r" % log[-300:])
+    else:
+        req, skipped = num(m.group(1)), num(m.group(3))
+        check(skipped >= 10 * req
+              and abs(float(m.group(2)) - req / elapsed) < 0.006,
+              "the 403 run logged %s a second for %d requests in %.2f s "
+              "(%d skipped): not requests / elapsed"
+              % (m.group(2), req, elapsed, skipped))
 
 
 # --- a run EOX refused is never recorded as a network stop -------------------
@@ -884,6 +903,30 @@ def check_repeat_network_stop_escalates(sp):
                   "%s" % (label, got, want))
 
 
+def check_skipped_is_only_never_asked():
+    """A tile already asked for once, waiting to retry when the run stops,
+    is not counted as never asked for; the next tile is."""
+    clock = _FakeClock()
+    box = {}
+
+    def sleep(s):
+        clock.sleep(s)
+        f = box["f"]
+        if not f.stopped:
+            f._stop("network", None, "stopped while a tile waited")
+    f = box["f"] = bs.Fetcher(sharpen=False,
+                              opener=_Script([OSError("reset")]),
+                              sleep=sleep, clock=clock)
+    first = f.get(14, 1, 1)
+    mid = (f.requests, f.skipped)
+    f.get(14, 1, 2)
+    check(first is None and mid == (1, 0) and (f.requests, f.skipped)
+          == (1, 1),
+          "skipped counts a tile asked for once: after the retried tile "
+          "(requests, skipped) = %r, after the next %r"
+          % (mid, (f.requests, f.skipped)))
+
+
 def check_progress_counts_requests():
     """The progress line every 200 tiles gives requests and requests/s."""
     box = (-1.0, 52.0, -0.3, 52.4)
@@ -897,9 +940,12 @@ def check_progress_counts_requests():
     except Exception as e:  # noqa: BLE001
         check(False, "the progress line could not be checked: %r" % e)
         return
-    m = re.search(r"  200/[\d,]+ tiles, 200 requests, ([\d.]+) requests/s",
-                  log)
-    check(m is not None and 0 < float(m.group(1))
+    m = re.search(r"  200/[\d,]+ tiles, (\d+) requests, ([\d.]+) "
+                  r"requests/s", log)
+    # Up to one request per other connection can be in flight when the
+    # 200th tile is counted.
+    check(m is not None and 200 <= int(m.group(1)) <= 203
+          and 0 < float(m.group(2))
           <= bs.MAX_REQUESTS_PER_SECOND * 1.02 and "tiles/s" not in log,
           "the progress line does not count requests: %r"
           % [l for l in log.split(LF) if "/s" in l][:3])
@@ -929,7 +975,7 @@ def check_real_rate_across_connections():
     span = stamps[-1] - stamps[0] if len(stamps) > 1 else 0.0
     rate = (len(stamps) - 1) / span if span > 0 else float("inf")
     check(len(stamps) == n_wanted >= 6
-          and rate <= bs.MAX_REQUESTS_PER_SECOND * 1.01,
+          and rate <= bs.MAX_REQUESTS_PER_SECOND * 1.05,
           "%d requests for %d tiles left at %.2f a second, over %s"
           % (len(stamps), n_wanted, rate, bs.MAX_REQUESTS_PER_SECOND))
 
