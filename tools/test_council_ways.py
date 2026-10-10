@@ -280,6 +280,12 @@ class References(unittest.TestCase):
                                  "UniqueID": "WIN BOAT16 "},
              ("WINKFIELD", "16")),
         ]
+        if hasattr(cw, "_ref_ceredigion"):
+            cases.append((cw._ref_ceredigion,
+                          {"routecode": "24/14/A" + " " * 20},
+                          ("24", "14/A")))
+        else:
+            self.fail("no Ceredigion reference reader")
         for fn, attrs, want in cases:
             self.assertEqual(fn(attrs), want, fn.__name__)
 
@@ -394,6 +400,71 @@ class Fetch(unittest.TestCase):
         self.assertEqual(entry["merge"]["kept"], 8)
         self.assertEqual(entry["merge"]["dropped"], ["ZZ|Ash|8"])
         self.assertTrue(entry["merge"]["used"])
+
+
+CEREDIGION = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                          "fixtures", "ceredigion",
+                          "prow_byway_open_to_all_traffic_ctc.json")
+
+
+class _Answers(object):
+    """A stand-in client: get_json returns the saved answer, and the URL
+    each call asked for is kept."""
+
+    def __init__(self, data):
+        self.data, self.urls = data, []
+
+    def get_json(self, url):
+        self.urls.append(url)
+        return copy.deepcopy(self.data)
+
+
+class Ceredigion(unittest.TestCase):
+    """Ceredigion County Council's own BOAT layer (GeoServer WFS), from a
+    small real answer saved on 10 October 2026: three of its 18 byways,
+    the route codes space-padded as the server sends them."""
+
+    def setUp(self):
+        with open(CEREDIGION, encoding="utf-8") as fh:
+            self.answer = json.load(fh)
+        self.layer = cw.by_code()["CE"]
+
+    def test_the_layer_is_the_councils_boat_layer_on_its_own_host(self):
+        self.assertEqual(self.layer["council"], "Ceredigion County Council")
+        self.assertIs(self.layer["read"], cw.read_wfs_json)
+        client = _Answers(self.answer)
+        self.layer["read"](client, self.layer)
+        url = client.urls[0]
+        self.assertTrue(url.startswith("https://wms.ceredigion.gov.uk/"), url)
+        self.assertIn("request=GetFeature", url)
+        self.assertIn("prow_byway_open_to_all_traffic_ctc", url)
+        self.assertNotIn("restricted", url.lower())
+        self.assertNotIn("bridleway", url.lower())
+
+    def test_each_byway_reads_as_rowmaps_names_it(self):
+        records, ways = self.layer["read"](_Answers(self.answer), self.layer)
+        self.assertEqual(records, 3)
+        # rowmaps' Ceredigion file names these CE|14|76, CE|2|4, CE|24|14/A.
+        self.assertEqual(sorted((w["parish"], w["number"]) for w in ways),
+                         [("14", "76"), ("2", "4"), ("24", "14/A")])
+        for w in ways:
+            lon, lat = w["lines"][0][0]
+            self.assertTrue(-4.8 < lon < -3.6 and 51.9 < lat < 52.6,
+                            (lon, lat))
+
+    def test_a_way_keeps_its_id_when_the_server_renumbers_its_features(self):
+        # GeoServer numbers this layer's features afresh on every request
+        # (fid--...701 here, fid--...98f an hour earlier, for one byway):
+        # the way's id is its route code, so an unchanged layer writes an
+        # unchanged file.
+        _r, first = self.layer["read"](_Answers(self.answer), self.layer)
+        again = copy.deepcopy(self.answer)
+        for k, f in enumerate(again["features"]):
+            f["id"] = "prow_byway_open_to_all_traffic_ctc.fid-other_%d" % k
+        _r, second = self.layer["read"](_Answers(again), self.layer)
+        self.assertEqual(sorted(w["id"] for w in first),
+                         sorted(w["id"] for w in second))
+        self.assertIn("24/14/A", [w["id"] for w in first])
 
 
 class Layers(unittest.TestCase):

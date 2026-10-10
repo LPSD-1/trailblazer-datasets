@@ -251,7 +251,7 @@ do not shut the way are left out.
 ## Byways from the councils' own layers
 
 rowmaps.com copies each council's definitive map, and many of its copies are
-over a year old. Sixteen councils publish their rights of way live, and for
+over a year old. Seventeen councils publish their rights of way live, and for
 them `council-ways.yml` reads the byways (BOATs only) from the council every
 day into `council-ways/<CODE>.json` (`tools/council_ways.py`):
 
@@ -271,6 +271,7 @@ day into `council-ways/<CODE>.json` (`tools/council_ways.py`):
 | EX | Essex County Council | ArcGIS `PROW_view` | not stated |
 | WT | Wiltshire Council | ArcGIS `OpenData/PublicRightsofWay` (query only) | OGL v3.0 |
 | BC | Bracknell Forest Council | ArcGIS `GIS_PublicRightsOfWay/7` | OGL v3.0 |
+| CE | Ceredigion County Council | GeoServer `CeredigionMaps:prow_byway_open_to_all_traffic_ctc` | not stated (WFS fees and access constraints: none) |
 | WB | West Berkshire Council | ArcGIS `gis.westberks.gov.uk` `PUBLIC_RIGHTS_OF_WAY/1` (query only) | not stated |
 | IW | Isle of Wight Council | ArcGIS `arcgis.iow.gov.uk` `PublicRightsOfWay/0`: a cross-check only, used if rowmaps ever has no Isle of Wight file | not stated |
 | HA | Hampshire County Council | ArcGIS Online `Hampshire_Rights_of_Way` (June 2023): a cross-check only, used if rowmaps ever has no Hampshire file | not stated |
@@ -289,6 +290,9 @@ challenge) are not read; its newer GIS host has no robots.txt and is. Dorset
 refuses GitHub's runners and is read by the collector server
 (HOME-COLLECTOR.md). Kent's, Dartmoor's and Exmoor's own layers carry
 licences that restrict their use and are not read.
+Somerset's GIS hosts (gis., maps. and roam.somerset.gov.uk) disallow every
+robot in robots.txt, and Powys's (geo.powys.gov.uk) answers 403, so neither
+council's own layer is read; both stay on rowmaps.
 
 ## Unsurfaced unclassified roads (UCRs)
 
