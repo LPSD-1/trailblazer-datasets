@@ -32,6 +32,8 @@ import re
 import sys
 import tempfile
 import threading
+import time
+import urllib.error
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 spec = importlib.util.spec_from_file_location(
@@ -152,6 +154,15 @@ def main():
     check_incomplete_run_is_green()
     check_failures_within_budget_fail()
     check_refusal_goes_to_main(sp)
+    check_network_block_is_a_day(sp)
+    check_pacing()
+    check_busy_page_is_a_refusal(sp)
+    check_log_counts_requests()
+    check_progress_counts_requests()
+    check_skipped_is_only_never_asked()
+    check_real_rate_across_connections()
+    check_refusal_never_recorded_as_network(sp)
+    check_repeat_network_stop_escalates(sp)
 
     if failures:
         for f in failures:
@@ -226,8 +237,9 @@ def check_root_limit():
 # A STOP USED TO BE FORGOTTEN BY THE NEXT RUN. EOX refused us, the area stopped
 # with no pack, and twelve hours later the planner picked the same area again
 # and asked the same service for the same tiles. A stop now writes a record in
-# satellite/blocks.json, and the planner skips that area for at least 7 days,
-# or until EOX's Retry-After if that is longer.
+# satellite/blocks.json, and the planner skips that area for at least 7 days
+# (24 hours for a "network" stop), or until EOX's Retry-After if that is
+# longer.
 
 def _plan(sp, catalogue, blocks, extra=()):
     """satellite_plan's own main(), as the workflow runs it."""
@@ -505,6 +517,502 @@ CMD = r"python tools/%s\.py(?:[^\n]*\\\n)*[^\n]*"
 LF = "\n"
 
 
+# --- a network fault pauses for a day; a refusal still for a week ------------
+#
+# On 10 Oct 2026 gb-east-anglia fetched 16,200 tiles, then 11 of the last 200
+# failed with connection errors: no 403, no 429, no Retry-After. That was
+# recorded as a 7-day block, the same as EOX saying no. The owner's decision:
+# a "network" stop (we could not connect; nobody refused us) pauses for 24
+# hours, and every explicit refusal keeps the rules it had.
+
+def check_network_block_is_a_day(sp):
+    at = "2026-10-10T08:54:38Z"
+    t0 = dt.datetime(2026, 10, 10, 8, 54, 38, tzinfo=dt.timezone.utc)
+    day, week = dt.timedelta(hours=24), dt.timedelta(days=7)
+
+    def until(status, retry_after=None, **extra):
+        rec = {"at": at, "status": status, "retry_after": retry_after}
+        rec.update(extra)
+        return sp.blocked_until(rec) - t0
+
+    got = until("network")
+    check(got == day, "a network stop blocks for %s, not 24 hours" % got)
+    # Every refusal, and a failed-tile stop recorded under an HTTP code,
+    # keeps the week.
+    for status in (401, 403, 410, 451, 429, 404, 500, 503, 302):
+        got = until(status)
+        check(got == week, "a stop with status %r blocks for %s, not 7 days"
+              % (status, got))
+    # Retry-After still wins when longer, and is never cut: over the 600 s
+    # cap, a month, and the absurd clamp of a year.
+    for status, asked, want in (
+            (429, 1200, week), (503, 601, week),
+            (403, 2592000, dt.timedelta(seconds=2592000)),
+            (429, bs.RETRY_AFTER_ABSURD,
+             dt.timedelta(seconds=bs.RETRY_AFTER_ABSURD))):
+        got = until(status, asked)
+        check(got == want, "status %r with Retry-After %r blocks for %s, "
+              "not %s" % (status, asked, got, want))
+    # A network stop is a day only by default: a recorded `until` later than
+    # that (a person extending it) still holds.
+    got = until("network", until="2026-10-17T08:54:38Z")
+    check(got == week, "a network stop dropped its recorded until: %s" % got)
+    check(sp.blocked_until({"status": "network"}) == sp.NEVER,
+          "a network stop with no time no longer blocks until mended")
+
+    # End to end: the Fetcher's own network stop, written by record_block.
+    class Down:
+        def open(self, req, timeout=0):
+            raise OSError("connection reset by peer")
+    now = [0.0]
+
+    def nap(s):
+        now[0] += s
+    f = bs.Fetcher(sharpen=False, opener=Down(), sleep=nap,
+                   clock=lambda: now[0])
+    for i in range(bs.FAILED_RUNNING + 5):
+        f.get(14, i, i)
+    with tempfile.TemporaryDirectory() as tmp:
+        path = os.path.join(tmp, "blocks.json")
+        rec = bs.record_block(path, "t", f.block or {})
+        refused = bs.record_block(os.path.join(tmp, "b2.json"), "t",
+                                  {"status": 403, "retry_after": None,
+                                   "reason": "HTTP 403"})
+    span = sp._when(rec["until"]) - sp._when(rec["at"])
+    check(f.stopped and rec.get("status") == "network" and span == day,
+          "the Fetcher's network stop was recorded as %r for %s"
+          % (rec.get("status"), span))
+    span = sp._when(refused["until"]) - sp._when(refused["at"])
+    check(span == week, "a recorded 403 blocks for %s, not 7 days" % span)
+
+    # The issue a stop raises says how long each kind of stop lasts.
+    with open(os.path.join(os.path.dirname(HERE), ".github", "workflows",
+                           "satellite.yml"), encoding="utf-8") as fh:
+        said = [l.strip() for l in fh.read().split(LF)
+                if l.strip().startswith('NEXT="')]
+    refusal = [l for l in said if "%d days after a refusal" % sp.BLOCK_DAYS
+               in l and l.startswith('NEXT="Nothing retries around')]
+    network = [l for l in said if "%d hours after a network fault"
+               % sp.NETWORK_BLOCK_HOURS in l
+               and "%d days if connections fail again within %d days" % (
+                   sp.BLOCK_DAYS, sp.NETWORK_REPEAT_DAYS) in l]
+    check(len(refusal) == 1 and len(network) == 1,
+          "satellite.yml's issues do not give the network pause and the "
+          "refusal block: %r" % said)
+
+    # The committed blocks file agrees with the rule: each host's `until` is
+    # what record_block would write for that record today. A network stop
+    # recorded under the old 7-day rule fails here until it is moved.
+    blocks = sp.load_blocks(os.path.join(os.path.dirname(HERE),
+                                         sp.BLOCKS_PATH))
+    for host, rec in blocks["hosts"].items():
+        rule = {k: v for k, v in rec.items() if k != "until"}
+        want = sp.stamp(sp.blocked_until(rule))
+        check(rec.get("until") == want,
+              "satellite/blocks.json: %s is blocked until %r; its %r stop at "
+              "%r gives %s" % (host, rec.get("until"), rec.get("status"),
+                               rec.get("at"), want))
+
+
+# --- a busy page served as success is EOX refusing us ------------------------
+#
+# A 200 whose body is not an image is EOX's "too busy" page. It used to count
+# as a network fault (a day's pause since 10 Oct 2026); it is EOX saying it is
+# overloaded, so it now follows a 429: a growing wait that holds every
+# connection, TOO_MANY_429 of them (429s and busy pages together) within the
+# window stop the area, and the stop blocks for BLOCK_DAYS.
+
+BUSY_PAGE = b"<html>heavyload</html>"
+REAL_FETCHER = bs.Fetcher
+
+
+class _Script:
+    """An opener that answers from a list: bytes are a 200 with that body,
+    an exception is raised. Past the end of the list, a JPEG."""
+
+    def __init__(self, script):
+        self.script, self.calls = list(script), []
+        self.lock = threading.Lock()
+
+    def open(self, req, timeout=0):
+        with self.lock:
+            self.calls.append(req.full_url)
+            item = self.script.pop(0) if self.script else JPEG
+        if isinstance(item, BaseException):
+            raise item
+        return contextlib.nullcontext(io.BytesIO(item))
+
+
+class _FakeClock:
+    """Time that moves only when the code under test sleeps; thread-safe."""
+
+    def __init__(self):
+        self.now, self.lock = 1000.0, threading.Lock()
+
+    def __call__(self):
+        with self.lock:
+            return self.now
+
+    def sleep(self, s):
+        with self.lock:
+            self.now += s
+
+
+def check_busy_page_is_a_refusal(sp):
+    def fetcher(script):
+        clock = _FakeClock()
+        op = _Script(script)
+        return bs.Fetcher(sharpen=False, opener=op, sleep=clock.sleep,
+                          clock=clock), op, clock
+
+    # One busy page: waited out like a 429 (15 s, every connection), then
+    # the tile arrives and nothing stops.
+    f, op, clock = fetcher([BUSY_PAGE, JPEG])
+    got = f.get(14, 1, 2)
+    check(got == JPEG and f.stopped is None and len(op.calls) == 2
+          and clock.now - 1000.0 >= 15.0 and not f.failed,
+          "one busy page was not waited out like a 429: tile %r, stopped "
+          "%r, %d requests, waited %r s" % (got, f.stopped, len(op.calls),
+                                            clock.now - 1000.0))
+    # Busy pages count with 429s: TOO_MANY_429 of them stop the area, as a
+    # refusal, blocked for BLOCK_DAYS.
+    f, op, clock = fetcher([BUSY_PAGE] * 10)
+    for y in range(4):
+        f.get(14, 1, y)
+    block = f.block or {}
+    check(f.stopped and len(op.calls) == bs.TOO_MANY_429
+          and block.get("status") == "busy",
+          "%d busy pages did not stop the area as a refusal: stopped %r, "
+          "%d requests, block %r" % (bs.TOO_MANY_429, f.stopped,
+                                     len(op.calls), block))
+    err = urllib.error.HTTPError("http://x", 429, "Too Many", {}, None)
+    f, op, clock = fetcher([err, err, BUSY_PAGE] + [JPEG] * 3)
+    f.get(14, 1, 2)
+    check(f.stopped and len(op.calls) == 3,
+          "two 429s and a busy page did not stop the area: stopped %r, %d "
+          "requests" % (f.stopped, len(op.calls)))
+    t0 = dt.datetime(2026, 10, 10, tzinfo=dt.timezone.utc)
+    got = sp.blocked_until({"at": "2026-10-10T00:00:00Z", "status": "busy",
+                            "retry_after": None}) - t0
+    check(got == dt.timedelta(days=sp.BLOCK_DAYS),
+          "a busy-page stop blocks for %s, not %d days" % (got, sp.BLOCK_DAYS))
+    # The other side: a connection that fails is still a network fault.
+    f, op, clock = fetcher([OSError("reset")] * 200)
+    for y in range(bs.FAILED_RUNNING):
+        f.get(14, 1, y)
+    check(f.stopped and (f.block or {}).get("status") == "network",
+          "a run of connection failures is no longer a network stop: %r"
+          % f.block)
+
+
+# --- the log says how fast the NETWORK went ---------------------------------
+#
+# Run 38038339064 (10 Oct 2026) logged "16,200/16,337  14 tiles/s" against a
+# cap of 4 a second. The cache was empty ("Cache not found", "0 staged") and
+# there was one Fetcher, so nothing was served locally and no second pacer
+# ran. The rate column held at 3-4 up to tile ~5,000 and then rose in a
+# straight line: done / elapsed with elapsed no longer growing. The area had
+# stopped near tile 5,000 (11 of the last 200 failed), and every tile still
+# queued in the pool returned at once without a request, yet was counted as
+# done and divided into the rate. The cache saved 39 MB, about 5,000 tiles,
+# not 16,200. So the log now counts requests, not tiles, and says how many
+# tiles were never asked for.
+
+def _run_main(factory, box, extra=()):
+    real = (bs.Fetcher, sys.argv)
+    log = io.StringIO()
+    try:
+        with tempfile.TemporaryDirectory() as tmp:
+            bs.Fetcher = factory
+            sys.argv = (["build_satellite.py", "--bbox"]
+                        + [str(v) for v in box]
+                        + ["--id", "t", "--label", "T", "--min-zoom", "13",
+                           "--max-zoom", "13", "--staging",
+                           os.path.join(tmp, "s")] + list(extra))
+            with contextlib.redirect_stdout(log), \
+                    contextlib.redirect_stderr(log):
+                rc = bs.main()
+    finally:
+        bs.Fetcher, sys.argv = real
+    return rc, log.getvalue()
+
+
+def check_log_counts_requests():
+    box = (-1.0, 52.0, -0.7, 52.2)
+    wanted = list(bs.tiles_in(box, 13, 13))
+    made = []
+
+    def factory(sharpen):
+        clock = _FakeClock()
+        op = _Script([OSError("reset")] * 100000)
+        made.append(op)
+        return REAL_FETCHER(sharpen=sharpen, opener=op, sleep=clock.sleep,
+                          clock=clock)
+    try:
+        rc, log = _run_main(factory, box)
+    except Exception as e:  # noqa: BLE001
+        check(False, "the request log could not be checked: %r" % e)
+        return
+    calls = made[0].calls if made else []
+    asked = len(set(calls))
+    m = re.search(r"network: ([\d,]+) requests in [\d.]+ s, ([\d.]+) a "
+                  r"second; ([\d,]+) tiles? not asked for", log)
+
+    def num(t):
+        return int(t.replace(",", ""))
+    check(m is not None and num(m.group(1)) == len(calls)
+          and num(m.group(3)) == len(wanted) - asked
+          and len(wanted) - asked > 0
+          and float(m.group(2)) <= bs.MAX_REQUESTS_PER_SECOND,
+          "the log does not report the network requests and the tiles never "
+          "asked for (%d requests for %d of %d tiles): %r"
+          % (len(calls), asked, len(wanted),
+             [l for l in log.split(LF) if "network" in l or "/s" in l]))
+    check("tiles/s" not in log,
+          "the log still divides tiles never asked for into a rate: %r"
+          % [l for l in log.split(LF) if "tiles/s" in l])
+    # A network stop says connection failures, never that EOX refused us;
+    # a refusal still says it was one.
+    stopped = [l for l in log.split(LF) if l.startswith("STOPPED")]
+    check(len(stopped) == 1 and "connection failures" in stopped[0]
+          and "refused" not in stopped[0],
+          "a network stop's STOPPED line is %r" % stopped)
+    refusal = urllib.error.HTTPError("http://x", 403, "no", {}, None)
+    clocks = []
+
+    def refused(sharpen):
+        clock = _FakeClock()
+        clocks.append(clock)
+        return REAL_FETCHER(sharpen=sharpen, opener=_Script([refusal] * 9),
+                            sleep=clock.sleep, clock=clock)
+    try:
+        rc, log = _run_main(refused, box)
+    except Exception as e:  # noqa: BLE001
+        log = repr(e)
+    stopped = [l for l in log.split(LF) if l.startswith("STOPPED")]
+    check(len(stopped) == 1 and "EOX refused" in stopped[0],
+          "a 403's STOPPED line is %r" % stopped)
+    # The rate is requests over the Fetcher's elapsed time, exactly, not
+    # tiles: here a 403 stops the run at once, so skipped tiles far
+    # outnumber requests (done / elapsed would read tens a second).
+    m = re.search(r"network: ([\d,]+) requests in [\d.]+ s, ([\d.]+) a "
+                  r"second; ([\d,]+) tiles? not asked for", log)
+    # Over at least a second: one 403 at the first slot takes no time.
+    elapsed = max(1.0, clocks[0].now - 1000.0) if clocks else 0.0
+    if m is None or elapsed <= 0:
+        check(False, "the 403 run's network line is missing: %r" % log[-300:])
+    else:
+        req, skipped = num(m.group(1)), num(m.group(3))
+        check(skipped >= 10 * req
+              and abs(float(m.group(2)) - req / elapsed) < 0.006,
+              "the 403 run logged %s a second for %d requests in %.2f s "
+              "(%d skipped): not requests / elapsed"
+              % (m.group(2), req, elapsed, skipped))
+
+
+# --- a run EOX refused is never recorded as a network stop -------------------
+#
+# Security review of 9ed7591: the stop recorded only what ENDED the run. Two
+# 429s cleared by waiting, then connections dropped (a server escalating from
+# "slow down" to refusing to talk), was recorded as "network" and paused for
+# 24 hours; before the 24-hour rule it got 7 days. Any refusal seen during
+# the run now decides the status.
+
+def check_refusal_never_recorded_as_network(sp):
+    def run(script, tiles=bs.FAILED_RUNNING + 5):
+        clock = _FakeClock()
+        f = bs.Fetcher(sharpen=False, opener=_Script(script),
+                       sleep=clock.sleep, clock=clock)
+        for y in range(tiles):
+            f.get(14, 1, y)
+        return f
+
+    def http(code, retry_after=None):
+        headers = {} if retry_after is None else {"Retry-After":
+                                                  str(retry_after)}
+        return urllib.error.HTTPError("http://x", code, "no", headers, None)
+    reset = [OSError("connection reset")] * 1000
+    for label, first in (
+            ("two 429s", [http(429), http(429)]),
+            ("a busy page", [BUSY_PAGE]),
+            ("a 503 with Retry-After 600", [http(503, 600)]),
+            ("a 302", [http(302)]),
+            ("19 404s", [http(404)] * 19)):
+        f = run(first + reset)
+        block = f.block or {}
+        with tempfile.TemporaryDirectory() as tmp:
+            rec = bs.record_block(os.path.join(tmp, "b.json"), "t", block) \
+                if f.stopped else {}
+        span = (sp._when(rec["until"]) - sp._when(rec["at"])) if rec else None
+        check(f.stopped and block.get("status") not in (None, "network")
+              and span == dt.timedelta(days=sp.BLOCK_DAYS),
+              "%s then connection resets was recorded as %r for %s, not as "
+              "a refusal for %d days" % (label, block.get("status"), span,
+                                         sp.BLOCK_DAYS))
+    f = run(reset)
+    check(f.stopped and (f.block or {}).get("status") == "network",
+          "connection resets alone are no longer a network stop: %r"
+          % f.block)
+
+
+# --- a repeated network stop escalates to the week -----------------------------
+#
+# Each network stop wrote a fresh 24 hours over the last, so a host that kept
+# dropping us was asked again every day or so for ever. A network stop that
+# follows a network block still in force, or one that ended within
+# BLOCK_DAYS, now blocks for BLOCK_DAYS.
+
+def check_repeat_network_stop_escalates(sp):
+    net = {"status": "network", "retry_after": None,
+           "reason": "11 of the last 200 tiles failed"}
+    host = "tiles.maps.eox.at"
+    now = dt.datetime.now(dt.timezone.utc)
+
+    def span(rec):
+        return sp._when(rec["until"]) - sp._when(rec["at"])
+
+    def stored(at, status="network"):
+        rec = {"at": sp.stamp(at), "area": "t", "status": status,
+               "retry_after": None, "reason": "earlier"}
+        rec["until"] = sp.stamp(sp.blocked_until(rec))
+        return rec
+    day, week = dt.timedelta(hours=24), dt.timedelta(days=sp.BLOCK_DAYS)
+    with tempfile.TemporaryDirectory() as tmp:
+        path = os.path.join(tmp, "blocks.json")
+        first = bs.record_block(path, "t", net)
+        second = bs.record_block(path, "t", net)
+        check(span(first) == day and span(second) == week,
+              "a first network stop blocks for %s and a second for %s, not "
+              "24 hours then %d days" % (span(first), span(second),
+                                         sp.BLOCK_DAYS))
+        check(sp.blocked_until({k: v for k, v in second.items()
+                                if k != "until"}) == sp._when(second["until"]),
+              "the escalated record's until is not what the rule gives: %r"
+              % second)
+        for ago, status, want, label in (
+                (dt.timedelta(days=3), "network", week,
+                 "a network block that ended 2 days ago"),
+                (dt.timedelta(days=9), "network", day,
+                 "a network block that ended 8 days ago"),
+                (dt.timedelta(days=9), 403, day,
+                 "an old 403 block")):
+            with open(path, "w", encoding="utf-8", newline=LF) as fh:
+                json.dump({"hosts": {host: stored(now - ago, status)}}, fh)
+            got = span(bs.record_block(path, "t", net))
+            check(got == want, "a network stop after %s blocks for %s, not "
+                  "%s" % (label, got, want))
+
+
+def check_skipped_is_only_never_asked():
+    """A tile already asked for once, waiting to retry when the run stops,
+    is not counted as never asked for; the next tile is."""
+    clock = _FakeClock()
+    box = {}
+
+    def sleep(s):
+        clock.sleep(s)
+        f = box["f"]
+        if not f.stopped:
+            f._stop("network", None, "stopped while a tile waited")
+    f = box["f"] = bs.Fetcher(sharpen=False,
+                              opener=_Script([OSError("reset")]),
+                              sleep=sleep, clock=clock)
+    first = f.get(14, 1, 1)
+    mid = (f.requests, f.skipped)
+    f.get(14, 1, 2)
+    check(first is None and mid == (1, 0) and (f.requests, f.skipped)
+          == (1, 1),
+          "skipped counts a tile asked for once: after the retried tile "
+          "(requests, skipped) = %r, after the next %r"
+          % (mid, (f.requests, f.skipped)))
+
+
+def check_progress_counts_requests():
+    """The progress line every 200 tiles gives requests and requests/s."""
+    box = (-1.0, 52.0, -0.3, 52.4)
+
+    def factory(sharpen):
+        clock = _FakeClock()
+        return REAL_FETCHER(sharpen=sharpen, opener=_Script([]),
+                            sleep=clock.sleep, clock=clock)
+    try:
+        rc, log = _run_main(factory, box)
+    except Exception as e:  # noqa: BLE001
+        check(False, "the progress line could not be checked: %r" % e)
+        return
+    m = re.search(r"  200/[\d,]+ tiles, (\d+) requests, ([\d.]+) "
+                  r"requests/s", log)
+    # Up to one request per other connection can be in flight when the
+    # 200th tile is counted.
+    check(m is not None and 200 <= int(m.group(1)) <= 203
+          and 0 < float(m.group(2))
+          <= bs.MAX_REQUESTS_PER_SECOND * 1.02 and "tiles/s" not in log,
+          "the progress line does not count requests: %r"
+          % [l for l in log.split(LF) if "/s" in l][:3])
+
+
+def check_real_rate_across_connections():
+    """main()'s own three connections, real clock and real sleeps, against an
+    instant server: requests leave no faster than MAX_REQUESTS_PER_SECOND."""
+    box = (-1.0, 52.0, -0.93, 52.07)
+    stamps, lock = [], threading.Lock()
+
+    class Instant:
+        def open(self, req, timeout=0):
+            with lock:
+                stamps.append(time.monotonic())
+            return contextlib.nullcontext(io.BytesIO(JPEG))
+
+    def factory(sharpen):
+        return REAL_FETCHER(sharpen=sharpen, opener=Instant())
+    n_wanted = len(list(bs.tiles_in(box, 13, 13)))
+    try:
+        rc, log = _run_main(factory, box, ["--workers", "3"])
+    except Exception as e:  # noqa: BLE001
+        check(False, "the real-clock rate could not be measured: %r" % e)
+        return
+    stamps.sort()
+    span = stamps[-1] - stamps[0] if len(stamps) > 1 else 0.0
+    rate = (len(stamps) - 1) / span if span > 0 else float("inf")
+    check(len(stamps) == n_wanted >= 6
+          and rate <= bs.MAX_REQUESTS_PER_SECOND * 1.05,
+          "%d requests for %d tiles left at %.2f a second, over %s"
+          % (len(stamps), n_wanted, rate, bs.MAX_REQUESTS_PER_SECOND))
+
+
+# --- the overall request rate, and a run that fits its timeout ----------------
+#
+# The same run asked for 10-14 tiles a second before the failures began. The
+# owner asked for slower: about 2-3 a second across every connection. The
+# budget must then still finish inside the job's timeout, with time left for
+# setup, packaging and publishing.
+
+PACKAGE_RESERVE_MINUTES = 45   # setup, cache, packaging, publish, backoff
+
+
+def check_pacing():
+    rate = bs.MAX_REQUESTS_PER_SECOND
+    check(2.0 <= rate <= 3.0, "MAX_REQUESTS_PER_SECOND is %r, not 2-3" % rate)
+    # The Fetcher's spacing at this rate, alone and across threads, is
+    # pinned in test_imagery_licence.py.
+    here = os.path.dirname(HERE)
+    with open(os.path.join(here, ".github", "workflows", "satellite.yml"),
+              encoding="utf-8") as fh:
+        text = fh.read()
+    budgets = re.findall(r"--budget (\d+)", text)
+    timeout = re.findall(r"^    timeout-minutes: (\d+)", text, re.M)
+    if len(budgets) != 1 or len(timeout) != 1:
+        check(False, "satellite.yml: budgets %r, job timeouts %r"
+              % (budgets, timeout))
+        return
+    budget, minutes = int(budgets[0]), int(timeout[0])
+    fetch = budget / rate / 60.0
+    check(fetch + PACKAGE_RESERVE_MINUTES <= minutes,
+          "a %s-tile run at %s tiles/s is %.0f minutes of fetching; with "
+          "%d minutes for the rest it overruns the %d-minute timeout"
+          % (budget, rate, fetch, PACKAGE_RESERVE_MINUTES, minutes))
+
+
 def check_workflow_wiring():
     """satellite.yml hands the planner the blocks file on both of its paths,
     and the build writes there."""
@@ -643,7 +1151,7 @@ def check_layer_allowlist():
 
 # --- a run that fetched part of an area is not a failure -------------------
 #
-# gb-north is 78,026 tiles at z14 and a run fetches 55,000, so it takes two
+# gb-north is 78,026 tiles at z14 and a run fetches 45,000, so it takes two
 # runs and the first writes no pack. On 9 Oct 2026 "Would the app be able to
 # read it?" read that as "no packs were written" and failed both scheduled
 # runs. The build now says which it was (--state-out): "incomplete" skips the
@@ -664,6 +1172,8 @@ def check_state_out():
             class Idle:
                 lock = threading.Lock()
                 done, failed, stopped = 0, [], None
+                requests = skipped = 0
+                clock = time.monotonic   # what main() times the run by
 
                 def __init__(self, *a, **k):
                     pass
@@ -801,6 +1311,8 @@ def check_failures_within_budget_fail():
 
                 def __init__(self, *a, **k):
                     self.done, self.failed, self.stopped = 0, [], None
+                    self.requests = self.skipped = 0
+                    self.clock = time.monotonic
 
                 def get(self, z, x, y):
                     if tiles.index((z, x, y)) % 7 == 0:

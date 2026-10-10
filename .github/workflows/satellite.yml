@@ -10,10 +10,11 @@ name: Build satellite imagery
 #   wales        6,767   26,675     midlands     6,859   26,854
 #   south-west   8,580   34,124     north       13,682   53,778
 #
-# The budget is 55,000, sized to the North so every region still fits in one
-# run - that is what splitting by area was for. Six areas, six runs, and at
-# twice daily that is three days; after which the job idles until the oldest
-# pack is 25 days old.
+# The budget is 45,000 a run, sized to the 350-minute timeout at the polite
+# rate (2.5 tiles a second since 10 Oct 2026), not to an area: the larger
+# areas, the North among them, take two runs or more, and that is fine. At
+# twice daily a full pass takes a few days; after which the job idles until
+# the oldest pack is 25 days old.
 #
 # Both tiers come out of one fetch: a z0-14 archive contains z0-13, so this
 # publishes Standard and High detail without fetching anything twice. Together
@@ -55,9 +56,10 @@ jobs:
     runs-on: ubuntu-latest
     # SIZED AGAINST THE BUDGET, not against an area. It was 180 minutes when
     # the largest area was 13,682 tiles at z13 and a run was "under an hour".
-    # At z14 a full-budget run is 40,000 tiles — roughly three hours at the
-    # same polite rate — so 180 was about to start timing out the nightly job
-    # on the larger regions, on the first night this ran.
+    # At z14 a full-budget run is 45,000 tiles - 300 minutes of fetching at
+    # 2.5 tiles a second (build_satellite's MAX_REQUESTS_PER_SECOND) - so 180
+    # would time out every full run. test_build_satellite checks the budget
+    # at that rate still leaves 45 minutes for everything else.
     #
     # 350 leaves real headroom under GitHub's own six-hour ceiling. The guard
     # it provides is still the one that matters: a hung request must not hold
@@ -178,7 +180,8 @@ jobs:
       # either, so the entries are one or two per area per monthly rebuild,
       # well inside the repository's 10 GB (the lane refresh's council cache
       # shares it). GitHub drops an entry nobody has read for 7 days, so
-      # after a 7-day refusal the area usually starts again from nothing;
+      # after a 7-day refusal the area usually starts again from nothing (a
+      # 24-hour network pause keeps its tiles);
       # that is expected, and at this pace re-fetching it is acceptable.
       #
       # Keyed by month as well as area, so a rebuild genuinely re-fetches
@@ -201,16 +204,13 @@ jobs:
           MAXZ=$(echo "$PLAN" | python -c 'import json,sys;print(json.load(sys.stdin)["max_zoom"])')
 
           mkdir -p dist/satellite
-          # Sized to the LARGEST AREA, not to the timeout: the North is 53,778
-          # tiles at z14, so 55,000 puts every region back inside a single run
-          # the way splitting by area intended. It was 40,000, which fitted
-          # when z13 made the North 13,682 and would now have split it over two
-          # nights.
-          #
-          # This does not make the fetch ruder. The rate is the same three
-          # connections with backoff; the run simply lasts longer, and a
-          # 55,000-tile run is about four hours against the 350-minute ceiling
-          # above. Fewer, longer runs move the same bytes in fewer days.
+          # Sized to the TIMEOUT at the polite rate. On 10 Oct 2026 the owner
+          # asked for a gentler fetch, so the rate across all three
+          # connections is 2.5 tiles a second: 45,000 tiles is 18,000 s, 300
+          # minutes, against the 350-minute ceiling above, leaving 50 minutes
+          # for setup, the cache, backoff, packaging and publishing. It was
+          # 55,000 at 4 a second; at 2.5 that is 367 minutes and would time
+          # out. Bigger areas simply take more runs.
           #
           # Exit 3 is EOX refusing us. The build has then written the refusal
           # to satellite/blocks.json, and `blocked` tells "Remember the
@@ -225,7 +225,7 @@ jobs:
             --max-zoom "$MAXZ" \
             --sharpen \
             --staging "staging/${{ steps.plan.outputs.id }}" \
-            --budget 55000 \
+            --budget 45000 \
             --package \
             --out "dist/satellite/${{ steps.plan.outputs.id }}.pmtiles" \
             --entry-out dist/satellite/entry.json \
@@ -240,8 +240,10 @@ jobs:
 
       # A REFUSAL IS REMEMBERED. Without this the next run, twelve hours on,
       # planned the same area and asked EOX again. The planner reads
-      # satellite/blocks.json and leaves the area alone for at least 7 days,
-      # or until EOX's Retry-After when that is longer.
+      # satellite/blocks.json and leaves the area alone for at least 7 days
+      # after a refusal (24 hours after a "network" stop, where connections
+      # failed and EOX refused nothing), or until EOX's Retry-After when that
+      # is longer.
       #
       # ON MAIN, WHEREVER THE RUN STARTED. Every scheduled run plans from
       # main, so that is where the record must land. A bare `git push` sent
@@ -629,29 +631,51 @@ jobs:
               host, rec = next((h, r) for h, r in hosts.items()
                                if r.get("area") == sys.argv[1])
               status = rec.get("status")
+              kind = ("refusal" if status != "network"
+                      else "network7" if rec.get("repeat") else "network")
               what = ("connection failures" if status == "network"
+                      else "a busy page served as success" if status == "busy"
                       else "HTTP %s" % status)
               if rec.get("retry_after") is not None:
                   what += ", Retry-After %s s" % rec["retry_after"]
-              print("%s|%s|%s" % (what, host,
-                                  rec.get("until") or "an unknown date"))
+              print("%s|%s|%s|%s" % (kind, what, host,
+                                     rec.get("until") or "an unknown date"))
           except (OSError, ValueError, KeyError, TypeError, AttributeError,
                   StopIteration):
-              print("a refusal not on record|the tile host|an unknown date")
+              print("refusal|a refusal not on record|the tile host|"
+                    "an unknown date")
           ' "$KEY")
+            KIND="${SAID%%|*}"
+            SAID="${SAID#*|}"
             WHAT="${SAID%%|*}"
             REST="${SAID#*|}"
             HOST="${REST%%|*}"
             UNTIL="${REST#*|}"
-            TITLE="Satellite build for $KEY stopped: EOX refused us"
-            if [ "$REMEMBERED" = "true" ]; then
-              NEXT="Nothing retries around a refusal: every area comes from $HOST, so the planner asks it for no area at all until **$UNTIL** (7 days, or longer when EOX's Retry-After asks for longer), as recorded in satellite/blocks.json."
+            # A NETWORK STOP IS NOT A REFUSAL: connections failed and EOX
+            # refused nothing, so the issue must not say it did.
+            if [ "$KIND" = "network" ] || [ "$KIND" = "network7" ]; then
+              PAUSE="24 hours"
+              # A repeat: connections failed again soon after the last pause.
+              if [ "$KIND" = "network7" ]; then PAUSE="7 days"; fi
+              TITLE="Satellite build for $KEY paused: connection failures from EOX (retrying after $PAUSE)"
+              SAYS="Connections to EOX ($HOST) failed ($WHAT) in \`$KEY\`, so the build paused. EOX did not refuse us."
+              if [ "$REMEMBERED" = "true" ]; then
+                NEXT="The planner asks $HOST for no area until **$UNTIL** (24 hours after a network fault; 7 days if connections fail again within 7 days of the last pause), as recorded in satellite/blocks.json, and then resumes."
+              else
+                NEXT="**The pause could not be recorded** in satellite/blocks.json, so the planner may ask $HOST for an area again on the next run. Disable this workflow from the Actions tab until someone has looked into the connection failures."
+              fi
             else
-              NEXT="**The refusal could not be recorded** in satellite/blocks.json, so the planner may ask $HOST for an area again on the next run. Disable this workflow from the Actions tab until someone has looked into EOX's refusal."
+              TITLE="Satellite build for $KEY stopped: EOX refused us"
+              SAYS="EOX ($HOST) refused us ($WHAT) in \`$KEY\`, so the build stopped."
+              if [ "$REMEMBERED" = "true" ]; then
+                NEXT="Nothing retries around a refusal: every area comes from $HOST, so the planner asks it for no area at all until **$UNTIL** (7 days after a refusal, or longer when EOX's Retry-After asks for longer), as recorded in satellite/blocks.json."
+              else
+                NEXT="**The refusal could not be recorded** in satellite/blocks.json, so the planner may ask $HOST for an area again on the next run. Disable this workflow from the Actions tab until someone has looked into EOX's refusal."
+              fi
             fi
             OUTCOME=$(cat <<EOF
-          EOX ($HOST) refused us ($WHAT) in \`$KEY\`, so the build stopped
-          and **nothing was published**. Riders keep the imagery they have.
+          $SAYS
+          **Nothing was published**. Riders keep the imagery they have.
 
           $NEXT
 

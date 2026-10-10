@@ -537,14 +537,15 @@ def service_checks(bs):
         box["f"] = bs.Fetcher(sharpen=False, opener=op, sleep=sleep,
                               clock=clock)
         box["f"].get(13, 1, 2)       # at 1000, no sleep
-        box["f"].get(13, 1, 3)       # slot 1000.25; the pause lands mid-sleep
+        box["f"].get(13, 1, 3)       # slot 1000.4; the pause lands mid-sleep
         check(held and len(starts) == 2 and starts[1] >= 1000.0 + 7,
               "a scheduled request left during a pause: starts %s" % starts)
 
     def paced():
-        # (b) A polite rate, stated and pinned: four a second.
-        check(bs.MAX_REQUESTS_PER_SECOND == 4.0,
-              "MAX_REQUESTS_PER_SECOND is %r, not 4"
+        # (b) A polite rate, stated and pinned: 2.5 a second (it was four
+        #     until the owner asked for gentler on 10 Oct 2026).
+        check(bs.MAX_REQUESTS_PER_SECOND == 2.5,
+              "MAX_REQUESTS_PER_SECOND is %r, not 2.5"
               % bs.MAX_REQUESTS_PER_SECOND)
         f, op, clock = fetcher([])
         starts = []
@@ -557,8 +558,8 @@ def service_checks(bs):
         for y in range(6):
             f.get(13, 1, y)
         gaps = [b - a for a, b in zip(starts, starts[1:])]
-        check(len(gaps) == 5 and all(abs(g - 0.25) < 1e-9 for g in gaps),
-              "requests were not paced to 4 a second: gaps %s" % gaps)
+        check(len(gaps) == 5 and all(abs(g - 0.4) < 1e-9 for g in gaps),
+              "requests were not paced to 2.5 a second: gaps %s" % gaps)
 
     def paced_across_threads():
         # Three connections, as main() runs them, share ONE slot: a slot per
@@ -593,8 +594,8 @@ def service_checks(bs):
             t.join()
         starts.sort()
         gaps = [b - a for a, b in zip(starts, starts[1:])]
-        check(len(starts) == 9 and all(abs(g - 0.25) < 1e-9 for g in gaps),
-              "three connections were not paced together at 4 a second: "
+        check(len(starts) == 9 and all(abs(g - 0.4) < 1e-9 for g in gaps),
+              "three connections were not paced together at 2.5 a second: "
               "starts %s" % starts)
 
     def pause_is_host_wide():
@@ -646,14 +647,14 @@ def service_checks(bs):
               % len(op.calls))
 
     def connection_failures():
-        # Resets, timeouts, TLS faults and a 200 that is not an image are
-        # refusals too, counted per tile: 20 tiles running, or more than 5%
-        # of the last 200, stop the area as an HTTP refusal does.
+        # Resets, timeouts and TLS faults count per tile: 20 tiles running,
+        # or more than 5% of the last 200, stop the area. A 200 that is not
+        # an image is EOX's busy page, a refusal handled as a 429 (since
+        # 10 Oct 2026; test_build_satellite checks it), so it is not here.
         faults = [ConnectionResetError("reset"), TimeoutError("timed out"),
                   ssl.SSLError("bad record mac"),
-                  urllib.error.URLError("refused"),
-                  b"<html>heavyload</html>"]
-        f, op, clock = fetcher([faults[i % 5] for i in range(20)]
+                  urllib.error.URLError("refused")]
+        f, op, clock = fetcher([faults[i % 4] for i in range(20)]
                                + [JPG] * 5, retries=1)
         for y in range(19):
             f.get(13, 1, y)
@@ -668,8 +669,8 @@ def service_checks(bs):
               "20 failed tiles running did not stop the area: stopped=%r, "
               "%d requests, block %r" % (f.stopped, len(op.calls), block))
 
-        f, op, clock = fetcher([faults[i % 5] for i in range(19)] + [JPG]
-                               + [faults[i % 5] for i in range(19)],
+        f, op, clock = fetcher([faults[i % 4] for i in range(19)] + [JPG]
+                               + [faults[i % 4] for i in range(19)],
                                retries=1)
         for y in range(39):
             f.get(13, 1, y)
@@ -702,8 +703,10 @@ def service_checks(bs):
 
         # And the busy page is never kept as a tile.
         f, op, clock = fetcher([b"<html>busy</html>"], retries=1)
-        check(f.get(13, 1, 2) is None and len(f.failed) == 1,
-              "a 200 that is not an image was kept as a tile")
+        check(f.get(13, 1, 2) is None and f.stopped
+              and (f.block or {}).get("status") == "busy",
+              "a 200 that is not an image was kept as a tile, or was not "
+              "a refusal: %r" % f.block)
 
     for name, fn in (("the Retry-After wait", waited_out),
                      ("the default tries", default_tries),
@@ -770,7 +773,7 @@ def service_checks(bs):
             followed = e.code != 302
         check(not followed and hits == ["/13/1/2"],
               "sample_imagery's FETCHER follows a redirect: %s" % hits)
-        check(abs(real.interval - 0.25) < 1e-9 and real.retries == 4,
+        check(abs(real.interval - 0.4) < 1e-9 and real.retries == 4,
               "sample_imagery's FETCHER is not the build's polite one: "
               "interval %r, retries %r" % (real.interval, real.retries))
     except Exception as e:  # noqa: BLE001
@@ -1053,9 +1056,14 @@ def main():
     #      must write all six plates and the index, with where they are of.
     #      Git is a stand-in too: the real one would fetch origin into
     #      whatever clone the suite runs in (on 10 Oct 2026 a mutant of the
-    #      planner's --depth made the owner's clone shallow that way).
+    #      planner's --depth made the owner's clone shallow that way). The
+    #      checkout's own satellite/blocks.json is swapped out as well: a
+    #      real block on main (10 Oct 2026) made this fail for reasons that
+    #      are not sample_imagery's.
     with tempfile.TemporaryDirectory() as tmp:
         fetch, argv, git_run = si.fetch, sys.argv, si.GIT_RUN
+        blocks_path = si.BLOCKS
+        si.BLOCKS = os.path.join(tmp, "no-blocks.json")
         si.fetch = lambda z, x, y: Image.new("RGB", (256, 256), blue)
         si.GIT_RUN = no_block = FakeGit()
         sys.argv = ["sample_imagery.py", "--lat", "52.12", "--lon", "1.40",
@@ -1069,6 +1077,7 @@ def main():
             ran = {"error": repr(e)}
         finally:
             si.fetch, sys.argv, si.GIT_RUN = fetch, argv, git_run
+            si.BLOCKS = blocks_path
         check(any(c[1:2] == ["fetch"] for c in no_block.calls),
               "sample_imagery's end-to-end run used the real git, not the "
               "stand-in: %r" % no_block.calls)

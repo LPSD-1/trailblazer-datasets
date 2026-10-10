@@ -618,7 +618,7 @@ def git(cwd, *args):
                           universal_newlines=True).stdout
 
 
-def write_blocks(where, status=403):
+def write_blocks(where, status=403, repeat=False):
     os.makedirs(os.path.join(where, "satellite"), exist_ok=True)
     with open(os.path.join(where, "satellite", "blocks.json"), "w",
               encoding="utf-8", newline="\n") as f:
@@ -626,7 +626,8 @@ def write_blocks(where, status=403):
             "at": "2026-10-09T02:41:00Z", "area": "gb-wales-satellite",
             "status": status,
             "retry_after": None, "until": UNTIL,
-            "reason": "HTTP %s for z14/1/2" % status}}}, f)
+            "reason": "HTTP %s for z14/1/2" % status,
+            **({"repeat": True} if repeat else {})}}}, f)
 
 
 def check_refusal(bash, problems):
@@ -716,6 +717,58 @@ def check_refusal(bash, problems):
         problems.append("a refusal that could not be recorded does not ask "
                         "for the workflow to be disabled: %r"
                         % lost[0]["body"][:400])
+
+    # A NETWORK STOP IS NOT A REFUSAL. Connections failed and EOX refused
+    # nothing (10 Oct 2026); the issue must not say it did, and must say the
+    # pause is a day. A busy page served as success is a refusal and keeps
+    # the refusal's title.
+    # A network stop that could not be recorded asks for the workflow to
+    # be disabled, without calling it a refusal.
+    ws = Workspace(bash, CATALOGUE)
+    try:
+        write_blocks(ws.dir, status="network")
+        ws.run(FAIL_STEP, dict(blocked, run="42", blocked="true"))
+        unrecorded = about(ws.issues(), "gb-wales-satellite", "open")
+    finally:
+        ws.close()
+    if not unrecorded:
+        raise Premise("an unrecorded network stop raised no alarm")
+    body = unrecorded[0]["body"]
+    if ("The pause could not be recorded" not in body
+            or "Disable this workflow" not in body
+            or "refused us" in body):
+        problems.append("an unrecorded network stop's alarm does not say the "
+                        "pause was not recorded: %r" % body[:300])
+
+    # With no record at all, it is still told as a refusal, and says so.
+    for status, want, must_not, says in (
+            ("network", "paused: connection failures from EOX (retrying "
+                        "after 24 hours)", "refused", "connection failures"),
+            ("repeat", "paused: connection failures from EOX (retrying "
+                       "after 7 days)", "refused", "connection failures"),
+            ("busy", "stopped: EOX refused us", None,
+             "a busy page served as success"),
+            (None, "stopped: EOX refused us", None,
+             "refused us (a refusal not on record)")):
+        ws = Workspace(bash, CATALOGUE)
+        try:
+            if status == "repeat":
+                write_blocks(ws.dir, status="network", repeat=True)
+            elif status is not None:
+                write_blocks(ws.dir, status=status)
+            ws.run(FAIL_STEP, dict(blocked, blocked="true", remembered="true"))
+            got = about(ws.issues(), "gb-wales-satellite", "open")
+        finally:
+            ws.close()
+        if not got:
+            raise Premise("a %s stop raised no alarm" % status)
+        title, body = got[0]["title"], got[0]["body"]
+        print("  %s stop: %s" % (status, title))
+        if want not in title or says not in body or (must_not and (
+                must_not in title.lower() or "refused us" in body)):
+            problems.append("a %s stop's alarm is titled %r (body %r); it "
+                            "should say %r and %r" % (
+                                status, title, body[:200], want, says))
 
 
 def check_remember_commits(bash, problems, blocked):

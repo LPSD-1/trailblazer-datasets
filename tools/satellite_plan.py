@@ -161,7 +161,16 @@ def _build_satellite():
 # Every area comes from that one host, so none is planned for at least
 # BLOCK_DAYS, or until Retry-After when EOX asked for longer; nothing
 # shortens either.
+#
+# A "network" stop is not a refusal: connections failed (resets, timeouts)
+# and EOX sent no 4xx, no 429 and no Retry-After. It pauses for
+# NETWORK_BLOCK_HOURS instead (owner's decision, 10 Oct 2026). Every stop
+# under an HTTP status keeps BLOCK_DAYS, and so does a network stop marked
+# "repeat": one that came while a network block was in force, or within
+# NETWORK_REPEAT_DAYS of one ending.
 BLOCK_DAYS = 7
+NETWORK_BLOCK_HOURS = 24
+NETWORK_REPEAT_DAYS = 7
 NEVER = dt.datetime.max.replace(tzinfo=dt.timezone.utc)
 
 
@@ -182,8 +191,11 @@ def blocked_until(record):
     try:
         at = _when(record["at"])
         asked = float(record.get("retry_after") or 0)
-        until = at + max(dt.timedelta(days=BLOCK_DAYS),
-                         dt.timedelta(seconds=asked))
+        pause = (dt.timedelta(hours=NETWORK_BLOCK_HOURS)
+                 if record.get("status") == "network"
+                 and not record.get("repeat")
+                 else dt.timedelta(days=BLOCK_DAYS))
+        until = at + max(pause, dt.timedelta(seconds=asked))
     except (KeyError, TypeError, ValueError, AttributeError, OverflowError):
         return NEVER
     try:
