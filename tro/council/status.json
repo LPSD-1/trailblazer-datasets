@@ -109,6 +109,8 @@
  },
  "west-berkshire-closures": {
   "authority": "West Berkshire",
+  "error": "service error from https://gis.westberks.gov.uk/server/rest/services/Layers/PUBLIC_RIGHTS_OF_WAY_CLOSURES/FeatureServer/2/query?where=Active%3D%27y%27&outFields=OBJECTID%2CId%2CTRO_title%2CStart%2CFinish%2CNotes%2CRoutecode%2CPermOrTemp%2CActive&f=json&returnGeometry=true&outSR=27700&resultOffset=0&",
+  "failing_since": "2026-10-10",
   "items": 17,
   "last_ok": "2026-10-10",
   "name": "West Berkshire Council - public rights of way orders layer",
