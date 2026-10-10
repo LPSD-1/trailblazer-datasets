@@ -1,6 +1,6 @@
 {
  "schema": 2,
- "generated": "2026-10-09T19:47:10Z",
+ "generated": "2026-10-10T01:15:03Z",
  "attribution": "Map and routing data (c) OpenStreetMap contributors, ODbL. United Kingdom rights of way contain public sector information licensed under the Open Government Licence v3.0, via rowmaps.com. Unsurfaced unclassified roads from the highway records of Devon County Council, North Yorkshire Council, Norfolk County Council, Lincolnshire County Council, Northumberland County Council, East Riding of Yorkshire Council, Oxfordshire County Council and Surrey County Council.",
  "baseUrl": "https://lpsd-1.github.io/trailblazer-datasets/",
  "overviews": [
@@ -73,108 +73,108 @@
     "kind": "wet",
     "region": "east-anglia",
     "file": "https://lpsd-1.github.io/trailblazer-datasets/published/wet/east-anglia.json",
-    "sha256": "98005b53a39e102a3d3c9ae13750dd1dd621b319eff2dd8a359aa089e16fa024",
-    "bytes": 28035,
-    "asOf": "2026-10-09T19:16:28Z"
+    "sha256": "88001ef1ed9e6ff3561effe811ba5d3ed703f59d7cc075326bc44e651b0f1eaa",
+    "bytes": 27523,
+    "asOf": "2026-10-10T01:09:08Z"
    },
    {
     "id": "gb-midlands-wet",
     "kind": "wet",
     "region": "midlands",
     "file": "https://lpsd-1.github.io/trailblazer-datasets/published/wet/midlands.json",
-    "sha256": "511958fda98ca18e8064a13b40cef21b605c1ab8a807eb4a4fa87522f6c01065",
-    "bytes": 45251,
-    "asOf": "2026-10-09T19:16:28Z"
+    "sha256": "2de24fb5d44683eec82a42366c544affc1ec41f66af9720b3bfbeff5de1c1dab",
+    "bytes": 44491,
+    "asOf": "2026-10-10T01:09:08Z"
    },
    {
     "id": "gb-north-wet",
     "kind": "wet",
     "region": "north",
     "file": "https://lpsd-1.github.io/trailblazer-datasets/published/wet/north.json",
-    "sha256": "e0946090ed63c66d3e02b9f70ad02f55d23bc108dbe62df6b473e87866741e97",
-    "bytes": 42912,
-    "asOf": "2026-10-09T19:16:28Z"
+    "sha256": "60ee950b4681c92242ec00f5137c545e9120eb3a614d6ec08851aab2ea0e47e7",
+    "bytes": 42152,
+    "asOf": "2026-10-10T01:09:08Z"
    },
    {
     "id": "gb-south-east-wet",
     "kind": "wet",
     "region": "south-east",
     "file": "https://lpsd-1.github.io/trailblazer-datasets/published/wet/south-east.json",
-    "sha256": "763666346aa44900411345d04bb617a97f1f0819dc45886b6fcab68f90289221",
-    "bytes": 37815,
-    "asOf": "2026-10-09T19:16:28Z"
+    "sha256": "2bf0f3cd0c2fa9c4c1f7b30fa1a22d5a16f7d1bc96b852597107595a41bfd3f2",
+    "bytes": 37533,
+    "asOf": "2026-10-10T01:09:08Z"
    },
    {
     "id": "gb-south-west-wet",
     "kind": "wet",
     "region": "south-west",
     "file": "https://lpsd-1.github.io/trailblazer-datasets/published/wet/south-west.json",
-    "sha256": "42792d7e05cbf41551d31235b466b2bcc74624716bb722c77a00256c7bb265e7",
-    "bytes": 26085,
-    "asOf": "2026-10-09T19:16:28Z"
+    "sha256": "8d975327aa57713b9ce17b8d96328260798ef4eb718904544e7f5b237fd8478c",
+    "bytes": 25902,
+    "asOf": "2026-10-10T01:09:08Z"
    },
    {
     "id": "gb-wales-wet",
     "kind": "wet",
     "region": "wales",
     "file": "https://lpsd-1.github.io/trailblazer-datasets/published/wet/wales.json",
-    "sha256": "21993f3e5b90184881cf69ad6f8442f5896dc73ef8305f80f8339e1200fd0954",
-    "bytes": 14448,
-    "asOf": "2026-10-09T19:16:28Z"
+    "sha256": "3ad43012b302afe625ab29e746a68bbd77eb95831824a3fad9449787675e1f91",
+    "bytes": 14280,
+    "asOf": "2026-10-10T01:09:08Z"
    },
    {
     "id": "gb-east-anglia-rivers",
     "kind": "rivers",
     "region": "east-anglia",
     "file": "https://lpsd-1.github.io/trailblazer-datasets/published/rivers/east-anglia.json",
-    "sha256": "42092a31cb0174d7b825a750c9597e13f237f7e4c7768b5164fabc1b4e187cbb",
-    "bytes": 3464,
-    "asOf": "2026-10-09T19:20:04Z"
+    "sha256": "14db27df093cd2c7d5477fef4680c12aa6efd267559f5ad8efaa5749a521c48f",
+    "bytes": 3472,
+    "asOf": "2026-10-10T01:11:26Z"
    },
    {
     "id": "gb-midlands-rivers",
     "kind": "rivers",
     "region": "midlands",
     "file": "https://lpsd-1.github.io/trailblazer-datasets/published/rivers/midlands.json",
-    "sha256": "a099811ff2dfd08827614e1abbf63527654687595de3e330801b4ed226c08395",
-    "bytes": 5666,
-    "asOf": "2026-10-09T19:20:04Z"
+    "sha256": "118ad4ea28a2946e805d4fd37b05e01446103b307d81a95bdf85e4c5b0fb1993",
+    "bytes": 5672,
+    "asOf": "2026-10-10T01:11:26Z"
    },
    {
     "id": "gb-north-rivers",
     "kind": "rivers",
     "region": "north",
     "file": "https://lpsd-1.github.io/trailblazer-datasets/published/rivers/north.json",
-    "sha256": "54fa964459c1ba2adf6d6e28cb2699ffc0ecab5cd20a01ad7ac6f8663078b69b",
-    "bytes": 9129,
-    "asOf": "2026-10-09T19:20:04Z"
+    "sha256": "daa75ab968a7a3712d0b9a604c7e7f7fc7fed85248366b43f187a44715ea2d94",
+    "bytes": 9125,
+    "asOf": "2026-10-10T01:11:26Z"
    },
    {
     "id": "gb-south-east-rivers",
     "kind": "rivers",
     "region": "south-east",
     "file": "https://lpsd-1.github.io/trailblazer-datasets/published/rivers/south-east.json",
-    "sha256": "469f8276d91195a462d80f3ac4951ad7e66f5914bee6c8c6e4284f81e5e84a28",
-    "bytes": 5360,
-    "asOf": "2026-10-09T19:20:04Z"
+    "sha256": "1522406ab2b84a74cd052c868e31b1155dbc226c5f0f5e0e83a76983c0570d04",
+    "bytes": 5367,
+    "asOf": "2026-10-10T01:11:26Z"
    },
    {
     "id": "gb-south-west-rivers",
     "kind": "rivers",
     "region": "south-west",
     "file": "https://lpsd-1.github.io/trailblazer-datasets/published/rivers/south-west.json",
-    "sha256": "f2a88e3d04942e14b55103bdce7984c9e751de7fdb5fd17868dcd8830b376f50",
+    "sha256": "68cc7ab17b51afb1dc809e808a39113b9cc7bcab55b1529d723d6d6d43ba3b2e",
     "bytes": 3276,
-    "asOf": "2026-10-09T19:20:04Z"
+    "asOf": "2026-10-10T01:11:26Z"
    },
    {
     "id": "gb-wales-rivers",
     "kind": "rivers",
     "region": "wales",
     "file": "https://lpsd-1.github.io/trailblazer-datasets/published/rivers/wales.json",
-    "sha256": "250f8b1baabf413e17d6a1b46fe6dd1289da02e03778b8677e7afbb228234a4a",
-    "bytes": 2402,
-    "asOf": "2026-10-09T19:20:04Z"
+    "sha256": "36feecb118d709eed3fcc1c28cffb17ac8b5be103a7f6ffd4e5c04b41aaf549f",
+    "bytes": 2397,
+    "asOf": "2026-10-10T01:11:26Z"
    }
   ]
  },
@@ -3358,17 +3358,17 @@
          "bytes": 40553
         },
         {
-         "bytes": 4950050,
+         "bytes": 4950015,
          "council_features": 347,
          "councils": 178,
          "councils_publishing": 99,
          "features": 41642,
-         "file": "https://github.com/lpsd-1/trailblazer-datasets/releases/download/tro/gb-tro-ef21511c0cc692c4.tbpack",
+         "file": "https://github.com/lpsd-1/trailblazer-datasets/releases/download/tro/gb-tro-a9b533b1c7172ee8.tbpack",
          "generated": "2026-10-08",
          "id": "gb-tro",
          "kind": "tro",
          "label": "Traffic orders",
-         "sha256": "ef21511c0cc692c4f5ceff26930f6bc036da4c83508ffb881e3b52f42e4a47f0"
+         "sha256": "a9b533b1c7172ee8e37dbce6792c069b0d866f5ed61c97f91a5372aa6cf328cd"
         }
        ]
       }
