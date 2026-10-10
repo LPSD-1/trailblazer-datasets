@@ -618,7 +618,7 @@ def git(cwd, *args):
                           universal_newlines=True).stdout
 
 
-def write_blocks(where, status=403):
+def write_blocks(where, status=403, repeat=False):
     os.makedirs(os.path.join(where, "satellite"), exist_ok=True)
     with open(os.path.join(where, "satellite", "blocks.json"), "w",
               encoding="utf-8", newline="\n") as f:
@@ -626,7 +626,8 @@ def write_blocks(where, status=403):
             "at": "2026-10-09T02:41:00Z", "area": "gb-wales-satellite",
             "status": status,
             "retry_after": None, "until": UNTIL,
-            "reason": "HTTP %s for z14/1/2" % status}}}, f)
+            "reason": "HTTP %s for z14/1/2" % status,
+            **({"repeat": True} if repeat else {})}}}, f)
 
 
 def check_refusal(bash, problems):
@@ -725,13 +726,17 @@ def check_refusal(bash, problems):
     for status, want, must_not, says in (
             ("network", "paused: connection failures from EOX (retrying "
                         "after 24 hours)", "refused", "connection failures"),
+            ("repeat", "paused: connection failures from EOX (retrying "
+                       "after 7 days)", "refused", "connection failures"),
             ("busy", "stopped: EOX refused us", None,
              "a busy page served as success"),
             (None, "stopped: EOX refused us", None,
              "refused us (a refusal not on record)")):
         ws = Workspace(bash, CATALOGUE)
         try:
-            if status is not None:
+            if status == "repeat":
+                write_blocks(ws.dir, status="network", repeat=True)
+            elif status is not None:
                 write_blocks(ws.dir, status=status)
             ws.run(FAIL_STEP, dict(blocked, blocked="true", remembered="true"))
             got = about(ws.issues(), "gb-wales-satellite", "open")

@@ -631,7 +631,8 @@ jobs:
               host, rec = next((h, r) for h, r in hosts.items()
                                if r.get("area") == sys.argv[1])
               status = rec.get("status")
-              kind = "network" if status == "network" else "refusal"
+              kind = ("refusal" if status != "network"
+                      else "network7" if rec.get("repeat") else "network")
               what = ("connection failures" if status == "network"
                       else "a busy page served as success" if status == "busy"
                       else "HTTP %s" % status)
@@ -652,11 +653,14 @@ jobs:
             UNTIL="${REST#*|}"
             # A NETWORK STOP IS NOT A REFUSAL: connections failed and EOX
             # refused nothing, so the issue must not say it did.
-            if [ "$KIND" = "network" ]; then
-              TITLE="Satellite build for $KEY paused: connection failures from EOX (retrying after 24 hours)"
+            if [ "$KIND" = "network" ] || [ "$KIND" = "network7" ]; then
+              PAUSE="24 hours"
+              # A repeat: connections failed again soon after the last pause.
+              if [ "$KIND" = "network7" ]; then PAUSE="7 days"; fi
+              TITLE="Satellite build for $KEY paused: connection failures from EOX (retrying after $PAUSE)"
               SAYS="Connections to EOX ($HOST) failed ($WHAT) in \`$KEY\`, so the build paused. EOX did not refuse us."
               if [ "$REMEMBERED" = "true" ]; then
-                NEXT="The planner asks $HOST for no area until **$UNTIL** (24 hours after a network fault), as recorded in satellite/blocks.json, and then resumes."
+                NEXT="The planner asks $HOST for no area until **$UNTIL** (24 hours after a network fault; 7 days if connections fail again within 7 days of the last pause), as recorded in satellite/blocks.json, and then resumes."
               else
                 NEXT="**The pause could not be recorded** in satellite/blocks.json, so the planner may ask $HOST for an area again on the next run. Disable this workflow from the Actions tab until someone has looked into the connection failures."
               fi

@@ -310,6 +310,11 @@ class Fetcher:
         # No request leaves before this, whatever slot it was given: a
         # pause set while a connection slept for its slot holds it too.
         self._paused_until = 0.0
+        # The last refusal seen this run, even one a wait cleared: a stop
+        # after any refusal is recorded as that refusal, never as "network"
+        # (EOX escalating from 429s to dropping connections is still EOX
+        # refusing us).
+        self._refusal_seen = None
         self._too_many = collections.deque()
         self._recent = collections.deque(maxlen=FAILED_WINDOW)
         self._running = 0
@@ -366,6 +371,9 @@ class Fetcher:
 
     def _stop(self, status, retry_after, reason):
         with self.lock:
+            if status == "network" and self._refusal_seen is not None:
+                status = self._refusal_seen
+                reason += ", after EOX refused us (%s) this run" % status
             if self.stopped is None:
                 self.stopped = reason
                 self.block = {"status": status, "retry_after": retry_after,
@@ -428,6 +436,9 @@ class Fetcher:
                     # of them stops the area rather than reading as success.
                     with self.lock:
                         self.failed.append((z, x, y, "HTTP %d" % e.code))
+                        # Any HTTP error this run means the stop is not
+                        # "connections failed": it keeps the longer rule.
+                        self._refusal_seen = e.code
                     self._tile_done(True, e.code)
                     return None
                 asked = self._retry_after(e)
@@ -453,6 +464,8 @@ class Fetcher:
         """EOX refused this request (an HTTP refusal, or a busy page as
         status BUSY). Stop the area and return True, or hold every
         connection for the wait and return False to try again."""
+        with self.lock:
+            self._refusal_seen = status
         if status in STOP_AT_ONCE:
             self._stop(status, asked, where + ", which is not retried")
             return True
@@ -801,11 +814,21 @@ def record_block(path, area_id, block):
            "retry_after": (None if asked is None
                            else max(0, int(math.ceil(asked)))),
            "reason": block.get("reason")}
-    rec["until"] = plan.stamp(plan.blocked_until(rec))
     data = plan.load_blocks(path)
+    host = urlparse(SOURCE).netloc
+    # A network stop on the heels of another (still blocked, or ended within
+    # NETWORK_REPEAT_DAYS) is marked a repeat, and blocks for BLOCK_DAYS: a
+    # host that keeps dropping us is not asked again every day for ever.
+    prev = data["hosts"].get(host)
+    if (rec["status"] == "network" and isinstance(prev, dict)
+            and prev.get("status") == "network"
+            and plan.blocked_until(prev)
+            >= now - dt.timedelta(days=plan.NETWORK_REPEAT_DAYS)):
+        rec["repeat"] = True
+    rec["until"] = plan.stamp(plan.blocked_until(rec))
     # Keyed by HOST: EOX refused us, not this area, and the planner stops
     # every area until the block ends.
-    data["hosts"][urlparse(SOURCE).netloc] = rec
+    data["hosts"][host] = rec
     os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
     with open(path, "w", encoding="utf-8", newline="\n") as f:
         json.dump(data, f, indent=2, sort_keys=True)
@@ -910,11 +933,18 @@ def main():
                              format(fetcher.skipped, ",")))
 
         if fetcher.stopped:
-            # EOX asked us to stop. No pack: the published one stays, and
-            # nothing here tries again around the refusal.
-            print("STOPPED: EOX refused the tile service to us (%s). No pack "
-                  "written; %s keeps its published imagery. Not retried."
-                  % (fetcher.stopped, args.id), file=sys.stderr)
+            # EOX asked us to stop, or connections kept failing. No pack:
+            # the published one stays, and nothing here tries again around
+            # the stop.
+            if (fetcher.block or {}).get("status") == "network":
+                said = "connections to the tile service kept failing"
+                what = "connection failures"
+            else:
+                said = "EOX refused the tile service to us"
+                what = "a refusal"
+            print("STOPPED: %s (%s). No pack written; %s keeps its "
+                  "published imagery. Not retried after %s."
+                  % (said, fetcher.stopped, args.id, what), file=sys.stderr)
             if args.block_out:
                 rec = record_block(args.block_out, args.id, fetcher.block)
                 print("Recorded in %s: %s is not asked for again until %s."

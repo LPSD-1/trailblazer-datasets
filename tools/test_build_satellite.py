@@ -160,6 +160,8 @@ def main():
     check_log_counts_requests()
     check_progress_counts_requests()
     check_real_rate_across_connections()
+    check_refusal_never_recorded_as_network(sp)
+    check_repeat_network_stop_escalates(sp)
 
     if failures:
         for f in failures:
@@ -590,7 +592,9 @@ def check_network_block_is_a_day(sp):
     refusal = [l for l in said if "%d days after a refusal" % sp.BLOCK_DAYS
                in l and l.startswith('NEXT="Nothing retries around')]
     network = [l for l in said if "%d hours after a network fault"
-               % sp.NETWORK_BLOCK_HOURS in l]
+               % sp.NETWORK_BLOCK_HOURS in l
+               and "%d days if connections fail again within %d days" % (
+                   sp.BLOCK_DAYS, sp.NETWORK_REPEAT_DAYS) in l]
     check(len(refusal) == 1 and len(network) == 1,
           "satellite.yml's issues do not give the network pause and the "
           "refusal block: %r" % said)
@@ -766,6 +770,118 @@ def check_log_counts_requests():
     check("tiles/s" not in log,
           "the log still divides tiles never asked for into a rate: %r"
           % [l for l in log.split(LF) if "tiles/s" in l])
+    # A network stop says connection failures, never that EOX refused us;
+    # a refusal still says it was one.
+    stopped = [l for l in log.split(LF) if l.startswith("STOPPED")]
+    check(len(stopped) == 1 and "connection failures" in stopped[0]
+          and "refused" not in stopped[0],
+          "a network stop's STOPPED line is %r" % stopped)
+    refusal = urllib.error.HTTPError("http://x", 403, "no", {}, None)
+
+    def refused(sharpen):
+        clock = _FakeClock()
+        return REAL_FETCHER(sharpen=sharpen, opener=_Script([refusal] * 9),
+                            sleep=clock.sleep, clock=clock)
+    try:
+        rc, log = _run_main(refused, box)
+    except Exception as e:  # noqa: BLE001
+        log = repr(e)
+    stopped = [l for l in log.split(LF) if l.startswith("STOPPED")]
+    check(len(stopped) == 1 and "EOX refused" in stopped[0],
+          "a 403's STOPPED line is %r" % stopped)
+
+
+# --- a run EOX refused is never recorded as a network stop -------------------
+#
+# Security review of 9ed7591: the stop recorded only what ENDED the run. Two
+# 429s cleared by waiting, then connections dropped (a server escalating from
+# "slow down" to refusing to talk), was recorded as "network" and paused for
+# 24 hours; before the 24-hour rule it got 7 days. Any refusal seen during
+# the run now decides the status.
+
+def check_refusal_never_recorded_as_network(sp):
+    def run(script, tiles=bs.FAILED_RUNNING + 5):
+        clock = _FakeClock()
+        f = bs.Fetcher(sharpen=False, opener=_Script(script),
+                       sleep=clock.sleep, clock=clock)
+        for y in range(tiles):
+            f.get(14, 1, y)
+        return f
+
+    def http(code, retry_after=None):
+        headers = {} if retry_after is None else {"Retry-After":
+                                                  str(retry_after)}
+        return urllib.error.HTTPError("http://x", code, "no", headers, None)
+    reset = [OSError("connection reset")] * 1000
+    for label, first in (
+            ("two 429s", [http(429), http(429)]),
+            ("a busy page", [BUSY_PAGE]),
+            ("a 503 with Retry-After 600", [http(503, 600)]),
+            ("a 302", [http(302)]),
+            ("19 404s", [http(404)] * 19)):
+        f = run(first + reset)
+        block = f.block or {}
+        with tempfile.TemporaryDirectory() as tmp:
+            rec = bs.record_block(os.path.join(tmp, "b.json"), "t", block) \
+                if f.stopped else {}
+        span = (sp._when(rec["until"]) - sp._when(rec["at"])) if rec else None
+        check(f.stopped and block.get("status") not in (None, "network")
+              and span == dt.timedelta(days=sp.BLOCK_DAYS),
+              "%s then connection resets was recorded as %r for %s, not as "
+              "a refusal for %d days" % (label, block.get("status"), span,
+                                         sp.BLOCK_DAYS))
+    f = run(reset)
+    check(f.stopped and (f.block or {}).get("status") == "network",
+          "connection resets alone are no longer a network stop: %r"
+          % f.block)
+
+
+# --- a repeated network stop escalates to the week -----------------------------
+#
+# Each network stop wrote a fresh 24 hours over the last, so a host that kept
+# dropping us was asked again every day or so for ever. A network stop that
+# follows a network block still in force, or one that ended within
+# BLOCK_DAYS, now blocks for BLOCK_DAYS.
+
+def check_repeat_network_stop_escalates(sp):
+    net = {"status": "network", "retry_after": None,
+           "reason": "11 of the last 200 tiles failed"}
+    host = "tiles.maps.eox.at"
+    now = dt.datetime.now(dt.timezone.utc)
+
+    def span(rec):
+        return sp._when(rec["until"]) - sp._when(rec["at"])
+
+    def stored(at, status="network"):
+        rec = {"at": sp.stamp(at), "area": "t", "status": status,
+               "retry_after": None, "reason": "earlier"}
+        rec["until"] = sp.stamp(sp.blocked_until(rec))
+        return rec
+    day, week = dt.timedelta(hours=24), dt.timedelta(days=sp.BLOCK_DAYS)
+    with tempfile.TemporaryDirectory() as tmp:
+        path = os.path.join(tmp, "blocks.json")
+        first = bs.record_block(path, "t", net)
+        second = bs.record_block(path, "t", net)
+        check(span(first) == day and span(second) == week,
+              "a first network stop blocks for %s and a second for %s, not "
+              "24 hours then %d days" % (span(first), span(second),
+                                         sp.BLOCK_DAYS))
+        check(sp.blocked_until({k: v for k, v in second.items()
+                                if k != "until"}) == sp._when(second["until"]),
+              "the escalated record's until is not what the rule gives: %r"
+              % second)
+        for ago, status, want, label in (
+                (dt.timedelta(days=3), "network", week,
+                 "a network block that ended 2 days ago"),
+                (dt.timedelta(days=9), "network", day,
+                 "a network block that ended 8 days ago"),
+                (dt.timedelta(days=9), 403, day,
+                 "an old 403 block")):
+            with open(path, "w", encoding="utf-8", newline=LF) as fh:
+                json.dump({"hosts": {host: stored(now - ago, status)}}, fh)
+            got = span(bs.record_block(path, "t", net))
+            check(got == want, "a network stop after %s blocks for %s, not "
+                  "%s" % (label, got, want))
 
 
 def check_progress_counts_requests():
