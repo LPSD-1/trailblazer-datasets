@@ -311,7 +311,8 @@ PAGE = """<title>Does z14 Buy Anything?</title>
       </table>
     </div>
     <p>The build is deliberately slow. EOX run the tile service free and the
-      CC&nbsp;BY licence covers the data, not a right to hammer it &mdash; so it
+      2016 mosaic's CC&nbsp;BY licence covers the imagery, not a right to
+      hammer it &mdash; so it
       fetches a few thousand tiles a day into staging that survives between
       runs, and packages nothing until every tile is present.</p>
   </section>
@@ -332,8 +333,10 @@ PAGE = """<title>Does z14 Buy Anything?</title>
   </section>
 
   <footer>
-    <p>Plates cut from Sentinel-2 cloudless 2024 by EOX IT Services GmbH,
-      CC&nbsp;BY&nbsp;4.0. Contains modified Copernicus Sentinel data 2024.
+    <p>Plates cut from EOxCloudless https://cloudless.eox.at by EOX IT
+      Services GmbH (Contains modified Copernicus Sentinel data 2016 &amp;
+      2017), CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/).
+      Resampled and sharpened by Trail Blazer.
       Every plate is the same ground: z13 tile 4127/2701, and the four z14
       tiles beneath it. Five tile requests in total.</p>
   </footer>

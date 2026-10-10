@@ -63,6 +63,15 @@ def catalogue_with(pack):
     }
 
 
+def empty_index(root):
+    """A satellite index that lists nothing: verify_catalogue fails on a
+    missing one, since it cannot check imagery without it."""
+    path = os.path.join(root, "satellite-index.json")
+    with open(path, "w", encoding="utf-8", newline="") as f:
+        f.write('{"packs": []}')
+    return path
+
+
 def run_verify(root, catalogue_path, staged=""):
     return subprocess.run(
         [sys.executable, VERIFY, catalogue_path,
@@ -71,7 +80,7 @@ def run_verify(root, catalogue_path, staged=""):
          # become the answer for a test that never mentioned one.
          "--staged", staged,
          # The other checks compare against indexes this fixture has none of.
-         "--satellite", os.path.join(root, "none.json"),
+         "--satellite", empty_index(root),
          "--routing", os.path.join(root, "none.json"),
          "--trips", os.path.join(root, "none.json"),
          "--published", ""],
@@ -221,7 +230,7 @@ def test_dropped_traffic_orders_are_refused():
 
         done = subprocess.run(
             [sys.executable, VERIFY, now, "--root", root,
-             "--satellite", os.path.join(root, "none.json"),
+             "--satellite", empty_index(root),
              "--routing", os.path.join(root, "none.json"),
              "--trips", os.path.join(root, "none.json"),
              "--published", was],

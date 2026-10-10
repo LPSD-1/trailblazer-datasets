@@ -12,6 +12,11 @@ tools/test_*.py by glob and stops the lane refresh on exit 1, so a red proof
 committed under that name would stop lane data publishing - the outage this
 hunt is about. Rename it test_* in the commit that fixes the workflows.
 
+NOT RUN AUTOMATICALLY. No workflow runs this file (satellite.yml runs only
+hunt_data_pipeline_satellite_alarm_lifecycle.py), so it guards nothing
+unless somebody runs it by hand after changing a publish step. Its catalogue
+checks are stubs that always pass (see seed()).
+
 WHAT IS RUN. The real `run:` block of the real step, cut out of the real
 workflow file, executed by bash -eo pipefail (what Actions uses) inside a
 throwaway clone of a throwaway bare remote. Only the repository's own tools
@@ -49,7 +54,8 @@ import tempfile
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # HUNT_WORKFLOWS points the harness at a mutated copy, to watch it go green
 # against a fixed workflow before it is trusted red against this one.
-WORKFLOWS = os.environ.get("HUNT_WORKFLOWS") or     os.path.join(ROOT, ".github", "workflows")
+WORKFLOWS = (os.environ.get("HUNT_WORKFLOWS")
+             or os.path.join(ROOT, ".github", "workflows"))
 
 OLD = "a" * 64
 NEW = "b" * 64
@@ -208,7 +214,13 @@ def seed(tmp):
     write(os.path.join(seed_dir, ".gitignore"), "dist/\n")
     write(os.path.join(seed_dir, "tools", "rebuild_catalogue.sh"),
           STUB_REBUILD)
-    for name in ("verify_catalogue.py", "validate_catalogue.py"):
+    # STUBS THAT ALWAYS PASS. These three checks exit 0 here whatever they
+    # are handed, so this hunt says nothing about whether a rebuilt
+    # catalogue is verified, or refused for withdrawn imagery: only about
+    # the push races above. Their own suites (test_verify_catalogue,
+    # test_imagery_withdrawn) hold them.
+    for name in ("verify_catalogue.py", "validate_catalogue.py",
+                 "imagery_withdrawn.py"):
         write(os.path.join(seed_dir, "tools", name),
               "import sys\nsys.exit(0)\n")
     write_json(os.path.join(seed_dir, "tro", "index.json"), tro_index(OLD))

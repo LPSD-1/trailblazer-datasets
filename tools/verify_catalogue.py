@@ -126,6 +126,17 @@ def packs_in(catalogue):
                     yield pack
 
 
+def _imagery():
+    """imagery_withdrawn, which owns the imagery allowlist."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        "imagery_withdrawn", os.path.join(os.path.dirname(
+            os.path.abspath(__file__)), "imagery_withdrawn.py"))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("catalogue")
@@ -154,13 +165,28 @@ def main():
     problems = []
 
     # --- imagery: every pack the index claims, by id -------------------------
-    sat = load(args.satellite, {"packs": []})
-    want = {p["id"] for p in sat.get("packs", []) if p.get("id")}
+    # No index is not "nothing to vouch for": the imagery check below reads
+    # it, so an index that is missing or unreadable fails the run.
+    sat = load(args.satellite)
+    if not isinstance(sat, dict) or not isinstance(sat.get("packs", []),
+                                                   list):
+        problems.append("the satellite index %s is missing or unreadable, "
+                        "so the imagery cannot be checked" % args.satellite)
+        sat = {"packs": []}
+    want = {p["id"] for p in sat.get("packs", [])
+            if isinstance(p, dict) and p.get("id")}
     missing = sorted(want - set(by_id))
     if missing:
         problems.append(
             "%d imagery pack(s) published but absent from the catalogue: %s"
             % (len(missing), ", ".join(missing[:5])))
+
+    # --- imagery: only the CC BY layer, never a withdrawn pack ---------------
+    #
+    # The 2024 mosaic is NonCommercial and was withdrawn on 9 Oct 2026. Every
+    # workflow that publishes catalogue.json runs this file first, so the one
+    # check here covers them all (tools/imagery_withdrawn.py).
+    problems.extend(_imagery().publish_problems(index=sat, catalogue=catalogue))
 
     # --- routing: mirrored tiles must carry the MIRROR url -------------------
     #

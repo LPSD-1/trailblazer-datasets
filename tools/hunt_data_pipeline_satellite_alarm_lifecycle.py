@@ -48,6 +48,7 @@ plan.py. The real `if:` of each step is evaluated under each job status.
       served). A second green run must not comment again. An unreadable or
       empty catalogue must close nothing.
 """
+import ast
 import json
 import os
 import re
@@ -262,7 +263,7 @@ class Workspace:
         with open(self.store) as f:
             return json.load(f)
 
-    def run(self, name, outputs):
+    def run(self, name, outputs, prelude_extra="", ok_codes=(0,)):
         """The real step `name`, after a job with these outputs and status."""
         _, env_raw, script = step(name)
         context = {
@@ -276,8 +277,14 @@ class Workspace:
             "steps.plan.outputs.work": outputs.get("work", ""),
             "steps.publish.outputs.uploaded": outputs.get("uploaded", ""),
             "steps.publish.outputs.recorded": outputs.get("recorded", ""),
+            "steps.plan.outputs.plan": outputs.get("plan", ""),
+            "steps.fetch.outputs.blocked": outputs.get("blocked", ""),
+            "steps.remember.outputs.remembered":
+                outputs.get("remembered", ""),
         }
         env = dict(os.environ)
+        self.output = os.path.join(self.dir, "github_output")
+        env["GITHUB_OUTPUT"] = self.output
         for key, value in env_raw.items():
             env[key] = evaluate(value, context)
         py = sys.executable.replace("\\", "/")
@@ -289,16 +296,18 @@ class Workspace:
                       self.store.replace("\\", "/")))
         body = evaluate("\n".join(script), context)
         run = subprocess.run([self.bash, "--noprofile", "--norc", "-eo",
-                              "pipefail", "-c", prelude + body],
+                              "pipefail", "-c",
+                              prelude + prelude_extra + body],
                              cwd=self.dir, env=env, stdout=subprocess.PIPE,
                              stderr=subprocess.STDOUT,
                              universal_newlines=True)
         if "fake gh: unsupported" in run.stdout:
             raise Premise("%r asked the fake gh for something it does not "
                           "model:\n%s" % (name, run.stdout))
-        if run.returncode != 0:
+        if run.returncode not in ok_codes:
             raise Premise("%r exited %d:\n%s" % (name, run.returncode,
                                                  run.stdout))
+        self.returncode = run.returncode
         return run.stdout
 
     def close(self):
@@ -468,12 +477,392 @@ def check_withdrawn(bash, problems):
         ws.close()
 
 
+# --- (3) the staged tiles survive a run that does not end green -------------
+#
+# WHAT WAS WRONG (3): a run that EOX stopped, that failed or that timed out
+# threw its tiles away. actions/cache saves only on success (`post-if:
+# success()`), so the next run of that area fetched every tile again from a
+# service that had just refused us. The save is now its own step, and it
+# runs however the job ends.
+
+def uses_steps():
+    """[{name, uses, if, with}] for every step of the workflow, in order."""
+    lines = open(WORKFLOW, encoding="utf-8").read().replace("\r\n", "\n") \
+        .split("\n")
+    steps, cur, item_indent, in_with = [], None, None, None
+    for line in lines:
+        bare = line.strip()
+        if not bare or bare.startswith("#"):
+            continue
+        m = re.match(r"(\s*)- (name|uses):\s*(.*)$", line)
+        if m and (item_indent is None or len(m.group(1)) == item_indent):
+            item_indent = len(m.group(1))
+            cur = {"name": "", "id": "", "uses": "", "if": "", "with": {}}
+            steps.append(cur)
+            cur[m.group(2)] = m.group(3).strip()
+            in_with = None
+            continue
+        if cur is None:
+            continue
+        if indent(line) <= item_indent:
+            cur, in_with = None, None
+            continue
+        if in_with is not None and indent(line) > in_with:
+            key, _, value = bare.partition(":")
+            cur["with"][key.strip()] = value.strip()
+            continue
+        in_with = None
+        if indent(line) == item_indent + 2:
+            key, _, value = bare.partition(":")
+            if key in ("name", "id", "uses", "if"):
+                cur[key] = value.strip()
+            elif key == "with":
+                in_with = indent(line)
+    return steps
+
+
+def runs_with(cond, status, outputs):
+    """runs_under, with each `steps.<id>.<field> == / != '<v>'` settled from
+    `outputs` (a step that did not run has every field '')."""
+    def settle(m):
+        got = outputs.get(m.group(1), "")
+        same = got == m.group(3)
+        return " %s " % (same if m.group(2) == "==" else not same)
+    expr = re.sub(r"(steps\.[\w-]+\.[\w.-]+)\s*(==|!=)\s*'([^']*)'",
+                  settle, cond)
+    return runs_under(expr, status)
+
+
+def check_cache(problems):
+    steps = uses_steps()
+    cache = [s for s in steps if s["uses"].startswith("actions/cache")]
+    both = [s["name"] for s in cache if s["uses"].startswith("actions/cache@")]
+    if both:
+        problems.append("%s uses actions/cache, which saves only when the "
+                        "job succeeds: a refused or timed-out run's tiles are "
+                        "fetched again" % both)
+    restore = [s for s in cache if s["uses"].startswith("actions/cache/restore@")]
+    save = [s for s in cache if s["uses"].startswith("actions/cache/save@")]
+    if len(restore) != 1 or len(save) != 1:
+        problems.append("expected one actions/cache/restore and one "
+                        "actions/cache/save step, found %s"
+                        % [(s["name"], s["uses"]) for s in cache])
+        return
+    restore, save = restore[0], save[0]
+    names = [s["name"] for s in steps]
+    print("  save `if: %s`, key %s" % (save["if"], save["with"].get("key")))
+    if "Fetch and package" not in names or \
+            names.index(save["name"]) < names.index("Fetch and package"):
+        problems.append("the cache is saved before the fetch")
+    working = {"steps.plan.outputs.work": "true"}
+    for status in ("failure", "cancelled"):
+        if not runs_with(save["if"], status, working):
+            problems.append("under a %s job the staged tiles are not saved, "
+                            "so the next run fetches them again" % status)
+    if runs_with(save["if"], "success", {"steps.plan.outputs.work": "false"}):
+        problems.append("a run with nothing due saves an empty cache entry")
+    cleared = dict(working, **{"steps.clear.outcome": "success"})
+    if runs_with(save["if"], "success", cleared):
+        problems.append("the cache is saved after the staged tiles were "
+                        "cleared: an empty entry the next rebuild resumes")
+    key = save["with"].get("key", "")
+    prefix = restore["with"].get("restore-keys", "")
+    # A cache key is written once and never replaced, so a second save under
+    # the same key is dropped: the key has to change every run.
+    if "github.run_id" not in key or not prefix or \
+            not key.startswith(prefix):
+        problems.append("the save key %r is not unique to the run under the "
+                        "restore prefix %r, so a resumed area's new tiles "
+                        "are never saved" % (key, prefix))
+    # The restore asks for this run's own key, which never exists yet, so
+    # it always takes the newest entry by prefix rather than an older one
+    # under a fixed name.
+    if restore["with"].get("key") != key:
+        problems.append("the restore key %r is not the save key %r"
+                        % (restore["with"].get("key"), key))
+    # The `if:`s above and the alarm read these ids; without them every
+    # `steps.<id>` is empty and nothing is saved, remembered or said.
+    ids = {s["name"]: s["id"] for s in steps}
+    for name, want in (("Fetch and package", "fetch"),
+                       ("Clear the staged tiles", "clear"),
+                       ("Remember the refusal", "remember")):
+        if ids.get(name) != want:
+            problems.append("step %r has id %r, not %r"
+                            % (name, ids.get(name), want))
+    if save["with"].get("path") != restore["with"].get("path"):
+        problems.append("the cache saves %r and restores %r"
+                        % (save["with"].get("path"),
+                           restore["with"].get("path")))
+
+
+# --- (4) a refusal is remembered, and the alarm says until when -------------
+#
+# WHAT WAS WRONG (4): EOX's refusal was forgotten as soon as the run ended.
+# build_satellite.py stopped the area and exited 3, and twelve hours later the
+# planner picked the same area and asked again. The build now writes the
+# refusal to satellite/blocks.json (--block-out), "Remember the refusal"
+# commits it, the planner skips the area until it runs out, and the alarm
+# says until when.
+
+REMEMBER_STEP = "Remember the refusal"
+FETCH_STEP = "Fetch and package"
+UNTIL = "2026-10-16T02:41:00Z"
+
+
+def git(cwd, *args):
+    return subprocess.run(["git", "-c", "user.name=hunt", "-c",
+                           "user.email=hunt@example.invalid",
+                           "-c", "init.defaultBranch=main"] + list(args),
+                          cwd=cwd, check=True, stdout=subprocess.PIPE,
+                          stderr=subprocess.STDOUT,
+                          universal_newlines=True).stdout
+
+
+def write_blocks(where, status=403):
+    os.makedirs(os.path.join(where, "satellite"), exist_ok=True)
+    with open(os.path.join(where, "satellite", "blocks.json"), "w",
+              encoding="utf-8", newline="\n") as f:
+        json.dump({"hosts": {"tiles.maps.eox.at": {
+            "at": "2026-10-09T02:41:00Z", "area": "gb-wales-satellite",
+            "status": status,
+            "retry_after": None, "until": UNTIL,
+            "reason": "HTTP %s for z14/1/2" % status}}}, f)
+
+
+def check_refusal(bash, problems):
+    plan = json.dumps({"work": True, "id": "gb-wales-satellite",
+                       "label": "Satellite - gb-wales", "area": "gb-wales",
+                       "max_zoom": 14, "bbox": [-4.0, 51.0, -3.0, 52.0]})
+    blocked = {"run": "40", "status": "failure", "id": "gb-wales-satellite",
+               "area": "gb-wales", "work": "true", "plan": plan}
+
+    # The fetch step: the build's exit 3 fails the step AND says blocked.
+    # Under bash -e a bare `rc=$?` after the build is never reached.
+    ws = Workspace(bash, CATALOGUE)
+    try:
+        stub = ('python() { case "$1" in tools/build_satellite.py) '
+                'return 3;; esac; command python "$@" | tr -d "\\r"; }\n')
+        ws.run(FETCH_STEP, blocked, prelude_extra=stub, ok_codes=(0, 3, 1))
+        rc = ws.returncode
+        said = open(ws.output).read() if os.path.exists(ws.output) else ""
+        # And a build that succeeds passes the step and says nothing.
+        if os.path.exists(ws.output):
+            os.remove(ws.output)
+        ws.run(FETCH_STEP, blocked, prelude_extra=stub.replace(
+            "return 3", "return 0"), ok_codes=(0, 1, 2, 3))
+        ok_rc = ws.returncode
+        ok_said = (open(ws.output).read() if os.path.exists(ws.output)
+                   else "")
+    finally:
+        ws.close()
+    if ok_rc != 0 or "blocked=" in ok_said:
+        problems.append("a build that succeeded left the fetch step at exit "
+                        "%d with outputs %r" % (ok_rc, ok_said.strip()))
+    print("  build exit 3: step exit %d, outputs %r" % (rc, said.strip()))
+    if rc == 0:
+        problems.append("the fetch step passed although the build was "
+                        "refused")
+    if "blocked=true" not in said.split("\n"):
+        problems.append("a refused build does not set the fetch step's "
+                        "`blocked` output, so nothing remembers it")
+
+    try:
+        remember_if, _, _ = step(REMEMBER_STEP)
+    except Premise:
+        problems.append("there is no %r step: a refusal is forgotten and the "
+                        "area is fetched again 12 hours later" % REMEMBER_STEP)
+        remember_if = None
+    if remember_if is not None:
+        ran = {"steps.fetch.outputs.blocked": "true"}
+        if not runs_with(remember_if, "failure", ran):
+            problems.append("%r does not run on the failed job a refusal "
+                            "makes" % REMEMBER_STEP)
+        if runs_with(remember_if, "success", {}):
+            problems.append("%r runs on a run that was not refused"
+                            % REMEMBER_STEP)
+        check_remember_commits(bash, problems, blocked)
+        check_remember_from_branch(bash, problems, blocked)
+
+    # The alarm: when the area comes due again, and that nothing retries.
+    ws = Workspace(bash, CATALOGUE)
+    try:
+        write_blocks(ws.dir)
+        ws.run(FAIL_STEP, dict(blocked, blocked="true", remembered="true"))
+        told = about(ws.issues(), "gb-wales-satellite", "open")
+        ws2 = Workspace(bash, CATALOGUE)
+        try:
+            write_blocks(ws2.dir)
+            ws2.run(FAIL_STEP, dict(blocked, run="41", blocked="true"))
+            lost = about(ws2.issues(), "gb-wales-satellite", "open")
+        finally:
+            ws2.close()
+    finally:
+        ws.close()
+    if not told or not lost:
+        raise Premise("a refused run raised no alarm")
+    print("  refused: %s" % told[0]["title"])
+    body = told[0]["body"]
+    if "refused" not in told[0]["title"].lower():
+        problems.append("a refused run's alarm does not say EOX refused us: "
+                        "%r" % told[0]["title"])
+    if "2026-10-16" not in body or "403" not in body or (
+            "tiles.maps.eox.at" not in body):
+        problems.append("a refused run's alarm does not say when the area "
+                        "comes due again, or why: %r" % body[:400])
+    if "saved however a run ends" not in body:
+        problems.append("the alarm does not say the staged tiles were kept "
+                        "however the run ended")
+    if "Disable this workflow" not in lost[0]["body"]:
+        problems.append("a refusal that could not be recorded does not ask "
+                        "for the workflow to be disabled: %r"
+                        % lost[0]["body"][:400])
+
+
+def check_remember_commits(bash, problems, blocked):
+    """Run the real step in a clone whose push loses a race once."""
+    ws = Workspace(bash, CATALOGUE)
+    remote = tempfile.mkdtemp(prefix="hunt-sat-remote-")
+    other = tempfile.mkdtemp(prefix="hunt-sat-other-")
+    try:
+        git(remote, "init", "--bare", "-q", ".")
+        git(ws.dir, "init", "-q", "-b", "main")
+        git(ws.dir, "add", "-A")
+        git(ws.dir, "commit", "-q", "-m", "start")
+        git(ws.dir, "remote", "add", "origin", remote)
+        git(ws.dir, "push", "-q", "-u", "origin", "main")
+        git(other, "clone", "-q", remote, ".")
+        with open(os.path.join(other, "elsewhere.txt"), "w") as f:
+            f.write("another job's commit\n")
+        git(other, "add", "elsewhere.txt")
+        git(other, "commit", "-q", "-m", "meanwhile")
+        git(other, "push", "-q", "origin", "main")
+        write_blocks(ws.dir)
+        ws.run(REMEMBER_STEP, dict(blocked, blocked="true"),
+               prelude_extra="sleep() { :; }\n")
+        said = open(ws.output).read() if os.path.exists(ws.output) else ""
+        log = git(remote, "log", "--format=%s", "main")
+        try:
+            kept = git(remote, "show", "main:satellite/blocks.json")
+        except subprocess.CalledProcessError:
+            kept = ""
+    except Premise as e:
+        problems.append("%r failed: %s" % (REMEMBER_STEP, e))
+        return
+    finally:
+        ws.close()
+        shutil.rmtree(remote, ignore_errors=True)
+        shutil.rmtree(other, ignore_errors=True)
+    print("  remembered: %s" % log.replace("\n", " | ").strip(" |"))
+    if UNTIL not in kept or "meanwhile" not in log:
+        problems.append("the refusal did not reach main past another job's "
+                        "commit: log %r" % log)
+    if "remembered=true" not in said.split("\n"):
+        problems.append("%r does not say it remembered the refusal"
+                        % REMEMBER_STEP)
+
+
+def check_remember_from_branch(bash, problems, blocked):
+    """A run started from a branch still records the refusal on MAIN, which
+    is what every scheduled run plans from. A bare `git push` sent it to the
+    branch, where no scheduled run would ever read it. Main's other records
+    survive, and none of the branch's own commits reach main."""
+    ws = Workspace(bash, CATALOGUE)
+    remote = tempfile.mkdtemp(prefix="hunt-sat-remote-")
+    try:
+        git(remote, "init", "--bare", "-q", "-b", "main", ".")
+        git(ws.dir, "init", "-q", "-b", "main")
+        os.makedirs(os.path.join(ws.dir, "satellite"))
+        with open(os.path.join(ws.dir, "satellite", "blocks.json"), "w",
+                  encoding="utf-8", newline="\n") as f:
+            json.dump({"hosts": {"other.example": {
+                "at": "2026-10-08T00:00:00Z", "status": 403,
+                "retry_after": None, "area": "x"}}}, f)
+        git(ws.dir, "add", "-A")
+        git(ws.dir, "commit", "-q", "-m", "start")
+        git(ws.dir, "remote", "add", "origin", remote)
+        git(ws.dir, "push", "-q", "origin", "main")
+        git(ws.dir, "checkout", "-q", "-b", "fix/branch-run")
+        with open(os.path.join(ws.dir, "branch-only.txt"), "w") as f:
+            f.write("work in progress on a branch\n")
+        git(ws.dir, "add", "branch-only.txt")
+        git(ws.dir, "commit", "-q", "-m", "branch-only work")
+        git(ws.dir, "push", "-q", "-u", "origin", "fix/branch-run")
+        write_blocks(ws.dir)   # what the build wrote: EOX's record only
+        ws.run(REMEMBER_STEP, dict(blocked, blocked="true"),
+               prelude_extra="sleep() { :; }\n")
+        said = open(ws.output).read() if os.path.exists(ws.output) else ""
+        log = git(remote, "log", "--format=%s", "main")
+        try:
+            kept = json.loads(git(remote, "show",
+                                  "main:satellite/blocks.json"))
+        except (subprocess.CalledProcessError, ValueError):
+            kept = {}
+    except Premise as e:
+        problems.append("%r from a branch failed: %s" % (REMEMBER_STEP, e))
+        return
+    finally:
+        ws.close()
+        shutil.rmtree(remote, ignore_errors=True)
+    hosts = kept.get("hosts", {})
+    print("  from a branch, main: %s" % log.replace("\n", " | ").strip(" |"))
+    if hosts.get("tiles.maps.eox.at", {}).get("until") != UNTIL:
+        problems.append("a refusal learned on a branch run never reached "
+                        "main's satellite/blocks.json: main has %r" % kept)
+    if "other.example" not in hosts:
+        problems.append("recording the refusal on main dropped main's other "
+                        "records: %r" % kept)
+    if "branch-only work" in log:
+        problems.append("recording the refusal pushed the branch's own "
+                        "commits to main: %r" % log)
+    if "remembered=true" not in said.split("\n"):
+        problems.append("%r from a branch does not say it remembered the "
+                        "refusal" % REMEMBER_STEP)
+
+
+def uncalled_checks(source):
+    """Every top-level check_* in `source` that main() never reaches, by
+    calling it or calling a function that does. A check written and never
+    wired in is a hunt that stays green whatever the workflow does."""
+    tree = ast.parse(source)
+    funcs = {n.name: n for n in tree.body if isinstance(n, ast.FunctionDef)}
+
+    def called(fn):
+        return {c.func.id for c in ast.walk(fn) if isinstance(c, ast.Call)
+                and isinstance(c.func, ast.Name) and c.func.id in funcs}
+    seen, todo = set(), ["main"] if "main" in funcs else []
+    while todo:
+        name = todo.pop()
+        if name in seen:
+            continue
+        seen.add(name)
+        todo.extend(called(funcs[name]) - seen)
+    return sorted(n for n in funcs if n.startswith("check_") and n not in seen)
+
+
+def check_wiring(problems):
+    """main() reaches every check_* here; and the test of that can fail."""
+    orphan = ("def check_a(p):\n    pass\n"
+              "def check_b(p):\n    check_c(p)\n"
+              "def check_c(p):\n    pass\n"
+              "def check_orphan(p):\n    pass\n"
+              "def main():\n    check_a([])\n    check_b([])\n")
+    if uncalled_checks(orphan) != ["check_orphan"]:
+        problems.append("the wiring check cannot see an uncalled check: %r"
+                        % uncalled_checks(orphan))
+    with open(os.path.abspath(__file__), encoding="utf-8") as f:
+        missing = uncalled_checks(f.read())
+    if missing:
+        problems.append("main() never runs %s, so this hunt is green "
+                        "whatever it would find" % ", ".join(missing))
+
+
 def main():
     bash = find_bash()
     if not bash:
         print("BLIND: bash is needed to run the steps as the runner does")
         return 2
     problems = []
+    check_wiring(problems)
     # Nothing else runs this hunt: satellite.yml must, before it plans, or a
     # regression in the steps above ships with this file still green.
     lines = [l.strip() for l in open(WORKFLOW, encoding="utf-8")]
@@ -487,6 +876,10 @@ def main():
         check_cancelled(bash, problems)
         print("withdrawn areas:")
         check_withdrawn(bash, problems)
+        print("the staged tiles:")
+        check_cache(problems)
+        print("a refusal:")
+        check_refusal(bash, problems)
     except Premise as e:
         print("PREMISE  %s" % e)
         return 3

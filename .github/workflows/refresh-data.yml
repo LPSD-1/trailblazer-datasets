@@ -833,6 +833,12 @@ jobs:
           # a build that otherwise succeeds. It has happened three times.
           python tools/verify_catalogue.py dist/catalogue.json
 
+      # Only the CC BY imagery layer is ever published, and never a pack
+      # withdrawn on 9 Oct 2026 (tools/imagery_withdrawn.py). Fails the job
+      # before Publish; the retries below run the same check.
+      - name: Is every imagery pack one we may publish?
+        run: python tools/imagery_withdrawn.py --index satellite/index.json --catalogue dist/catalogue.json
+
       # And prove it, rather than trusting the flags above. A catalogue that
       # lost every imagery pack is a build that "succeeded".
       - name: Did the rebuild keep what the other workflows published?
@@ -1132,6 +1138,7 @@ jobs:
             git clean -fdq -- . ${OURS} || return 1
             bash tools/rebuild_catalogue.sh manifest.json dist/catalogue.json || return 1
             python tools/verify_catalogue.py dist/catalogue.json || return 1
+            python tools/imagery_withdrawn.py --index satellite/index.json --catalogue dist/catalogue.json || return 1
             python tools/validate_catalogue.py dist/catalogue.json || return 1
             mv dist/catalogue.json catalogue.json
           }
@@ -1582,6 +1589,7 @@ jobs:
           rebuild_and_prove_the_catalogue() {
           bash tools/rebuild_catalogue.sh manifest.json dist/catalogue.json || return 1
           python tools/verify_catalogue.py dist/catalogue.json || return 1
+          python tools/imagery_withdrawn.py --index satellite/index.json --catalogue dist/catalogue.json || return 1
           python tools/validate_catalogue.py dist/catalogue.json || return 1
 
           # And prove the feeds reached it, rather than trusting the rebuild.

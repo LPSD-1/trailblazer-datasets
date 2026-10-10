@@ -89,6 +89,16 @@ jobs:
       - name: Check the alarm wiring
         run: python tools/hunt_data_pipeline_satellite_alarm_lifecycle.py
 
+      # Before anything is fetched or uploaded. Every pack up to 9 Oct 2026
+      # came from EOX's 2024 layer, which is non-commercial, and was withdrawn
+      # that day. An area with no imagery is due first, so without this a
+      # SOURCE or LAYER moved off the allowlist (tools/imagery_withdrawn.py
+      # ALLOWED_LAYERS) would be fetched and re-published. Fails the run, and
+      # raises the alarm, rather than skipping in silence.
+      # tools/test_imagery_withdrawn.py holds the order of these steps.
+      - name: Is the imagery source one we may publish?
+        run: python tools/imagery_withdrawn.py --source-check
+
       # Which area, if any. The plan is derived from the catalogue's own
       # areas, so adding a lane region adds an imagery region with no second
       # list to keep in step.
@@ -101,9 +111,16 @@ jobs:
           MAX_ZOOM: ${{ inputs.max_zoom || '14' }}
         run: |
           if [ -n "$AREA" ]; then
+            # A forced run honours a refusal too: an area EOX refused is not
+            # planned, so it is "not the one due" below.
+            # --blocks-ref: main's latest blocks.json counts as well as this
+            # checkout's, so a re-run or a run from a branch sees a stop
+            # committed since; unreadable plans nothing.
             PLAN=$(python tools/satellite_plan.py --catalogue catalogue.json \
                      --refresh-after-days 0 \
-                     --max-zoom "$MAX_ZOOM")
+                     --max-zoom "$MAX_ZOOM" \
+                     --blocks satellite/blocks.json \
+                     --blocks-ref origin/main)
             PLAN=$(python - "$PLAN" "$AREA" <<'PY'
           import json, sys
           plan = json.loads(sys.argv[1])
@@ -128,7 +145,9 @@ jobs:
             # far were built by hand, and this workflow's own header promising
             # a full pass "in under a week" had never once been true.
             PLAN=$(python tools/satellite_plan.py --catalogue catalogue.json \
-                     --max-zoom "$MAX_ZOOM")
+                     --max-zoom "$MAX_ZOOM" \
+                     --blocks satellite/blocks.json \
+                     --blocks-ref origin/main)
           fi
           echo "$PLAN"
           echo "plan=$PLAN" >> "$GITHUB_OUTPUT"
@@ -141,38 +160,39 @@ jobs:
         if: steps.plan.outputs.work != 'true'
         run: echo "Everything is current. No bandwidth spent."
 
-      # Resumption rests on a run SUCCEEDING, not on surviving a failure.
+      # THE STAGED TILES ARE KEPT HOWEVER THE RUN ENDS.
       #
-      # This said "survives a failed job". It does not: actions/cache declares
-      # `post-if: success()`, so a job that fails saves nothing and the next
-      # night starts from an empty staging directory. What actually makes a
-      # multi-night area work is that a run which merely exhausts its budget
-      # EXITS ZERO - it prints what is left and stops - so the cache is written
-      # and the next run picks it up.
+      # This used actions/cache, which declares `post-if: success()`: a run
+      # that EOX stopped, that failed or that timed out saved nothing, and the
+      # next run of that area asked EOX again for every tile it had already
+      # sent - the heaviest possible answer to being told to back off. The
+      # restore and the save are now separate steps, and "Save the staged
+      # tiles" below runs on failure and cancellation too.
       #
-      # Which is why the timeout above is sized against the budget. A run that
-      # overruns is a run whose entire night of tiles is thrown away, and at
-      # z14 the North needs two nights: had the 180-minute timeout stayed, the
-      # larger regions could have failed, discarded everything and retried for
-      # ever without converging.
+      # ONE ENTRY PER WORKING RUN. A cache key is written once and never
+      # replaced, so under the old single key per area and month the second
+      # night's tiles were never saved at all. Each run that fetches now saves
+      # under its own run id, and the restore takes the newest entry for this
+      # area and month by prefix. Runs that find nothing due save nothing,
+      # and a run that packaged its area cleared the tiles and saves nothing
+      # either, so the entries are one or two per area per monthly rebuild,
+      # well inside the repository's 10 GB (the lane refresh's council cache
+      # shares it). GitHub drops an entry nobody has read for 7 days, so
+      # after a 7-day refusal the area usually starts again from nothing;
+      # that is expected, and at this pace re-fetching it is acceptable.
       #
       # Keyed by month as well as area, so a rebuild genuinely re-fetches
       # rather than repackaging stale imagery.
       - name: Restore the staged tiles
         if: steps.plan.outputs.work == 'true'
-        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25  # v5
+        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25  # v5
         with:
           path: staging
-          # Keyed by the MONTH, not the run. Keyed by run id every run wrote a
-          # fresh 70-240 MB entry, and a repository's cache is capped at 10 GB
-          # with least-recently-used eviction — so a daily job would have
-          # quietly evicted the lane refresh's council-data cache and turned
-          # its 25-minute fetch back on. Within a month a retry resumes; a new
-          # month re-fetches, which is the point of a rebuild.
-          key: sat-${{ steps.plan.outputs.id }}-${{ steps.plan.outputs.month }}
-          restore-keys: sat-${{ steps.plan.outputs.id }}-${{ steps.plan.outputs.month }}
+          key: sat-${{ steps.plan.outputs.id }}-${{ steps.plan.outputs.month }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: sat-${{ steps.plan.outputs.id }}-${{ steps.plan.outputs.month }}-
 
       - name: Fetch and package
+        id: fetch
         if: steps.plan.outputs.work == 'true'
         run: |
           PLAN='${{ steps.plan.outputs.plan }}'
@@ -191,6 +211,13 @@ jobs:
           # connections with backoff; the run simply lasts longer, and a
           # 55,000-tile run is about four hours against the 350-minute ceiling
           # above. Fewer, longer runs move the same bytes in fewer days.
+          #
+          # Exit 3 is EOX refusing us. The build has then written the refusal
+          # to satellite/blocks.json, and `blocked` tells "Remember the
+          # refusal" to commit it. The code is caught rather than left to
+          # bash -e, which would end the step before anything said so; the
+          # step still fails with the build's own code.
+          rc=0
           python tools/build_satellite.py \
             --bbox $BBOX \
             --id "${{ steps.plan.outputs.id }}" \
@@ -201,13 +228,82 @@ jobs:
             --budget 55000 \
             --package \
             --out "dist/satellite/${{ steps.plan.outputs.id }}.pmtiles" \
-            --entry-out dist/satellite/entry.json
+            --entry-out dist/satellite/entry.json \
+            --state-out dist/satellite/state \
+            --block-out satellite/blocks.json || rc=$?
+          if [ "$rc" = 3 ]; then
+            echo "blocked=true" >> "$GITHUB_OUTPUT"
+          fi
+          # "incomplete": the area needs another run, so no pack yet.
+          echo "state=$(cat dist/satellite/state 2>/dev/null || true)" >> "$GITHUB_OUTPUT"
+          exit "$rc"
+
+      # A REFUSAL IS REMEMBERED. Without this the next run, twelve hours on,
+      # planned the same area and asked EOX again. The planner reads
+      # satellite/blocks.json and leaves the area alone for at least 7 days,
+      # or until EOX's Retry-After when that is longer.
+      #
+      # ON MAIN, WHEREVER THE RUN STARTED. Every scheduled run plans from
+      # main, so that is where the record must land. A bare `git push` sent
+      # it to the branch a manual run started from, where no scheduled run
+      # reads it, and they would ask EOX again before the block ended. So
+      # the record is merged into main's newest copy in a worktree of
+      # origin/main (main's other records kept, the longer block winning),
+      # committed there alone, and pushed to main, as the other data jobs
+      # commit to main; nothing of the branch goes with it. A lost race
+      # fetches main again and redoes the merge.
+      # tools/hunt_data_pipeline_satellite_alarm_lifecycle.py holds this.
+      - name: Remember the refusal
+        id: remember
+        if: always() && steps.fetch.outputs.blocked == 'true'
+        env:
+          AREA_ID: ${{ steps.plan.outputs.id }}
+        run: |
+          git config user.name  'Trail Blazer data bot'
+          git config user.email 'noreply@github.com'
+          RECORD=$(mktemp)
+          cp satellite/blocks.json "$RECORD"
+          MAIN="$(mktemp -d)/main"
+          trap 'git worktree remove --force "$MAIN" 2>/dev/null || true' EXIT
+          DEPTH=
+          if [ "$(git rev-parse --is-shallow-repository)" = true ]; then DEPTH=--depth=1; fi
+          for attempt in 1 2 3; do
+            git fetch --quiet $DEPTH origin +refs/heads/main:refs/remotes/origin/main
+            git worktree remove --force "$MAIN" 2>/dev/null || true
+            git worktree add --quiet --detach "$MAIN" refs/remotes/origin/main
+            python -c 'import sys; sys.path.insert(0, "tools"); import satellite_plan as p; p.merge_block_files(*sys.argv[1:])' \
+              "$MAIN/satellite/blocks.json" "$RECORD"
+            git -C "$MAIN" add satellite/blocks.json
+            if git -C "$MAIN" diff --cached --quiet; then
+              echo "main already holds this refusal"
+              echo "remembered=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            git -C "$MAIN" commit --quiet \
+              -m "Satellite: EOX refused $AREA_ID; not asked again until its block ends" \
+              -m "Recorded in satellite/blocks.json by tools/build_satellite.py."
+            if git -C "$MAIN" push origin HEAD:refs/heads/main; then
+              echo "remembered=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            echo "push rejected; merging the record into main's newest copy again"
+            sleep $((attempt * 5))
+          done
+          echo "the refusal could not be recorded on main" >&2
+          exit 1
 
       # The one check worth having: the app's own reader must be able to open
       # it. A pack that packages cleanly and will not open is a pack every
       # rider downloads hundreds of megabytes of and cannot use.
+      # An area bigger than one run's budget is fetched over two runs, and
+      # the first writes no pack. That is progress, not a failure; any other
+      # state, a missing one included, goes on to the check below.
+      - name: Not finished this run
+        if: steps.plan.outputs.work == 'true' && steps.fetch.outputs.state == 'incomplete'
+        run: echo "nothing to build this run - ${{ steps.plan.outputs.id }} is partly fetched; its tiles are saved and the rest are fetched next run."
+
       - name: Would the app be able to read it?
-        if: steps.plan.outputs.work == 'true'
+        if: steps.plan.outputs.work == 'true' && steps.fetch.outputs.state != 'incomplete'
         run: |
           python - <<'PY'
           import glob, struct, sys
@@ -249,29 +345,54 @@ jobs:
       # would run for ever and the pictures would never actually change. That
       # is a correctness fault wearing the clothes of untidiness.
       - name: Clear the staged tiles
-        if: steps.plan.outputs.work == 'true'
+        id: clear
+        if: steps.plan.outputs.work == 'true' && steps.fetch.outputs.state != 'incomplete'
         run: |
           rm -rf "staging/${{ steps.plan.outputs.id }}"
           echo "staged tiles cleared; next rebuild re-fetches"
 
+      # However the run ended - refused, failed, timed out - except once the
+      # tiles were packaged and cleared, when there is nothing to keep.
+      - name: Save the staged tiles
+        if: always() && steps.plan.outputs.work == 'true' && steps.clear.outcome != 'success'
+        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25  # v5
+        with:
+          path: staging
+          key: sat-${{ steps.plan.outputs.id }}-${{ steps.plan.outputs.month }}-${{ github.run_id }}-${{ github.run_attempt }}
+
+      # tools/imagery_withdrawn.py runs twice in here: nothing is uploaded
+      # unless every new entry records an allowed layer and no withdrawn
+      # asset, and nothing is committed (on either path) whose index or
+      # rebuilt catalogue lists a withdrawn asset or a layer off the list.
+      # The comments live out here because the retry hunt hands this run
+      # body to `bash -c`, which on Windows drops anything past ~8 KB.
       - name: Publish
         id: publish
-        if: steps.plan.outputs.work == 'true'
+        if: steps.plan.outputs.work == 'true' && steps.fetch.outputs.state != 'incomplete'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           # Every pack this run wrote: one per detail tier.
           PACKS=$(ls dist/satellite/*.pmtiles)
 
+          python tools/imagery_withdrawn.py --entry dist/satellite/entry.json
+
           # One long-lived release holds every imagery pack. They are hundreds
           # of megabytes and cannot live beside the index on GitHub Pages,
           # which caps a site at 1 GB — the same reason the routing tiles are
           # addressed absolutely.
+          #
+          # The notes are build_satellite.py's ATTRIBUTION word for word
+          # (tools/test_imagery_licence.py checks), and are set again on every
+          # run: the release was created under the 2024 mosaic, whose notes
+          # wrongly said CC BY 4.0, and would otherwise keep them for ever.
+          NOTES="EOxCloudless https://cloudless.eox.at by EOX IT Services GmbH (Contains modified Copernicus Sentinel data 2016 & 2017), CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/). Resampled and sharpened by Trail Blazer. Rebuilt one area at a time; see the dated asset list."
           gh release view satellite >/dev/null 2>&1 || \
             gh release create satellite \
               --title "Satellite imagery" \
-              --notes "Sentinel-2 cloudless by EOX IT Services GmbH (CC BY 4.0). Contains modified Copernicus Sentinel data. Rebuilt one area at a time; see the dated asset list." \
+              --notes "$NOTES" \
               --latest=false
+          gh release edit satellite --notes "$NOTES"
 
           # From here until `recorded`, the served packs are new (or, if the
           # upload dies part-way, deleted by --clobber or only some replaced)
@@ -313,6 +434,7 @@ jobs:
           # forgets an index DELETES what another job published - silently, in
           # a build that otherwise succeeds. It has happened three times.
           python tools/verify_catalogue.py dist/catalogue.json
+          python tools/imagery_withdrawn.py --index satellite/index.json --catalogue dist/catalogue.json
           mv dist/catalogue.json catalogue.json
 
           git config user.name  'Trail Blazer data bot'
@@ -325,7 +447,7 @@ jobs:
           fi
           SIZE=$(python -c "import glob,os;print('%.0f MB' % (sum(os.path.getsize(p) for p in glob.glob('dist/satellite/*.pmtiles'))/1048576))")
           git commit -m "Satellite: ${{ steps.plan.outputs.id }} (${SIZE})" \
-                     -m "Sentinel-2 cloudless via EOX, CC BY 4.0."
+                     -m "EOxCloudless 2016 by EOX IT Services GmbH, CC BY 4.0."
           # RE-DO THE RECORD ON TOP OF WHATEVER LANDED, rather than merge it.
           #
           # These jobs run for over an hour against a checkout taken at the
@@ -373,6 +495,7 @@ jobs:
               --index satellite/index.json
             bash tools/rebuild_catalogue.sh manifest.json dist/catalogue.json
             python tools/verify_catalogue.py dist/catalogue.json
+            python tools/imagery_withdrawn.py --index satellite/index.json --catalogue dist/catalogue.json
             mv dist/catalogue.json catalogue.json
 
             git add -A satellite/index.json catalogue.json
@@ -382,7 +505,7 @@ jobs:
               exit 0
             fi
             git commit -m "Satellite: ${{ steps.plan.outputs.id }} (${SIZE})" \
-                       -m "Sentinel-2 cloudless via EOX, CC BY 4.0."
+                       -m "EOxCloudless 2016 by EOX IT Services GmbH, CC BY 4.0."
             sleep $((attempt * 5))
           done
           # THE LAST RE-RECORD IS PUSHED TOO, OR THE STEP FAILS. The loop used
@@ -456,6 +579,8 @@ jobs:
           AREA_ID: ${{ steps.plan.outputs.id }}
           UPLOADED: ${{ steps.publish.outputs.uploaded }}
           RECORDED: ${{ steps.publish.outputs.recorded }}
+          BLOCKED: ${{ steps.fetch.outputs.blocked }}
+          REMEMBERED: ${{ steps.remember.outputs.remembered }}
           JOB_STATUS: ${{ job.status }}
         run: |
           KEY="${AREA_ID:-none}"
@@ -493,6 +618,47 @@ jobs:
           you can. Only a run that rebuilds and records this area closes this.
           EOF
           )
+          elif [ "$BLOCKED" = "true" ]; then
+            # What EOX said and when any area comes due again, from the
+            # record the build wrote under this area's host.
+            SAID=$(python -c '
+          import json, sys
+          try:
+              with open("satellite/blocks.json", encoding="utf-8") as f:
+                  hosts = json.load(f)["hosts"]
+              host, rec = next((h, r) for h, r in hosts.items()
+                               if r.get("area") == sys.argv[1])
+              status = rec.get("status")
+              what = ("connection failures" if status == "network"
+                      else "HTTP %s" % status)
+              if rec.get("retry_after") is not None:
+                  what += ", Retry-After %s s" % rec["retry_after"]
+              print("%s|%s|%s" % (what, host,
+                                  rec.get("until") or "an unknown date"))
+          except (OSError, ValueError, KeyError, TypeError, AttributeError,
+                  StopIteration):
+              print("a refusal not on record|the tile host|an unknown date")
+          ' "$KEY")
+            WHAT="${SAID%%|*}"
+            REST="${SAID#*|}"
+            HOST="${REST%%|*}"
+            UNTIL="${REST#*|}"
+            TITLE="Satellite build for $KEY stopped: EOX refused us"
+            if [ "$REMEMBERED" = "true" ]; then
+              NEXT="Nothing retries around a refusal: every area comes from $HOST, so the planner asks it for no area at all until **$UNTIL** (7 days, or longer when EOX's Retry-After asks for longer), as recorded in satellite/blocks.json."
+            else
+              NEXT="**The refusal could not be recorded** in satellite/blocks.json, so the planner may ask $HOST for an area again on the next run. Disable this workflow from the Actions tab until someone has looked into EOX's refusal."
+            fi
+            OUTCOME=$(cat <<EOF
+          EOX ($HOST) refused us ($WHAT) in \`$KEY\`, so the build stopped
+          and **nothing was published**. Riders keep the imagery they have.
+
+          $NEXT
+
+          The tiles fetched before the stop were saved to the cache, so a
+          later run resumes rather than fetching them again.
+          EOF
+          )
           else
             TITLE="Satellite build $HEADLINE for $KEY on $(date -u +%Y-%m-%d)"
             OUTCOME=$(cat <<EOF
@@ -515,9 +681,8 @@ jobs:
             asking too much of a free service — talk to them about the
             offline mosaic.
           - **It ran out of time** (cancelled at 350 minutes). The staged
-            tiles are cached only by a run that ends GREEN, so a failed,
-            cancelled or timed-out run's tiles are lost and a re-run fetches
-            this area again; one that keeps timing out needs a smaller
+            tiles are saved however a run ends, so a re-run resumes where
+            this one stopped; one that keeps timing out needs a smaller
             budget, not another try.
           - **The archive check objected.** Read what it said; a pack that
             will not open is worse than no pack.

@@ -393,7 +393,7 @@ class NoPersonalData(Fixture):
         bs.public_check(self.build())
         bs.public_check({"datasets": [], "x": [
             "2026-10-08T18:05:00Z", "2026-09-30", "Every 6 hours",
-            "the 2024 Sentinel-2 cloudless mosaic", "A1 and M6 junctions"]})
+            "the 2016 Sentinel-2 cloudless mosaic", "A1 and M6 junctions"]})
 
     def test_public_check_refuses_an_unknown_result(self):
         s = self.build()
