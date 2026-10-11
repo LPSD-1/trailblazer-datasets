@@ -1,6 +1,6 @@
 {
  "schema": 1,
- "generated": "2026-10-11T14:26:53Z",
+ "generated": "2026-10-11T18:31:54Z",
  "datasets": [
   {
    "id": "lanes",
@@ -429,6 +429,19 @@
    "activity": []
   },
   {
+   "name": "Broads",
+   "full_name": "Broads Authority",
+   "country": "England",
+   "kind": "park",
+   "byways": null,
+   "unsurfaced_roads": null,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [],
+   "honours": [],
+   "activity": []
+  },
+  {
    "name": "Bromley",
    "full_name": "London Borough of Bromley",
    "country": "England",
@@ -756,6 +769,19 @@
    "activity": []
   },
   {
+   "name": "Dartmoor National Park",
+   "full_name": "Dartmoor National Park Authority",
+   "country": "England",
+   "kind": "park",
+   "byways": null,
+   "unsurfaced_roads": null,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [],
+   "honours": [],
+   "activity": []
+  },
+  {
    "name": "Derby",
    "full_name": "Derby City Council",
    "country": "England",
@@ -1057,6 +1083,19 @@
     "Shares its own data openly",
     "Publishes to D-TRO"
    ],
+   "activity": []
+  },
+  {
+   "name": "Exmoor National Park",
+   "full_name": "Exmoor National Park Authority",
+   "country": "England",
+   "kind": "park",
+   "byways": null,
+   "unsurfaced_roads": null,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [],
+   "honours": [],
    "activity": []
   },
   {
@@ -1827,6 +1866,19 @@
    "activity": []
   },
   {
+   "name": "New Forest National Park",
+   "full_name": "New Forest National Park Authority",
+   "country": "England",
+   "kind": "park",
+   "byways": null,
+   "unsurfaced_roads": null,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [],
+   "honours": [],
+   "activity": []
+  },
+  {
    "name": "Newcastle",
    "full_name": "Newcastle City Council",
    "country": "England",
@@ -1997,6 +2049,19 @@
    "activity": []
   },
   {
+   "name": "North York Moors National Park",
+   "full_name": "North York Moors National Park Authority",
+   "country": "England",
+   "kind": "park",
+   "byways": null,
+   "unsurfaced_roads": null,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [],
+   "honours": [],
+   "activity": []
+  },
+  {
    "name": "North Yorkshire",
    "full_name": "North Yorkshire Council",
    "country": "England",
@@ -2064,6 +2129,19 @@
     "Open Government Licence",
     "Publishes to D-TRO"
    ],
+   "activity": []
+  },
+  {
+   "name": "Northumberland National Park",
+   "full_name": "Northumberland National Park Authority",
+   "country": "England",
+   "kind": "park",
+   "byways": null,
+   "unsurfaced_roads": null,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [],
+   "honours": [],
    "activity": []
   },
   {
@@ -2164,6 +2242,19 @@
     "Open Government Licence",
     "Publishes to D-TRO"
    ],
+   "activity": []
+  },
+  {
+   "name": "Peak District National Park",
+   "full_name": "Peak District National Park Authority",
+   "country": "England",
+   "kind": "park",
+   "byways": null,
+   "unsurfaced_roads": null,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [],
+   "honours": [],
    "activity": []
   },
   {
@@ -2525,6 +2616,19 @@
     "Open Government Licence",
     "Publishes to D-TRO"
    ],
+   "activity": []
+  },
+  {
+   "name": "South Downs National Park",
+   "full_name": "South Downs National Park Authority",
+   "country": "England",
+   "kind": "park",
+   "byways": null,
+   "unsurfaced_roads": null,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [],
+   "honours": [],
    "activity": []
   },
   {
@@ -3386,6 +3490,25 @@
    "activity": []
   },
   {
+   "name": "Yorkshire Dales National Park",
+   "full_name": "Yorkshire Dales National Park Authority",
+   "country": "England",
+   "kind": "park",
+   "byways": null,
+   "unsurfaced_roads": null,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [
+    {
+     "what": "Traffic orders",
+     "from": "Yorkshire Dales National Park Authority - byway orders listed on its website",
+     "as_of": null
+    }
+   ],
+   "honours": [],
+   "activity": []
+  },
+  {
    "name": "Bannau Brycheiniog National Park",
    "full_name": "Bannau Brycheiniog National Park Authority",
    "country": "Wales",
@@ -3550,6 +3673,19 @@
    "activity": []
   },
   {
+   "name": "Eryri National Park",
+   "full_name": "Eryri National Park Authority",
+   "country": "Wales",
+   "kind": "park",
+   "byways": null,
+   "unsurfaced_roads": null,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [],
+   "honours": [],
+   "activity": []
+  },
+  {
    "name": "Flintshire",
    "full_name": "Flintshire County Council",
    "country": "Wales",
@@ -3698,6 +3834,19 @@
      "as_of": null
     }
    ],
+   "honours": [],
+   "activity": []
+  },
+  {
+   "name": "Pembrokeshire Coast National Park",
+   "full_name": "Pembrokeshire Coast National Park Authority",
+   "country": "Wales",
+   "kind": "park",
+   "byways": null,
+   "unsurfaced_roads": null,
+   "dtro_records": null,
+   "dtro": null,
+   "sources": [],
    "honours": [],
    "activity": []
   },
