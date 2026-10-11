@@ -26,6 +26,13 @@ of blame (FORBIDDEN) anywhere in it.
 WHAT IT IS BUILT FROM, all committed except the run results:
   * tools/tro_authorities.csv - every highway authority. Rows whose note says
     "no byways" (National Highways, the Welsh Government, TfL) are left out.
+  * tools/national_park_authorities.csv - every national park authority in
+    England and Wales (and the Broads Authority, of equivalent status). They
+    are not highway authorities, so the table above lists only the parks
+    rowmaps files lanes under; the rest are added from here so that every
+    park is named. A park added this way owns no lane name, so its byway
+    and unsurfaced road counts are null: its lanes are counted under the
+    councils whose ground it covers, and "0 byways" would be untrue.
   * the published ways containers, through byway_match.load_byways - the
     byways (BOATs) and unsurfaced roads (UCRs) riders actually have, and
     each way's `source` column, which says whether it came from rowmaps.com,
@@ -242,6 +249,36 @@ def load_table(path):
                           if n.strip()],
             })
     return rows
+
+
+def load_parks(path):
+    """Every national park authority: [{full_name, country}].
+
+    A missing file raises: without it the parks would silently vanish from
+    the public page and the app.
+    """
+    parks = []
+    with open(path, encoding="utf-8-sig", newline="") as fh:
+        for row in csv.DictReader(fh):
+            full = (row.get("display_name") or "").strip()
+            if full:
+                parks.append({"full_name": full,
+                              "country": (row.get("country") or "").strip()})
+    return parks
+
+
+def add_parks(rows, parks):
+    """The council table's rows plus each park it does not already list.
+
+    An added park has no code and no lane names, and carries its own country
+    and kind ("Broads Authority" does not end in "National Park Authority").
+    `counted` False makes its byway and unsurfaced road counts null.
+    """
+    have = set(r["full_name"] for r in rows)
+    return rows + [{"swa": None, "full_name": p["full_name"], "lanes": [],
+                    "country": p["country"], "kind": "park",
+                    "counted": False}
+                   for p in parks if p["full_name"] not in have]
 
 
 def lane_owners(rows):
@@ -644,13 +681,14 @@ def build_authorities(root, rows, ways, closure_sources, byway_layers):
         reasons = [r for r, met in ((OPEN_DATA, acc["open"]),
                                     (OGL, acc["ogl"]),
                                     (DTRO, bool(records))) if met]
+        counted = row.get("counted", True)
         out.append({
             "name": short_name(row["full_name"]),
             "full_name": row["full_name"],
-            "country": country_of(row["full_name"]),
-            "kind": kind_of(row["full_name"]),
-            "byways": acc["boat"],
-            "unsurfaced_roads": acc["ucr"],
+            "country": row.get("country") or country_of(row["full_name"]),
+            "kind": row.get("kind") or kind_of(row["full_name"]),
+            "byways": acc["boat"] if counted else None,
+            "unsurfaced_roads": acc["ucr"] if counted else None,
             "dtro_records": records,
             "dtro": dtro_label(records),
             "sources": sources,
@@ -699,7 +737,10 @@ def build(root, runs_for, ways, closure_sources, byway_layers, previous=None,
           now=None, notes_path=None):
     previous = previous or {}
     now = now or datetime.datetime.now(datetime.timezone.utc)
-    rows = load_table(os.path.join(root, "tools", "tro_authorities.csv"))
+    rows = add_parks(
+        load_table(os.path.join(root, "tools", "tro_authorities.csv")),
+        load_parks(os.path.join(root, "tools",
+                                "national_park_authorities.csv")))
     authorities = build_authorities(root, rows, ways, closure_sources,
                                     byway_layers)
     status = {

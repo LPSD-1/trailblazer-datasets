@@ -143,6 +143,9 @@ def make_checkout(tmp, publishers=True):
     out = io.StringIO()
     csv.writer(out, lineterminator="\n").writerows(TABLE)
     _write(os.path.join(tmp, "tools", "tro_authorities.csv"), out.getvalue())
+    # The real list of national park authorities, as build reads it.
+    shutil.copyfile(os.path.join(HERE, "national_park_authorities.csv"),
+                    os.path.join(tmp, "tools", "national_park_authorities.csv"))
     _json(os.path.join(tmp, "council-ways", "status.json"), {
         "DN": {"council": "Devon County Council", "last_ok": "2026-10-01",
                "error": "write to " + CONTACT_EMAIL}})
@@ -257,7 +260,12 @@ class TheFileMatchesTheSchema(Fixture):
             self.assertIn(a["country"], ("England", "Wales"))
             self.assertIn(a["kind"], ("council", "park"))
             for key in ("byways", "unsurfaced_roads"):
-                self.assertIsInstance(a[key], int)
+                # Null only for a park whose lanes are counted under its
+                # councils (the app reads both counts as int?).
+                if a[key] is None:
+                    self.assertEqual(a["kind"], "park", a["full_name"])
+                else:
+                    self.assertIsInstance(a[key], int)
             self.assertTrue(a["dtro_records"] is None
                             or isinstance(a["dtro_records"], int))
             self.assertIn(a["dtro"], DTRO_LABELS, a["full_name"])
@@ -456,7 +464,8 @@ class WhoIsListed(Fixture):
         s = self.build()
         names = [a["full_name"] for a in s["authorities"]]
         self.assertNotIn("National Highways", names)
-        self.assertEqual(len(names), len(TABLE) - 2,
+        # Every other table row, and the parks the table does not list.
+        self.assertEqual(len(names), len(TABLE) - 2 + len(PARKS_NOT_IN_TABLE),
                          "every other row is listed")
 
     def test_wales_and_england(self):
@@ -499,6 +508,80 @@ class WhoIsListed(Fixture):
                        "from": "Wiltshire Council, via the Department for "
                                "Transport's D-TRO service",
                        "as_of": "2026-09-01"}, wilts["sources"])
+
+
+# Every national park authority in England and Wales, as each styles
+# itself. The Broads Authority has equivalent status. Lake District and
+# Bannau Brycheiniog are already rows of the council table (TABLE), so the
+# parks file adds the other eleven.
+PARKS = {
+    "Dartmoor National Park Authority": "England",
+    "Exmoor National Park Authority": "England",
+    "Lake District National Park Authority": "England",
+    "New Forest National Park Authority": "England",
+    "Northumberland National Park Authority": "England",
+    "North York Moors National Park Authority": "England",
+    "Peak District National Park Authority": "England",
+    "South Downs National Park Authority": "England",
+    "Yorkshire Dales National Park Authority": "England",
+    "Broads Authority": "England",
+    "Bannau Brycheiniog National Park Authority": "Wales",
+    "Eryri National Park Authority": "Wales",
+    "Pembrokeshire Coast National Park Authority": "Wales",
+}
+PARKS_NOT_IN_TABLE = sorted(set(PARKS) - set(r[1] for r in TABLE[1:]))
+
+
+class EveryNationalPark(Fixture):
+    """Every park authority is named, though none is a highway authority."""
+
+    def test_the_peak_district_is_listed_as_a_park(self):
+        s = self.build()
+        self.assertEqual(
+            self.authority(s, "Peak District National Park Authority"), {
+                "name": "Peak District National Park",
+                "full_name": "Peak District National Park Authority",
+                "country": "England",
+                "kind": "park",
+                # Its byways are filed under the councils whose ground it
+                # covers, so we cannot say how many are in the park: not
+                # known, never 0.
+                "byways": None,
+                "unsurfaced_roads": None,
+                "dtro_records": None,
+                "dtro": None,
+                "sources": [],
+                "honours": [],
+                "activity": [],
+            })
+
+    def test_every_park_once_in_its_country(self):
+        s = self.build()
+        for full, country in PARKS.items():
+            a = self.authority(s, full)    # asserts exactly once
+            self.assertEqual((a["country"], a["kind"]), (country, "park"),
+                             full)
+        self.assertEqual(self.authority(s, "Broads Authority")["name"],
+                         "Broads")
+        self.assertEqual(self.authority(s, "Eryri National Park Authority")
+                         ["name"], "Eryri National Park")
+
+    def test_a_park_the_table_lists_keeps_its_counts(self):
+        s = self.build()
+        lake = self.authority(s, "Lake District National Park Authority")
+        self.assertEqual((lake["byways"], lake["unsurfaced_roads"]), (11, 0))
+
+    def test_the_list_is_exactly_the_parks(self):
+        parks = bs.load_parks(os.path.join(HERE,
+                                           "national_park_authorities.csv"))
+        self.assertEqual(dict((p["full_name"], p["country"]) for p in parks),
+                         PARKS)
+
+    def test_a_missing_list_fails_loudly(self):
+        os.remove(os.path.join(self.tmp, "tools",
+                               "national_park_authorities.csv"))
+        with self.assertRaises(OSError):
+            self.build()
 
 
 class TheDtroLabelIsNeutral(Fixture):
