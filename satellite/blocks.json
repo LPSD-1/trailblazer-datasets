@@ -2,11 +2,11 @@
   "hosts": {
     "tiles.maps.eox.at": {
       "area": "gb-east-anglia-satellite",
-      "at": "2026-10-10T08:54:38Z",
-      "reason": "11 of the last 200 tiles failed",
+      "at": "2026-10-11T09:18:51Z",
+      "reason": "a busy page (HTTP 200, not a JPEG) for z12/2069/1357, 3 HTTP 429s or busy pages within 3600 s",
       "retry_after": null,
-      "status": "network",
-      "until": "2026-10-11T08:54:38Z"
+      "status": "busy",
+      "until": "2026-10-18T09:18:51Z"
     }
   }
 }
