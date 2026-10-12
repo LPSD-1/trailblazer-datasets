@@ -621,7 +621,7 @@
     }
    ],
    "council": "City of Bradford Metropolitan District Council",
-   "last_ok": "2026-10-07",
+   "last_ok": "2026-10-12",
    "ok": true,
    "records": 3,
    "url": "https://utility.arcgis.com/usrsvcs/servers/b9aaf7350f9746478448e39e0e2c844a/rest/services/AGOL/ROWIP_Consult_Pro/MapServer/2"
@@ -1147,7 +1147,7 @@
     }
    ],
    "council": "Caerphilly County Borough Council",
-   "last_ok": "2026-10-07",
+   "last_ok": "2026-10-12",
    "ok": true,
    "records": 10,
    "url": "https://services2.arcgis.com/joiLPYpH7xAxIkcx/arcgis/rest/services/prow_claimed_rights_of_way_view/FeatureServer/0"
@@ -11563,7 +11563,7 @@
      "council": "Derbyshire County Council",
      "current": "Bridleway 24",
      "details": {
-      "stage": "Consultation in progress"
+      "stage": "Report in Progress"
      },
      "lines": [
       [
@@ -11794,7 +11794,7 @@
      "council": "Derbyshire County Council",
      "current": null,
      "details": {
-      "stage": "Consultation in progress"
+      "stage": "Report in Progress"
      },
      "lines": [
       [
@@ -23860,7 +23860,7 @@
      "council": "Derbyshire County Council",
      "current": "Claimed BOAT 48",
      "details": {
-      "stage": "Consultation in progress"
+      "stage": "Report in Progress"
      },
      "lines": [
       [
@@ -50782,7 +50782,7 @@
     }
    ],
    "council": "Derbyshire County Council",
-   "last_ok": "2026-10-07",
+   "last_ok": "2026-10-12",
    "ok": true,
    "records": 554,
    "url": "https://wms.derbyshire.gov.uk/geoserver/DCC/wfs"
@@ -54211,7 +54211,7 @@
     }
    ],
    "council": "Devon County Council",
-   "last_ok": "2026-10-07",
+   "last_ok": "2026-10-12",
    "ok": true,
    "records": 208,
    "url": "https://map.devon.gov.uk/arcgis/rest/services/Environment/Public_Access/MapServer/3"
@@ -83219,10 +83219,10 @@
     }
    ],
    "council": "Dorset Council",
-   "last_ok": "2026-10-07",
+   "last_ok": "2026-10-12",
    "ok": true,
    "records": 428,
-   "supplied": "collected from a home connection 2026-10-07",
+   "supplied": "collected directly from the council 2026-10-07",
    "url": "https://gi.dorsetcouncil.gov.uk/geoserver/countryside/wfs?service=WFS&version=2.0.0&request=GetFeature&typeNames=countryside:v_dmmo_public&outputFormat=application/json&propertyName=dmmo_ref_no,application_details,case_status,website_url,claimed_statuses,application_types,geom"
   },
   "northumberland-claims": {
@@ -86563,7 +86563,7 @@
     }
    ],
    "council": "Northumberland County Council",
-   "last_ok": "2026-10-07",
+   "last_ok": "2026-10-12",
    "ok": true,
    "records": 31,
    "url": "https://services2.arcgis.com/LrUbY6lLLgV3tEa5/arcgis/rest/services/Join_Features_to_NEW_PRoW_Claims_Master_view/FeatureServer/0"
@@ -91707,7 +91707,7 @@
      "source": "northumberland-claims-2020",
      "state": "unknown",
      "ways": [
-      "ND-018-5025727d04"
+      "ND-018-ca16acaaf5"
      ]
     },
     {
@@ -91760,7 +91760,7 @@
      "source": "northumberland-claims-2020",
      "state": "unknown",
      "ways": [
-      "ND-019-c341a4610f"
+      "ND-019-34b8959392"
      ]
     },
     {
@@ -109226,7 +109226,7 @@
     }
    ],
    "council": "Northumberland County Council (2020 register)",
-   "last_ok": "2026-10-07",
+   "last_ok": "2026-10-12",
    "ok": true,
    "records": 240,
    "url": "https://services2.arcgis.com/LrUbY6lLLgV3tEa5/arcgis/rest/services/PROW_ClaimedRightsOfWay/FeatureServer/0"
@@ -110388,7 +110388,7 @@
     }
    ],
    "council": "West Berkshire Council",
-   "last_ok": "2026-10-07",
+   "last_ok": "2026-10-12",
    "ok": true,
    "records": 98,
    "url": "https://gis.westberks.gov.uk/server/rest/services/Layers/PUBLIC_RIGHTS_OF_WAY_SECTION_53B_WCA81/FeatureServer/5"
