@@ -42,7 +42,8 @@ WHAT IT IS BUILT FROM, all committed except the run results:
   * council-ways/status.json and council_ways.LAYERS - councils' own byway
     layers; council-ucrs/<CODE>.json and status.json - their UCR layers.
   * tro/register/orders.json and pages.json - the order register; only
-    entries a person approved count.
+    entries a person approved AND the register published (their id among
+    the items of tro/council/order-register.json) count.
   * tro/publishers.json - how many records each authority has published to
     D-TRO, written by build_tro.py beside tro/index.json. Missing, every
     `dtro_records` is null: unknown, never zero.
@@ -641,12 +642,23 @@ def build_authorities(root, rows, ways, closure_sources, byway_layers):
             acc["ogl"] = acc["ogl"] or _is_ogl(known.get("licence"))
 
     # THE ORDER REGISTER: a council whose page gave us an order a person
-    # approved. Matched on the council's own name, so a National Park's page
-    # about a council's ground is not counted as the council's.
+    # approved AND the register published (tro/council/order-register.json,
+    # by the order's id). Approved alone is not enough: an approved order on
+    # no lane of ours is held back, and a council none of whose orders
+    # reached a rider is not a source. Matched on the council's own name, so
+    # a National Park's page about a council's ground is not counted as the
+    # council's.
     orders = _read_json(os.path.join(root, "tro", "register",
                                      "orders.json"), []) or []
+    register = _read_json(os.path.join(root, "tro", "council",
+                                       "order-register.json"), {}) or {}
+    if not isinstance(register, dict):
+        register = {}
+    published = set(i.get("id") for i in register.get("items") or []
+                    if isinstance(i, dict))
     approved = set(o.get("council") for o in orders
-                   if isinstance(o, dict) and o.get("status") == "approved")
+                   if isinstance(o, dict) and o.get("status") == "approved"
+                   and o.get("id") in published)
     for i, row in enumerate(rows):
         if row["full_name"] in approved:
             per_row[i]["sources"].append({

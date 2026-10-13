@@ -174,10 +174,20 @@ def make_checkout(tmp, publishers=True):
         "items": [{"title": "Path closed", "contact": CONTACT_NAME,
                    "email": CONTACT_EMAIL, "phone": CONTACT_PHONE}]})
     _json(os.path.join(tmp, "tro", "register", "orders.json"), [
-        {"council": "North Yorkshire Council", "status": "approved",
+        {"id": "nyc/1", "council": "North Yorkshire Council",
+         "status": "approved",
          "review_note": "confirmed by %s (%s)" % (OFFICER, CONTACT_EMAIL)},
-        {"council": "Dorset Council", "status": "needs-review"},
-        {"council": "Dorset Council", "status": "listed-only"}])
+        # Approved, but on no lane of ours: order_register.build holds it
+        # back, so nothing of the Park's list reaches a rider.
+        {"id": "ydnpa/1", "council": "Yorkshire Dales National Park "
+         "Authority", "status": "approved"},
+        {"id": "dorset/1", "council": "Dorset Council",
+         "status": "needs-review"},
+        {"id": "dorset/2", "council": "Dorset Council",
+         "status": "listed-only"}])
+    _json(os.path.join(tmp, "tro", "council", "order-register.json"), {
+        "items": [{"id": "nyc/1", "authority": "North Yorkshire"}],
+        "review": [{"id": "ydnpa/1", "why": "no byway of ours matches"}]})
     _json(os.path.join(tmp, "tro", "register", "pages.json"), [
         {"council": "North Yorkshire Council", "url": "https://x.invalid/"}])
     if publishers:
@@ -448,6 +458,47 @@ class Honours(Fixture):
         dorset = self.authority(s, "Dorset Council")
         self.assertFalse([x for x in dorset["sources"]
                           if "byway orders listed" in x["from"]])
+
+    def test_only_register_entries_that_were_published_count(self):
+        # 13 Oct 2026: the Yorkshire Dales row said its "byway orders listed
+        # on its website" were a source while the register published none of
+        # them (both approved entries were held back as unmatched).
+        s = self.build()
+        park = self.authority(s, "Yorkshire Dales National Park Authority")
+        self.assertFalse([x for x in park["sources"]
+                          if "orders listed" in x["from"]])
+        nyc = self.authority(s, "North Yorkshire Council")
+        self.assertTrue([x for x in nyc["sources"]
+                         if "orders listed" in x["from"]])
+
+    def test_the_park_is_a_source_once_its_order_is_published(self):
+        _json(os.path.join(self.tmp, "tro", "council",
+                           "order-register.json"), {"items": [
+                               {"id": "nyc/1", "authority": "North Yorkshire"},
+                               {"id": "ydnpa/1",
+                                "authority": "North Yorkshire"}]})
+        s = self.build()
+        park = self.authority(s, "Yorkshire Dales National Park Authority")
+        self.assertIn({"what": "Traffic orders",
+                       "from": "Yorkshire Dales National Park Authority - "
+                               "byway orders listed on its website",
+                       "as_of": None}, park["sources"])
+
+    def test_a_register_file_that_is_not_an_object_counts_nothing(self):
+        _json(os.path.join(self.tmp, "tro", "council",
+                           "order-register.json"), [{"id": "nyc/1"}])
+        s = self.build()
+        nyc = self.authority(s, "North Yorkshire Council")
+        self.assertFalse([x for x in nyc["sources"]
+                          if "orders listed" in x["from"]])
+
+    def test_no_register_output_means_no_register_source(self):
+        os.remove(os.path.join(self.tmp, "tro", "council",
+                               "order-register.json"))
+        s = self.build()
+        nyc = self.authority(s, "North Yorkshire Council")
+        self.assertFalse([x for x in nyc["sources"]
+                          if "orders listed" in x["from"]])
 
     def test_top_level_honours_are_exactly_the_honoured_authorities(self):
         s = self.build()
