@@ -6025,8 +6025,14 @@
   "restriction": "All motor vehicles",
   "source_url": "https://www.yorkshiredales.org.uk/wp-content/uploads/sites/13/2019/08/CURRENT-TRAFFIC-REGULATION-ORDERS-IN-THE-YORKSHIRE-DALES-12.10.18.pdf",
   "evidence": "Gorbeck Road (Langcliffe to Malham) SD888 649 to SD830 652 All motor vehicles August 2010",
-  "status": "needs-review",
-  "review_note": "low confidence in the transcription"
+  "status": "approved",
+  "review_note": "The current-orders list's start date column (read by both the table and the content-order extraction of the PDF) gives August 2010, agreeing with the BOAT list's \"commencing 23.8.10\". Our lanes cover both ends; about 1.9 km between them is not in our data.",
+  "ways": [
+   "NY-20/1-87e3435213",
+   "NY-32/1-b37b226ef1",
+   "NY-UCR-craven-u8040"
+  ],
+  "reviewed": "pinned 2026-10-13: BOAT 05.28 20/1 starts at the Langcliffe end (16 m from SD830 652); BOAT 05.70 32/1 and North Yorkshire Council's unsurfaced road U8040 (Craven), drawn on the same line, end at SD888 649. The council's own notices name U8040 as Gorbeck Road."
  },
  {
   "id": "yorkshire-dales-national-park-authority//the-high-way-south-section",
@@ -6036,7 +6042,7 @@
    "Westmorland and Furness",
    "Cumbria"
   ],
-  "path_as_written": "The High Way (south section)",
+  "path_as_written": "The High Way",
   "vehicles": "motor_vehicles",
   "form": "permanent",
   "start": "2008-06-01",
@@ -6047,7 +6053,263 @@
   ],
   "restriction": "All motor vehicles",
   "source_url": "https://www.yorkshiredales.org.uk/wp-content/uploads/sites/13/2019/08/CURRENT-TRAFFIC-REGULATION-ORDERS-IN-THE-YORKSHIRE-DALES-12.10.18.pdf",
-  "evidence": "Permanent Traffic Regulation Orders ... The High Way SD842 921 to SD787 969 All motor vehicles June 2008 Through route is available using Shaw Paddock byway",
-  "status": "approved"
+  "evidence": "The High Way SD842 921 to SD787 969 All motor vehicles June 2008 Through route is available using Shaw Paddock byway",
+  "status": "approved",
+  "ways": [
+   "NY-1/1-9b128ac3dd"
+  ],
+  "reviewed": "pinned 2026-10-13: BOAT 20.93 1/1 runs from 61 m of SD842 921 to 133 m of SD787 969, the whole extent; BOAT 20.93 2/1 and W1-004 only meet its north end and are not pinned."
+ },
+ {
+  "id": "yorkshire-dales-national-park-authority//foxup-road-horton-scar-lane",
+  "council": "Yorkshire Dales National Park Authority",
+  "authorities": [
+   "North Yorkshire",
+   "Westmorland and Furness",
+   "Cumbria"
+  ],
+  "path_as_written": "Foxup Road/Horton Scar Lane",
+  "vehicles": "motor_vehicles",
+  "form": "permanent",
+  "start": "2008-06-01",
+  "order_date": "June 2008 (start date column)",
+  "grid_refs": [
+   "SD809 724",
+   "SD872 767"
+  ],
+  "restriction": "All motor vehicles",
+  "source_url": "https://www.yorkshiredales.org.uk/wp-content/uploads/sites/13/2019/08/CURRENT-TRAFFIC-REGULATION-ORDERS-IN-THE-YORKSHIRE-DALES-12.10.18.pdf",
+  "evidence": "Foxup Road/Horton Scar Lane SD809 724 to SD872 767 All motor vehicles June 2008 Also includes route to Hesleden Bergh",
+  "status": "approved",
+  "review_note": "The list's comment says the order also includes the route to Hesleden Bergh, for which it gives no grid reference. Not pinned: none of our lanes is this route (U8035 near its Halton Gill end is Horsehead Pass)."
+ },
+ {
+  "id": "yorkshire-dales-national-park-authority//ling-gill-old-ing-to-cam-end",
+  "council": "Yorkshire Dales National Park Authority",
+  "authorities": [
+   "North Yorkshire",
+   "Westmorland and Furness",
+   "Cumbria"
+  ],
+  "path_as_written": "Ling Gill (Old Ing to Cam End)",
+  "vehicles": "motor_vehicles",
+  "form": "permanent",
+  "start": "2008-08-01",
+  "order_date": "August 2008 (start date column)",
+  "grid_refs": [
+   "SD804 774",
+   "SD802 804"
+  ],
+  "restriction": "All motor vehicles",
+  "source_url": "https://www.yorkshiredales.org.uk/wp-content/uploads/sites/13/2019/08/CURRENT-TRAFFIC-REGULATION-ORDERS-IN-THE-YORKSHIRE-DALES-12.10.18.pdf",
+  "evidence": "Ling Gill (Old Ing to Cam End) SD804 774 to SD802 804 All motor vehicles August 2008 This route is restricted byway",
+  "status": "approved",
+  "review_note": "The list says this route is a restricted byway, which we do not carry. No lane of ours lies within 800 m of the line between its grid references."
+ },
+ {
+  "id": "yorkshire-dales-national-park-authority//cam-high-road-far-gearstones-to-cam-houses",
+  "council": "Yorkshire Dales National Park Authority",
+  "authorities": [
+   "North Yorkshire",
+   "Westmorland and Furness",
+   "Cumbria"
+  ],
+  "path_as_written": "Cam High Road (Far Gearstones to Cam Houses)",
+  "vehicles": "motor_vehicles",
+  "form": "permanent",
+  "start": "2008-08-01",
+  "order_date": "August 2008 (start date column)",
+  "grid_refs": [
+   "SD785 803",
+   "SD822 828"
+  ],
+  "restriction": "All motor vehicles",
+  "source_url": "https://www.yorkshiredales.org.uk/wp-content/uploads/sites/13/2019/08/CURRENT-TRAFFIC-REGULATION-ORDERS-IN-THE-YORKSHIRE-DALES-12.10.18.pdf",
+  "evidence": "Cam High Road (Far Gearstones to Cam Houses) SD785 803 to SD822 828 All motor vehicles August 2008 This route is restricted byway",
+  "status": "approved",
+  "review_note": "The list says this route is a restricted byway, which we do not carry. Not pinned: the only lane near it, BOAT NY-63/1 (152 m), lies at the Far Gearstones end and is not the restricted byway the order is about."
+ },
+ {
+  "id": "yorkshire-dales-national-park-authority//mastiles-lane",
+  "council": "Yorkshire Dales National Park Authority",
+  "authorities": [
+   "North Yorkshire",
+   "Westmorland and Furness",
+   "Cumbria"
+  ],
+  "path_as_written": "Mastiles Lane from Street Gate to Kilnsey",
+  "vehicles": "motor_vehicles",
+  "form": "permanent",
+  "start": "2008-08-01",
+  "order_date": "August 2008 (start date column)",
+  "grid_refs": [
+   "SD905 656",
+   "SD971 676"
+  ],
+  "restriction": "All motor vehicles",
+  "source_url": "https://www.yorkshiredales.org.uk/wp-content/uploads/sites/13/2019/08/CURRENT-TRAFFIC-REGULATION-ORDERS-IN-THE-YORKSHIRE-DALES-12.10.18.pdf",
+  "evidence": "Mastiles Lane from Street Gate to Kilnsey 905 656 to 971 676 All motor vehicles August 2008 Exemption for Alan Jeffries Trial",
+  "status": "approved",
+  "review_note": "The list prints these grid references without the 100 km square letters; SD is supplied, the only square this route lies in. The list's comment gives an exemption for the Alan Jeffries Trial; the prohibition is otherwise of all motor vehicles. North Yorkshire Council draws U808 in two pieces; about 1.5 km between them is not in its layer.",
+  "ways": [
+   "NY-UCR-craven-u808",
+   "NY-UCR-craven-u808-a9d791"
+  ],
+  "reviewed": "pinned 2026-10-13: North Yorkshire Council's unsurfaced road U808 (Craven), both pieces; its west end is 22 m from Street Gate (SD905 656) and its east end at Kilnsey is within 130 m of SD971 676. BOAT 05.70 31/1 only meets it at Street Gate and is not pinned."
+ },
+ {
+  "id": "yorkshire-dales-national-park-authority//long-lane-from-clapham-to-selside",
+  "council": "Yorkshire Dales National Park Authority",
+  "authorities": [
+   "North Yorkshire",
+   "Westmorland and Furness",
+   "Cumbria"
+  ],
+  "path_as_written": "Long Lane from Clapham to Selside",
+  "vehicles": "motor_vehicles",
+  "form": "permanent",
+  "start": "2008-08-01",
+  "order_date": "August 2008 (start date column)",
+  "grid_refs": [
+   "SD752 694",
+   "SD787 746",
+   "SD779 756"
+  ],
+  "restriction": "All motor vehicles",
+  "source_url": "https://www.yorkshiredales.org.uk/wp-content/uploads/sites/13/2019/08/CURRENT-TRAFFIC-REGULATION-ORDERS-IN-THE-YORKSHIRE-DALES-12.10.18.pdf",
+  "evidence": "Long Lane from Clapham to Selside 752 694 to 787 746 and 779 756 All motor vehicles August 2008",
+  "status": "approved",
+  "review_note": "The list prints these grid references without the 100 km square letters; SD is supplied, the only square this route lies in. No lane of ours lies within 800 m of the line between its grid references."
+ },
+ {
+  "id": "yorkshire-dales-national-park-authority//horsehead-pass-from-halton-gill-to-yockenthwaite",
+  "council": "Yorkshire Dales National Park Authority",
+  "authorities": [
+   "North Yorkshire",
+   "Westmorland and Furness",
+   "Cumbria"
+  ],
+  "path_as_written": "Horsehead Pass from Halton Gill to Yockenthwaite",
+  "vehicles": "motor_vehicles",
+  "form": "permanent",
+  "start": "2008-08-01",
+  "order_date": "August 2008 (start date column)",
+  "grid_refs": [
+   "SD879 766",
+   "SD905 786"
+  ],
+  "restriction": "All motor vehicles",
+  "source_url": "https://www.yorkshiredales.org.uk/wp-content/uploads/sites/13/2019/08/CURRENT-TRAFFIC-REGULATION-ORDERS-IN-THE-YORKSHIRE-DALES-12.10.18.pdf",
+  "evidence": "Horsehead Pass from Halton Gill to Yockenthwaite 879 766 to 905 786 All motor vehicles August 2008",
+  "status": "approved",
+  "review_note": "The list prints these grid references without the 100 km square letters; SD is supplied, the only square this route lies in. Our lane covers the Halton Gill end (2.1 km of the 3.3 km between the grid references); the rest is not in our data.",
+  "ways": [
+   "NY-UCR-craven-u8035"
+  ],
+  "reviewed": "pinned 2026-10-13: North Yorkshire Council's unsurfaced road U8035 (Craven) starts 21 m from SD879 766 and runs towards SD905 786; the council's own notices name U8035 as Horsehead Pass."
+ },
+ {
+  "id": "yorkshire-dales-national-park-authority//pockstones-moor",
+  "council": "Yorkshire Dales National Park Authority",
+  "authorities": [
+   "North Yorkshire",
+   "Westmorland and Furness",
+   "Cumbria"
+  ],
+  "path_as_written": "Pockstones Moor",
+  "vehicles": "motor_vehicles",
+  "form": "permanent",
+  "grid_refs": [
+   "SE078 616",
+   "SE129 593"
+  ],
+  "restriction": "All motor vehicles",
+  "made_by": "North Yorkshire County Council",
+  "source_url": "https://www.yorkshiredales.org.uk/wp-content/uploads/sites/13/2019/08/CURRENT-TRAFFIC-REGULATION-ORDERS-IN-THE-YORKSHIRE-DALES-12.10.18.pdf",
+  "evidence": "Pockstones Moor SE078 616 to SE129 593 All motor vehicles Order placed by NYCC",
+  "status": "approved",
+  "review_note": "The list gives no start date for this order; none is recorded.",
+  "ways": [
+   "NY-UCR-craven-u2281",
+   "NY-UCR-craven-u8130",
+   "NY-UCR-harrogate-u2281",
+   "NY-UCR-harrogate-u8130"
+  ],
+  "reviewed": "pinned 2026-10-13: four North Yorkshire unsurfaced roads joined end to end - U2281 and U8130 (Craven), U8130 and U2281 (Harrogate) - run from 76 m of SE078 616 to 325 m of SE129 593. U2279, which only meets the west end, is not pinned."
+ },
+ {
+  "id": "yorkshire-dales-national-park-authority//barth-bridge-to-garsdale",
+  "council": "Yorkshire Dales National Park Authority",
+  "authorities": [
+   "North Yorkshire",
+   "Westmorland and Furness",
+   "Cumbria"
+  ],
+  "path_as_written": "Barth Bridge to Garsdale",
+  "vehicles": "motor_vehicles",
+  "form": "permanent",
+  "start": "2008-08-01",
+  "order_date": "August 2008 (start date column)",
+  "grid_refs": [
+   "SD 694 888",
+   "SD 697 911",
+   "SD 687 913"
+  ],
+  "restriction": "All motor vehicles",
+  "source_url": "https://www.yorkshiredales.org.uk/wp-content/uploads/sites/13/2019/08/CURRENT-TRAFFIC-REGULATION-ORDERS-IN-THE-YORKSHIRE-DALES-12.10.18.pdf",
+  "evidence": "Barth Bridge to Garsdale SD 694 888 to SD 697 911 and SD 687 913 All motor vehicles August 2008",
+  "status": "approved",
+  "review_note": "No lane of ours lies within 800 m of the line between its grid references."
+ },
+ {
+  "id": "yorkshire-dales-national-park-authority//carlton-to-middleham-high-moor",
+  "council": "Yorkshire Dales National Park Authority",
+  "authorities": [
+   "North Yorkshire",
+   "Westmorland and Furness",
+   "Cumbria"
+  ],
+  "path_as_written": "Carlton to Middleham High Moor",
+  "vehicles": "motor_vehicles",
+  "form": "permanent",
+  "start": "2008-08-01",
+  "order_date": "August 2008 (start date column)",
+  "grid_refs": [
+   "SE 063 849",
+   "SE 067 868"
+  ],
+  "restriction": "All motor vehicles",
+  "source_url": "https://www.yorkshiredales.org.uk/wp-content/uploads/sites/13/2019/08/CURRENT-TRAFFIC-REGULATION-ORDERS-IN-THE-YORKSHIRE-DALES-12.10.18.pdf",
+  "evidence": "Carlton to Middleham High Moor SE 063 849 to SE 067 868 All motor vehicles August 2008 Exemption for Gerald Simpson Memorial Trial",
+  "status": "approved",
+  "review_note": "The list's comment gives an exemption for the Gerald Simpson Memorial Trial; the prohibition is otherwise of all motor vehicles. Our lane runs about 0.3 km south of SE 063 849; North Yorkshire Council's own notices name U7021 sections 30, 50 and 70, Carlton to Middleham High Moor, and our lane is the council's three sections of U7021.",
+  "ways": [
+   "NY-UCR-richmondshire-u7021"
+  ],
+  "reviewed": "pinned 2026-10-13: North Yorkshire Council's unsurfaced road U7021 (Richmondshire) passes 45 m from SE 063 849 and ends 23 m from SE 067 868."
+ },
+ {
+  "id": "yorkshire-dales-national-park-authority//turbary-road",
+  "council": "Yorkshire Dales National Park Authority",
+  "authorities": [
+   "North Yorkshire",
+   "Westmorland and Furness",
+   "Cumbria"
+  ],
+  "path_as_written": "Turbary Road",
+  "vehicles": "motor_vehicles",
+  "form": "permanent",
+  "start": "2017-03-01",
+  "order_date": "March 2017 (start date column)",
+  "grid_refs": [
+   "SD701 786",
+   "SD707 791"
+  ],
+  "restriction": "All motor vehicles",
+  "made_by": "North Yorkshire County Council",
+  "source_url": "https://www.yorkshiredales.org.uk/wp-content/uploads/sites/13/2019/08/CURRENT-TRAFFIC-REGULATION-ORDERS-IN-THE-YORKSHIRE-DALES-12.10.18.pdf",
+  "evidence": "Turbary Road SD701,786 to SD707,791 All motor vehicles March 2017 Order placed by NYCC. Only applies to Yordas end of route.",
+  "status": "needs-review",
+  "review_note": "The list writes the grid references as SD701,786 and SD707,791; the comma is dropped here. The order applies only to the Yordas end of the route, about 0.8 km between its grid references, and our only lane there, North Yorkshire Council's U695 (Craven), is 4.9 km long. Pinning U695 would mark the whole road closed, so it is held until the lane can be closed in part or a person decides."
  }
 ]
