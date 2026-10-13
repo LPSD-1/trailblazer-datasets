@@ -60,6 +60,26 @@ MASTILES = "yorkshire-dales-national-park-authority//mastiles-lane"
 # build_packages.ucr_lanes gives the second its own suffixed id.
 MASTILES_WAYS = ["NY-UCR-craven-u808", "NY-UCR-craven-u808-a9d791"]
 TURBARY = "yorkshire-dales-national-park-authority//turbary-road"
+_P = "yorkshire-dales-national-park-authority//"
+# Every pinned Park order and the lanes a reviewer pinned it to, by value,
+# with what each is: "ucr" where every lane is a road, None for byways.
+PINNED = {
+    _P + "mastiles-lane": (sorted(MASTILES_WAYS), "ucr"),
+    _P + "horsehead-pass-from-halton-gill-to-yockenthwaite":
+        (["NY-UCR-craven-u8035"], "ucr"),
+    _P + "the-high-way-south-section": (["NY-1/1-9b128ac3dd"], None),
+    _P + "pockstones-moor": (sorted([
+        "NY-UCR-craven-u2281", "NY-UCR-craven-u8130",
+        "NY-UCR-harrogate-u2281", "NY-UCR-harrogate-u8130"]), "ucr"),
+    _P + "carlton-to-middleham-high-moor":
+        (["NY-UCR-richmondshire-u7021"], "ucr"),
+    _P + "gorbeck-road-langcliffe-to-malham": (sorted([
+        "NY-20/1-87e3435213", "NY-32/1-b37b226ef1",
+        "NY-UCR-craven-u8040"]), None),
+    # Owner's decision, 13 Oct 2026: the whole road, though the order
+    # covers only its Yordas end.
+    TURBARY: (["NY-UCR-craven-u695"], "ucr"),
+}
 GONE = "no longer in the published byways"
 
 
@@ -106,6 +126,11 @@ class EveryRowIsTranscribed(unittest.TestCase):
                 self.assertIn(o["path_as_written"].split(" ")[0],
                               o["evidence"])
                 self.assertIn(o["status"], ("approved", "needs-review"))
+                # Begun, and in the year the list's start column gives.
+                if o.get("start"):
+                    self.assertLessEqual(o["start"],
+                                         datetime.date.today().isoformat())
+                    self.assertIn(o["start"][:4], o["order_date"])
 
     def test_the_rows_the_list_says_nycc_made_say_so(self):
         made = dict((o["path_as_written"], o.get("made_by"))
@@ -126,13 +151,39 @@ class EveryRowIsTranscribed(unittest.TestCase):
         self.assertEqual(o["form"], "permanent")
         self.assertNotIn("end", o)
 
-    def test_turbary_road_is_held_not_pinned_to_the_whole_road(self):
+    def test_turbary_road_closes_the_whole_road_on_the_owners_word(self):
         # The order covers only the Yordas end (about 0.8 km) of the
-        # council's 4.9 km U695; pinning U695 would close all of it.
+        # council's 4.9 km U695; the owner chose the whole road closed.
         o = _order(TURBARY)
-        self.assertEqual(o["status"], "needs-review")
-        self.assertNotIn("ways", o)
+        self.assertEqual(o["status"], "approved")
+        self.assertEqual(o["ways"], ["NY-UCR-craven-u695"])
         self.assertIn("Yordas", o["review_note"])
+        self.assertIn("owner", o["review_note"])
+
+    def test_the_pins_are_the_reviewed_ones(self):
+        pinned = dict((o["id"], sorted(o["ways"]))
+                      for o in _from_the_list(_orders()) if o.get("ways"))
+        self.assertEqual(pinned, dict((k, v[0]) for k, v in PINNED.items()))
+        for oid in PINNED:
+            self.assertEqual(_order(oid)["status"], "approved", oid)
+
+    def test_the_review_notes_carry_what_review_found(self):
+        # Review of d40f800: what a later reviewer needs to know is on the
+        # entry, not only in a commit message.
+        for oid in ("gorbeck-road-langcliffe-to-malham",
+                    "the-high-way-south-section"):
+            self.assertIn("recreational motor vehicles",
+                          _order(_P + oid)["review_note"])
+        self.assertIn("SD974 677", _order(MASTILES)["reviewed"])
+        self.assertIn("the whole road the council's notices name",
+                      _order(_P + "carlton-to-middleham-high-moor")
+                      ["reviewed"])
+
+    def test_trial_names_stay_in_the_quote_only(self):
+        for o in _from_the_list(_orders()):
+            for key in ("review_note", "reviewed"):
+                for name in ("Jeffries", "Gerald Simpson"):
+                    self.assertNotIn(name, o.get(key) or "", o["id"])
 
 
 class MastilesLaneIsClosed(unittest.TestCase):
@@ -208,6 +259,28 @@ class TheCommittedOutput(unittest.TestCase):
         self.assertEqual(item["vehicles"], "motor_vehicles")
         self.assertEqual(item["on"], "ucr")
         self.assertEqual(CO.label_for(item)[1], "prohibition")
+        today = datetime.date.today().isoformat()
+        feature = CO.feature_of(item, self.out["source"], today)
+        self.assertIsNotNone(feature, "drawn today")
+        self.assertEqual(feature["properties"]["otype"], "prohibition")
+        self.assertEqual(feature["properties"]["label"], "No motor vehicles")
+        self.assertLessEqual(feature["properties"]["start"], today)
+
+    def test_every_published_park_item_is_what_was_reviewed(self):
+        today = datetime.date.today().isoformat()
+        for oid, item in self.items.items():
+            if not oid.startswith(_P):
+                continue
+            with self.subTest(oid):
+                ways, on = PINNED[oid]
+                self.assertEqual(item["ways"], ways)
+                self.assertEqual(item.get("on"), on)
+                self.assertEqual(item["vehicles"], "motor_vehicles")
+                self.assertLessEqual(item.get("start") or "", today)
+                feature = CO.feature_of(item, self.out["source"], today)
+                self.assertIsNotNone(feature, "in force today")
+                self.assertEqual(feature["properties"]["otype"],
+                                 "prohibition")
 
     def test_every_park_order_is_published_or_held_with_a_reason(self):
         for o in _from_the_list(_orders()):

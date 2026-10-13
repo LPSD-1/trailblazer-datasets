@@ -42,7 +42,8 @@ WHAT IT IS BUILT FROM, all committed except the run results:
   * council-ways/status.json and council_ways.LAYERS - councils' own byway
     layers; council-ucrs/<CODE>.json and status.json - their UCR layers.
   * tro/register/orders.json and pages.json - the order register; only
-    entries a person approved count.
+    entries a person approved AND the register published (their id among
+    the items of tro/council/order-register.json) count.
   * tro/publishers.json - how many records each authority has published to
     D-TRO, written by build_tro.py beside tro/index.json. Missing, every
     `dtro_records` is null: unknown, never zero.
@@ -651,6 +652,8 @@ def build_authorities(root, rows, ways, closure_sources, byway_layers):
                                      "orders.json"), []) or []
     register = _read_json(os.path.join(root, "tro", "council",
                                        "order-register.json"), {}) or {}
+    if not isinstance(register, dict):
+        register = {}
     published = set(i.get("id") for i in register.get("items") or []
                     if isinstance(i, dict))
     approved = set(o.get("council") for o in orders

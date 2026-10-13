@@ -6026,7 +6026,7 @@
   "source_url": "https://www.yorkshiredales.org.uk/wp-content/uploads/sites/13/2019/08/CURRENT-TRAFFIC-REGULATION-ORDERS-IN-THE-YORKSHIRE-DALES-12.10.18.pdf",
   "evidence": "Gorbeck Road (Langcliffe to Malham) SD888 649 to SD830 652 All motor vehicles August 2010",
   "status": "approved",
-  "review_note": "The current-orders list's start date column (read by both the table and the content-order extraction of the PDF) gives August 2010, agreeing with the BOAT list's \"commencing 23.8.10\". Our lanes cover both ends; about 1.9 km between them is not in our data.",
+  "review_note": "The current-orders list's start date column (read by both the table and the content-order extraction of the PDF) gives August 2010, agreeing with the BOAT list's \"commencing 23.8.10\". Our lanes cover both ends; about 1.9 km between them is not in our data. The Park's BOAT list says \"recreational motor vehicles\"; the Current Traffic Regulation Orders list, transcribed here, says \"All motor vehicles\".",
   "ways": [
    "NY-20/1-87e3435213",
    "NY-32/1-b37b226ef1",
@@ -6058,7 +6058,8 @@
   "ways": [
    "NY-1/1-9b128ac3dd"
   ],
-  "reviewed": "pinned 2026-10-13: BOAT 20.93 1/1 runs from 61 m of SD842 921 to 133 m of SD787 969, the whole extent; BOAT 20.93 2/1 and W1-004 only meet its north end and are not pinned."
+  "reviewed": "pinned 2026-10-13: BOAT 20.93 1/1 runs from 61 m of SD842 921 to 133 m of SD787 969, the whole extent; BOAT 20.93 2/1 and W1-004 only meet its north end and are not pinned.",
+  "review_note": "The Park's BOAT list says \"recreational motor vehicles\"; the Current Traffic Regulation Orders list, transcribed here, says \"All motor vehicles\"."
  },
  {
   "id": "yorkshire-dales-national-park-authority//foxup-road-horton-scar-lane",
@@ -6150,12 +6151,12 @@
   "source_url": "https://www.yorkshiredales.org.uk/wp-content/uploads/sites/13/2019/08/CURRENT-TRAFFIC-REGULATION-ORDERS-IN-THE-YORKSHIRE-DALES-12.10.18.pdf",
   "evidence": "Mastiles Lane from Street Gate to Kilnsey 905 656 to 971 676 All motor vehicles August 2008 Exemption for Alan Jeffries Trial",
   "status": "approved",
-  "review_note": "The list prints these grid references without the 100 km square letters; SD is supplied, the only square this route lies in. The list's comment gives an exemption for the Alan Jeffries Trial; the prohibition is otherwise of all motor vehicles. North Yorkshire Council draws U808 in two pieces; about 1.5 km between them is not in its layer.",
+  "review_note": "The list prints these grid references without the 100 km square letters; SD is supplied, the only square this route lies in. The list's comment gives an exemption for a named motor trial; the prohibition is otherwise of all motor vehicles. North Yorkshire Council draws U808 in two pieces; about 1.5 km between them is not in its layer.",
   "ways": [
    "NY-UCR-craven-u808",
    "NY-UCR-craven-u808-a9d791"
   ],
-  "reviewed": "pinned 2026-10-13: North Yorkshire Council's unsurfaced road U808 (Craven), both pieces; its west end is 22 m from Street Gate (SD905 656) and its east end at Kilnsey is within 130 m of SD971 676. BOAT 05.70 31/1 only meets it at Street Gate and is not pinned."
+  "reviewed": "pinned 2026-10-13: North Yorkshire Council's unsurfaced road U808 (Craven), both pieces; its west end is 22 m from Street Gate (SD905 656) and its east end at Kilnsey is within 130 m of SD971 676. BOAT 05.70 31/1 only meets it at Street Gate and is not pinned. A 52 m U808 fragment at about SD974 677, 320-355 m past SD971 676, is the foot of the lane at Kilnsey and part of the east piece."
  },
  {
   "id": "yorkshire-dales-national-park-authority//long-lane-from-clapham-to-selside",
@@ -6282,11 +6283,11 @@
   "source_url": "https://www.yorkshiredales.org.uk/wp-content/uploads/sites/13/2019/08/CURRENT-TRAFFIC-REGULATION-ORDERS-IN-THE-YORKSHIRE-DALES-12.10.18.pdf",
   "evidence": "Carlton to Middleham High Moor SE 063 849 to SE 067 868 All motor vehicles August 2008 Exemption for Gerald Simpson Memorial Trial",
   "status": "approved",
-  "review_note": "The list's comment gives an exemption for the Gerald Simpson Memorial Trial; the prohibition is otherwise of all motor vehicles. Our lane runs about 0.3 km south of SE 063 849; North Yorkshire Council's own notices name U7021 sections 30, 50 and 70, Carlton to Middleham High Moor, and our lane is the council's three sections of U7021.",
+  "review_note": "The list's comment gives an exemption for a named motor trial; the prohibition is otherwise of all motor vehicles. North Yorkshire Council's own notices name U7021 sections 30, 50 and 70, Carlton to Middleham High Moor; our lane is those three sections, and its southern 0.3 km runs on past the list's SE 063 849.",
   "ways": [
    "NY-UCR-richmondshire-u7021"
   ],
-  "reviewed": "pinned 2026-10-13: North Yorkshire Council's unsurfaced road U7021 (Richmondshire) passes 45 m from SE 063 849 and ends 23 m from SE 067 868."
+  "reviewed": "pinned 2026-10-13: North Yorkshire Council's unsurfaced road U7021 (Richmondshire), the whole road the council's notices name; it passes 45 m from SE 063 849 and ends 23 m from SE 067 868."
  },
  {
   "id": "yorkshire-dales-national-park-authority//turbary-road",
@@ -6309,7 +6310,11 @@
   "made_by": "North Yorkshire County Council",
   "source_url": "https://www.yorkshiredales.org.uk/wp-content/uploads/sites/13/2019/08/CURRENT-TRAFFIC-REGULATION-ORDERS-IN-THE-YORKSHIRE-DALES-12.10.18.pdf",
   "evidence": "Turbary Road SD701,786 to SD707,791 All motor vehicles March 2017 Order placed by NYCC. Only applies to Yordas end of route.",
-  "status": "needs-review",
-  "review_note": "The list writes the grid references as SD701,786 and SD707,791; the comma is dropped here. The order applies only to the Yordas end of the route, about 0.8 km between its grid references, and our only lane there, North Yorkshire Council's U695 (Craven), is 4.9 km long. Pinning U695 would mark the whole road closed, so it is held until the lane can be closed in part or a person decides."
+  "status": "approved",
+  "review_note": "The list writes the grid references as SD701,786 and SD707,791; the comma is dropped here. The order applies only to the Yordas end of the route, about 0.8 km between its grid references. Our only lane there, North Yorkshire Council's U695 (Craven), is 4.9 km long and cannot be split, and the owner decided on 13 October 2026 to show the whole road as closed.",
+  "ways": [
+   "NY-UCR-craven-u695"
+  ],
+  "reviewed": "pinned 2026-10-13 on the owner's decision: the whole of U695 (Craven), whose east end is 23 m from SD707 791."
  }
 ]

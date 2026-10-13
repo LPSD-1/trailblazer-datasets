@@ -471,6 +471,27 @@ class Honours(Fixture):
         self.assertTrue([x for x in nyc["sources"]
                          if "orders listed" in x["from"]])
 
+    def test_the_park_is_a_source_once_its_order_is_published(self):
+        _json(os.path.join(self.tmp, "tro", "council",
+                           "order-register.json"), {"items": [
+                               {"id": "nyc/1", "authority": "North Yorkshire"},
+                               {"id": "ydnpa/1",
+                                "authority": "North Yorkshire"}]})
+        s = self.build()
+        park = self.authority(s, "Yorkshire Dales National Park Authority")
+        self.assertIn({"what": "Traffic orders",
+                       "from": "Yorkshire Dales National Park Authority - "
+                               "byway orders listed on its website",
+                       "as_of": None}, park["sources"])
+
+    def test_a_register_file_that_is_not_an_object_counts_nothing(self):
+        _json(os.path.join(self.tmp, "tro", "council",
+                           "order-register.json"), [{"id": "nyc/1"}])
+        s = self.build()
+        nyc = self.authority(s, "North Yorkshire Council")
+        self.assertFalse([x for x in nyc["sources"]
+                          if "orders listed" in x["from"]])
+
     def test_no_register_output_means_no_register_source(self):
         os.remove(os.path.join(self.tmp, "tro", "council",
                                "order-register.json"))
