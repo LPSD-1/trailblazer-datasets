@@ -654,6 +654,9 @@ class PersonalData(Register):
         "Ref: 2026-0123-4567-89", "016329601234", "016329601",
         "0123456789012345", "Byway 15/2", "Surrey 0692 4666",
         "Order 0123/2004", "Section 01 02 2026",
+        # Round 4: a "-" or "." straight after a digit starts no number.
+        "2026-01632 960123", "ref 12.01632 960123",
+        "Order 2026-0116 496 0123",
     ]
 
     def test_every_phone_shape_is_replaced(self):
@@ -692,6 +695,12 @@ class PersonalData(Register):
         "BY 07700 900123", "FOR INFO CALL AT 01632 960123",
         "NO 01632 960123", "SO 01632 960123", "ST 07700 900123",
         "Phone TO 01632 960123", "011 74960123", "0116 4960123",
+        # Round 4: grid-shaped digits after capitals that are not a square,
+        # after a square that is part of a word or follows a digit, or in
+        # unequal halves after a real square.
+        "PH 01768 62345", "PH 0800 1111", "RING 01768 62345",
+        "RING 0800 1111", "CASH 01768 62345", "5SU 01768 62345",
+        "TEL NO 0161 496 0123", "NB 0808 157 0150", "SU 0116 496 0123",
     ]
 
     def test_a_number_after_capitals_or_punctuation_is_replaced(self):
@@ -703,6 +712,19 @@ class PersonalData(Register):
     def test_grid_references_after_a_real_square_stay(self):
         for keep in ("SU 0123 5678", "NB 01234 56789", "TQ 012345",
                      "HP 0123456789", "at SU 01234 56789."):
+            self.assertEqual(reg.scrub_text(keep), keep, keep)
+
+    # The 100 km squares of Great Britain, written out here so that a
+    # square dropped from or added to the code's set is caught.
+    SQUARES = (
+        "HP HT HU HW HX HY HZ NA NB NC ND NF NG NH NJ NK NL NM NN NO NR NS "
+        "NT NU NW NX NY NZ OV SC SD SE SH SJ SK SM SN SO SP SR SS ST SU SV "
+        "SW SX SY SZ TA TF TG TL TM TQ TR TV").split()
+
+    def test_every_square_of_the_grid_is_a_grid_reference(self):
+        self.assertEqual(reg._GB_SQUARES, set(self.SQUARES))
+        for square in self.SQUARES:
+            keep = "%s 01234 56789" % square
             self.assertEqual(reg.scrub_text(keep), keep, keep)
 
     def page(self, who):
