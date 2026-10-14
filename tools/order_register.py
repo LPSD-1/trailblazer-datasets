@@ -422,39 +422,63 @@ class EmptyPage(ValueError):
 _EMAIL = re.compile(r"[A-Za-z0-9._%+'-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*"
                     r"\.[A-Za-z]{2,}")
 # Where a UK number may start: +44 or 0044 (with an optional "(0)"), a
-# bare "(0)", or a 0 - not inside a word, a path, a date or a reference.
-_PHONE_START = re.compile(r"(?<![\w/.-])(?:(?:\+|00)44[ .-]?(?:\(0\)[ .-]?)?"
+# bare "(0)", or a 0 - not inside a word, a number or a path, and not after
+# a "-" or "." that follows a digit (a date, a reference: "2026-0123-...").
+_PHONE_START = re.compile(r"(?<![\w/])(?<!\d[.-])"
+                          r"(?:(?:\+|00)44[ .-]?(?:\(0\)[ .-]?)?"
                           r"|\(0\)[ .-]?|(?=\(?0\d))")
 _PHONE_GROUP = re.compile(r"\(?(\d+)\)?")
-_PHONE_SEP = re.compile(r"[ .-]")
+_PHONE_SEP = re.compile(r" ?[.-] ?| ")
 # The groupings UK numbers are written in, by digits per group (the leading
 # 0 counted): a run of digits that is not one of these - a date, a time, an
 # order reference - is not a phone number.
-_PHONE_SHAPES = {(10,), (11,), (5, 5), (4, 6), (4, 3, 3), (5, 6), (4, 7),
-                 (3, 8), (3, 4, 4), (4, 3, 4), (4, 4, 3), (5, 3, 3)}
-# An OS grid reference: two square letters, then digits ("SU 01234 56789").
-_GRID_SQUARE = re.compile(r"(?<![A-Za-z])[A-HJ-Z]{2} ?$")
+_PHONE_SHAPES = {(10,), (11,), (5, 5), (4, 6), (6, 4), (4, 3, 3), (5, 6),
+                 (4, 7), (3, 8), (3, 4, 4), (4, 3, 4), (4, 4, 3), (5, 3, 3)}
+# Freephone and local-rate numbers may be eight digits: "0800 1111".
+_SHORT_PREFIXES = ("0800", "0845")
+# The 100 km squares of Great Britain's National Grid. A run of digits in
+# a grid reference's shape right after one ("SU 01234 56789") is a place.
+_GB_SQUARES = set(
+    "HP HT HU HW HX HY HZ NA NB NC ND NF NG NH NJ NK NL NM NN NO NR NS NT "
+    "NU NW NX NY NZ OV SC SD SE SH SJ SK SM SN SO SP SR SS ST SU SV SW SX "
+    "SY SZ TA TF TG TL TM TQ TR TV".split())
+_SQUARE_BEFORE = re.compile(r"(?<![A-Za-z0-9])([A-Z]{2}) ?$")
+_GRID_DIGITS = re.compile(r"(\d{2,5}) (\d{2,5})(?!\d)|(\d{4}|\d{6}|\d{8}|"
+                          r"\d{10})(?!\d)")
+
+
+def _is_grid_ref(text, at):
+    square = _SQUARE_BEFORE.search(text, 0, at)
+    if not square or square.group(1) not in _GB_SQUARES:
+        return False
+    digits = _GRID_DIGITS.match(text, at)
+    return bool(digits) and (digits.group(3) is not None or
+                             len(digits.group(1)) == len(digits.group(2)))
 
 
 def _phone_end(text, at, implicit_zero):
     """Where the longest phone-shaped run of digit groups from `at` ends,
     or None."""
-    sizes, end, i = [], None, at
+    sizes, digits, end, i = [], "", None, at
     while True:
         group = _PHONE_GROUP.match(text, i)
         if not group:
             return end
         sizes.append(len(group.group(1)))
+        digits += group.group(1)
         i = group.end()
         shape = tuple([sizes[0] + implicit_zero] + sizes[1:])
         if sum(shape) > 11:
             return end
-        if shape in _PHONE_SHAPES:
+        if shape in _PHONE_SHAPES or (
+                shape == (4, 4) and digits.startswith(_SHORT_PREFIXES)):
             end = i
         sep = _PHONE_SEP.match(text, i)
-        if not sep:
+        if sep:
+            i = sep.end()
+        elif text[i - 1] != ")":
+            # "(01632)960123": a closing bracket is a separator of its own.
             return end
-        i = sep.end()
 
 
 def scrub_text(text):
@@ -462,8 +486,7 @@ def scrub_text(text):
     text = _EMAIL.sub("[email removed]", text)
     out, done = [], 0
     for start in _PHONE_START.finditer(text):
-        if start.start() < done or _GRID_SQUARE.search(
-                text, 0, start.start()):
+        if start.start() < done or _is_grid_ref(text, start.start()):
             continue
         end = _phone_end(text, start.end(), int(start.end() > start.start()))
         if end is not None:

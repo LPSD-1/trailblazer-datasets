@@ -144,7 +144,7 @@ jobs:
 
           $(sed 's/^/- /' /tmp/register-report.txt)
 
-          The diffs are in tro/register/changes.json. Nothing was published from them: update tro/register/orders.json by hand (approve, change or retire entries), then run \`python tools/order_register.py accept <page>\` for each page reviewed. A page that could not be read keeps its last snapshot; a 403 or a robots.txt refusal is never worked around. A HELD order stays listed until it matches: correct its path or grid references in tro/register/orders.json, or pin it to the right byways with \"ways\"."
+          The diffs are in tro/register/changes.json. Nothing was published from them: update tro/register/orders.json by hand (approve, change or retire entries), then run \`python tools/order_register.py accept <page>\` for each page reviewed. A page that could not be read keeps its last snapshot; a 403 or a robots.txt refusal is never worked around. A HELD order stays listed until it matches: correct its path or grid references in tro/register/orders.json, or pin it to the right byways with \"ways\". HELD-LIST-FAILED means that list could not be built this run; the run log says why."
             if [ -n "$OPEN" ]; then
               gh issue edit "$OPEN" --body "$BODY" || true
             else
@@ -179,7 +179,7 @@ jobs:
               --description "The quarterly order register check failed" 2>/dev/null || true
             gh issue create --label order-register-failed \
               --title "Order register check failed" \
-              --body "$RUN_URL failed. The register and what it publishes are unchanged, but changes on the councils' pages are not being caught until this is fixed."
+              --body "$RUN_URL failed. The register and what it publishes are unchanged. If the councils' pages could not be checked, changes on them are not being caught until this is fixed; if only the list of held-back orders failed, the review issue says so (HELD-LIST-FAILED)."
           fi
 
       - name: Stand the alarm down if this worked

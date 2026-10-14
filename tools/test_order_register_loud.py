@@ -18,6 +18,7 @@ import contextlib
 import io
 import json
 import os
+import re
 import shutil
 import sys
 import tempfile
@@ -485,6 +486,22 @@ class Wiring(unittest.TestCase):
         self.assertIn("contents: write   # changes.json and the override "
                       "read log", text)
 
+    def test_the_issues_say_what_a_failed_held_list_means(self):
+        text = " ".join(self.workflow().split())
+        self.assertIn("HELD-LIST-FAILED means that list could not be built "
+                      "this run", text)
+        self.assertIn("if only the list of held-back orders failed, the "
+                      "review issue says so (HELD-LIST-FAILED)", text)
+        steps = self.steps()
+        note = steps["Say the held-back list could not be built"][1]
+        self.assertIn('echo "HELD-LIST-FAILED the list of approved orders '
+                      'held back from riders could not be built - see '
+                      '$RUN_URL"', note["run"])
+        fail = steps["Fail the run if the held-back list could not be "
+                     "built"][1]
+        self.assertIn('echo "::error::the list of approved orders held back '
+                      'from riders could not be built"', fail["run"])
+
     def test_the_issue_says_what_to_do_about_held_lines(self):
         self.assertIn("A HELD order stays listed until it matches", " ".join(
             self.workflow().split()))
@@ -660,6 +677,32 @@ class PersonalData(Register):
 
     def test_references_dates_and_grid_refs_stay(self):
         for keep in self.KEEP:
+            self.assertEqual(reg.scrub_text(keep), keep, keep)
+
+    AFTER_CAPITALS = [
+        "TEL NO 01632 960123", "PHONE NO 01632 960123",
+        "CONTACT ON 01632 960123", "RING ON 01632 960123",
+        "CALL ON 01632 960123", "OR 01632 960123", "PH 01632 960123",
+        "Contact JS 07700 900123", "NB 07700 900123", "PS 07700 900123",
+        "BT 0808 157 0150", "Postcode DE4 3AQ 01632 960123",
+        "Tel.01632 960123", "tel.01632 960123", "Tel-01632 960123",
+        "TEL NO.01632 960123", "(01632)960123", "01632 - 960123",
+        "016977 3456", "0800 1111", "0845 4647",
+        "CONTACT US ON 01632 960123", "CALL ME ON 07700 900123",
+        "BY 07700 900123", "FOR INFO CALL AT 01632 960123",
+        "NO 01632 960123", "SO 01632 960123", "ST 07700 900123",
+        "Phone TO 01632 960123", "011 74960123", "0116 4960123",
+    ]
+
+    def test_a_number_after_capitals_or_punctuation_is_replaced(self):
+        for text in self.AFTER_CAPITALS:
+            got = reg.scrub_text(text)
+            self.assertIn("[phone removed]", got, text)
+            self.assertFalse(re.search(r"\d{4}", got), (text, got))
+
+    def test_grid_references_after_a_real_square_stay(self):
+        for keep in ("SU 0123 5678", "NB 01234 56789", "TQ 012345",
+                     "HP 0123456789", "at SU 01234 56789."):
             self.assertEqual(reg.scrub_text(keep), keep, keep)
 
     def page(self, who):
