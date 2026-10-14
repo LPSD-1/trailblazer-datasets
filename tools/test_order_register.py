@@ -26,6 +26,12 @@ from osgb import grid_to_wgs84  # noqa: E402
 from polite_http import FetchFailed  # noqa: E402
 
 
+# Enough prose that a page reads as a page: fingerprint() refuses one with
+# less than reg.MIN_TEXT_CHARS of text as unread.
+PROSE = ("<p>The orders below restrict vehicles on byways in this county; "
+         "each names the route, the vehicles and the dates it applies.</p>")
+
+
 def way(uid, authority, name, *bng):
     return Way(uid, authority, "Byway open to all traffic (BOAT) " + name,
                [[grid_to_wgs84(e, n) for e, n in bng]])
@@ -187,22 +193,24 @@ class Check(unittest.TestCase):
         shutil.rmtree(self.tmp)
 
     def page(self, items):
-        return ("<main><ul>%s</ul></main>" % "".join(
-            "<li>%s</li>" % i for i in items)).encode()
+        return ("<main>%s<ul>%s</ul></main>" % (PROSE, "".join(
+            "<li>%s</li>" % i for i in items))).encode()
 
     def run_check(self, body):
         return reg.check(Client({self.URL: body}), register=self.tmp,
                          today="2027-01-01",
                          manual_root=os.path.join(self.tmp, "manual"))
 
-    def test_first_read_takes_a_snapshot_and_flags_nothing(self):
-        changed, unreachable, baselined = self.run_check(
+    def test_first_read_is_flagged_for_transcription(self):
+        changed, unreachable, empty = self.run_check(
             self.page(["Arlington Byway 9a"]))
-        self.assertEqual((changed, unreachable, baselined),
-                         ([], [], ["es/seasonal"]))
+        self.assertEqual((unreachable, empty), ([], []))
+        self.assertEqual([(c["page"], c["new"]) for c in changed],
+                         [("es/seasonal", True)])
 
     def test_a_change_is_flagged_with_a_diff_and_nothing_moves(self):
         self.run_check(self.page(["Arlington Byway 9a"]))
+        reg.accept(["es/seasonal"], Client({}), register=self.tmp)
         with open(self.orders, "rb") as fh:
             before = fh.read()
         changed, _u, _b = self.run_check(
@@ -251,15 +259,20 @@ class FollowedDocuments(unittest.TestCase):
                         "authorities": ["Cambridgeshire"],
                         "follow": r"/asset-library/[^?]+\.pdf$"}], fh)
         self.manual = os.path.join(self.tmp, "manual")
+        # The council's page itself was transcribed and accepted already.
+        digest, lines = reg.fingerprint({"url": self.URL}, self.PAGE)
+        reg._snapshot(self.tmp, {"id": "cambs/restrictions"}, digest, lines)
 
     def tearDown(self):
         shutil.rmtree(self.tmp)
 
+    PAGE = (b'<main>' + PROSE.encode() +
+            b'<ul><li><a href="/asset-library/Soham-Byway-2016.pdf">'
+            b'Soham Byway - 2016</a></li><li><a href="/news">News</a>'
+            b'</li></ul></main>')
+
     def client(self, pdf=b"%PDF-1.4 order", overridden=True):
-        page = (b'<main><ul><li><a href="/asset-library/Soham-Byway-2016.pdf">'
-                b'Soham Byway - 2016</a></li><li><a href="/news">News</a>'
-                b'</li></ul></main>')
-        client = Client({self.URL: page, self.PDF: pdf})
+        client = Client({self.URL: self.PAGE, self.PDF: pdf})
         client.overridden = {self.PDF: "cambridgeshire-byway-orders"} \
             if overridden else {}
         return client
@@ -269,9 +282,8 @@ class FollowedDocuments(unittest.TestCase):
                          manual_root=self.manual)
 
     def test_a_linked_pdf_is_flagged_new_and_credited_to_the_override(self):
-        changed, unreachable, baselined = self.check(self.client())
-        self.assertEqual(baselined, ["cambs/restrictions"])
-        self.assertEqual(unreachable, [])
+        changed, unreachable, empty = self.check(self.client())
+        self.assertEqual((unreachable, empty), ([], []))
         self.assertEqual([c["page"] for c in changed],
                          ["cambs/restrictions/doc/soham-byway-2016.pdf"])
         self.assertTrue(changed[0]["new"])
@@ -329,7 +341,8 @@ class CollectedDocuments(unittest.TestCase):
                                     "kind": "page"}]}, fh)
         with open(os.path.join(self.home, "snapshots", "p.html"),
                   "wb") as fh:
-            fh.write(b'<main><a href="/media/10190/Gap-Road/pdf/gap.pdf'
+            fh.write(b'<main>' + PROSE.encode() +
+                     b'<a href="/media/10190/Gap-Road/pdf/gap.pdf'
                      b'?m=1">Gap Road</a></main>')
         self.digest = hashlib.sha256(self.BYTES).hexdigest()
         self.index({"digest": self.digest})
@@ -364,10 +377,10 @@ class CollectedDocuments(unittest.TestCase):
                          manual_root=os.path.join(self.tmp, "manual"))
 
     def test_a_held_pdf_is_flagged_by_its_digest_and_credited(self):
-        changed, unreachable, baselined = self.check()
-        self.assertEqual(unreachable, [])
-        self.assertEqual(baselined, ["powys/2446"])
-        (doc,) = changed
+        changed, unreachable, empty = self.check()
+        self.assertEqual((unreachable, empty), ([], []))
+        page, doc = changed
+        self.assertEqual((page["page"], page["new"]), ("powys/2446", True))
         self.assertEqual(doc["page"], "powys/2446/doc/gap.pdf")
         self.assertTrue(doc["new"])
         self.assertEqual(doc["digest"], self.digest,
@@ -380,7 +393,8 @@ class CollectedDocuments(unittest.TestCase):
 
     def test_accepted_it_stays_quiet_until_the_digest_moves(self):
         changed, _u, _b = self.check()
-        reg.accept([changed[0]["page"]], Client({}), register=self.register)
+        reg.accept([c["page"] for c in changed], Client({}),
+                   register=self.register)
         self.assertEqual(self.check()[0], [])
         self.index({"digest": "0" * 64})
         changed, _u, _b = self.check()
@@ -439,8 +453,9 @@ class ReadUnderTheOwnersDecision(unittest.TestCase):
                     inner.overridden[url] = "cambridgeshire-byway-orders"
                 return Client.get(inner, url)
 
-        real = Overriding({self.URL: b'<main><a href="/asset-library/'
-                                     b'Soham-Byway-2016.pdf">x</a></main>',
+        real = Overriding({self.URL: b'<main>' + PROSE.encode() +
+                           b'<a href="/asset-library/'
+                           b'Soham-Byway-2016.pdf">x</a></main>',
                            self.PDF: b"%PDF-1.4 order"})
         real.overridden = {}
         home = os.path.join(tmp, "home-collected")
@@ -449,9 +464,10 @@ class ReadUnderTheOwnersDecision(unittest.TestCase):
                                     today="2026-10-08",
                                     manual_root=os.path.join(tmp, "manual"))
         self.assertEqual([c["page"] for c in changed],
-                         ["cambs/restrictions/doc/soham-byway-2016.pdf"])
+                         ["cambs/restrictions",
+                          "cambs/restrictions/doc/soham-byway-2016.pdf"])
         self.assertIn("cambridgeshire-byway-orders",
-                      changed[0].get("read_under") or "",
+                      changed[1].get("read_under") or "",
                       "the override read was not credited")
 
 
@@ -467,8 +483,8 @@ class ManualInbox(unittest.TestCase):
             json.dump({"IW": {"authority": "Isle of Wight"}}, fh)
         with open(os.path.join(self.manual, "IW",
                                "byway-orders-2026-10-08.html"), "w") as fh:
-            fh.write("<main><p>Byway N12 Brighstone: no motor vehicles "
-                     "1 Oct to 30 Apr</p></main>")
+            fh.write("<main>" + PROSE + "<p>Byway N12 Brighstone: no motor "
+                     "vehicles 1 Oct to 30 Apr</p></main>")
         with open(os.path.join(self.tmp, "pages.json"), "w") as fh:
             json.dump([{"id": "iow/2998", "url": "https://www.iow.example/x",
                         "council": "Isle of Wight Council",
@@ -505,10 +521,12 @@ class ManualInbox(unittest.TestCase):
         with open(os.path.join(self.manual, "IW", "manifest.json"),
                   "w") as fh:
             json.dump({"automated": "on"}, fh)
-        _c, unreachable, baselined = reg.check(
-            Client({"https://www.iow.example/x": b"<main>x</main>"}),
+        changed, unreachable, empty = reg.check(
+            Client({"https://www.iow.example/x":
+                    ("<main>%s</main>" % PROSE).encode()}),
             register=self.tmp, today="2026-10-08", manual_root=self.manual)
-        self.assertEqual(baselined, ["iow/2998"])
+        self.assertEqual((unreachable, empty), ([], []))
+        self.assertIn("iow/2998", [c["page"] for c in changed])
 
     def test_the_coverage_table_says_how_each_authority_came(self):
         import manual_inbox

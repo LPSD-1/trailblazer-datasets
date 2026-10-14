@@ -34,15 +34,21 @@ checked from disk the same way.
 `check` is the schedule (quarterly, order-register.yml). It re-reads each
 council page listed in `tro/register/pages.json`, reduces it to its text,
 and compares that with the snapshot in `tro/register/snapshots/`. A page
-that changed is written to `tro/register/changes.json` with a diff and
-raised as an issue; NOTHING in orders.json moves until a person has read
-the change, updated the register, and run `accept` for that page.
+that changed - or that has no snapshot yet, because nobody has transcribed
+it - is written to `tro/register/changes.json` with a diff and raised as an
+issue; NOTHING in orders.json moves until a person has read the change,
+updated the register, and run `accept` for that page. (A page read for the
+first time used to be snapshotted quietly instead: the Yorkshire Dales'
+order list was, and 10 of its 12 orders went untranscribed.) A page whose
+text comes out empty is reported and keeps its last snapshot: an empty
+snapshot would hide every later change.
 
 `build` (no network) matches every approved order to our byways and writes
 it as a council source the order build already reads: by path reference
 first (parish and number, or the council's route code), then by the OS grid
 references the council gave. Where both exist and disagree by more than
-`GRID_AGREE_M`, the entry is not published and is listed for review.
+`GRID_AGREE_M`, the entry is not published and is listed for review -
+held back, which `build` says as a workflow warning and in `--report`.
 """
 import argparse
 import datetime
@@ -342,10 +348,16 @@ def build(byways, orders):
 
 
 class _Text(html.parser.HTMLParser):
-    """The readable text of a page, inside <main> when it has one."""
+    """The readable text of a page, inside <main> when it has one.
+
+    A <form> is read: an ASP.NET page (Derbyshire, Denbighshire,
+    Hertfordshire) wraps its whole body, <main> and the order list
+    included, in one. Only the form's controls are skipped.
+    """
 
     SKIP = {"script", "style", "noscript", "nav", "header", "footer",
-            "form", "svg", "button", "iframe", "template"}
+            "select", "textarea", "label", "svg", "button", "iframe",
+            "template"}
 
     def __init__(self):
         html.parser.HTMLParser.__init__(self, convert_charrefs=True)
@@ -394,10 +406,28 @@ def page_text(body, only=None):
     return lines
 
 
+#: A web page with less readable text than this was not read: a layout
+#: the reader cannot see into, a script-only shell, a title alone.
+MIN_TEXT_CHARS = 100
+
+
+class EmptyPage(ValueError):
+    """A page came out with no readable text; its snapshot must stand."""
+
+
 def fingerprint(page, body):
-    """(sha256, text lines or None). A PDF is compared by its bytes."""
+    """(sha256, text lines or None). A PDF is compared by its bytes.
+
+    Raises EmptyPage for a web page with less than MIN_TEXT_CHARS of text,
+    counted before `only` filters it: a filter may rightly match nothing.
+    """
     if page["url"].lower().endswith(".pdf") or body[:4] == b"%PDF":
         return hashlib.sha256(body).hexdigest(), None
+    size = len("".join(page_text(body)))
+    if size < MIN_TEXT_CHARS:
+        raise EmptyPage("no readable text (%d characters): the page's "
+                        "layout may have changed; its last snapshot is "
+                        "kept" % size)
     lines = page_text(body, page.get("only"))
     joined = "\n".join(lines).encode("utf-8")
     return hashlib.sha256(joined).hexdigest(), lines
@@ -468,12 +498,13 @@ def _snapshot(register, page, digest, lines):
 
 def check(client, register=REGISTER, today=None, manual_root=None,
           automated_off=None):
-    """Re-read every page. Returns (changed, unreachable, baselined).
+    """Re-read every page. Returns (changed, unreachable, empty).
 
     `automated_off`: authorities whose documents come from manual/ instead;
-    none of their pages is requested. A followed or hand-saved document
-    seen for the first time is flagged for review (its orders still have to
-    be transcribed), not quietly baselined.
+    none of their pages is requested. Any page or document seen for the
+    first time is flagged for review (its orders still have to be
+    transcribed), never quietly baselined. `empty` lists the pages whose
+    text came out empty (fingerprint's EmptyPage); their snapshots stand.
     """
     from polite_http import FetchFailed, NotDue, Refused
     if automated_off is None:
@@ -486,7 +517,7 @@ def check(client, register=REGISTER, today=None, manual_root=None,
     changes_path = os.path.join(register, "changes.json")
     previous = dict((c["page"], c) for c in
                     (read_json(changes_path, []) or []))
-    changed, unreachable, baselined = [], [], []
+    changed, unreachable, empty = [], [], []
     while queue:
         page = queue.pop(0)
         if page.get("blocked"):
@@ -525,17 +556,18 @@ def check(client, register=REGISTER, today=None, manual_root=None,
             digest, lines = held, None
         else:
             queue.extend(linked_documents(page, body))
-            digest, lines = fingerprint(page, body)
+            try:
+                digest, lines = fingerprint(page, body)
+            except EmptyPage as e:
+                empty.append({"page": page["id"], "url": page["url"],
+                              "why": str(e)})
+                continue
         try:
             with open(hash_path, encoding="utf-8") as fh:
                 old = fh.read().strip()
         except OSError:
             old = None
         overridden = getattr(client, "overridden", {}).get(page["url"])
-        if old is None and not page.get("new_is_review"):
-            _snapshot(register, page, digest, lines)
-            baselined.append(page["id"])
-            continue
         if old == digest:
             continue
         diff = []
@@ -564,7 +596,31 @@ def check(client, register=REGISTER, today=None, manual_root=None,
             entry["provenance"] = page["provenance"]
         changed.append(entry)
     write_json(changes_path, changed)
-    return changed, unreachable, baselined
+    return changed, unreachable, empty
+
+
+def report_lines(changed, unreachable, empty, inbox=None):
+    """The lines of the review issue, one per page that needs a person."""
+    lines = []
+    for c in changed:
+        lines.append("%s %s %s%s" % (
+            "NEW" if c.get("new") else "CHANGED", c["page"], c["url"],
+            " (%s)" % (c.get("read_under") or c.get("provenance"))
+            if c.get("read_under") or c.get("provenance") else ""))
+    for u in unreachable:
+        lines.append("UNREADABLE %s %s - %s" % (u["page"], u["url"],
+                                                u["why"]))
+    for e in empty:
+        lines.append("EMPTY %s %s - %s" % (e["page"], e["url"], e["why"]))
+    if inbox is None:
+        # A file in manual/ the pipeline cannot use is said here, in the
+        # review issue - never as a failed test that would stop a refresh.
+        import manual_inbox
+        inbox = [p for box in manual_inbox.inboxes()
+                 for p in box["problems"]]
+    for problem in inbox:
+        lines.append("INBOX %s" % problem)
+    return lines
 
 
 def accept(page_ids, client, register=REGISTER):
@@ -598,6 +654,7 @@ def main(argv=None):
     sub = ap.add_subparsers(dest="cmd")
     b = sub.add_parser("build")
     b.add_argument("--out", default=COUNCIL_OUT)
+    b.add_argument("--report", help="write each held-back order here")
     c = sub.add_parser("check")
     c.add_argument("--report", help="write a summary for the issue here")
     a = sub.add_parser("accept")
@@ -628,6 +685,15 @@ def main(argv=None):
                  len(problems), "" if written else " (unchanged)"))
         for p in problems:
             print("  held back %s: %s" % (p["id"], p["why"]))
+            # An approved order riders do not get: a warning on the run,
+            # and a line in the review issue (order-register.yml).
+            print("::warning title=Order held back::%s: %s"
+                  % (p["id"], p["why"]))
+        if args.report:
+            with open(args.report, "w", encoding="utf-8",
+                      newline="\n") as fh:
+                for p in problems:
+                    fh.write("HELD %s - %s\n" % (p["id"], p["why"]))
         return 0
 
     if args.cmd in ("check", "accept"):
@@ -640,27 +706,18 @@ def main(argv=None):
             min_gap=4.0, today=today,
             override_log=os.path.join(REGISTER, "override-reads.json")))
         if args.cmd == "accept":
-            accept(args.pages, client)
+            try:
+                accept(args.pages, client)
+            except EmptyPage as e:
+                print("::error::not accepted: %s" % e)
+                return 1
             return 0
-        changed, unreachable, baselined = check(client, today=today)
-        print("pages: %d changed since review, %d could not be read, %d "
-              "read for the first time (snapshot taken)"
-              % (len(changed), len(unreachable), len(baselined)))
-        lines = []
-        for c in changed:
-            lines.append("%s %s %s%s" % (
-                "NEW" if c.get("new") else "CHANGED", c["page"], c["url"],
-                " (%s)" % (c.get("read_under") or c.get("provenance"))
-                if c.get("read_under") or c.get("provenance") else ""))
-        for u in unreachable:
-            lines.append("UNREADABLE %s %s - %s" % (u["page"], u["url"],
-                                                    u["why"]))
-        # A file in manual/ the pipeline cannot use is said here, in the
-        # review issue - never as a failed test that would stop a refresh.
-        import manual_inbox
-        for box in manual_inbox.inboxes():
-            for problem in box["problems"]:
-                lines.append("INBOX %s" % problem)
+        changed, unreachable, empty = check(client, today=today)
+        print("pages: %d to review (%d read for the first time), %d could "
+              "not be read, %d with no readable text"
+              % (len(changed), sum(1 for c in changed if c.get("new")),
+                 len(unreachable), len(empty)))
+        lines = report_lines(changed, unreachable, empty)
         for line in lines:
             print("  " + line)
         if args.report:

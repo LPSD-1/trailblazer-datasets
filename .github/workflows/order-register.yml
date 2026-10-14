@@ -51,6 +51,7 @@ jobs:
         run: |
           python tools/test_polite_http.py
           python tools/test_order_register.py
+          python tools/test_order_register_loud.py
           python tools/test_manual_inbox.py
 
       - name: Re-read the councils' pages
@@ -106,6 +107,14 @@ jobs:
           echo "::error::could not push after three attempts"
           exit 1
 
+      # An approved order that matches none of our byways is held back from
+      # riders; council-orders.yml publishes the rest without a word, so the
+      # review issue lists each one (HELD). No network, nothing committed.
+      - name: List approved orders held back from riders
+        run: |
+          python tools/order_register.py build --out /tmp/order-register.json --report /tmp/register-held.txt
+          cat /tmp/register-held.txt >> /tmp/register-report.txt
+
       # A REVIEW REQUEST, NOT AN ALARM: a council editing its page is the
       # ordinary case this job exists to catch. One issue at a time, kept
       # current, closed by the first run with nothing left to review.
@@ -118,7 +127,7 @@ jobs:
           OPEN=$(gh issue list --label order-register --state open \
                    --json number --jq '.[0].number' 2>/dev/null || true)
           if [ -s /tmp/register-report.txt ]; then
-            BODY="The councils' pages behind the byway order register were re-read on $RUN_URL. These changed since the register was last reviewed, or could not be read:
+            BODY="The councils' pages behind the byway order register were re-read on $RUN_URL. These changed since the register was last reviewed (NEW: read for the first time, never transcribed), could not be read, came out with no readable text (EMPTY), or are approved orders held back from riders (HELD):
 
           $(sed 's/^/- /' /tmp/register-report.txt)
 
