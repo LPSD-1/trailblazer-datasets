@@ -380,8 +380,16 @@ jobs:
           field() { printf '%s\n' "$REPORT" | sed -n "s/^$1=//p"; }
           STUCK=$(field stuck)
           THROUGH=$(field through)
-          OPEN=$(gh issue list --label traffic-orders-feed --state open \
-                   --json number --jq '.[].number' 2>/dev/null || true)
+          # A listing that fails cannot tell an open issue from none: raise
+          # nothing and close nothing on it, rather than open a duplicate.
+          # The next run lists again.
+          if OPEN=$(gh issue list --label traffic-orders-feed --state open \
+                      --json number --jq '.[].number' 2>/dev/null); then
+            LISTED=yes
+          else
+            LISTED=no
+            echo "::warning::Could not list the open traffic-orders-feed issues; no issue raised or closed this run."
+          fi
           if [ "$STUCK" = "true" ]; then
             echo "::warning::The D-TRO events feed is stuck at ${THROUGH:-unknown}: $(field stalled_runs) run(s) stopped there ($(field error)); $(field skipped_windows) window(s) skipped; $(field gave_up_orders) order(s) given up on."
             TITLE="Traffic orders: the events feed is stuck at ${THROUGH:-unknown}"
@@ -389,14 +397,18 @@ jobs:
 
           - Applied through: ${THROUGH:-unknown}
           - Runs in a row that stopped there: $(field stalled_runs) ($(field error))
-          - Windows skipped after a refusal (a day of changes each, not applied): $(field skipped_windows) $(field windows)
-          - Orders given up on after repeated refusals: $(field gave_up_orders) $(field gave_up)
+          - Windows given up on: $(field gave_up_windows) ($(field windows_given_up)) - a day of changes each, not applied
+          - Windows still being retried: $(field retrying_windows) ($(field windows_retrying))
+          - Orders given up on: $(field gave_up_orders) ($(field gave_up)) - each keeps its last known state
+          - Orders still being retried: $(field retrying_orders) ($(field retrying))
 
-          Read the 'Build the pack' and 'Say so when the events feed is stuck' steps of that run. A refusal is HTTP 400 or 422, or a 200 that is not an order; ask d-tro@dft.gov.uk about any order or window that keeps being refused.
+          The full report, with each order id and window, is printed at the top of the 'Say so when the events feed is stuck' step of that run. A refusal is HTTP 400 or 422 from the request for that order or window, or a 200 that is not an order; ask d-tro@dft.gov.uk about any that keep being refused.
 
           This issue is updated by every run while the feed is stuck, and closed by the first run that finds it moving."
             FIRST=$(printf '%s\n' "$OPEN" | head -n 1)
-            if [ -n "$FIRST" ]; then
+            if [ "$LISTED" != "yes" ]; then
+              :
+            elif [ -n "$FIRST" ]; then
               gh issue edit "$FIRST" --title "$TITLE" --body "$BODY" || true
             else
               gh label create traffic-orders-feed --color FBCA04 \

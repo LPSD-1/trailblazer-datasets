@@ -62,6 +62,27 @@ PAGE_SIZE = 50
 MAX_PAGES = 500
 
 
+# The statuses that mean "the service said no to THIS data request": the
+# order or the window, not the service or our credentials. Raised as Refused,
+# and only from the data request itself - never from the token endpoint,
+# whose errors stay HTTPError and stop the catch-up (tro_events.refused).
+REFUSED_CODES = (400, 422)
+
+
+class Refused(OSError):
+    """The service refused one data request with a REFUSED_CODES status."""
+
+    def __init__(self, code, what):
+        OSError.__init__(self, "%s answered HTTP %d" % (what, code))
+        self.code = code
+
+
+def _refused(error, what):
+    if error.code in REFUSED_CODES:
+        return Refused(error.code, what)
+    return error
+
+
 class Malformed(ValueError):
     """A 200 from the service whose body is not what was asked for.
 
@@ -72,13 +93,21 @@ class Malformed(ValueError):
     """
 
 
+def _json(raw, what):
+    try:
+        return json.loads(raw.decode())
+    except ValueError:  # not UTF-8, or not JSON
+        raise Malformed("%s answered with a body that is not JSON" % what)
+
+
 def _post(url, access, body):
     request = urllib.request.Request(
         url, data=json.dumps(body).encode(), method="POST")
     request.add_header("Authorization", "Bearer " + access)
     request.add_header("Content-Type", "application/json")
     with urllib.request.urlopen(request, timeout=TIMEOUT) as response:
-        return json.loads(response.read().decode())
+        raw = response.read()
+    return _json(raw, "POST /events")
 
 
 def _with_backoff(call):
@@ -122,8 +151,15 @@ def changes(base, access, since, to, on_page=None):
         except urllib.error.HTTPError as e:
             if e.code == 404:
                 break  # documented empty result
-            raise
+            raise _refused(e, "POST /events %s .. %s page %d"
+                           % (since, to, page))
+        # A 200 that is not a page of events is not "nothing changed": read
+        # as that, the window would be applied empty and never read again.
         events = reply.get("events") if isinstance(reply, dict) else None
+        if not isinstance(events, list):
+            raise Malformed("POST /events %s .. %s page %d answered with "
+                            "%s, not a page of events"
+                            % (since, to, page, type(reply).__name__))
         if not events:
             break
         out.extend(events)
@@ -149,23 +185,21 @@ def hydrate(base, access, dtro_id):
     def fetch():
         with urllib.request.urlopen(request, timeout=TIMEOUT) as response:
             raw = response.read()
-        try:
-            return json.loads(raw.decode())
-        except ValueError:  # not UTF-8, or not JSON
-            raise Malformed("GET /dtros/%s answered with a body that is not "
-                            "JSON" % dtro_id)
+        return _json(raw, "GET /dtros/%s" % dtro_id)
 
     try:
         body = _with_backoff(fetch)
     except urllib.error.HTTPError as e:
         if e.code in (404, 410):
             return None
-        raise
+        raise _refused(e, "GET /dtros/%s" % dtro_id)
+    # An order carries its `source`; anything else - {"data": {}} included,
+    # which would empty the order and draw its closure as open - is not one.
     if isinstance(body, dict):
-        if isinstance(body.get("data"), dict):
-            return body["data"]
-        if "source" in body:
-            return body  # an unwrapped record, as the extract carries it
+        record = body.get("data", body)
+        if isinstance(record, dict) and isinstance(record.get("source"),
+                                                   dict):
+            return record
     raise Malformed("GET /dtros/%s answered with %s, not an order"
                     % (dtro_id, type(body).__name__))
 
