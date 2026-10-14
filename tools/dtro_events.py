@@ -155,11 +155,17 @@ def changes(base, access, since, to, on_page=None):
                            % (since, to, page))
         # A 200 that is not a page of events is not "nothing changed": read
         # as that, the window would be applied empty and never read again.
-        events = reply.get("events") if isinstance(reply, dict) else None
-        if not isinstance(events, list):
+        if not isinstance(reply, dict):
             raise Malformed("POST /events %s .. %s page %d answered with "
                             "%s, not a page of events"
                             % (since, to, page, type(reply).__name__))
+        events = reply.get("events")
+        if events is None:
+            events = []  # absent or null: an empty page, as a 404 is
+        if not isinstance(events, list):
+            raise Malformed("POST /events %s .. %s page %d answered with "
+                            "events as %s, not a list"
+                            % (since, to, page, type(events).__name__))
         if not events:
             break
         out.extend(events)

@@ -264,6 +264,40 @@ class OneRefusedOrder(unittest.TestCase):
         self.assertNotIn("\n", stats["failed"])
         self.assertNotIn("\n", state["stall"]["error"])
 
+    def test_the_order_refused_now_is_not_the_one_checked_against(self):
+        # p was the order last answered, and p is the one refused now: the
+        # service is asked about g instead, which answers.
+        self.state["fetched"].update({"g": "2026-10-01T00:00:00Z",
+                                      "p": "2026-10-07T00:00:00Z"})
+        feed = Feed([event("p", "2026-10-08T11:00:00Z")], {"g": {"v": 1}},
+                    refuse={"p": no()})
+        stats = run(self.state, feed, "2026-10-09T00:00:00Z")
+        self.assertIsNone(stats["failed"])
+        self.assertEqual(feed.hydrates, ["p", "g"])
+        self.assertIn("p", self.state["skipped"])
+        self.assertNotIn("stall", self.state)
+
+    def test_one_counted_try_per_run(self):
+        self.state["skipped"]["p"] = {"tries": 1, "error": "x"}
+        feed = Feed(self.events, self.records, refuse={"p": no()})
+        run(self.state, feed, "2026-10-10T00:00:00Z")
+        self.assertEqual(feed.hydrates.count("p"), 1)
+        self.assertEqual(self.state["skipped"]["p"]["tries"], 2)
+
+    def test_a_refusal_beside_an_answer_needs_no_check(self):
+        feed = Feed(self.events, self.records, refuse={"p": no()})
+        run(self.state, feed, "2026-10-10T00:00:00Z")
+        self.assertEqual(feed.hydrates, ["a", "p", "z", "b"])
+
+    def test_a_window_retry_with_nothing_else_read_counts_no_try(self):
+        state = te.fresh_state(EXTRACT, "2026-10-10T00:00:00Z")
+        state["skipped_windows"] = [
+            {"since": START, "to": "2026-10-09T00:00:00Z", "tries": 1}]
+        feed = Feed(refuse_windows={START: no("POST /events")})
+        run(state, feed, "2026-10-10T00:00:00Z")
+        self.assertEqual(feed.fetches, [(START, "2026-10-09T00:00:00Z")])
+        self.assertEqual(state["skipped_windows"][0]["tries"], 1)
+
     def test_a_service_refusing_every_order_stops_the_window(self):
         self.state["fetched"]["good"] = "2026-10-07T00:00:00Z"
         orders = ["o%02d" % i for i in range(te.MAX_REFUSED_PER_WINDOW + 1)]
@@ -820,6 +854,40 @@ class OnlyTheDataRequestsRefusalIsSkipped(unittest.TestCase):
         self.assertIn("400", stats["failed"])
         self.assertEqual(service.calls, [])
 
+    def test_a_token_refusal_that_clears_still_stops_the_run(self):
+        # The token endpoint answers 400 once and then recovers. Read as a
+        # refused window, the window after would answer and the first be
+        # skipped: changes never applied, `through` moved past them.
+        service = Service(self.events)
+        service.install(self)
+        issued = []
+
+        def token(base, client, secret):
+            issued.append(1)
+            if len(issued) == 1:
+                raise self.token_refusal()
+            return {"access_token": "t"}
+
+        feed = self.live(token)
+        state = self.state()
+        stats = te.catch_up(state, te.parse_stamp("2026-10-11T00:00:00Z"),
+                            feed.fetch, feed.hydrate, build)
+        self.assertEqual(state["through"], START)
+        self.assertEqual(state["skipped_windows"], [])
+        self.assertIsNotNone(stats["failed"])
+
+    def test_a_token_error_is_never_a_refusal(self):
+        def token(base, client, secret):
+            raise self.token_refusal()
+
+        feed = self.live(token)
+        for call in (lambda: feed.fetch(START, "2026-10-09T00:00:00Z"),
+                     lambda: feed.hydrate("p")):
+            with self.assertRaises(urllib.error.HTTPError) as raised:
+                call()
+            self.assertNotIsInstance(raised.exception, dtro_events.Refused)
+            self.assertFalse(te.refused(raised.exception))
+
     def test_a_token_refusal_on_an_order_fetch_stops(self):
         service = Service(self.events)
         service.install(self)
@@ -857,12 +925,19 @@ class TheEventsFeedIsReadStrictly(unittest.TestCase):
         return dtro_events.changes(BASE, "t", START, "2026-10-09T00:00:00Z")
 
     def test_shapes_that_are_not_a_page_raise(self):
-        for body in (b"[]", b"null", b'"ok"', b'{"message": "later"}',
+        for body in (b"[]", b"null", b'"ok"',
                      b'{"events": "none"}', b'{"events": {}}', b"<html>",
                      b"\xff\xfe"):
             self.answer(body)
             with self.assertRaises(dtro_events.Malformed, msg=body):
                 self.changes()
+
+    def test_a_page_without_events_is_empty(self):
+        # 404 is the documented empty answer; a null or absent `events` in a
+        # 200 is the same answer in another shape.
+        for body in (b'{"events": null}', b"{}", b'{"message": "none"}'):
+            self.answer(body)
+            self.assertEqual(self.changes(), [], body)
 
     def test_an_empty_page_is_nothing_changed(self):
         self.answer(b'{"events": []}')
@@ -1014,6 +1089,11 @@ if [ "$1 $2" = "issue list" ]; then
     exit 1
   fi
   [ -n "$FAKE_GH_OPEN" ] && printf '%s\n' $FAKE_GH_OPEN
+  exit 0
+fi
+if [ "$FAKE_GH_VERB_FAIL" = "1" ]; then
+  echo "gh: HTTP 502" >&2
+  exit 1
 fi
 exit 0
 '''
@@ -1053,7 +1133,10 @@ class TheWorkflowStep(unittest.TestCase):
         with open(path, "w", encoding="utf-8", newline="\n") as fh:
             fh.write(text)
 
-    def run_step(self, state, open_issues="", fail=False, list_fail=False):
+    def run_step(self, state, open_issues="", fail=False, list_fail=False,
+                 verb_fail=False):
+        if os.path.exists(self.log):
+            os.remove(self.log)
         if state is not None:
             te.save_state(os.path.join(self.work, "dist", "tro", "_events",
                                        te.STATE_NAME), state)
@@ -1067,6 +1150,7 @@ class TheWorkflowStep(unittest.TestCase):
             "FAKE_GH_OPEN": open_issues,
             "FAKE_GH_FAIL": "1" if fail else "0",
             "FAKE_GH_LIST_FAIL": "1" if list_fail else "0",
+            "FAKE_GH_VERB_FAIL": "1" if verb_fail else "0",
             "GH_TOKEN": "x", "RUN_URL": "https://example.invalid/runs/1",
         })
         done = subprocess.run([BASH, "--noprofile", "--norc", "-eo",
@@ -1134,6 +1218,7 @@ class TheWorkflowStep(unittest.TestCase):
         self.assertIn("Say so when the events feed is stuck", body,
                       "the body must say where the full report is printed")
         self.assertNotIn("'Build the pack'", body)
+        self.assertIn("first 20", body)
         self.assertIn("gave_up=p", out.splitlines(),
                       "the report itself is printed in this step")
 
@@ -1176,6 +1261,18 @@ class TheWorkflowStep(unittest.TestCase):
             code, out, calls = self.run_step(state, fail=True)
             self.assertEqual(code, 0, out)
             self.assertTrue(calls, "PREMISE: the stand-in gh was called")
+
+    def test_gh_failing_after_the_listing_never_fails_the_step(self):
+        cases = ((self.stuck(), "7", [("issue", "edit")]),
+                 (self.stuck(), "", [("label", "create"),
+                                     ("issue", "create")]),
+                 (te.fresh_state(EXTRACT, START), "7", [("issue", "close")]))
+        for state, open_issues, verbs in cases:
+            code, out, calls = self.run_step(state, open_issues=open_issues,
+                                             verb_fail=True)
+            self.assertEqual(code, 0, out)
+            for verb in verbs:
+                self.assertTrue(self.calls_of(calls, *verb), (verb, calls))
 
     def test_a_failed_listing_raises_no_duplicate(self):
         # The trade-off: a run that cannot list cannot tell an open issue
