@@ -1,24 +1,14 @@
 {
  "builds": {
-  "containers/ways-east-anglia.tbmap": "2026-10-13T10:52:05Z",
-  "containers/ways-midlands.tbmap": "2026-10-13T10:52:05Z",
-  "containers/ways-north.tbmap": "2026-10-13T10:52:05Z",
-  "containers/ways-overview.tbmap": "2026-10-13T10:52:05Z",
+  "containers/ways-east-anglia.tbmap": "2026-10-14T08:57:55Z",
+  "containers/ways-midlands.tbmap": "2026-10-14T08:57:55Z",
+  "containers/ways-north.tbmap": "2026-10-14T08:57:55Z",
+  "containers/ways-overview.tbmap": "2026-10-14T08:57:55Z",
   "containers/ways-south-east.tbmap": "2026-10-08T12:26:02Z",
   "containers/ways-south-west.tbmap": "2026-10-08T12:26:02Z",
   "containers/ways-wales.tbmap": "2026-10-07T10:27:45Z"
  },
  "changesets": [
-  {
-   "bytes": 860160,
-   "container": "containers/ways-east-anglia.tbmap",
-   "file": "changes/gb-east-anglia/20261003T051556Z-20261007T102745Z.tbchange",
-   "from": "2026-10-03T05:15:56Z",
-   "pack": "gb-east-anglia",
-   "sha256": "ae95c1d788c6d7eb6e0e7eeb144b9375d13c6024fadbaed765eff9fc5f1e6a4a",
-   "signature": "P+7ahulxNcVLJsY61Kk6jEZl8lShymun/lxK6hvMVODdMUW45DzPz5e6Un7T5ucI9WnR3x2aGVvqFM9GhxvVAA==",
-   "to": "2026-10-07T10:27:45Z"
-  },
   {
    "bytes": 1335296,
    "container": "containers/ways-east-anglia.tbmap",
@@ -70,14 +60,14 @@
    "to": "2026-10-13T10:52:05Z"
   },
   {
-   "bytes": 1064960,
-   "container": "containers/ways-midlands.tbmap",
-   "file": "changes/gb-midlands/20261003T091900Z-20261007T102745Z.tbchange",
-   "from": "2026-10-03T09:19:00Z",
-   "pack": "gb-midlands",
-   "sha256": "db4765292d1c8b1a8a4012dffb921d9a5f11059e7237ebe71f3ee648ae00cce5",
-   "signature": "Fbks8ZEV54zyXhh2QKnrUtigFRJs8GpbCPlw/2b90IH8QHgs6Ji4G9NI6nwbK9LemMnJmZPr84cSMSkvEstsAg==",
-   "to": "2026-10-07T10:27:45Z"
+   "bytes": 1339392,
+   "container": "containers/ways-east-anglia.tbmap",
+   "file": "changes/gb-east-anglia/20261013T105205Z-20261014T085755Z.tbchange",
+   "from": "2026-10-13T10:52:05Z",
+   "pack": "gb-east-anglia",
+   "sha256": "430c5a1eb71d4f437554f34f1b6ec8382eca3a29bb7e570ec743c04e8ad7b011",
+   "signature": "C/X3HT0Ntd22hjx1SoKXPWpiKBqet7sm97YBHfWcJHBJENn1kWGFwBCdOHqwpYxiv8bKoXMloPCCXUGAAwFjCg==",
+   "to": "2026-10-14T08:57:55Z"
   },
   {
    "bytes": 1290240,
@@ -130,14 +120,14 @@
    "to": "2026-10-13T10:52:05Z"
   },
   {
-   "bytes": 970752,
-   "container": "containers/ways-north.tbmap",
-   "file": "changes/gb-north/20261007T102745Z-20261008T114151Z.tbchange",
-   "from": "2026-10-07T10:27:45Z",
-   "pack": "gb-north",
-   "sha256": "1c4ade93db2c8de1742da313ea0db7cb5d391f0d2149d3025b317b3f846c7cc8",
-   "signature": "6AVCNSPks2Ih862XHIANAgjz5xUL0KQUeEy3W5P3yanRY64sfQ0W5j5stI9kjUccdVSUEkpECqqVc6a6PzfAAw==",
-   "to": "2026-10-08T11:41:51Z"
+   "bytes": 1290240,
+   "container": "containers/ways-midlands.tbmap",
+   "file": "changes/gb-midlands/20261013T105205Z-20261014T085755Z.tbchange",
+   "from": "2026-10-13T10:52:05Z",
+   "pack": "gb-midlands",
+   "sha256": "73ca79c6aee7a39fed9b2304065c0ed3c189b2f66f9ade64496b3502dd29c1b6",
+   "signature": "+BoiTPxOy/wOLsRwdCb09YaL5EbIBvWQhIQLYolwI3BD922yumy9sAYHRZqvbYRq7zVYBUrkpN3qjucYWEIVBg==",
+   "to": "2026-10-14T08:57:55Z"
   },
   {
    "bytes": 1634304,
@@ -190,14 +180,14 @@
    "to": "2026-10-13T10:52:05Z"
   },
   {
-   "bytes": 807936,
-   "container": "containers/ways-overview.tbmap",
-   "file": "changes/gb-overview/20261008T114151Z-20261008T122602Z.tbchange",
-   "from": "2026-10-08T11:41:51Z",
-   "pack": "gb-overview",
-   "sha256": "59bc4fe3956ab39d3bac160f9c50e24464ed7ad6f14cd45c9cd4bc620ec36786",
-   "signature": "h7UwC/BIVmbaknT+Z15Ew5wHnCy7SFbaMDAghkzKa+doxEcJBdZFFq+omqsaDs+Kvqv3p5rQnzh/jC3fgBFTAg==",
-   "to": "2026-10-08T12:26:02Z"
+   "bytes": 1634304,
+   "container": "containers/ways-north.tbmap",
+   "file": "changes/gb-north/20261013T105205Z-20261014T085755Z.tbchange",
+   "from": "2026-10-13T10:52:05Z",
+   "pack": "gb-north",
+   "sha256": "6c101397a63ceaaa08ebf87fbd00dcfe2452ab0771545eeafae0c5b262cd4573",
+   "signature": "El1ctPXK2qUC+QoZibCZyV9nVP0VY3r8ExANNp3Pf+FzkMuFljib55bQIPTq3HAxNBu8wE0xGp3WXcueIy7mAA==",
+   "to": "2026-10-14T08:57:55Z"
   },
   {
    "bytes": 19456,
@@ -248,6 +238,16 @@
    "sha256": "9a7eeb1bfd0b47074b8f36b98331d681163667c43228d70ce3f975ce8fb594c5",
    "signature": "nBJK73d/KpD0AtUsT7RLtJ5nVM/2JzZO7ZjANNN6f5g7MewBprnLxNI1IxN6fIT1JU6mA/pwt1qH+Hzr6iR0Bw==",
    "to": "2026-10-13T10:52:05Z"
+  },
+  {
+   "bytes": 83456,
+   "container": "containers/ways-overview.tbmap",
+   "file": "changes/gb-overview/20261013T105205Z-20261014T085755Z.tbchange",
+   "from": "2026-10-13T10:52:05Z",
+   "pack": "gb-overview",
+   "sha256": "178bdd2c23050aeae955db9df82c732c26f29d6dd0d4432cf5bd296cf32857c1",
+   "signature": "nMqCfPOlKui79twGle3AeIrN9yXRi+ndu+PYiRRV9vnEavo5CWYyzFu2z8eVaLfXvTNK8XK7LZMA8h/komTgBw==",
+   "to": "2026-10-14T08:57:55Z"
   },
   {
    "bytes": 15872,
