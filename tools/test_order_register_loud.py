@@ -333,6 +333,17 @@ class HeldBack(unittest.TestCase):
             "::warning title=Order held back::es/iden/%d: no byway of ours "
             "matches its path or grid refs" % n for n in (28, 30)])
 
+    def test_no_id_can_write_a_workflow_command(self):
+        self.orders[1] = dict(self.orders[1], id="es/x\n::error::x")
+        self.write_orders()
+        _rc, printed = self.build()
+        commands = [line for line in printed.splitlines()
+                    if line.startswith("::")]
+        self.assertEqual(len(commands), 2)
+        for line in commands:
+            self.assertTrue(line.startswith(
+                "::warning title=Order held back::"), line)
+
     def test_an_odd_id_is_escaped_and_kept_to_one_line(self):
         self.orders[1] = dict(self.orders[1], id="es/50%\nx")
         self.write_orders()
@@ -433,11 +444,40 @@ class Wiring(unittest.TestCase):
         self.assertLess(build, append)
         self.assertLess(append, text.index("if [ -s /tmp/register-report.txt"))
 
-    def test_a_failed_held_list_cannot_skip_the_review_issue(self):
-        text = self.workflow()
-        step = text[text.index("- name: List approved orders held back"):]
-        step = step[:step.index("- name:", 10)]
-        self.assertIn("continue-on-error: true", step)
+    def steps(self):
+        import yaml
+        steps = yaml.safe_load(self.workflow())["jobs"]["check"]["steps"]
+        return dict((s.get("name"), (i, s)) for i, s in enumerate(steps))
+
+    def test_a_failed_held_list_is_said_and_fails_the_run(self):
+        steps = self.steps()
+        held_at, held = steps["List approved orders held back from riders"]
+        self.assertEqual((held["id"], held["continue-on-error"]),
+                         ("held", True))
+        failed = "steps.held.outcome == 'failure'"
+        note_at, note = steps["Say the held-back list could not be built"]
+        review_at, review = steps["Ask for a review of what changed"]
+        fail_at, fail = steps["Fail the run if the held-back list could "
+                              "not be built"]
+        raise_at, alarm = steps["Raise an issue if this failed"]
+        down_at, down = steps["Stand the alarm down if this worked"]
+        self.assertEqual((note["if"], fail["if"]), (failed, failed))
+        self.assertIn("$RUN_URL", note["run"])
+        self.assertIn("RUN_URL", note["env"])
+        self.assertIn(">> /tmp/register-report.txt", note["run"])
+        self.assertIn("exit 1", fail["run"])
+        self.assertEqual((review["if"], alarm["if"], down["if"]),
+                         ("success()", "failure()", "success()"))
+        self.assertTrue(held_at < note_at < review_at < fail_at < raise_at
+                        < down_at)
+
+    def test_the_tests_dependency_is_installed_first(self):
+        steps = self.steps()
+        at, step = steps["Install what the tests read"]
+        self.assertEqual(step["run"].split(), ["pip", "install", "--quiet",
+                                               "pyyaml"])
+        self.assertLess(at, steps["Run the tests before trusting the "
+                                  "check"][0])
 
     def test_the_permissions_comment_is_current(self):
         text = self.workflow()
@@ -579,24 +619,51 @@ class PendingStays(Register):
 
 
 class PersonalData(Register):
-    """Round 2, P1: no e-mail address or phone number is written."""
+    """Round 2-3, P1: no e-mail address or phone number is written, and
+    nothing else is mistaken for one. Numbers are Ofcom drama ranges."""
 
-    def test_addresses_and_numbers_are_replaced(self):
-        text = reg.scrub_text(
-            "Write to jo.bloggs@council.example or ring 01234 567890, "
-            "+44 (0)1234 567 890, 07700 900123 or 0300-123-4567.")
-        self.assertEqual(text, (
-            "Write to [email removed] or ring [phone removed], "
-            "[phone removed], [phone removed] or [phone removed]."))
+    SCRUB = [
+        "01632 960123", "(01632) 960123", "(0)1632 960123", "01632.960123",
+        "(020) 7946 0123", "020 7946 0123", "0044 1632 960123",
+        "+44 1632 960123", "+44 (0)1632 960 123", "+44 20 7946 0123",
+        "07700 900123", "0808-157-0192", "0117 496 0123", "01632960123",
+        "0163296012", "01632 96012", "0306 9990 123",
+    ]
+    KEEP = [
+        "SU 01234 56789", "ST 05123 12345", "SU 0123 4567", "SU012345",
+        "TQ 566 091", "511436 149706", "Order 2004 made 01/10/2026",
+        "Closed 01-02-2026 05-03-2026", "Closed 03-02-2026 05-03-2026",
+        "2026-01-02 2026-03-05", "Dates: 01-02-2026 09:00",
+        "Ref: 2026-0123-4567-89", "016329601234", "016329601",
+        "0123456789012345", "Byway 15/2", "Surrey 0692 4666",
+        "Order 0123/2004", "Section 01 02 2026",
+    ]
 
-    def test_references_that_look_like_numbers_stay(self):
-        for keep in ("Order 2004 made 01/10/2026", "TQ 566 091",
-                     "grid 511436 149706", "Surrey 0692 4666",
-                     "Byway 15/2", "0123456789012345"):
-            self.assertEqual(reg.scrub_text(keep), keep)
+    def test_every_phone_shape_is_replaced(self):
+        for number in self.SCRUB:
+            self.assertEqual(reg.scrub_text("Ring %s today" % number),
+                             "Ring [phone removed] today", number)
+
+    def test_prefixes_and_what_follows_are_kept(self):
+        for text, want in (
+                ("Tel: 01632 960123", "Tel: [phone removed]"),
+                ("Tel:01632 960123", "Tel:[phone removed]"),
+                ("01632 960123 ext 2", "[phone removed] ext 2"),
+                ("01632 960123 9am", "[phone removed] 9am"),
+                ("on 01632 960123 1 May", "on [phone removed] 1 May"),
+                ("01632 96012 3 May", "[phone removed] 3 May"),
+                ("Write to jo.bloggs@council.example, o'neil@x.example or "
+                 "a+b@x.example",
+                 "Write to [email removed], [email removed] or "
+                 "[email removed]")):
+            self.assertEqual(reg.scrub_text(text), want, text)
+
+    def test_references_dates_and_grid_refs_stay(self):
+        for keep in self.KEEP:
+            self.assertEqual(reg.scrub_text(keep), keep, keep)
 
     def page(self, who):
-        return ("<main>%s<p>Questions to %s, telephone 01629 533190.</p>"
+        return ("<main>%s<p>Questions to %s, telephone 01632 960123.</p>"
                 "</main>" % (LIST.decode()[6:-7], who)).encode()
 
     def test_nothing_personal_reaches_changes_and_the_digest_is_steady(self):
@@ -604,7 +671,7 @@ class PersonalData(Register):
         with open(os.path.join(self.tmp, "changes.json")) as fh:
             raw = fh.read()
         self.assertNotIn("ann.example", raw)
-        self.assertNotIn("533190", raw)
+        self.assertNotIn("960123", raw)
         self.assertIn("[email removed]", raw)
         self.assertIn("[phone removed]", raw)
         reg.accept(["co/orders"], Client({}), register=self.tmp)
@@ -619,25 +686,31 @@ class PersonalData(Register):
         changed, _u, _e = self.check(LIST)
         self.assertNotIn("old.name", json.dumps(changed))
 
+    OLD = ["Byway 9 closed", "Ask c.d@council.example on 01632 960123"]
+
     def make_old_register(self):
-        lines = ["Byway 9 closed", "Ask c.d@council.example on 01629 533190"]
-        joined = "\n".join(lines).encode()
+        joined = "\n".join(self.OLD).encode()
         reg._snapshot(self.tmp, {"id": "co/orders"},
-                      reg.hashlib.sha256(joined).hexdigest(), lines)
+                      reg.hashlib.sha256(joined).hexdigest(), self.OLD)
         # A snapshot whose digest is of bytes (a PDF) keeps its digest.
         reg._snapshot(self.tmp, {"id": "co/pdf"}, "f" * 64,
                       ["Ask c.d@council.example"])
         reg._snapshot(self.tmp, {"id": "co/clean"}, "e" * 64,
                       ["Byway 9 closed"])
+        # A text with no digest file beside it is scrubbed all the same.
+        with open(reg.snapshot_paths(self.tmp, "co/bare")[1], "w") as fh:
+            fh.write("Ask c.d@council.example\n")
         with open(os.path.join(self.tmp, "changes.json"), "w") as fh:
             json.dump([{"page": "co/orders", "digest": reg.hashlib.sha256(
-                joined).hexdigest(), "text": lines,
-                "diff": ["+Ask c.d@council.example on 01629 533190"]}], fh)
+                joined).hexdigest(), "text": self.OLD,
+                "diff": ["+Ask c.d@council.example on 01632 960123"]},
+                {"page": "co/pdf", "digest": "a" * 64,
+                 "text": ["Ask c.d@council.example"]}], fh)
 
     def test_scrub_rewrites_the_old_snapshots_and_changes(self):
         self.make_old_register()
         counts = reg.scrub_register(self.tmp)
-        self.assertEqual(counts, {"snapshots": 2, "changes": 1})
+        self.assertEqual(counts, {"snapshots": 3, "changes": 2})
         h, t = reg.snapshot_paths(self.tmp, "co/orders")
         with open(t) as fh:
             lines = fh.read().splitlines()
@@ -650,10 +723,16 @@ class PersonalData(Register):
             self.assertEqual(fh.read().strip(), "f" * 64)
         with open(reg.snapshot_paths(self.tmp, "co/pdf")[1]) as fh:
             self.assertEqual(fh.read(), "Ask [email removed]\n")
-        (entry,) = self.queued()
-        self.assertNotIn("c.d@", json.dumps(entry))
+        with open(reg.snapshot_paths(self.tmp, "co/bare")[1]) as fh:
+            self.assertEqual(fh.read(), "Ask [email removed]\n")
+        self.assertFalse(os.path.exists(
+            reg.snapshot_paths(self.tmp, "co/bare")[0]))
+        entry, pdf = self.queued()
+        self.assertNotIn("c.d@", json.dumps([entry, pdf]))
         self.assertEqual(entry["digest"], reg.hashlib.sha256(
             "\n".join(lines).encode()).hexdigest())
+        self.assertEqual(pdf["digest"], "a" * 64,
+                         "a digest not of the text was retaken")
         self.assertEqual(reg.scrub_register(self.tmp),
                          {"snapshots": 0, "changes": 0})
 
@@ -668,7 +747,7 @@ class PersonalData(Register):
         self.assertEqual(self.snapshot(), before)
         with open(os.path.join(self.tmp, "changes.json"), "rb") as fh:
             self.assertEqual(fh.read(), changes)
-        self.assertIn("2 snapshot(s) and 1 change(s) would be scrubbed",
+        self.assertIn("3 snapshot(s) and 2 change(s) would be scrubbed",
                       printed.getvalue())
         self.assertNotIn("c.d@", printed.getvalue())
 
@@ -676,10 +755,17 @@ class PersonalData(Register):
         self.make_old_register()
         with contextlib.redirect_stdout(io.StringIO()) as printed:
             self.assertEqual(reg.main(["scrub", "--register", self.tmp]), 0)
-        self.assertIn("2 snapshot(s) and 1 change(s) scrubbed",
+        self.assertIn("3 snapshot(s) and 2 change(s) scrubbed",
                       printed.getvalue())
         with open(reg.snapshot_paths(self.tmp, "co/orders")[1]) as fh:
             self.assertNotIn("c.d@", fh.read())
+
+    def test_accept_of_a_page_that_was_always_short(self):
+        reg._snapshot(self.tmp, {"id": "co/orders"}, "0" * 64,
+                      ["Byway 5: closed all year"])
+        reg.accept(["co/orders"], Client({self.URL: b"<p>Byway 5: open</p>"}),
+                   register=self.tmp)
+        self.assertEqual(self.snapshot()[1], b"Byway 5: open\n")
 
 
 class WorkflowCommands(unittest.TestCase):
@@ -689,6 +775,14 @@ class WorkflowCommands(unittest.TestCase):
         self.assertEqual(reg.workflow_escape("50% off\r\nnext"),
                          "50%25 off%0D%0Anext")
         self.assertEqual(reg.one_line("a\r\nb\n\nc"), "a b c")
+
+    def test_changed_and_new_lines_are_one_line_each(self):
+        lines = reg.report_lines(
+            [{"page": "a\nb", "url": "https://a\r\n1", "new": True},
+             {"page": "c", "url": "https://c", "new": False,
+              "provenance": "saved\nby hand"}], [], [], inbox=[])
+        self.assertEqual(lines, ["NEW a b https://a 1",
+                                 "CHANGED c https://c (saved by hand)"])
 
     def test_report_lines_are_one_line_each(self):
         lines = reg.report_lines(

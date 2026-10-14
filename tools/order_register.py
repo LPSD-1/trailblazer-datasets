@@ -421,25 +421,55 @@ class EmptyPage(ValueError):
 # the text with them replaced.
 _EMAIL = re.compile(r"[A-Za-z0-9._%+'-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*"
                     r"\.[A-Za-z]{2,}")
-_PHONE = re.compile(r"(?<![\w/])(?:\+44\s?(?:\(0\)\s?)?|0)\d[\d\s-]{7,12}\d"
-                    r"(?![\d/])")
+# Where a UK number may start: +44 or 0044 (with an optional "(0)"), a
+# bare "(0)", or a 0 - not inside a word, a path, a date or a reference.
+_PHONE_START = re.compile(r"(?<![\w/.-])(?:(?:\+|00)44[ .-]?(?:\(0\)[ .-]?)?"
+                          r"|\(0\)[ .-]?|(?=\(?0\d))")
+_PHONE_GROUP = re.compile(r"\(?(\d+)\)?")
+_PHONE_SEP = re.compile(r"[ .-]")
+# The groupings UK numbers are written in, by digits per group (the leading
+# 0 counted): a run of digits that is not one of these - a date, a time, an
+# order reference - is not a phone number.
+_PHONE_SHAPES = {(10,), (11,), (5, 5), (4, 6), (4, 3, 3), (5, 6), (4, 7),
+                 (3, 8), (3, 4, 4), (4, 3, 4), (4, 4, 3), (5, 3, 3)}
+# An OS grid reference: two square letters, then digits ("SU 01234 56789").
+_GRID_SQUARE = re.compile(r"(?<![A-Za-z])[A-HJ-Z]{2} ?$")
 
 
-def _phone(match):
-    found = match.group(0)
-    digits = re.sub(r"\D", "", found)
-    if found.startswith("+"):
-        digits = digits[2:]
-        if not digits.startswith("0"):
-            digits = "0" + digits
-    # A UK number is 10 or 11 digits with its leading 0; anything else
-    # (a 16-digit reference) is not one.
-    return "[phone removed]" if len(digits) in (10, 11) else found
+def _phone_end(text, at, implicit_zero):
+    """Where the longest phone-shaped run of digit groups from `at` ends,
+    or None."""
+    sizes, end, i = [], None, at
+    while True:
+        group = _PHONE_GROUP.match(text, i)
+        if not group:
+            return end
+        sizes.append(len(group.group(1)))
+        i = group.end()
+        shape = tuple([sizes[0] + implicit_zero] + sizes[1:])
+        if sum(shape) > 11:
+            return end
+        if shape in _PHONE_SHAPES:
+            end = i
+        sep = _PHONE_SEP.match(text, i)
+        if not sep:
+            return end
+        i = sep.end()
 
 
 def scrub_text(text):
     """The text with e-mail addresses and UK phone numbers replaced."""
-    return _PHONE.sub(_phone, _EMAIL.sub("[email removed]", text))
+    text = _EMAIL.sub("[email removed]", text)
+    out, done = [], 0
+    for start in _PHONE_START.finditer(text):
+        if start.start() < done or _GRID_SQUARE.search(
+                text, 0, start.start()):
+            continue
+        end = _phone_end(text, start.end(), int(start.end() > start.start()))
+        if end is not None:
+            out.append(text[done:start.start()] + "[phone removed]")
+            done = end
+    return "".join(out) + text[done:]
 
 
 def fingerprint(page, body, floor=MIN_TEXT_CHARS):
@@ -668,10 +698,10 @@ def report_lines(changed, unreachable, empty, inbox=None):
     """The lines of the review issue, one per page that needs a person."""
     lines = []
     for c in changed:
-        lines.append("%s %s %s%s" % (
+        lines.append(one_line("%s %s %s%s" % (
             "NEW" if c.get("new") else "CHANGED", c["page"], c["url"],
             " (%s)" % (c.get("read_under") or c.get("provenance"))
-            if c.get("read_under") or c.get("provenance") else ""))
+            if c.get("read_under") or c.get("provenance") else "")))
     for u in unreachable:
         lines.append("UNREADABLE %s %s - %s" % (u["page"], u["url"],
                                                 one_line(u["why"])))
@@ -708,7 +738,8 @@ def accept(page_ids, client, register=REGISTER):
             continue
         page = pages[page_id]
         body = client.get(page["url"])
-        digest, lines = fingerprint(page, body)
+        digest, lines = fingerprint(page, body, _floor(
+            page, snapshot_paths(register, page_id)[1]))
         _snapshot(register, page, digest, lines)
     left = [c for c in pending.values() if c["page"] not in page_ids]
     left.sort(key=lambda c: c["page"])
@@ -740,8 +771,11 @@ def scrub_register(register=REGISTER, dry_run=False):
         counts["snapshots"] += 1
         if dry_run:
             continue
-        with open(hash_path, encoding="utf-8") as fh:
-            of_text = fh.read().strip() == _digest_of(lines)
+        try:
+            with open(hash_path, encoding="utf-8") as fh:
+                of_text = fh.read().strip() == _digest_of(lines)
+        except OSError:
+            of_text = False
         if of_text:
             with open(hash_path, "w", encoding="utf-8", newline="\n") as fh:
                 fh.write(_digest_of(clean) + "\n")

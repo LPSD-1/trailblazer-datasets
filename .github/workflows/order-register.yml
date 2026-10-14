@@ -47,6 +47,9 @@ jobs:
         with:
           python-version: '3.12'
 
+      - name: Install what the tests read
+        run: pip install --quiet pyyaml
+
       - name: Run the tests before trusting the check
         run: |
           python tools/test_polite_http.py
@@ -111,11 +114,19 @@ jobs:
       # riders; council-orders.yml publishes the rest without a word, so the
       # review issue lists each one (HELD). No network, nothing committed.
       - name: List approved orders held back from riders
-        # A failure here must not keep the review issue from being written.
+        id: held
+        # A failure here must not keep the review issue from being written:
+        # the next step says so in it, and the run fails after it.
         continue-on-error: true
         run: |
           python tools/order_register.py build --out /tmp/order-register.json --report /tmp/register-held.txt
           cat /tmp/register-held.txt >> /tmp/register-report.txt
+
+      - name: Say the held-back list could not be built
+        if: steps.held.outcome == 'failure'
+        env:
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: echo "HELD-LIST-FAILED the list of approved orders held back from riders could not be built - see $RUN_URL" >> /tmp/register-report.txt
 
       # A REVIEW REQUEST, NOT AN ALARM: a council editing its page is the
       # ordinary case this job exists to catch. One issue at a time, kept
@@ -146,6 +157,12 @@ jobs:
           elif [ -n "$OPEN" ]; then
             gh issue close "$OPEN" --comment "Nothing left to review: $RUN_URL" || true
           fi
+
+      - name: Fail the run if the held-back list could not be built
+        if: steps.held.outcome == 'failure'
+        run: |
+          echo "::error::the list of approved orders held back from riders could not be built"
+          exit 1
 
       - name: Raise an issue if this failed
         if: failure()
