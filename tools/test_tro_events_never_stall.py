@@ -932,12 +932,21 @@ class TheEventsFeedIsReadStrictly(unittest.TestCase):
             with self.assertRaises(dtro_events.Malformed, msg=body):
                 self.changes()
 
-    def test_a_page_without_events_is_empty(self):
-        # 404 is the documented empty answer; a null or absent `events` in a
+    def test_a_dict_without_events_raises(self):
+        # An error envelope or a re-cased key is not "nothing changed": read
+        # as empty, `through` would pass the window and its changes be lost.
+        for body in (b"{}", b'{"message": "later"}',
+                     b'{"Events": [{"id": "a"}]}', b'{"EVENTS": []}'):
+            with self.subTest(body=body):
+                self.answer(body)
+                with self.assertRaises(dtro_events.Malformed):
+                    self.changes()
+
+    def test_explicit_null_events_is_empty(self):
+        # 404 is the documented empty answer; an explicit null `events` in a
         # 200 is the same answer in another shape.
-        for body in (b'{"events": null}', b"{}", b'{"message": "none"}'):
-            self.answer(body)
-            self.assertEqual(self.changes(), [], body)
+        self.answer(b'{"events": null}')
+        self.assertEqual(self.changes(), [])
 
     def test_an_empty_page_is_nothing_changed(self):
         self.answer(b'{"events": []}')
@@ -1218,7 +1227,11 @@ class TheWorkflowStep(unittest.TestCase):
         self.assertIn("Say so when the events feed is stuck", body,
                       "the body must say where the full report is printed")
         self.assertNotIn("'Build the pack'", body)
-        self.assertIn("first 20", body)
+        self.assertIn("first 20 of each list", body)
+        self.assertNotIn("full report", body,
+                         "the report is cut to 20 as well")
+        self.assertIn("a 200 from /events that is not a page of events",
+                      body)
         self.assertIn("gave_up=p", out.splitlines(),
                       "the report itself is printed in this step")
 

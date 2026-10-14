@@ -402,7 +402,7 @@ jobs:
           - Orders given up on: $(field gave_up_orders) ($(field gave_up)) - each keeps its last known state
           - Orders still being retried: $(field retrying_orders) ($(field retrying))
 
-          Order lists here and in the report show the first 20. The full report is printed at the top of the 'Say so when the events feed is stuck' step of that run. A refusal is HTTP 400 or 422 from the request for that order or window, or a 200 that is not an order; ask d-tro@dft.gov.uk about any that keep being refused.
+          This issue and the report show the first 20 of each list. The report is printed at the top of the 'Say so when the events feed is stuck' step of that run. A refusal is HTTP 400 or 422 from the request for that order or window, a 200 for an order that is not an order, or a 200 from /events that is not a page of events (no 'events' list in it); ask d-tro@dft.gov.uk about any that keep being refused.
 
           This issue is updated by every run while the feed is stuck, and closed by the first run that finds it moving."
             FIRST=$(printf '%s\n' "$OPEN" | head -n 1)

@@ -155,13 +155,22 @@ def changes(base, access, since, to, on_page=None):
                            % (since, to, page))
         # A 200 that is not a page of events is not "nothing changed": read
         # as that, the window would be applied empty and never read again.
+        # Empty is only a 404, `"events": null` or `"events": []`. Malformed
+        # is anything else: a body that is not an object, an object with no
+        # key spelt exactly `events` (an error envelope, `Events`), or
+        # `events` that is neither a list nor null.
         if not isinstance(reply, dict):
             raise Malformed("POST /events %s .. %s page %d answered with "
                             "%s, not a page of events"
                             % (since, to, page, type(reply).__name__))
-        events = reply.get("events")
+        if "events" not in reply:
+            raise Malformed("POST /events %s .. %s page %d answered with "
+                            "no events key (keys: %s)"
+                            % (since, to, page,
+                               ", ".join(sorted(map(str, reply)))[:200]))
+        events = reply["events"]
         if events is None:
-            events = []  # absent or null: an empty page, as a 404 is
+            events = []  # explicit null: an empty page, as a 404 is
         if not isinstance(events, list):
             raise Malformed("POST /events %s .. %s page %d answered with "
                             "events as %s, not a list"
