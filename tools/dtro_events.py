@@ -62,6 +62,16 @@ PAGE_SIZE = 50
 MAX_PAGES = 500
 
 
+class Malformed(ValueError):
+    """A 200 from the service whose body is not what was asked for.
+
+    Never read as "the order has gone": only 404 and 410 say that. A body that
+    is a list, a string, a dict that is not an order or not JSON at all is
+    the service misbehaving for this one request, and deleting the order from
+    the pack on its say-so would draw a closed lane as open.
+    """
+
+
 def _post(url, access, body):
     request = urllib.request.Request(
         url, data=json.dumps(body).encode(), method="POST")
@@ -138,7 +148,12 @@ def hydrate(base, access, dtro_id):
     request.add_header("Authorization", "Bearer " + access)
     def fetch():
         with urllib.request.urlopen(request, timeout=TIMEOUT) as response:
-            return json.loads(response.read().decode())
+            raw = response.read()
+        try:
+            return json.loads(raw.decode())
+        except ValueError:  # not UTF-8, or not JSON
+            raise Malformed("GET /dtros/%s answered with a body that is not "
+                            "JSON" % dtro_id)
 
     try:
         body = _with_backoff(fetch)
@@ -146,9 +161,13 @@ def hydrate(base, access, dtro_id):
         if e.code in (404, 410):
             return None
         raise
-    if isinstance(body, dict) and isinstance(body.get("data"), dict):
-        return body["data"]
-    return body if isinstance(body, dict) else None
+    if isinstance(body, dict):
+        if isinstance(body.get("data"), dict):
+            return body["data"]
+        if "source" in body:
+            return body  # an unwrapped record, as the extract carries it
+    raise Malformed("GET /dtros/%s answered with %s, not an order"
+                    % (dtro_id, type(body).__name__))
 
 
 def main():
