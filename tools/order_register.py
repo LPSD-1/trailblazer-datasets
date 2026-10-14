@@ -4,6 +4,7 @@
     python tools/order_register.py build     # register -> tro/council/order-register.json
     python tools/order_register.py check     # re-read the councils' pages, flag changes
     python tools/order_register.py accept PAGE_ID [...]   # after a person reviewed them
+    python tools/order_register.py scrub [--dry-run]   # e-mails, phones out of old text
 
 WHY A REGISTER, AND WHY A PERSON IN THE LOOP
 -------------------------------------------
@@ -415,20 +416,50 @@ class EmptyPage(ValueError):
     """A page came out with no readable text; its snapshot must stand."""
 
 
-def fingerprint(page, body):
+# Council pages name their officers. No address or number is written to
+# this public repository: snapshots, changes.json and the digest all take
+# the text with them replaced.
+_EMAIL = re.compile(r"[A-Za-z0-9._%+'-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*"
+                    r"\.[A-Za-z]{2,}")
+_PHONE = re.compile(r"(?<![\w/])(?:\+44\s?(?:\(0\)\s?)?|0)\d[\d\s-]{7,12}\d"
+                    r"(?![\d/])")
+
+
+def _phone(match):
+    found = match.group(0)
+    digits = re.sub(r"\D", "", found)
+    if found.startswith("+"):
+        digits = digits[2:]
+        if not digits.startswith("0"):
+            digits = "0" + digits
+    # A UK number is 10 or 11 digits with its leading 0; anything else
+    # (a 16-digit reference) is not one.
+    return "[phone removed]" if len(digits) in (10, 11) else found
+
+
+def scrub_text(text):
+    """The text with e-mail addresses and UK phone numbers replaced."""
+    return _PHONE.sub(_phone, _EMAIL.sub("[email removed]", text))
+
+
+def fingerprint(page, body, floor=MIN_TEXT_CHARS):
     """(sha256, text lines or None). A PDF is compared by its bytes.
 
-    Raises EmptyPage for a web page with less than MIN_TEXT_CHARS of text,
+    Raises EmptyPage for a page with less than `floor` characters of text,
     counted before `only` filters it: a filter may rightly match nothing.
+    The lines, and so the digest, are scrubbed (scrub_text).
     """
     if page["url"].lower().endswith(".pdf") or body[:4] == b"%PDF":
         return hashlib.sha256(body).hexdigest(), None
     size = len("".join(page_text(body)))
-    if size < MIN_TEXT_CHARS:
-        raise EmptyPage("no readable text (%d characters): the page's "
+    if size < floor:
+        if page.get("local"):
+            raise EmptyPage("the saved document has no readable text; save "
+                            "it again, or as a PDF")
+        raise EmptyPage("%s readable text (%d characters): the page's "
                         "layout may have changed; its last snapshot is "
-                        "kept" % size)
-    lines = page_text(body, page.get("only"))
+                        "kept" % ("too little" if size else "no", size))
+    lines = [scrub_text(line) for line in page_text(body, page.get("only"))]
     joined = "\n".join(lines).encode("utf-8")
     return hashlib.sha256(joined).hexdigest(), lines
 
@@ -546,6 +577,9 @@ def check(client, register=REGISTER, today=None, manual_root=None,
         except (Refused, FetchFailed, OSError) as e:
             unreachable.append({"page": page["id"], "url": page["url"],
                                 "why": str(e)[:300]})
+            # Not read is not reviewed: a pending change stands.
+            if page["id"] in previous:
+                changed.append(previous[page["id"]])
             continue
         served = client.take_served() if hasattr(client, "take_served") \
             else {}
@@ -557,10 +591,13 @@ def check(client, register=REGISTER, today=None, manual_root=None,
         else:
             queue.extend(linked_documents(page, body))
             try:
-                digest, lines = fingerprint(page, body)
+                digest, lines = fingerprint(page, body,
+                                            _floor(page, text_path))
             except EmptyPage as e:
                 empty.append({"page": page["id"], "url": page["url"],
                               "why": str(e)})
+                if page["id"] in previous:
+                    changed.append(previous[page["id"]])
                 continue
         try:
             with open(hash_path, encoding="utf-8") as fh:
@@ -576,7 +613,8 @@ def check(client, register=REGISTER, today=None, manual_root=None,
                     "tro/register/orders.json)"] + (lines or [])[:60]
         elif lines is not None and os.path.exists(text_path):
             with open(text_path, encoding="utf-8") as fh:
-                before = fh.read().splitlines()
+                before = [scrub_text(line)
+                          for line in fh.read().splitlines()]
             diff = list(difflib.unified_diff(before, lines, "before",
                                              "now", n=1, lineterm=""))[:80]
         entry = {"page": page["id"], "url": page["url"],
@@ -599,6 +637,33 @@ def check(client, register=REGISTER, today=None, manual_root=None,
     return changed, unreachable, empty
 
 
+def _floor(page, text_path):
+    """The least text a page must have to be read as read.
+
+    A document saved into manual/ is what it is, however short. A fetched
+    page whose reviewed snapshot was itself short real text may change to
+    other short text; one that was long (or empty) may not.
+    """
+    if page.get("local"):
+        return 1
+    try:
+        with open(text_path, encoding="utf-8") as fh:
+            was = "".join(fh.read().split("\n"))
+    except OSError:
+        was = ""
+    return 1 if 0 < len(was) < MIN_TEXT_CHARS else MIN_TEXT_CHARS
+
+
+def workflow_escape(text):
+    """Data for a GitHub workflow command (::warning::, ::error::)."""
+    return text.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+
+
+def one_line(text):
+    """Text for a one-line report entry."""
+    return re.sub(r"[\r\n]+", " ", text)
+
+
 def report_lines(changed, unreachable, empty, inbox=None):
     """The lines of the review issue, one per page that needs a person."""
     lines = []
@@ -609,9 +674,10 @@ def report_lines(changed, unreachable, empty, inbox=None):
             if c.get("read_under") or c.get("provenance") else ""))
     for u in unreachable:
         lines.append("UNREADABLE %s %s - %s" % (u["page"], u["url"],
-                                                u["why"]))
+                                                one_line(u["why"])))
     for e in empty:
-        lines.append("EMPTY %s %s - %s" % (e["page"], e["url"], e["why"]))
+        lines.append("EMPTY %s %s - %s" % (e["page"], e["url"],
+                                           one_line(e["why"])))
     if inbox is None:
         # A file in manual/ the pipeline cannot use is said here, in the
         # review issue - never as a failed test that would stop a refresh.
@@ -649,6 +715,58 @@ def accept(page_ids, client, register=REGISTER):
     write_json(changes_path, left)
 
 
+def _digest_of(lines):
+    return hashlib.sha256("\n".join(lines).encode("utf-8")).hexdigest()
+
+
+def scrub_register(register=REGISTER, dry_run=False):
+    """Scrub (scrub_text) the snapshots and changes.json written before
+    pages were scrubbed. A digest that was taken of the text is retaken of
+    the scrubbed text, so the next check does not see a change; a digest of
+    a document's bytes stays. Returns {"snapshots": n, "changes": n}."""
+    counts = {"snapshots": 0, "changes": 0}
+    folder = os.path.join(register, "snapshots")
+    names = sorted(os.listdir(folder)) if os.path.isdir(folder) else []
+    for name in names:
+        if not name.endswith(".txt"):
+            continue
+        text_path = os.path.join(folder, name)
+        hash_path = text_path[:-len(".txt")] + ".sha256"
+        with open(text_path, encoding="utf-8") as fh:
+            lines = fh.read().splitlines()
+        clean = [scrub_text(line) for line in lines]
+        if clean == lines:
+            continue
+        counts["snapshots"] += 1
+        if dry_run:
+            continue
+        with open(hash_path, encoding="utf-8") as fh:
+            of_text = fh.read().strip() == _digest_of(lines)
+        if of_text:
+            with open(hash_path, "w", encoding="utf-8", newline="\n") as fh:
+                fh.write(_digest_of(clean) + "\n")
+        with open(text_path, "w", encoding="utf-8", newline="\n") as fh:
+            fh.write("\n".join(clean) + "\n")
+    changes_path = os.path.join(register, "changes.json")
+    entries = read_json(changes_path, []) or []
+    for entry in entries:
+        text = entry.get("text") or []
+        clean = dict(entry, text=[scrub_text(t) for t in text],
+                     diff=[scrub_text(d) for d in entry.get("diff") or []])
+        if "text" not in entry:
+            clean.pop("text")
+        if clean == entry:
+            continue
+        counts["changes"] += 1
+        if entry.get("digest") == _digest_of(text):
+            clean["digest"] = _digest_of(clean["text"])
+        entry.clear()
+        entry.update(clean)
+    if counts["changes"] and not dry_run:
+        write_json(changes_path, entries)
+    return counts
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     sub = ap.add_subparsers(dest="cmd")
@@ -659,6 +777,12 @@ def main(argv=None):
     c.add_argument("--report", help="write a summary for the issue here")
     a = sub.add_parser("accept")
     a.add_argument("pages", nargs="+")
+    s = sub.add_parser("scrub", help="replace e-mail addresses and phone "
+                       "numbers in snapshots and changes.json written "
+                       "before pages were scrubbed")
+    s.add_argument("--register", default=REGISTER)
+    s.add_argument("--dry-run", action="store_true",
+                   help="count what would change; write nothing")
     args = ap.parse_args(argv)
     today = datetime.date.today().isoformat()
 
@@ -684,16 +808,24 @@ def main(argv=None):
                  len(set(w for i in data["items"] for w in i["ways"])),
                  len(problems), "" if written else " (unchanged)"))
         for p in problems:
-            print("  held back %s: %s" % (p["id"], p["why"]))
+            print(one_line("  held back %s: %s" % (p["id"], p["why"])))
             # An approved order riders do not get: a warning on the run,
             # and a line in the review issue (order-register.yml).
-            print("::warning title=Order held back::%s: %s"
-                  % (p["id"], p["why"]))
+            print("::warning title=Order held back::%s"
+                  % workflow_escape("%s: %s" % (p["id"], p["why"])))
         if args.report:
             with open(args.report, "w", encoding="utf-8",
                       newline="\n") as fh:
                 for p in problems:
-                    fh.write("HELD %s - %s\n" % (p["id"], p["why"]))
+                    fh.write(one_line("HELD %s - %s" % (p["id"], p["why"]))
+                             + "\n")
+        return 0
+
+    if args.cmd == "scrub":
+        counts = scrub_register(args.register, dry_run=args.dry_run)
+        print("%d snapshot(s) and %d change(s) %s" % (
+            counts["snapshots"], counts["changes"],
+            "would be scrubbed" if args.dry_run else "scrubbed"))
         return 0
 
     if args.cmd in ("check", "accept"):
@@ -709,7 +841,7 @@ def main(argv=None):
             try:
                 accept(args.pages, client)
             except EmptyPage as e:
-                print("::error::not accepted: %s" % e)
+                print("::error::not accepted: %s" % workflow_escape(str(e)))
                 return 1
             return 0
         changed, unreachable, empty = check(client, today=today)

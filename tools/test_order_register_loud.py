@@ -203,7 +203,7 @@ class EmptyText(Register):
     def assert_reported(self, empty, unreachable, changed):
         self.assertEqual([e["page"] for e in empty], ["co/orders"])
         self.assertEqual(empty[0]["url"], self.URL)
-        self.assertIn("no readable text", empty[0]["why"])
+        self.assertIn("readable text (", empty[0]["why"])
         self.assertEqual((changed, unreachable), ([], []))
         self.assertEqual(self.queued(), [])
 
@@ -278,8 +278,9 @@ class HeldBack(unittest.TestCase):
         lost = dict(good, id="es/iden/28", parish="Iden",
                     paths=[["num", None, "28"]])
         draft = dict(lost, id="es/iden/29", status="needs-review")
-        with open(os.path.join(self.register, "orders.json"), "w") as fh:
-            json.dump([good, lost, draft], fh)
+        lost2 = dict(lost, id="es/iden/30", paths=[["num", None, "30"]])
+        self.orders = [good, lost, draft, lost2]
+        self.write_orders()
         self.byways = Byways([way("ES-%d" % i, "East Sussex",
                                   ("Arlington 9" if i == 0
                                    else "Firle %d" % (100 + i)),
@@ -290,6 +291,10 @@ class HeldBack(unittest.TestCase):
         self.real = (byway_match.load_byways, reg.REGISTER)
         byway_match.load_byways = lambda *a, **k: self.byways
         reg.REGISTER = self.register
+
+    def write_orders(self):
+        with open(os.path.join(self.register, "orders.json"), "w") as fh:
+            json.dump(self.orders, fh)
 
     def tearDown(self):
         import byway_match
@@ -316,7 +321,29 @@ class HeldBack(unittest.TestCase):
         with open(report, encoding="utf-8") as fh:
             self.assertEqual(fh.read().splitlines(),
                              ["HELD es/iden/28 - no byway of ours matches "
+                              "its path or grid refs",
+                              "HELD es/iden/30 - no byway of ours matches "
                               "its path or grid refs"])
+
+    def test_every_held_order_is_a_warning_in_order(self):
+        _rc, printed = self.build()
+        warnings = [line for line in printed.splitlines()
+                    if line.startswith("::warning")]
+        self.assertEqual(warnings, [
+            "::warning title=Order held back::es/iden/%d: no byway of ours "
+            "matches its path or grid refs" % n for n in (28, 30)])
+
+    def test_an_odd_id_is_escaped_and_kept_to_one_line(self):
+        self.orders[1] = dict(self.orders[1], id="es/50%\nx")
+        self.write_orders()
+        report = os.path.join(self.tmp, "held.txt")
+        _rc, printed = self.build("--report", report)
+        self.assertIn("::warning title=Order held back::es/50%25%0Ax: no",
+                      printed)
+        with open(report, encoding="utf-8") as fh:
+            self.assertEqual(fh.read().splitlines()[0],
+                             "HELD es/50% x - no byway of ours matches its "
+                             "path or grid refs")
 
     def test_nothing_held_writes_an_empty_report(self):
         with open(os.path.join(self.register, "orders.json"), "w") as fh:
@@ -406,6 +433,22 @@ class Wiring(unittest.TestCase):
         self.assertLess(build, append)
         self.assertLess(append, text.index("if [ -s /tmp/register-report.txt"))
 
+    def test_a_failed_held_list_cannot_skip_the_review_issue(self):
+        text = self.workflow()
+        step = text[text.index("- name: List approved orders held back"):]
+        step = step[:step.index("- name:", 10)]
+        self.assertIn("continue-on-error: true", step)
+
+    def test_the_permissions_comment_is_current(self):
+        text = self.workflow()
+        self.assertNotIn("snapshots of pages read for the first time", text)
+        self.assertIn("contents: write   # changes.json and the override "
+                      "read log", text)
+
+    def test_the_issue_says_what_to_do_about_held_lines(self):
+        self.assertIn("A HELD order stays listed until it matches", " ".join(
+            self.workflow().split()))
+
     def test_the_issue_explains_each_kind_of_line(self):
         text = self.workflow()
         for word in ("NEW:", "(EMPTY)", "(HELD)"):
@@ -424,7 +467,248 @@ class Wiring(unittest.TestCase):
         self.assertIn("Returns (changed, unreachable, empty)",
                       flat(reg.check.__doc__))
         self.assertIn("never quietly baselined", flat(reg.check.__doc__))
+        self.assertIn("order_register.py scrub [--dry-run]", reg.__doc__)
 
+
+
+class ShortDocuments(unittest.TestCase):
+    """Round 2, B1: the floor is for fetched web pages only. A document
+    saved into manual/ is what it is, however short."""
+
+    SHORT = "Byway N12 Brighstone: no motor vehicles 1 Oct to 30 Apr"
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.manual = os.path.join(self.tmp, "manual")
+        os.makedirs(os.path.join(self.manual, "IW"))
+        with open(os.path.join(self.manual, "authorities.json"), "w") as fh:
+            json.dump({"IW": {"authority": "Isle of Wight"}}, fh)
+        with open(os.path.join(self.tmp, "pages.json"), "w") as fh:
+            json.dump([], fh)
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp)
+
+    def save(self, name, text):
+        with open(os.path.join(self.manual, "IW", name), "w",
+                  newline="\n") as fh:
+            fh.write(text)
+
+    def check(self):
+        return reg.check(Client({}), register=self.tmp, today="2026-10-14",
+                         manual_root=self.manual)
+
+    def test_a_short_txt_and_csv_are_queued_new_and_acceptable(self):
+        self.save("orders-2026-10-08.txt", self.SHORT)
+        self.save("orders-2026-10-09.csv", "path,restriction\nN12,closed\n")
+        changed, unreachable, empty = self.check()
+        self.assertEqual((unreachable, empty), ([], []))
+        self.assertEqual([(c["page"], c["new"]) for c in changed],
+                         [("manual/IW/orders-2026-10-08.txt", True),
+                          ("manual/IW/orders-2026-10-09.csv", True)])
+        self.assertIn(self.SHORT, changed[0]["text"])
+        reg.accept([c["page"] for c in changed], Client({}),
+                   register=self.tmp)
+        self.assertEqual(self.check(), ([], [], []))
+
+    def test_an_empty_saved_document_says_so(self):
+        self.save("orders-2026-10-08.html", "<html><body></body></html>")
+        _c, _u, empty = self.check()
+        self.assertEqual(len(empty), 1)
+        self.assertIn("saved document has no readable text",
+                      empty[0]["why"])
+        self.assertNotIn("layout", empty[0]["why"])
+
+
+class ShortPages(Register):
+    """Round 2, B1: a fetched page that was always short may change."""
+
+    def seed(self, lines):
+        reg._snapshot(self.tmp, {"id": "co/orders"},
+                      reg.hashlib.sha256("\n".join(lines).encode())
+                      .hexdigest(), lines)
+
+    def test_an_aspnet_page_reading_empty_is_still_empty(self):
+        _c, _u, empty = self.check(
+            b'<html><body><form id="aspnetForm"><script>x()</script>'
+            b'</form></body></html>')
+        self.assertIn("no readable text (0 characters)", empty[0]["why"])
+        self.assertIn("layout may have changed", empty[0]["why"])
+
+    def test_too_little_text_is_said_as_such(self):
+        _c, _u, empty = self.check(b"<p>Byway 5: closed</p>")
+        self.assertIn("too little readable text (15 characters)",
+                      empty[0]["why"])
+
+    def test_a_page_that_was_always_short_is_changed_not_empty(self):
+        self.seed(["Byway 5: closed all year"])
+        changed, _u, empty = self.check(b"<p>Byway 5: open</p>")
+        self.assertEqual(empty, [])
+        self.assertEqual([(c["page"], c["new"]) for c in changed],
+                         [("co/orders", False)])
+        self.assertIn("+Byway 5: open", changed[0]["diff"])
+
+    def test_a_long_page_that_turns_short_is_empty(self):
+        self.seed(["Byway 5: closed all year " * 10])
+        _c, _u, empty = self.check(b"<p>Byway 5: open</p>")
+        self.assertEqual(len(empty), 1)
+
+    def test_a_page_whose_snapshot_was_empty_stays_under_the_floor(self):
+        self.seed([])
+        _c, _u, empty = self.check(b"<p>Byway 5: open</p>")
+        self.assertEqual(len(empty), 1)
+
+
+class PendingStays(Register):
+    """Round 2, L3: a page that cannot be read keeps its pending entry."""
+
+    def test_unreadable_and_empty_keep_the_pending_entry(self):
+        from polite_http import FetchFailed
+        (entry,) = self.check(LIST)[0]
+
+        class Failing(Client):
+            def get(inner, url):
+                raise FetchFailed("HTTP 500\nbody")
+
+        for client in (Failing({}), Client({self.URL: b"<main></main>"})):
+            changed, _u, _e = reg.check(
+                client, register=self.tmp, today="2026-10-15",
+                manual_root=os.path.join(self.tmp, "manual"))
+            self.assertEqual(changed, [entry])
+            self.assertEqual(self.queued(), [entry])
+
+
+class PersonalData(Register):
+    """Round 2, P1: no e-mail address or phone number is written."""
+
+    def test_addresses_and_numbers_are_replaced(self):
+        text = reg.scrub_text(
+            "Write to jo.bloggs@council.example or ring 01234 567890, "
+            "+44 (0)1234 567 890, 07700 900123 or 0300-123-4567.")
+        self.assertEqual(text, (
+            "Write to [email removed] or ring [phone removed], "
+            "[phone removed], [phone removed] or [phone removed]."))
+
+    def test_references_that_look_like_numbers_stay(self):
+        for keep in ("Order 2004 made 01/10/2026", "TQ 566 091",
+                     "grid 511436 149706", "Surrey 0692 4666",
+                     "Byway 15/2", "0123456789012345"):
+            self.assertEqual(reg.scrub_text(keep), keep)
+
+    def page(self, who):
+        return ("<main>%s<p>Questions to %s, telephone 01629 533190.</p>"
+                "</main>" % (LIST.decode()[6:-7], who)).encode()
+
+    def test_nothing_personal_reaches_changes_and_the_digest_is_steady(self):
+        self.check(self.page("ann.example@council.example"))
+        with open(os.path.join(self.tmp, "changes.json")) as fh:
+            raw = fh.read()
+        self.assertNotIn("ann.example", raw)
+        self.assertNotIn("533190", raw)
+        self.assertIn("[email removed]", raw)
+        self.assertIn("[phone removed]", raw)
+        reg.accept(["co/orders"], Client({}), register=self.tmp)
+        with open(reg.snapshot_paths(self.tmp, "co/orders")[1]) as fh:
+            self.assertNotIn("ann.example", fh.read())
+        changed, _u, _e = self.check(self.page("bob.example@council.example"))
+        self.assertEqual(changed, [], "the scrubbed text churned")
+
+    def test_the_old_snapshot_is_scrubbed_before_it_is_diffed(self):
+        lines = ["Questions to old.name@council.example"]
+        reg._snapshot(self.tmp, {"id": "co/orders"}, "0" * 64, lines)
+        changed, _u, _e = self.check(LIST)
+        self.assertNotIn("old.name", json.dumps(changed))
+
+    def make_old_register(self):
+        lines = ["Byway 9 closed", "Ask c.d@council.example on 01629 533190"]
+        joined = "\n".join(lines).encode()
+        reg._snapshot(self.tmp, {"id": "co/orders"},
+                      reg.hashlib.sha256(joined).hexdigest(), lines)
+        # A snapshot whose digest is of bytes (a PDF) keeps its digest.
+        reg._snapshot(self.tmp, {"id": "co/pdf"}, "f" * 64,
+                      ["Ask c.d@council.example"])
+        reg._snapshot(self.tmp, {"id": "co/clean"}, "e" * 64,
+                      ["Byway 9 closed"])
+        with open(os.path.join(self.tmp, "changes.json"), "w") as fh:
+            json.dump([{"page": "co/orders", "digest": reg.hashlib.sha256(
+                joined).hexdigest(), "text": lines,
+                "diff": ["+Ask c.d@council.example on 01629 533190"]}], fh)
+
+    def test_scrub_rewrites_the_old_snapshots_and_changes(self):
+        self.make_old_register()
+        counts = reg.scrub_register(self.tmp)
+        self.assertEqual(counts, {"snapshots": 2, "changes": 1})
+        h, t = reg.snapshot_paths(self.tmp, "co/orders")
+        with open(t) as fh:
+            lines = fh.read().splitlines()
+        self.assertEqual(lines, ["Byway 9 closed",
+                                 "Ask [email removed] on [phone removed]"])
+        with open(h) as fh:
+            self.assertEqual(fh.read().strip(), reg.hashlib.sha256(
+                "\n".join(lines).encode()).hexdigest())
+        with open(reg.snapshot_paths(self.tmp, "co/pdf")[0]) as fh:
+            self.assertEqual(fh.read().strip(), "f" * 64)
+        with open(reg.snapshot_paths(self.tmp, "co/pdf")[1]) as fh:
+            self.assertEqual(fh.read(), "Ask [email removed]\n")
+        (entry,) = self.queued()
+        self.assertNotIn("c.d@", json.dumps(entry))
+        self.assertEqual(entry["digest"], reg.hashlib.sha256(
+            "\n".join(lines).encode()).hexdigest())
+        self.assertEqual(reg.scrub_register(self.tmp),
+                         {"snapshots": 0, "changes": 0})
+
+    def test_scrub_dry_run_counts_and_writes_nothing(self):
+        self.make_old_register()
+        before = self.snapshot()
+        with open(os.path.join(self.tmp, "changes.json"), "rb") as fh:
+            changes = fh.read()
+        with contextlib.redirect_stdout(io.StringIO()) as printed:
+            self.assertEqual(reg.main(["scrub", "--dry-run", "--register",
+                                       self.tmp]), 0)
+        self.assertEqual(self.snapshot(), before)
+        with open(os.path.join(self.tmp, "changes.json"), "rb") as fh:
+            self.assertEqual(fh.read(), changes)
+        self.assertIn("2 snapshot(s) and 1 change(s) would be scrubbed",
+                      printed.getvalue())
+        self.assertNotIn("c.d@", printed.getvalue())
+
+    def test_scrub_for_real_says_what_it_did(self):
+        self.make_old_register()
+        with contextlib.redirect_stdout(io.StringIO()) as printed:
+            self.assertEqual(reg.main(["scrub", "--register", self.tmp]), 0)
+        self.assertIn("2 snapshot(s) and 1 change(s) scrubbed",
+                      printed.getvalue())
+        with open(reg.snapshot_paths(self.tmp, "co/orders")[1]) as fh:
+            self.assertNotIn("c.d@", fh.read())
+
+
+class WorkflowCommands(unittest.TestCase):
+    """Round 2, L1: data in a workflow command or report line is escaped."""
+
+    def test_escape(self):
+        self.assertEqual(reg.workflow_escape("50% off\r\nnext"),
+                         "50%25 off%0D%0Anext")
+        self.assertEqual(reg.one_line("a\r\nb\n\nc"), "a b c")
+
+    def test_report_lines_are_one_line_each(self):
+        lines = reg.report_lines(
+            [], [{"page": "b", "url": "https://b", "why": "HTTP 500\nx"}],
+            [{"page": "c", "url": "https://c", "why": "no\r\ntext"}],
+            inbox=[])
+        self.assertEqual(lines, ["UNREADABLE b https://b - HTTP 500 x",
+                                 "EMPTY c https://c - no text"])
+
+    def test_accept_error_is_escaped(self):
+        real = reg.accept
+
+        def refuse(pages, client):
+            raise reg.EmptyPage("100% gone\nnow")
+        reg.accept = refuse
+        self.addCleanup(setattr, reg, "accept", real)
+        with contextlib.redirect_stdout(io.StringIO()) as printed:
+            reg.main(["accept", "x"])
+        self.assertIn("::error::not accepted: 100%25 gone%0Anow",
+                      printed.getvalue())
 
 if __name__ == "__main__":
     unittest.main(verbosity=1)

@@ -234,9 +234,10 @@ class Check(unittest.TestCase):
         self.assertEqual(changed, [])
 
     def test_an_unreadable_page_is_reported_not_treated_as_empty(self):
-        self.run_check(self.page(["a"]))
+        (pending,), _u, _e = self.run_check(self.page(["a"]))
         changed, unreachable, _b = self.run_check(FetchFailed("HTTP 500"))
-        self.assertEqual(changed, [])
+        # Its pending first read stands; nothing new is flagged.
+        self.assertEqual(changed, [pending])
         self.assertEqual([u["page"] for u in unreachable], ["es/seasonal"])
 
     def test_a_blocked_page_is_never_fetched(self):

@@ -28,7 +28,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write   # snapshots of pages read for the first time, changes.json
+  contents: write   # changes.json and the override read log
   issues: write     # to ask for a review, and when a run fails
 
 concurrency:
@@ -111,6 +111,8 @@ jobs:
       # riders; council-orders.yml publishes the rest without a word, so the
       # review issue lists each one (HELD). No network, nothing committed.
       - name: List approved orders held back from riders
+        # A failure here must not keep the review issue from being written.
+        continue-on-error: true
         run: |
           python tools/order_register.py build --out /tmp/order-register.json --report /tmp/register-held.txt
           cat /tmp/register-held.txt >> /tmp/register-report.txt
@@ -131,7 +133,7 @@ jobs:
 
           $(sed 's/^/- /' /tmp/register-report.txt)
 
-          The diffs are in tro/register/changes.json. Nothing was published from them: update tro/register/orders.json by hand (approve, change or retire entries), then run \`python tools/order_register.py accept <page>\` for each page reviewed. A page that could not be read keeps its last snapshot; a 403 or a robots.txt refusal is never worked around."
+          The diffs are in tro/register/changes.json. Nothing was published from them: update tro/register/orders.json by hand (approve, change or retire entries), then run \`python tools/order_register.py accept <page>\` for each page reviewed. A page that could not be read keeps its last snapshot; a 403 or a robots.txt refusal is never worked around. A HELD order stays listed until it matches: correct its path or grid references in tro/register/orders.json, or pin it to the right byways with \"ways\"."
             if [ -n "$OPEN" ]; then
               gh issue edit "$OPEN" --body "$BODY" || true
             else
