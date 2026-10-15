@@ -140,6 +140,7 @@ jobs:
           python tools/test_tro.py
           python tools/test_tro_merge.py
           python tools/test_tro_events_move_the_pack.py
+          python tools/test_tro_events_never_stall.py
           python tools/test_build_tro.py
           python tools/test_dtro_fetch.py
           # THE COUNCILS' OWN ORDERS (council-orders.yml commits them to
@@ -354,6 +355,75 @@ jobs:
             gh issue create --label traffic-orders-stale \
               --title "Traffic orders: the stale-extract check could not run" \
               --body "$RUN_URL could not measure how old the D-TRO extract is, so a stalled extract would go unreported. See the step 'Say so when the extract has stopped moving' in that run." || true
+          fi
+
+      # AND SAY SO WHEN THE EVENTS FEED IS STUCK, WITHIN A DAY.
+      #
+      # From 8 to 13 October 2026, 17 runs in a row were green and applied
+      # nothing: one order's GET /dtros/{id} answered HTTP 400 every time, and
+      # the catch-up stopped at the same window on every run. The age alarm
+      # above needs 7 days. tools/tro_events.py now steps past a refused order
+      # or window and records it, and counts runs that fail at the same
+      # place; `--report` says stuck=true after STALL_RUNS of them, for any
+      # skipped window, or for anything given up on. ONE issue under its own
+      # label, updated while stuck and closed when the feed moves again. Not
+      # gated on publishing: a stuck feed is the run that publishes nothing.
+      # Every command here tolerates failure, so this can never stop a pack.
+      # tools/test_tro_events_never_stall.py runs this step.
+      - name: Say so when the events feed is stuck
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          REPORT=$(python tools/tro_events.py --report dist/tro/_events/delta.json || true)
+          echo "$REPORT"
+          field() { printf '%s\n' "$REPORT" | sed -n "s/^$1=//p"; }
+          STUCK=$(field stuck)
+          THROUGH=$(field through)
+          # A listing that fails cannot tell an open issue from none: raise
+          # nothing and close nothing on it, rather than open a duplicate.
+          # The next run lists again.
+          if OPEN=$(gh issue list --label traffic-orders-feed --state open \
+                      --json number --jq '.[].number' 2>/dev/null); then
+            LISTED=yes
+          else
+            LISTED=no
+            echo "::warning::Could not list the open traffic-orders-feed issues; no issue raised or closed this run."
+          fi
+          if [ "$STUCK" = "true" ]; then
+            echo "::warning::The D-TRO events feed is stuck at ${THROUGH:-unknown}: $(field stalled_runs) run(s) stopped there ($(field error)); $(field skipped_windows) window(s) skipped; $(field gave_up_orders) order(s) given up on."
+            TITLE="Traffic orders: the events feed is stuck at ${THROUGH:-unknown}"
+            BODY="The D-TRO /events catch-up is not moving the traffic orders ($RUN_URL). Every run can still be green: the pack publishes as far as the feed got, dated by that.
+
+          - Applied through: ${THROUGH:-unknown}
+          - Runs in a row that stopped there: $(field stalled_runs) ($(field error))
+          - Windows given up on: $(field gave_up_windows) ($(field windows_given_up)) - a day of changes each, not applied
+          - Windows still being retried: $(field retrying_windows) ($(field windows_retrying))
+          - Orders given up on: $(field gave_up_orders) ($(field gave_up)) - each keeps its last known state
+          - Orders still being retried: $(field retrying_orders) ($(field retrying))
+
+          This issue and the report show the first 20 of each list. The report is printed at the top of the 'Say so when the events feed is stuck' step of that run. A refusal is HTTP 400 or 422 from the request for that order or window, a 200 for an order that is not an order, or a 200 from /events that is not a page of events (no 'events' list in it); ask d-tro@dft.gov.uk about any that keep being refused.
+
+          This issue is updated by every run while the feed is stuck, and closed by the first run that finds it moving."
+            FIRST=$(printf '%s\n' "$OPEN" | head -n 1)
+            if [ "$LISTED" != "yes" ]; then
+              :
+            elif [ -n "$FIRST" ]; then
+              gh issue edit "$FIRST" --title "$TITLE" --body "$BODY" || true
+            else
+              gh label create traffic-orders-feed --color FBCA04 \
+                --description "The D-TRO events feed has stopped moving" 2>/dev/null || true
+              gh issue create --label traffic-orders-feed \
+                --title "$TITLE" --body "$BODY" || true
+            fi
+          elif [ "$STUCK" = "false" ]; then
+            for n in $OPEN; do
+              gh issue close "$n" --comment "The events feed is moving: applied through ${THROUGH:-unknown}. $RUN_URL" || true
+            done
+          else
+            # No delta to read (the feed was not read this run, or the
+            # report failed): neither raise nor stand down on a guess.
+            echo "::warning::Could not read how far the D-TRO events feed got; a stuck feed would go unreported this run."
           fi
 
       - name: Forget the credentials

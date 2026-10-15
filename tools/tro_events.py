@@ -42,9 +42,11 @@ import datetime
 import json
 import os
 import re
+import sys
 import time
 import urllib.error
 
+import dtro_events
 from tro import INTERESTING, SPEED_LIMIT
 
 # One request window. The feed pages by ORDER (dtro_events.py), and a day is
@@ -72,6 +74,37 @@ CLOCK_MARGIN = datetime.timedelta(minutes=10)
 BUDGET_SECONDS = 35 * 60
 
 STATE_NAME = "delta.json"
+
+# ONE BAD ORDER MUST NOT STALL THE FEED. From 8 to 13 October 2026, 17 runs in
+# a row were green and applied nothing: one order's `GET /dtros/{id}` answered
+# HTTP 400 every time, and a failed fetch ended the whole catch-up at its
+# window's start. A REFUSAL - the service saying no to THIS data request
+# (dtro_events.Refused: 400 or 422 from the order's or the window's own
+# request, never the token's), or a 200 that is not an order or a page
+# (dtro_events.Malformed) - is now recorded and stepped past once the service
+# has answered something else (catch_up, _confirm): the order keeps what it
+# had, the window applies, and the order is fetched again on later runs.
+# Anything else (a token error, a 5xx, a timeout, a 429 past its back-off) is
+# the service being unwell, and still stops the window so it is read again
+# whole next run.
+
+# How often a skipped order or window is tried in all, counting the first
+# time, before it is given up on and reported. Four runs a day: two days.
+MAX_TRIES = 8
+
+# Refusals one window may skip. More than this is not a bad order, it is the
+# service refusing everything, and skipping it all would date the pack past
+# events it never applied.
+MAX_REFUSED_PER_WINDOW = 10
+
+# Refused /events windows the delta may hold at once. A window skipped is a
+# day of changes not applied while the pack is dated past it, so few are
+# allowed and every one is reported at once (report()).
+MAX_SKIPPED_WINDOWS = 2
+
+# Runs in a row that applied no window because the catch-up failed, before
+# report() says the feed is stuck. Three is under a day.
+STALL_RUNS = 3
 
 _STAMP = "%Y-%m-%dT%H:%M:%SZ"
 _CUT_NAME = re.compile(r"(\d{4})(\d{2})(\d{2})[_T-]?(\d{2})(\d{2})(\d{2})")
@@ -118,7 +151,8 @@ def cut_moment(path):
 # ---------------------------------------------------------------------------
 
 def fresh_state(extract, since):
-    return {"extract": extract, "through": since, "orders": {}, "fetched": {}}
+    return {"extract": extract, "through": since, "orders": {}, "fetched": {},
+            "skipped": {}, "skipped_windows": []}
 
 
 def load_state(path, extract):
@@ -142,6 +176,10 @@ def load_state(path, extract):
         return None
     if not isinstance(state.get("fetched"), dict):
         state["fetched"] = {}
+    if not isinstance(state.get("skipped"), dict):
+        state["skipped"] = {}
+    if not isinstance(state.get("skipped_windows"), list):
+        state["skipped_windows"] = []
     return state
 
 
@@ -228,21 +266,35 @@ def catch_up(state, until, fetch, hydrate, build, carried=frozenset(),
     `failed` says why it stopped. Orders already re-fetched inside the failed
     window keep their newer state; the window is read again next run.
     """
-    orders = state["orders"]
-    fetched = state.setdefault("fetched", {})
+    state.setdefault("fetched", {})
+    state.setdefault("skipped", {})
+    state.setdefault("skipped_windows", [])
     if now is None:
         def now():
             return datetime.datetime.now(datetime.timezone.utc)
     stats = {"windows": 0, "events": 0, "orders": 0, "hydrated": 0,
              "passed_over": 0, "deleted": 0, "gone": 0, "newest": None,
-             "already_current": 0,
+             "already_current": 0, "skipped": 0, "skipped_windows": 0,
+             "recovered": 0, "recovered_windows": 0, "noted": [],
              "stopped_early": False, "failed": None}
     started = clock()
+    # Whether the service answered a request of each kind this run. A
+    # refusal is one bad order or window only beside an answer (_confirm).
+    answered = {"fetch": False, "hydrate": False}
+    # Only what EARLIER runs skipped is retried below; what this run refuses
+    # has had its try.
+    earlier_windows = list(state["skipped_windows"])
+    earlier_orders = set(state["skipped"])
 
     def out_of_time():
         return (budget_seconds is not None
                 and clock() - started > budget_seconds)
 
+    def apply(events):
+        _apply_window(state, events, hydrate, build, carried, stats, now,
+                      answered, out_of_time)
+
+    ahead = None  # (since, events) of a window read ahead, see below
     while True:
         since = parse_stamp(state["through"])
         if since >= until:
@@ -252,8 +304,37 @@ def catch_up(state, until, fetch, hydrate, build, carried=frozenset(),
             break
         to = min(since + WINDOW, until)
         try:
-            _apply_window(orders, fetched, fetch(stamp(since), stamp(to)),
-                          hydrate, build, carried, stats, now, out_of_time)
+            if ahead is not None and ahead[0] == stamp(since):
+                events = ahead[1]
+            else:
+                events = fetch(stamp(since), stamp(to))
+                answered["fetch"] = True
+            ahead = None
+        except (OSError, ValueError, KeyError) as e:
+            # A REFUSED WINDOW IS SKIPPED ONLY WHEN THE NEXT ONE ANSWERS.
+            # That is the one way `through` passes a window not applied in
+            # full: recorded, retried, and reported at once. /events refusing
+            # everything - or a refusal that is not from /events at all -
+            # stops here as any failure does.
+            nxt = None
+            if (refused(e) and to < until and len(state["skipped_windows"])
+                    < MAX_SKIPPED_WINDOWS):
+                nxt = _read(fetch, to, min(to + WINDOW, until))
+            if nxt is None:
+                stats["failed"] = "%s .. %s: %s" % (stamp(since), stamp(to),
+                                                    _why(e))
+                break
+            answered["fetch"] = True
+            state["skipped_windows"].append(
+                _note({"since": stamp(since), "to": stamp(to)}, e, now))
+            stats["skipped_windows"] += 1
+            state["through"] = stamp(to)
+            ahead = (stamp(to), nxt)
+            if on_window is not None:
+                on_window(state)
+            continue
+        try:
+            apply(events)
         except _OutOfTime:
             # Mid-window: `through` stays where it was, but every order
             # fetched so far is kept and dated in `fetched`, so the next run
@@ -266,14 +347,144 @@ def catch_up(state, until, fetch, hydrate, build, carried=frozenset(),
                 on_window(state)
             break
         except (OSError, ValueError, KeyError) as e:
-            stats["failed"] = "%s .. %s: %s: %s" % (
-                stamp(since), stamp(to), type(e).__name__, e)
+            stats["failed"] = "%s .. %s: %s" % (stamp(since), stamp(to),
+                                                _why(e))
             break
         state["through"] = stamp(to)
         stats["windows"] += 1
         if on_window is not None:
             on_window(state)
+    # WHAT EARLIER RUNS SKIPPED is tried again once this run has caught up,
+    # MAX_TRIES times in all, and never on a run that failed: an outage must
+    # not spend the tries of what it did not cause. Runs that stop at the
+    # same place are counted in state["stall"] (_count_stall), which
+    # report() turns into an alarm.
+    if stats["failed"] is None and not stats["stopped_early"]:
+        _retry_skipped(state, fetch, hydrate, build, stats, now, out_of_time,
+                       apply, on_window, answered, earlier_windows,
+                       earlier_orders - set(stats["noted"]))
+    _count_stall(state, stats, now)
     return stats
+
+
+def _read(fetch, since, to):
+    """A window's events, or None when it cannot be read."""
+    try:
+        return fetch(stamp(since), stamp(to))
+    except (OSError, ValueError, KeyError):
+        return None
+
+
+def refused(error):
+    """Whether a failure is the service refusing ONE data request - which is
+    skipped and recorded - rather than the service, or our credentials, being
+    unwell, which stops the catch-up. Only dtro_events says so, and only for
+    the request for that order or window (dtro_events.REFUSED_CODES); a 400
+    from the token endpoint is a plain HTTPError and is never skipped."""
+    return isinstance(error, (dtro_events.Refused, dtro_events.Malformed))
+
+
+def _why(error):
+    """One line naming a failure. Never a response body: str(HTTPError) is
+    its code and reason only."""
+    return " ".join(("%s: %s" % (type(error).__name__, error)).split())
+
+
+def _note(entry, error, now):
+    """Count one more refused try against a skipped order or window."""
+    moment = stamp(now())
+    entry["tries"] = int(entry.get("tries") or 0) + 1
+    entry["error"] = _why(error)
+    entry.setdefault("first", moment)
+    entry["last"] = moment
+    return entry
+
+
+def _given_up(entry):
+    return int(entry.get("tries") or 0) >= MAX_TRIES
+
+
+def _retry_skipped(state, fetch, hydrate, build, stats, now, out_of_time,
+                   apply, on_window, answered, earlier_windows,
+                   earlier_orders):
+    """Try once more what earlier runs skipped, within the budget.
+
+    Anything that is not a refusal ends the pass without counting a try: the
+    service is unwell, and the next run will try again.
+    """
+    windows = state["skipped_windows"]
+    for entry in earlier_windows:
+        if entry not in windows:
+            continue
+        if not isinstance(entry, dict) or "since" not in entry \
+                or "to" not in entry:
+            windows.remove(entry)
+            continue
+        if _given_up(entry):
+            continue
+        if out_of_time():
+            stats["stopped_early"] = True
+            return
+        try:
+            events = fetch(entry["since"], entry["to"])
+        except (OSError, ValueError, KeyError) as e:
+            if not (refused(e) and answered["fetch"]):
+                return
+            _note(entry, e, now)
+            continue
+        answered["fetch"] = True
+        try:
+            apply(events)
+        except _OutOfTime:
+            stats["stopped_early"] = True
+            return
+        except _TooManyRefused as e:
+            _note(entry, e, now)  # a window that never applies runs out too
+            continue
+        except (OSError, ValueError, KeyError):
+            return
+        windows.remove(entry)
+        stats["recovered_windows"] += 1
+        if on_window is not None:
+            on_window(state)
+    skipped = state["skipped"]
+    refusals = []
+    for order in sorted(o for o in earlier_orders if o in skipped):
+        entry = skipped[order]
+        if isinstance(entry, dict) and _given_up(entry):
+            continue
+        if out_of_time():
+            stats["stopped_early"] = True
+            break
+        try:
+            error = _fetch_order(state, order, hydrate, build, stats, now,
+                                 answered)
+        except (OSError, ValueError, KeyError):
+            return
+        if error is None:
+            stats["recovered"] += 1
+        else:
+            refusals.append((order, error))
+    if refusals:
+        try:
+            _confirm(state, refusals, hydrate, build, stats, now, answered)
+        except (OSError, ValueError, KeyError):
+            return
+        _skip(state, refusals, stats, now)
+
+
+def _count_stall(state, stats, now):
+    """Count runs that ended at the same place because something failed."""
+    if not stats["failed"]:
+        state.pop("stall", None)
+        return
+    stall = state.get("stall")
+    if isinstance(stall, dict) and stall.get("at") == state["through"]:
+        stall["runs"] = int(stall.get("runs") or 0) + 1
+    else:
+        stall = {"at": state["through"], "runs": 1, "first": stamp(now())}
+    stall["error"] = stats["failed"]
+    state["stall"] = stall
 
 
 def _moment(text):
@@ -287,12 +498,89 @@ class _OutOfTime(Exception):
     pass
 
 
-def _apply_window(orders, fetched, events, hydrate, build, carried, stats,
-                  now, out_of_time=lambda: False):
-    """Lay one window's events into `orders`."""
+class _TooManyRefused(OSError):
+    pass
+
+
+class _ServiceRefuses(OSError):
+    pass
+
+
+def _fetch_order(state, order, hydrate, build, stats, now, answered):
+    """Fetch one order and lay it into the delta.
+
+    Returns None when it was applied, or the refusal when the service
+    refused it - the order is then left exactly as it was, never emptied and
+    never dated as fetched, and nothing is recorded yet (_skip). Any other
+    failure is raised.
+    """
+    asked = now() - CLOCK_MARGIN
+    try:
+        record = hydrate(order)
+    except (OSError, ValueError) as e:
+        if not refused(e):
+            raise
+        return e
+    answered["hydrate"] = True
+    state["fetched"][order] = stamp(asked)
+    state["skipped"].pop(order, None)
+    stats["hydrated"] += 1
+    if record is None:
+        state["orders"][order] = []
+        stats["gone"] += 1
+    else:
+        state["orders"][order] = build(record, order)
+    return None
+
+
+def _confirm(state, refusals, hydrate, build, stats, now, answered):
+    """Raise _ServiceRefuses unless the service answers some other order.
+
+    Nothing answered this run yet: ask for the order it answered most
+    recently, which is a real fetch and applied like one. No such order, or
+    that one refused too, means the service and not these orders.
+    """
+    if answered["hydrate"]:
+        return
+    refused_now = set(order for order, _ in refusals)
+    known = sorted((when, order) for order, when in state["fetched"].items()
+                   if isinstance(when, str) and order not in refused_now
+                   and order not in state["skipped"])
+    last = refusals[-1]
+    if not known:
+        raise _ServiceRefuses("%s refused (%s), and no other order to check "
+                              "the service with" % (last[0], _why(last[1])))
+    order = known[-1][1]
+    error = _fetch_order(state, order, hydrate, build, stats, now, answered)
+    if error is not None:
+        raise _ServiceRefuses("%s refused, and %s too (%s)"
+                              % (last[0], order, _why(error)))
+
+
+def _skip(state, refusals, stats, now):
+    """Record confirmed refusals in state["skipped"]."""
+    for order, error in refusals:
+        entry = state["skipped"].get(order)
+        state["skipped"][order] = _note(
+            entry if isinstance(entry, dict) else {}, error, now)
+        stats["skipped"] += 1
+        stats["noted"].append(order)
+
+
+def _apply_window(state, events, hydrate, build, carried, stats, now,
+                  answered, out_of_time=lambda: False):
+    """Lay one window's events into the delta.
+
+    More than MAX_REFUSED_PER_WINDOW refusals in one window, or refusals the
+    service will not answer anything else beside (_confirm), are the service
+    and not an order: the window fails and nothing is counted against them.
+    """
+    orders = state["orders"]
+    fetched = state["fetched"]
     latest = latest_by_order(events)
     stats["events"] += len(events)
     stats["orders"] += len(latest)
+    refusals = []
     for order in sorted(latest):
         event = latest[order]
         when = event.get("eventTime")
@@ -309,6 +597,7 @@ def _apply_window(orders, fetched, events, hydrate, build, carried, stats,
             orders[order] = []
             if happened is not None:
                 fetched[order] = stamp(happened)
+            state["skipped"].pop(order, None)
             stats["deleted"] += 1
             continue
         if (order not in orders and order not in carried
@@ -317,15 +606,87 @@ def _apply_window(orders, fetched, events, hydrate, build, carried, stats,
             continue
         if out_of_time():
             raise _OutOfTime()
-        asked = now() - CLOCK_MARGIN
-        record = hydrate(order)
-        fetched[order] = stamp(asked)
-        stats["hydrated"] += 1
-        if record is None:
-            orders[order] = []
-            stats["gone"] += 1
-        else:
-            orders[order] = build(record, order)
+        error = _fetch_order(state, order, hydrate, build, stats, now,
+                             answered)
+        if error is not None:
+            refusals.append((order, error))
+            if len(refusals) > MAX_REFUSED_PER_WINDOW:
+                raise _TooManyRefused(
+                    "%d orders refused in one window, the last %s"
+                    % (len(refusals), _why(error)))
+    if refusals:
+        _confirm(state, refusals, hydrate, build, stats, now, answered)
+        _skip(state, refusals, stats, now)
+
+
+def report(state):
+    """The delta's health, as key=value lines for traffic-orders.yml.
+
+    stuck=true when the feed has failed at the same place for STALL_RUNS runs,
+    when any /events window was skipped (a day of changes not applied), or
+    when any order was given up on after MAX_TRIES. One line per key, always.
+    """
+    stall = state.get("stall")
+    stall = stall if isinstance(stall, dict) else {}
+    runs = int(stall.get("runs") or 0)
+    skipped = state.get("skipped")
+    skipped = dict((order, entry) for order, entry in
+                   (skipped.items() if isinstance(skipped, dict) else [])
+                   if isinstance(entry, dict))
+    windows = state.get("skipped_windows")
+    windows = [w for w in (windows if isinstance(windows, list) else [])
+               if isinstance(w, dict)]
+    lost = sorted(o for o, entry in skipped.items() if _given_up(entry))
+    trying = sorted(o for o, entry in skipped.items() if not _given_up(entry))
+    lost_windows = [w for w in windows if _given_up(w)]
+    trying_windows = [w for w in windows if not _given_up(w)]
+    stuck = runs >= STALL_RUNS or bool(windows) or bool(lost)
+
+    def one_line(value):
+        return " ".join(str(value).split())
+
+    def spans(ws):
+        return one_line(",".join("%s..%s" % (w.get("since"), w.get("to"))
+                                 for w in ws))
+
+    return [
+        "stuck=%s" % ("true" if stuck else "false"),
+        "through=%s" % one_line(state.get("through") or ""),
+        "stalled_runs=%d" % runs,
+        "error=%s" % one_line(stall.get("error") or ""),
+        "skipped_orders=%d" % len(skipped),
+        "gave_up_orders=%d" % len(lost),
+        "gave_up=%s" % one_line(",".join(lost[:20])),
+        "retrying_orders=%d" % len(trying),
+        "retrying=%s" % one_line(",".join(trying[:20])),
+        "skipped_windows=%d" % len(windows),
+        "gave_up_windows=%d" % len(lost_windows),
+        "windows_given_up=%s" % spans(lost_windows),
+        "retrying_windows=%d" % len(trying_windows),
+        "windows_retrying=%s" % spans(trying_windows),
+    ]
+
+
+def main(argv):
+    """`--report DELTA`: print report() for the workflow's alarm step.
+
+    Always exits 0. A delta that cannot be read prints stuck=unknown, which
+    the step neither raises nor stands down on.
+    """
+    if len(argv) != 2 or argv[0] != "--report":
+        print("usage: tro_events.py --report DELTA_JSON", file=sys.stderr)
+        return 0
+    try:
+        with open(argv[1], encoding="utf-8") as handle:
+            state = json.load(handle)
+    except (OSError, ValueError):
+        state = None
+    if not isinstance(state, dict):
+        print("stuck=unknown")
+        return 0
+    for line in report(state):
+        print(line)
+    return 0
 
 
 # ---------------------------------------------------------------------------
@@ -413,3 +774,7 @@ class ReplayFeed(object):
 
     def hydrate(self, order):
         return self.records.get(order)
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))
