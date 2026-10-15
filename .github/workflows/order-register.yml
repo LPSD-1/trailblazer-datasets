@@ -27,31 +27,73 @@ on:
     - cron: '41 5 3 1,4,7,10 *'   # 05:41 UTC on the 3rd of each quarter
   workflow_dispatch:
 
+# Read-only unless a job says otherwise.
 permissions:
-  contents: write   # snapshots of pages read for the first time, changes.json
-  issues: write     # to ask for a review, and when a run fails
+  contents: read
 
 concurrency:
   group: order-register
   cancel-in-progress: false
 
 jobs:
-  check:
+  # The tests need PyYAML from PyPI, installed only as the exact wheel
+  # whose hash is in tools/requirements-order-register.txt. They run in a
+  # job whose token can only read and is not left in .git/config, apart
+  # from the check job below, which takes nothing from this one but its
+  # result: the tests never run beside the token that pushes and opens
+  # issues.
+  tests:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 10
+    permissions:
+      contents: read
 
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09  # v5
+        with:
+          persist-credentials: false
 
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1  # v6
         with:
           python-version: '3.12'
 
+      - name: Install what the tests read
+        run: |
+          pip install --quiet --require-hashes --only-binary :all: -r tools/requirements-order-register.txt
+
       - name: Run the tests before trusting the check
         run: |
           python tools/test_polite_http.py
           python tools/test_order_register.py
+          python tools/test_order_register_loud.py
           python tools/test_manual_inbox.py
+
+  check:
+    needs: tests
+    # Runs even when the tests failed, so that "Raise an issue if this
+    # failed" below reports it; the first step then stops the job before
+    # anything is read or written.
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write   # changes.json and the override read log
+      issues: write     # to ask for a review, and when a run fails
+
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09  # v5
+
+      - name: Stop unless the tests passed
+        env:
+          TESTS: ${{ needs.tests.result }}
+        run: |
+          if [ "$TESTS" = "success" ]; then exit 0; fi
+          echo "::error::the tests did not pass ($TESTS); the councils' pages were not read"
+          exit 1
+
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1  # v6
+        with:
+          python-version: '3.12'
 
       - name: Re-read the councils' pages
         run: python tools/order_register.py check --report /tmp/register-report.txt
@@ -106,6 +148,24 @@ jobs:
           echo "::error::could not push after three attempts"
           exit 1
 
+      # An approved order that matches none of our byways is held back from
+      # riders; council-orders.yml publishes the rest without a word, so the
+      # review issue lists each one (HELD). No network, nothing committed.
+      - name: List approved orders held back from riders
+        id: held
+        # A failure here must not keep the review issue from being written:
+        # the next step says so in it, and the run fails after it.
+        continue-on-error: true
+        run: |
+          python tools/order_register.py build --out /tmp/order-register.json --report /tmp/register-held.txt
+          cat /tmp/register-held.txt >> /tmp/register-report.txt
+
+      - name: Say the held-back list could not be built
+        if: steps.held.outcome == 'failure'
+        env:
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: echo "HELD-LIST-FAILED the list of approved orders held back from riders could not be built - see $RUN_URL" >> /tmp/register-report.txt
+
       # A REVIEW REQUEST, NOT AN ALARM: a council editing its page is the
       # ordinary case this job exists to catch. One issue at a time, kept
       # current, closed by the first run with nothing left to review.
@@ -118,11 +178,11 @@ jobs:
           OPEN=$(gh issue list --label order-register --state open \
                    --json number --jq '.[0].number' 2>/dev/null || true)
           if [ -s /tmp/register-report.txt ]; then
-            BODY="The councils' pages behind the byway order register were re-read on $RUN_URL. These changed since the register was last reviewed, or could not be read:
+            BODY="The councils' pages behind the byway order register were re-read on $RUN_URL. These changed since the register was last reviewed (NEW: read for the first time, never transcribed), could not be read, came out with no readable text (EMPTY), or are approved orders held back from riders (HELD):
 
           $(sed 's/^/- /' /tmp/register-report.txt)
 
-          The diffs are in tro/register/changes.json. Nothing was published from them: update tro/register/orders.json by hand (approve, change or retire entries), then run \`python tools/order_register.py accept <page>\` for each page reviewed. A page that could not be read keeps its last snapshot; a 403 or a robots.txt refusal is never worked around."
+          The diffs are in tro/register/changes.json. Nothing was published from them: update tro/register/orders.json by hand (approve, change or retire entries), then run \`python tools/order_register.py accept <page>\` for each page reviewed. A page that could not be read keeps its last snapshot; a 403 or a robots.txt refusal is never worked around. A HELD order stays listed until it matches: correct its path or grid references in tro/register/orders.json, or pin it to the right byways with \"ways\". HELD-LIST-FAILED means that list could not be built this run; the run log says why."
             if [ -n "$OPEN" ]; then
               gh issue edit "$OPEN" --body "$BODY" || true
             else
@@ -135,6 +195,12 @@ jobs:
           elif [ -n "$OPEN" ]; then
             gh issue close "$OPEN" --comment "Nothing left to review: $RUN_URL" || true
           fi
+
+      - name: Fail the run if the held-back list could not be built
+        if: steps.held.outcome == 'failure'
+        run: |
+          echo "::error::the list of approved orders held back from riders could not be built"
+          exit 1
 
       - name: Raise an issue if this failed
         if: failure()
@@ -151,7 +217,7 @@ jobs:
               --description "The quarterly order register check failed" 2>/dev/null || true
             gh issue create --label order-register-failed \
               --title "Order register check failed" \
-              --body "$RUN_URL failed. The register and what it publishes are unchanged, but changes on the councils' pages are not being caught until this is fixed."
+              --body "$RUN_URL failed. The register and what it publishes are unchanged. If the councils' pages could not be checked, changes on them are not being caught until this is fixed; if only the list of held-back orders failed, the review issue says so (HELD-LIST-FAILED)."
           fi
 
       - name: Stand the alarm down if this worked
