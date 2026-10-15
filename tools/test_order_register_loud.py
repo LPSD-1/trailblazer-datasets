@@ -454,27 +454,158 @@ class Wiring(unittest.TestCase):
         steps = self.parsed()["jobs"][job]["steps"]
         return dict((s.get("name"), (i, s)) for i, s in enumerate(steps))
 
-    def test_a_failed_held_list_is_said_and_fails_the_run(self):
-        steps = self.steps()
-        held_at, held = steps["List approved orders held back from riders"]
-        self.assertEqual((held["id"], held["continue-on-error"]),
-                         ("held", True))
-        failed = "steps.held.outcome == 'failure'"
-        note_at, note = steps["Say the held-back list could not be built"]
-        review_at, review = steps["Ask for a review of what changed"]
-        fail_at, fail = steps["Fail the run if the held-back list could "
-                              "not be built"]
-        raise_at, alarm = steps["Raise an issue if this failed"]
-        down_at, down = steps["Stand the alarm down if this worked"]
-        self.assertEqual((note["if"], fail["if"]), (failed, failed))
+    # GitHub's step `if:` semantics, for the forms this workflow uses: an
+    # expression with no status function gets an implicit `success() &&`;
+    # success() is "nothing before failed and the run is not cancelled",
+    # failure() "a step before failed (continue-on-error aside)", cancelled()
+    # "the run was cancelled", always() true. Strings compare ignoring case.
+    STATUS = re.compile(r"\b(success|failure|cancelled|always)\(\)")
+
+    def evaluate(self, cond, state):
+        cond = cond.strip()
+        if cond.startswith("${{") and cond.endswith("}}"):
+            cond = cond[3:-2].strip()
+        if not self.STATUS.search(cond):
+            cond = "success() && (%s)" % cond
+        tokens = re.findall(r"&&|\|\||==|!=|!|\(|\)|'[^']*'|[\w.\-]+\(\)"
+                            r"|[\w.\-]+", cond)
+        self.assertEqual("".join(tokens), re.sub(r"\s+", "", cond),
+                         "expression not understood: %r" % cond)
+        pos = [0]
+
+        def peek():
+            return tokens[pos[0]] if pos[0] < len(tokens) else None
+
+        def take():
+            pos[0] += 1
+            return tokens[pos[0] - 1]
+
+        def value():
+            t = take()
+            if t == "!":
+                return not value()
+            if t == "(":
+                v = either()
+                self.assertEqual(take(), ")")
+                return v
+            if t.startswith("'"):
+                return t[1:-1].lower()
+            if t.endswith("()"):
+                return {"success()": not state["failed"]
+                        and not state["cancelled"],
+                        "failure()": state["failed"],
+                        "cancelled()": state["cancelled"],
+                        "always()": True}[t]
+            m = re.match(r"steps\.([\w-]+)\.outcome$", t)
+            self.assertTrue(m, "unknown operand %r" % t)
+            return state["outcomes"].get(m.group(1), "").lower()
+
+        def compare():
+            v = value()
+            while peek() in ("==", "!="):
+                op, w = take(), value()
+                v = (v == w) if op == "==" else (v != w)
+            return v
+
+        def both():
+            v = compare()
+            while peek() == "&&":
+                take()
+                w = compare()
+                v = v and w
+            return v
+
+        def either():
+            v = both()
+            while peek() == "||":
+                take()
+                w = both()
+                v = v or w
+            return v
+
+        result = either()
+        self.assertIsNone(peek(), "trailing tokens in %r" % cond)
+        return bool(result)
+
+    def simulate(self, fails=None, cancelled_at=None):
+        """Run the check job's steps on paper: step `fails` fails, or the
+        run is cancelled while step `cancelled_at` runs. Returns the names
+        of the steps that ran, and whether the job failed."""
+        state = {"failed": False, "cancelled": False, "outcomes": {}}
+        ran = []
+        for i, step in enumerate(self.parsed()["jobs"]["check"]["steps"]):
+            name = step.get("name", "#%d" % i)
+            if not self.evaluate(str(step.get("if", "success()")), state):
+                outcome = "skipped"
+            else:
+                ran.append(name)
+                outcome = "success"
+                if name == cancelled_at:
+                    state["cancelled"], outcome = True, "cancelled"
+                elif name == fails:
+                    outcome = "failure"
+                    if not step.get("continue-on-error"):
+                        state["failed"] = True
+            if step.get("id"):
+                state["outcomes"][step["id"]] = outcome
+        return ran, state["failed"]
+
+    HELD = "List approved orders held back from riders"
+    NOTE = "Say the held-back list could not be built"
+    REVIEW = "Ask for a review of what changed"
+    RAISE = "Raise an issue if this failed"
+    DOWN = "Stand the alarm down if this worked"
+
+    def test_the_held_step_fails_the_job_itself(self):
+        held = self.steps()[self.HELD][1]
+        self.assertEqual(held["id"], "held")
+        self.assertNotIn("continue-on-error", held)
+
+    def test_a_failed_held_list_is_said_reviewed_and_alarmed(self):
+        ran, failed = self.simulate(fails=self.HELD)
+        self.assertTrue(failed)
+        self.assertEqual([n for n in ran if n in (
+            self.HELD, self.NOTE, self.REVIEW, self.RAISE, self.DOWN)],
+            [self.HELD, self.NOTE, self.REVIEW, self.RAISE])
+
+    def test_a_clean_run_reviews_and_stands_down(self):
+        ran, failed = self.simulate()
+        self.assertFalse(failed)
+        self.assertEqual([n for n in ran if n in (
+            self.HELD, self.NOTE, self.REVIEW, self.RAISE, self.DOWN)],
+            [self.HELD, self.REVIEW, self.DOWN])
+
+    def test_an_earlier_failure_raises_and_writes_no_review(self):
+        # A failed page read or push must not write (or close) the review
+        # issue from a half-built report; it raises the failed issue only.
+        for step in ("Stop unless the tests passed",
+                     "Re-read the councils' pages",
+                     "Commit snapshots and the change list"):
+            ran, failed = self.simulate(fails=step)
+            self.assertTrue(failed, step)
+            for name in (self.HELD, self.NOTE, self.REVIEW, self.DOWN):
+                self.assertNotIn(name, ran, step)
+            self.assertIn(self.RAISE, ran, step)
+
+    def test_a_cancel_writes_no_note_and_no_review(self):
+        for step in (self.HELD, "Re-read the councils' pages"):
+            ran, _ = self.simulate(cancelled_at=step)
+            for name in (self.NOTE, self.REVIEW, self.DOWN):
+                self.assertNotIn(name, ran, step)
+
+    def test_nothing_else_waits_on_the_held_step(self):
+        # The failure re-raised by a later `exit 1` is gone: the held step
+        # fails the job itself, and a step gated on its outcome without
+        # !cancelled() would now never run.
+        named = [s.get("name") for s in self.parsed()["jobs"]["check"]["steps"]
+                 if "steps.held." in str(s.get("if", ""))]
+        self.assertEqual(named, [self.NOTE, self.REVIEW])
+
+    def test_the_note_says_where_to_look(self):
+        note = self.steps()[self.NOTE][1]
         self.assertIn("$RUN_URL", note["run"])
         self.assertIn("RUN_URL", note["env"])
         self.assertIn(">> /tmp/register-report.txt", note["run"])
-        self.assertIn("exit 1", fail["run"])
-        self.assertEqual((review["if"], alarm["if"], down["if"]),
-                         ("success()", "failure()", "success()"))
-        self.assertTrue(held_at < note_at < review_at < fail_at < raise_at
-                        < down_at)
 
     def test_the_tests_dependency_is_installed_first(self):
         steps = self.steps("tests")
@@ -502,10 +633,6 @@ class Wiring(unittest.TestCase):
         self.assertIn('echo "HELD-LIST-FAILED the list of approved orders '
                       'held back from riders could not be built - see '
                       '$RUN_URL"', note["run"])
-        fail = steps["Fail the run if the held-back list could not be "
-                     "built"][1]
-        self.assertIn('echo "::error::the list of approved orders held back '
-                      'from riders could not be built"', fail["run"])
 
     def test_the_issue_says_what_to_do_about_held_lines(self):
         self.assertIn("A HELD order stays listed until it matches", " ".join(
