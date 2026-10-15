@@ -491,6 +491,44 @@ class OneRefusedWindow(unittest.TestCase):
         self.assertIn("timed out", stats["failed"])
 
 
+class AnAnswerCountsWhereverItCameFrom(unittest.TestCase):
+    """A refusal is counted against an earlier-skipped window only beside an
+    answer from /events this run - and every /events answer counts, the
+    read-ahead and the retries included."""
+
+    def setUp(self):
+        self.state = te.fresh_state(EXTRACT, START)
+        self.earlier = {"since": "2026-10-03T00:00:00Z",
+                        "to": "2026-10-04T00:00:00Z", "tries": 1,
+                        "error": "Refused", "first": START, "last": START}
+
+    def test_a_recovered_retry_is_an_answer_for_the_next_retry(self):
+        # No new window to read: the only answer is the first retry's.
+        first = {"since": "2026-10-01T00:00:00Z",
+                 "to": "2026-10-02T00:00:00Z", "tries": 1,
+                 "error": "Refused", "first": START, "last": START}
+        self.state["skipped_windows"] = [first, self.earlier]
+        feed = Feed(refuse_windows={self.earlier["since"]: no("POST /events")})
+        stats = run(self.state, feed, START)
+        self.assertEqual(stats["recovered_windows"], 1)
+        self.assertEqual(self.state["skipped_windows"], [self.earlier])
+        self.assertEqual(self.earlier["tries"], 2,
+                         "the recovered window answered, so this is a try")
+
+    def test_the_read_ahead_is_an_answer_for_the_retries(self):
+        # The new window is refused, the one after it answers via the
+        # read-ahead and nothing follows: that read-ahead is the only answer.
+        self.state["skipped_windows"] = [self.earlier]
+        feed = Feed(refuse_windows={START: no("POST /events"),
+                                    self.earlier["since"]: no("POST /events")})
+        stats = run(self.state, feed, "2026-10-10T00:00:00Z")
+        self.assertIsNone(stats["failed"])
+        self.assertEqual(self.state["through"], "2026-10-10T00:00:00Z")
+        self.assertEqual(stats["skipped_windows"], 1)
+        self.assertEqual(self.earlier["tries"], 2,
+                         "the read-ahead answered, so this is a try")
+
+
 class AStallIsCounted(unittest.TestCase):
     def stalled_runs(self, runs):
         state = te.fresh_state(EXTRACT, START)
