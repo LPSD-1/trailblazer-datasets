@@ -545,6 +545,8 @@ class Wiring(unittest.TestCase):
         # with a token that pushes to the repository.
         flow = self.parsed()
         top = flow.get("permissions")
+        # A job added later without its own permissions inherits these.
+        self.assertEqual(top, {"contents": "read"})
         installs = re.compile(r"\bpip3?\s+install\b"
                               r"|\buv\s+(pip\s+)?(install|add|sync)\b")
         for line in ("pip install --quiet pyyaml",
