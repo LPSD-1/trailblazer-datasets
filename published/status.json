@@ -1,6 +1,6 @@
 {
  "schema": 1,
- "generated": "2026-10-15T17:56:27Z",
+ "generated": "2026-10-15T18:37:24Z",
  "datasets": [
   {
    "id": "lanes",
@@ -17,8 +17,8 @@
    "name": "Traffic orders and closures",
    "what": "Legal orders and closures on the lanes, from the Department for Transport's D-TRO service and councils' own notices",
    "schedule": "Every 6 hours",
-   "last_run": "2026-10-15T13:31:58Z",
-   "result": "ok",
+   "last_run": "2026-10-15T18:23:20Z",
+   "result": "running",
    "last_ok": "2026-10-15T13:31:58Z",
    "data_as_of": "2026-10-13"
   },
@@ -87,9 +87,9 @@
    "name": "Satellite imagery",
    "what": "Satellite photos of the ground, from the 2016 Sentinel-2 cloudless mosaic",
    "schedule": "Twice a day",
-   "last_run": "2026-10-15T07:43:24Z",
+   "last_run": "2026-10-15T18:36:36Z",
    "result": "ok",
-   "last_ok": "2026-10-15T07:43:24Z",
+   "last_ok": "2026-10-15T18:36:36Z",
    "data_as_of": null
   },
   {
