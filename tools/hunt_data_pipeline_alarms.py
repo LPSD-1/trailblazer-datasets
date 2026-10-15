@@ -12,7 +12,8 @@ glob would not pick it up. It is green now, and that glob DOES run it: it is
 the premise of test_data_alarms_follow_up_fires_on_failure.py,
 test_data_alarms_follow_up_refuses_what_never_runs.py,
 test_data_alarms_premise_names_the_check.py,
-test_data_alarms_check4_scope.py and test_data_alarms_parser_sweep.py.
+test_data_alarms_check4_scope.py, test_data_alarms_check4_reraise.py
+and test_data_alarms_parser_sweep.py.
 Those need the whole hunt green
 on the unmodified workflows, so ANY check below going red stops lane data
 publishing at "Run every tool suite". Their PREMISE message names the red
@@ -51,7 +52,10 @@ the property is about the workflow and nothing else can be asked:
    User-Agent, say) stops every forecast for good: each phone shows "too old
    to use" after 12 hours, and the owner is never told. The trips step next
    to it shows the shape that works: an id, and a follow-up step that opens
-   an issue on `steps.trips.outcome == 'failure'`.
+   an issue on `steps.trips.outcome == 'failure'`. The other shape that
+   works (order-register.yml's `held`): a later step on exactly that
+   condition that ends in `exit 1`, failing the job, and after it the job's
+   `if: failure()` step that runs `gh issue` (reraised_by).
 
    Check 4 guards what riders download, so it spares a job only when it is
    on NON_PUBLISHING_JOBS below AND its text still hashes to the sha256 a
@@ -170,6 +174,7 @@ def _take(lines, i, end, rest, col, step):
         text = " ".join([v] + [b.strip() for b in body if b.strip()]).strip()
     if key == "run":
         step["run"] = text
+        step["folded"] = v.startswith(">")
     elif key == "if":
         step["if"] = " ".join(text.split())
     elif key in ("name", "id", "uses"):
@@ -445,6 +450,56 @@ def fires_on_failure(cond, step_id):
                      cond, re.I) is not None
 
 
+def _bare_if(cond):
+    """`cond` without a `${{ }}` wrapper, its whitespace collapsed."""
+    c = cond.strip()
+    m = re.match(r"^\$\{\{(.*)\}\}$", c, re.S)
+    return " ".join((m.group(1) if m else c).split())
+
+
+def exits_nonzero(run):
+    """Does the script end in a bare `exit N` (1 <= N <= 255) that always
+    runs? Refused: anything after it on its line or below it; a line before
+    it ending in a backslash, `|`, `||` or `&&` (it becomes an argument, or
+    runs only sometimes); and `exit`, `return`, `exec` or a here-document
+    anywhere before it, which can end the script first or swallow it."""
+    lines = [l.strip() for l in run.split("\n")
+             if l.strip() and not l.strip().startswith("#")]
+    m = re.match(r"^exit ([1-9][0-9]{0,2})$", lines[-1]) if lines else None
+    if not m or int(m.group(1)) > 255:
+        return False
+    return not any(re.search(r"\b(exit|return|exec)\b|<<|[\\|&]$", l)
+                   for l in lines[:-1])
+
+
+def reraised_by(steps, n):
+    """The name of the step that re-raises soft step steps[n]'s failure, or
+    None. That is a LATER step that runs on exactly
+    `steps.<id>.outcome == 'failure'` (or `!= 'success'`), is not itself
+    continue-on-error, and whose script ends in an unconditional non-zero
+    exit - so the job fails - followed in the job by a step on exactly
+    `if: failure()` that runs `gh issue`. Anything else in either `if:`
+    (`&& ...`, `||`, a negation, `cancelled()`) is refused: it can keep the
+    step from running when the soft step has failed.
+    tools/test_data_alarms_check4_reraise.py holds this to each of those."""
+    sid = steps[n]["id"]
+    if not sid:
+        return None
+    exact = r"^steps\.%s\.outcome\s*(==\s*'failure'|!=\s*'success')$" \
+        % re.escape(sid)
+    for m in range(n + 1, len(steps)):
+        r = steps[m]
+        # Stricter than fires_on_failure: the comparison and nothing else.
+        if r["soft"] or r["uses"] or r.get("folded") \
+                or not re.match(exact, _bare_if(r["if"]), re.I) \
+                or not exits_nonzero(r["run"]):
+            continue
+        if any(_bare_if(a["if"]) == "failure()"
+               and "gh issue" in a["run"] for a in steps[m + 1:]):
+            return r["name"]
+    return None
+
+
 def main():
     # GitHub runs both extensions; a copy saved as .yaml is still a workflow.
     files = sorted(f for f in os.listdir(WORKFLOWS)
@@ -537,6 +592,12 @@ def main():
                 told = s["id"] and any(
                     fires_on_failure(later["if"], s["id"])
                     and "gh issue" in later["run"] for later in steps[n + 1:])
+                again = None if told else reraised_by(steps, n)
+                if again:
+                    print("%-20s %-11s %-30s continue-on-error; re-raised by "
+                          "`%s`, then the job's failure issue"
+                          % (f, job, s["name"][:30], again))
+                    continue
                 print("%-20s %-11s %-30s continue-on-error; issue on "
                       "failure: %s" % (f, job, s["name"][:30],
                                        "yes" if told else "NONE"))
