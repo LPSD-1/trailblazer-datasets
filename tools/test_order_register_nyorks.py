@@ -60,6 +60,7 @@ _RULE = ("pinned 2026-10-15 on the owner's rule (14 Oct 2026): an order on "
 # The words every part-lane order ends with, as the #40 rows on main have
 # them, and what an order that covers its whole lane says instead.
 _SHOWN = "; the whole lane is shown"
+_BOTH = "; the whole of both lanes is shown"
 _WHOLE = "the order covers the whole lane"
 _PLAN = ("The places named are those on the order's plan, at its grid "
          "references. ")
@@ -122,7 +123,7 @@ TEXT = {
         path_as_written="U64/9/50 and U74/9/60",
         local_name="Pockley Moor; the order covers U64 from Birk Nab Farm "
         "to Hanging Stone, and U74 from a gate at Rollgate Bank north over "
-        "Pockley Moor to the Helmsley to Cockayne road" + _SHOWN,
+        "Pockley Moor to the Helmsley to Cockayne road" + _BOTH,
         vehicles="motor_vehicles", form="permanent", start="2009-03-16",
         order_name="North Yorkshire County Council (Prohibition of Motor "
         "Vehicles Except for Access) (Pockley Moor) Order 2009",
@@ -209,7 +210,7 @@ TEXT = {
         path_as_written="U586 and U587",
         local_name="High Langdale; the order covers U586 up to 195 m short "
         "of where it meets U587 at High Langdale End, and U587 from 125 m "
-        "past that junction to Low North Road at Murk Head Farm" + _SHOWN,
+        "past that junction to Low North Road at Murk Head Farm" + _BOTH,
         vehicles="motor_vehicles", form="permanent", start="2009-03-11",
         order_name="North Yorkshire County Council (Prohibition of Driving "
         "Except for Access) (High Langdale End/Darncombe-cum-Langdale End and "
@@ -294,8 +295,8 @@ TEXT = {
     STAINBURN: _text(
         parish="Stainburn", path_as_written="U3310/9/50",
         local_name="the order covers it across Stainburn Moor from the car "
-        "park to Briscoe Moor Farm, all but about 40 m at its north-west "
-        "end" + _SHOWN,
+        "park to Briscoe Moor Farm, except the last 40 m or so at its "
+        "north-west end" + _SHOWN,
         vehicles="all_users", form="temporary", start="2026-09-29",
         end="2028-03-28",
         order_name="North Yorkshire Council (Temporary Prohibition of All "
@@ -341,8 +342,9 @@ TEXT = {
         "order's grid references are its two ends."),
     DARNCOMBE: _text(
         parish="Darncombe-cum-Langdale End", path_as_written="U586/1/90",
-        local_name="the order covers it from High Langdale End Farm south "
-        "to Warsman Head, and closes it to horse riders too" + _SHOWN,
+        local_name="the council's order closes it to everyone except people "
+        "on foot, so horse riders and cyclists too, from High Langdale End "
+        "Farm south to Warsman Head; access to premises is excepted" + _SHOWN,
         vehicles="all_vehicles", form="temporary", start="2026-02-16",
         end="2027-08-15",
         order_name="The North Yorkshire Council (Temporary Prohibition of All "
@@ -368,8 +370,9 @@ TEXT = {
     U618: _text(
         parish="Darncombe-cum-Langdale End and Snainton",
         path_as_written="30.32/U618/40, 30.32/U618/20 and 30.21/U618/70",
-        local_name="the order covers it from its junction north of "
-        "Troutsdale Moor south to Keepers Cottage" + _SHOWN,
+        local_name="the three references are one lane; the order covers it "
+        "from where it meets another unsurfaced road north of Troutsdale "
+        "Moor, south to Keepers Cottage" + _SHOWN,
         vehicles="all_vehicles", form="temporary", start="2025-11-14",
         end="2027-05-13",
         order_name="North Yorkshire Council (Temporary Prohibition of "
@@ -444,8 +447,8 @@ TEXT = {
     U7069: _text(
         parish="Brompton",
         path_as_written="10.19/U7069/20, 10.19/U7069/40 and 10.19/U7069/60",
-        local_name="the order covers it from its south-west end, west of "
-        "Wellspring Farm, north-east along Troutsdale Brow to the junction "
+        local_name="the three references are one lane; the order covers it "
+        "from its south-west end, west of Wellspring Farm, north-east along Troutsdale Brow to the junction "
         "by Troutsdale Brow Plantation" + _SHOWN,
         vehicles="all_vehicles", form="temporary", start="2025-11-24",
         end="2027-05-23",
@@ -498,8 +501,8 @@ TEXT = {
     FARNDALE: _text(
         parish="Farndale East",
         path_as_written="U8006/9/60, U8006/9/50, U8006/9/40 and U8006/9/20",
-        local_name="the order covers it from the road by Lowna Farm north "
-        "past Hagg End Farm to Thunder Head Hill" + _SHOWN,
+        local_name="the order covers it from the junction at Lowna Farm "
+        "north past Hagg End Farm to Thunder Head Hill" + _SHOWN,
         vehicles="motor_vehicles", form="temporary", start="2026-10-19",
         end="2028-04-18",
         order_name="The North Yorkshire Council Temporary Prohibition of "
@@ -523,8 +526,8 @@ TEXT = {
     MULGRAVE: _text(
         parish="Newton Mulgrave", path_as_written="U7081/9/70",
         local_name="the order covers it from Newton Mulgrave south-west to "
-        "where a public footpath crosses it, about 400 m short of the main "
-        "road" + _SHOWN,
+        "where a public footpath crosses it; the last 500 m or so to the main "
+        "road is not covered" + _SHOWN,
         vehicles="motor_vehicles", form="temporary", start="2026-10-19",
         end="2028-04-18",
         order_name="North Yorkshire Council (Temporary Prohibition of All "
@@ -556,8 +559,8 @@ SHOWN = {
               "Bransdale, Nawton and Pockley U64/9/50 and U74/9/60 (Pockley "
               "Moor; the order covers U64 from Birk Nab Farm to Hanging "
               "Stone, and U74 from a gate at Rollgate Bank north over Pockley "
-              "Moor to the Helmsley to Cockayne road; the whole lane is "
-              "shown)"),
+              "Moor to the Helmsley to Cockayne road; the whole of both "
+              "lanes is shown)"),
     HAWNBY: ("No vehicles",
              "U5/9/40 (the order covers it from south of Nova Scotia Farm to "
              "Malkin Bower; the whole lane is shown)"),
@@ -570,7 +573,7 @@ SHOWN = {
                "(High Langdale; the order covers U586 up to 195 m short of "
                "where it meets U587 at High Langdale End, and U587 from 125 m "
                "past that junction to Low North Road at Murk Head Farm; the "
-               "whole lane is shown)"),
+               "whole of both lanes is shown)"),
     CARR: ("No motor vehicles",
            "Hackness U567/1/30 (Carr Lane; the order covers the whole lane)"),
     KIRBY: ("No motor vehicles",
@@ -579,18 +582,22 @@ SHOWN = {
             "south of the Cleveland Way; the whole lane is shown)"),
     STAINBURN: ("Road closed",
                 "Stainburn U3310/9/50 (the order covers it across Stainburn "
-                "Moor from the car park to Briscoe Moor Farm, all but about "
-                "40 m at its north-west end; the whole lane is shown)"),
+                "Moor from the car park to Briscoe Moor Farm, except the "
+                "last 40 m or so at its north-west end; the whole lane is "
+                "shown)"),
     HUTTON: ("Road closed",
              "Hutton Buscel U569/1/50 (the order covers the whole lane)"),
     DARNCOMBE: ("No vehicles",
-                "Darncombe-cum-Langdale End U586/1/90 (the order covers it "
-                "from High Langdale End Farm south to Warsman Head, and "
-                "closes it to horse riders too; the whole lane is shown)"),
+                "Darncombe-cum-Langdale End U586/1/90 (the council's order "
+                "closes it to everyone except people on foot, so horse riders "
+                "and cyclists too, from High Langdale End Farm south to "
+                "Warsman Head; access to premises is excepted; the whole lane "
+                "is shown)"),
     U618: ("No vehicles",
            "Darncombe-cum-Langdale End and Snainton 30.32/U618/40, "
-           "30.32/U618/20 and 30.21/U618/70 (the order covers it from its "
-           "junction north of Troutsdale Moor south to Keepers Cottage; the "
+           "30.32/U618/20 and 30.21/U618/70 (the three references are one "
+           "lane; the order covers it from where it meets another unsurfaced "
+           "road north of Troutsdale Moor, south to Keepers Cottage; the "
            "whole lane is shown)"),
     HARWOOD: ("Road closed",
               "Harwood Dale U2420/9/30 (the order covers the whole lane)"),
@@ -599,6 +606,7 @@ SHOWN = {
             "the whole lane)"),
     U7069: ("No vehicles",
             "Brompton 10.19/U7069/20, 10.19/U7069/40 and 10.19/U7069/60 (the "
+            "three references are one lane; the "
             "order covers it from its south-west end, west of Wellspring "
             "Farm, north-east along Troutsdale Brow to the junction by "
             "Troutsdale Brow Plantation; the whole lane is shown)"),
@@ -607,14 +615,14 @@ SHOWN = {
               "lane)"),
     FARNDALE: ("No motor vehicles",
                "Farndale East U8006/9/60, U8006/9/50, U8006/9/40 and "
-               "U8006/9/20 (the order covers it from the road by Lowna Farm "
-               "north past Hagg End Farm to Thunder Head Hill; the whole lane "
+               "U8006/9/20 (the order covers it from the junction at Lowna "
+               "Farm north past Hagg End Farm to Thunder Head Hill; the whole lane "
                "is shown)"),
     MULGRAVE: ("No motor vehicles",
                "Newton Mulgrave U7081/9/70 (the order covers it from Newton "
-               "Mulgrave south-west to where a public footpath crosses it, "
-               "about 400 m short of the main road; the whole lane is "
-               "shown)"),
+               "Mulgrave south-west to where a public footpath crosses it; "
+               "the last 500 m or so to the main road is not covered; the "
+               "whole lane is shown)"),
 }
 
 # A second layer under the value pins: what a name or a number looks like.
