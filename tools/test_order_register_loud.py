@@ -445,9 +445,12 @@ class Wiring(unittest.TestCase):
         self.assertLess(build, append)
         self.assertLess(append, text.index("if [ -s /tmp/register-report.txt"))
 
-    def steps(self):
+    def parsed(self):
         import yaml
-        steps = yaml.safe_load(self.workflow())["jobs"]["check"]["steps"]
+        return yaml.safe_load(self.workflow())
+
+    def steps(self, job="check"):
+        steps = self.parsed()["jobs"][job]["steps"]
         return dict((s.get("name"), (i, s)) for i, s in enumerate(steps))
 
     def test_a_failed_held_list_is_said_and_fails_the_run(self):
@@ -473,7 +476,7 @@ class Wiring(unittest.TestCase):
                         < down_at)
 
     def test_the_tests_dependency_is_installed_first(self):
-        steps = self.steps()
+        steps = self.steps("tests")
         at, step = steps["Install what the tests read"]
         self.assertEqual(step["run"].split(), ["pip", "install", "--quiet",
                                                "pyyaml"])
@@ -525,6 +528,76 @@ class Wiring(unittest.TestCase):
                       flat(reg.check.__doc__))
         self.assertIn("never quietly baselined", flat(reg.check.__doc__))
         self.assertIn("order_register.py scrub [--dry-run]", reg.__doc__)
+
+    @staticmethod
+    def can_write(perms):
+        """True when a job's token can write anything. No permissions key
+        means the repository default, which may be write: count it so."""
+        if perms is None or perms == "write-all":
+            return True
+        if isinstance(perms, dict):
+            return "write" in perms.values()
+        return False
+
+    def test_no_unpinned_install_in_a_job_that_can_write(self):
+        # PR #39 security review: an unpinned `pip install` in a job holding
+        # contents: write and issues: write lets whatever PyPI serves run
+        # with a token that pushes to the repository.
+        flow = self.parsed()
+        top = flow.get("permissions")
+        installs = re.compile(r"\bpip3?\s+install\b"
+                              r"|\buv\s+(pip\s+)?(install|add|sync)\b")
+        for line in ("pip install --quiet pyyaml",
+                     "python -m pip install pyyaml==6.0.3",
+                     "pip3 install -r requirements.txt",
+                     "uv pip install pyyaml"):
+            self.assertTrue(installs.search(line), line)
+        for name, job in flow["jobs"].items():
+            if not self.can_write(job.get("permissions", top)):
+                continue
+            for step in job.get("steps", []):
+                run = step.get("run", "")
+                for line in run.splitlines():
+                    if not installs.search(line):
+                        continue
+                    with self.subTest(job=name, line=line.strip()):
+                        self.assertIn("--require-hashes", line)
+                        self.assertIn("--only-binary", line)
+
+    def test_the_tests_run_with_a_token_that_cannot_write(self):
+        flow = self.parsed()
+        tests = flow["jobs"]["tests"]
+        self.assertEqual(tests["permissions"], {"contents": "read"})
+        checkout = [s for s in tests["steps"]
+                    if s.get("uses", "").startswith("actions/checkout@")]
+        self.assertEqual(len(checkout), 1)
+        self.assertIs(checkout[0]["with"]["persist-credentials"], False)
+        self.assertNotIn("upload-artifact", self.workflow())
+        runs = " ".join(s.get("run", "") for s in tests["steps"])
+        for script in ("test_polite_http.py", "test_order_register.py",
+                       "test_order_register_loud.py",
+                       "test_manual_inbox.py"):
+            self.assertIn("python tools/" + script, runs)
+        self.assertNotIn("git push", runs)
+        self.assertNotIn("GH_TOKEN", str(tests))
+
+    def test_the_write_job_waits_for_the_tests_and_says_when_they_fail(self):
+        flow = self.parsed()
+        check = flow["jobs"]["check"]
+        self.assertEqual(check["needs"], "tests")
+        # It still runs when the tests fail, so its failure() step raises
+        # the alarm issue; it then stops before reading or writing anything.
+        self.assertEqual(check["if"], "${{ !cancelled() }}")
+        names = [s.get("name") or s.get("uses") for s in check["steps"]]
+        gate = names.index("Stop unless the tests passed")
+        self.assertTrue(names[0].startswith("actions/checkout@"))
+        self.assertEqual(gate, 1)
+        step = check["steps"][gate]
+        self.assertEqual(step["env"]["TESTS"], "${{ needs.tests.result }}")
+        self.assertIn('[ "$TESTS" = "success" ]', step["run"])
+        self.assertIn("exit 1", step["run"])
+        self.assertNotIn("pip", " ".join(s.get("run", "")
+                                         for s in check["steps"]))
 
 
 

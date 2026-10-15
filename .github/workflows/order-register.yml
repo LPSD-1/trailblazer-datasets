@@ -27,21 +27,29 @@ on:
     - cron: '41 5 3 1,4,7,10 *'   # 05:41 UTC on the 3rd of each quarter
   workflow_dispatch:
 
+# Read-only unless a job says otherwise.
 permissions:
-  contents: write   # changes.json and the override read log
-  issues: write     # to ask for a review, and when a run fails
+  contents: read
 
 concurrency:
   group: order-register
   cancel-in-progress: false
 
 jobs:
-  check:
+  # The tests install PyPI packages (PyYAML, unpinned), so they run in a job
+  # whose token can only read and is not left in .git/config: nothing pip
+  # installs can push, edit issues or reach the check job below, which
+  # takes nothing from this one but its result.
+  tests:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 10
+    permissions:
+      contents: read
 
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09  # v5
+        with:
+          persist-credentials: false
 
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1  # v6
         with:
@@ -56,6 +64,33 @@ jobs:
           python tools/test_order_register.py
           python tools/test_order_register_loud.py
           python tools/test_manual_inbox.py
+
+  check:
+    needs: tests
+    # Runs even when the tests failed, so that "Raise an issue if this
+    # failed" below reports it; the first step then stops the job before
+    # anything is read or written.
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write   # changes.json and the override read log
+      issues: write     # to ask for a review, and when a run fails
+
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09  # v5
+
+      - name: Stop unless the tests passed
+        env:
+          TESTS: ${{ needs.tests.result }}
+        run: |
+          if [ "$TESTS" = "success" ]; then exit 0; fi
+          echo "::error::the tests did not pass ($TESTS); the councils' pages were not read"
+          exit 1
+
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1  # v6
+        with:
+          python-version: '3.12'
 
       - name: Re-read the councils' pages
         run: python tools/order_register.py check --report /tmp/register-report.txt
