@@ -167,6 +167,7 @@ def _take(lines, i, end, rest, col, step):
         _mark(step, i + 1, "a step line that is not `key: value`")
         return k
     key, raw = kv
+    step.setdefault("keys", set()).add(key)
     v = _scalar(raw)
     if re.match(r"^[|>][-+0-9]*$", v):
         text = "\n".join(body)
@@ -458,32 +459,61 @@ def _bare_if(cond):
 
 
 def exits_nonzero(run):
-    """Does the script end in a bare `exit N` (1 <= N <= 255) that always
-    runs? Refused: anything after it on its line or below it; a line before
-    it ending in a backslash, `|`, `||` or `&&` (it becomes an argument, or
-    runs only sometimes); and `exit`, `return`, `exec` or a here-document
-    anywhere before it, which can end the script first or swallow it."""
+    """Does the script end in a bare `exit N` (1 <= N <= 255) that nothing
+    before it can skip, swallow or redefine? An allowlist: every line before
+    it is blank, a comment, or a plain `echo`/`printf` (_plain_echo).
+    Anything else (`true || # x`, `. file`, `exit 0`) is refused, and so is
+    anything after the exit."""
     lines = [l.strip() for l in run.split("\n")
              if l.strip() and not l.strip().startswith("#")]
     m = re.match(r"^exit ([1-9][0-9]{0,2})$", lines[-1]) if lines else None
     if not m or int(m.group(1)) > 255:
         return False
-    return not any(re.search(r"\b(exit|return|exec)\b|<<|[\\|&]$", l)
-                   for l in lines[:-1])
+    return all(_plain_echo(l) for l in lines[:-1])
 
 
-def reraised_by(steps, n):
+def _plain_echo(line):
+    """Is `line` an `echo` or `printf` that can do nothing but print? It
+    holds none of `$(`, a backtick, `;`, `&`, `|`, `#`, `<<`, a line-ending
+    backslash, or a keyword that could end or reshape the script, even one
+    split by quotes (`ex""it`)."""
+    if not re.match(r"^(echo|printf)( |$)", line):
+        return False
+    if re.search(r"\$\(|`|;|&|\||#|<<|\\$", line):
+        return False
+    unquoted = line.replace('"', "").replace("'", "")
+    return not re.search(r"\b(exit|return|exec|eval|source|trap|alias|"
+                         r"function|kill)\b", unquoted)
+
+
+# Anywhere in the workflow, these change what the re-raise's `exit N` does:
+# a `shell:` (on a step, `defaults: run: shell:` on the job or workflow, or
+# behind a YAML alias from elsewhere in the file) runs it in another
+# interpreter; BASH_ENV runs a file before it; BASH_FUNC_* imports a
+# function that can shadow `exit` or `echo`.
+_RESHAPES = re.compile(r"\bshell\b['\"]?\s*:|BASH_ENV|BASH_FUNC")
+
+
+def reraised_by(steps, n, text=""):
     """The name of the step that re-raises soft step steps[n]'s failure, or
     None. That is a LATER step that runs on exactly
     `steps.<id>.outcome == 'failure'` (or `!= 'success'`), is not itself
-    continue-on-error, and whose script ends in an unconditional non-zero
-    exit - so the job fails - followed in the job by a step on exactly
-    `if: failure()` that runs `gh issue`. Anything else in either `if:`
-    (`&& ...`, `||`, a negation, `cancelled()`) is refused: it can keep the
-    step from running when the soft step has failed.
+    continue-on-error, has no `uses:` or `env:`, is not a folded script,
+    and whose script ends in an unconditional non-zero exit (exits_nonzero)
+    - so the job fails - followed in the job by a step, not itself
+    continue-on-error, on exactly `if: failure()` that runs `gh issue`.
+    Anything else in either `if:` (`&& ...`, `||`, a negation,
+    `cancelled()`) is refused: it can keep the step from running when the
+    soft step has failed. Refused as well: a workflow `text` that names a
+    shell, BASH_ENV or BASH_FUNC on any line that is not a comment
+    (_RESHAPES), and a step before the re-raise whose script writes
+    $GITHUB_ENV or $GITHUB_PATH, which can set either for later steps.
     tools/test_data_alarms_check4_reraise.py holds this to each of those."""
     sid = steps[n]["id"]
     if not sid:
+        return None
+    if any(_RESHAPES.search(l) for l in text.split("\n")
+           if not l.strip().startswith("#")):
         return None
     exact = r"^steps\.%s\.outcome\s*(==\s*'failure'|!=\s*'success')$" \
         % re.escape(sid)
@@ -491,10 +521,13 @@ def reraised_by(steps, n):
         r = steps[m]
         # Stricter than fires_on_failure: the comparison and nothing else.
         if r["soft"] or r["uses"] or r.get("folded") \
+                or "env" in r.get("keys", ()) \
                 or not re.match(exact, _bare_if(r["if"]), re.I) \
                 or not exits_nonzero(r["run"]):
             continue
-        if any(_bare_if(a["if"]) == "failure()"
+        if any(re.search(r"GITHUB_(ENV|PATH)", b["run"]) for b in steps[:m]):
+            return None
+        if any(_bare_if(a["if"]) == "failure()" and not a["soft"]
                and "gh issue" in a["run"] for a in steps[m + 1:]):
             return r["name"]
     return None
@@ -592,7 +625,7 @@ def main():
                 told = s["id"] and any(
                     fires_on_failure(later["if"], s["id"])
                     and "gh issue" in later["run"] for later in steps[n + 1:])
-                again = None if told else reraised_by(steps, n)
+                again = None if told else reraised_by(steps, n, texts[f])
                 if again:
                     print("%-20s %-11s %-30s continue-on-error; re-raised by "
                           "`%s`, then the job's failure issue"

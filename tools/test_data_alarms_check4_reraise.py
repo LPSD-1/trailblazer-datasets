@@ -18,8 +18,13 @@ THE RULE HELD HERE. A soft step is also told when a LATER step in its job
 (1) runs on exactly `steps.<id>.outcome == 'failure'` (or `!= 'success'`),
 nothing else in the `if:`; (2) is itself not continue-on-error, and its
 script ends in a bare, unconditional `exit N`, N from 1 to 255, that
-nothing before it can skip or turn into an argument; and (3) is followed
-in the job by a step on exactly `if: failure()` that runs `gh issue`.
+every line before it a plain `echo`/`printf` (or blank, or a comment)
+with no `$(`, backtick, `;`, `&`, `|`, `#`, `<<`, line-ending backslash
+or shell keyword, even one split by quotes; and has no `env:`; (3) is
+followed in the job by a step, not continue-on-error, on exactly
+`if: failure()` that runs `gh issue`; and (4) nothing can change what runs
+the exit: no `shell:` or BASH_ENV or BASH_FUNC anywhere in the workflow,
+and no step before the re-raise writing $GITHUB_ENV or $GITHUB_PATH.
 Every case below but the first breaks one of those and must stay flagged.
 
 WHAT IS RUN. The real hunt, as a subprocess, over a copy of the real
@@ -40,6 +45,9 @@ RERAISE_IF = RERAISE_NAME + "        if: steps.held.outcome == 'failure'\n"
 RERAISE_EXIT = "could not be built\"\n          exit 1\n"
 ISSUE_NAME = "      - name: Raise an issue if this failed\n"
 ISSUE_IF = ISSUE_NAME + "        if: failure()\n"
+JOB_HEAD = "  check:\n    needs: tests\n"
+TOP_ANCHOR = "concurrency:\n"
+HELD_CAT = "          cat /tmp/register-held.txt >> /tmp/register-report.txt\n"
 
 
 def text():
@@ -196,6 +204,52 @@ def cases():
             "        with:\n          script: |\n")),
         ("the re-raise carries uses: beside its run", sub(
             t, RERAISE_IF, RERAISE_IF + "        uses: ./x\n")),
+        ("the re-raise is continue-on-error: ${{ true }}", sub(
+            t, RERAISE_IF, RERAISE_IF
+            + "        continue-on-error: ${{ true }}\n")),
+        # What runs the exit: shell, BASH_ENV, imported functions.
+        ("the re-raise names its shell", sub(
+            t, RERAISE_IF, RERAISE_IF + "        shell: python {0}\n")),
+        ("the issue step names its shell", sub(
+            t, ISSUE_IF, ISSUE_IF + "        shell: python {0}\n")),
+        ("the job sets defaults: run: shell:", sub(
+            t, JOB_HEAD, JOB_HEAD + "    defaults:\n      run:\n"
+            "        shell: python {0}\n")),
+        ("the workflow sets defaults: run: shell:", sub(
+            t, TOP_ANCHOR, "defaults:\n  run:\n    shell: python {0}\n\n"
+            + TOP_ANCHOR)),
+        ("the re-raise has an env: at all", sub(
+            t, RERAISE_IF, RERAISE_IF + "        env:\n          X: y\n")),
+        ("the job env sets BASH_ENV", sub(
+            t, JOB_HEAD, JOB_HEAD + "    env:\n      BASH_ENV: /tmp/x\n")),
+        ("the workflow env sets BASH_ENV", sub(
+            t, TOP_ANCHOR, "env:\n  BASH_ENV: /tmp/x\n\n" + TOP_ANCHOR)),
+        ("the workflow env imports a function named exit", sub(
+            t, TOP_ANCHOR, "env:\n  'BASH_FUNC_exit%%': '() { :; }'\n\n"
+            + TOP_ANCHOR)),
+        ("a step before the re-raise writes $GITHUB_ENV", sub(
+            t, HELD_CAT, HELD_CAT + "          echo \"X=1\" >> "
+            "\"$GITHUB_ENV\"\n")),
+        ("a step before the re-raise writes $GITHUB_PATH", sub(
+            t, HELD_CAT, HELD_CAT + "          echo /tmp >> "
+            "\"$GITHUB_PATH\"\n")),
+        ("the issue step is continue-on-error", sub(
+            t, ISSUE_IF, ISSUE_IF + "        continue-on-error: true\n")),
+        # Only plain echo/printf lines before the exit.
+        ("true || # x before the exit", reraise_body(["true || # x"])),
+        ("ex\"\"it 0 before the exit", reraise_body(["ex\"\"it 0"])),
+        (". file before the exit", reraise_body([". /tmp/x"])),
+        ("an echo with $( )", reraise_body(["echo $(true)"])),
+        ("an echo with a backtick", reraise_body(["echo `true`"])),
+        ("an echo with ;", reraise_body(["echo x; true"])),
+        ("an echo with a # comment", reraise_body(["echo x # y"])),
+        ("an echo sent to the background", reraise_body(["echo x &"])),
+        ("an echo opening a here-document", reraise_body(["echo <<EOF"])),
+        ("an echo with a quote-split keyword",
+         reraise_body(["echo x ex\"\"it"])),
+        ("an echo naming eval", reraise_body(["echo eval x"])),
+        ("a command that only starts like echo",
+         reraise_body(["echoes x"])),
         # Order.
         ("the re-raise comes BEFORE the soft step",
          move_before(t, RERAISE_NAME, "      - name: " + HELD + "\n")),
@@ -237,6 +291,10 @@ def passing():
             "steps.held.outcome != 'success'\n")),
         ("the issue step's if wrapped in ${{ }}", sub(
             t, ISSUE_IF, ISSUE_NAME + "        if: ${{ failure() }}\n")),
+        ("printf, a blank line and a comment before the exit", sub(
+            t, RERAISE_EXIT, "could not be built\"\n          printf "
+            "'%s\\n' x\n\n          # shell: is only a comment here\n"
+            "          exit 1\n")),
         ("exit 255 after comments", sub(
             t, RERAISE_EXIT, "could not be built\"\n          # why\n"
             "          exit 255\n          # done\n")),
