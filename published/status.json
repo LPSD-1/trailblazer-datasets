@@ -1,6 +1,6 @@
 {
  "schema": 1,
- "generated": "2026-10-15T08:45:37Z",
+ "generated": "2026-10-15T10:21:45Z",
  "datasets": [
   {
    "id": "lanes",
@@ -2080,6 +2080,11 @@
      "what": "Unsurfaced roads",
      "from": "North Yorkshire Council",
      "as_of": "2026-10-15"
+    },
+    {
+     "what": "Traffic orders",
+     "from": "North Yorkshire Council - byway orders listed on its website",
+     "as_of": null
     },
     {
      "what": "Traffic orders",
