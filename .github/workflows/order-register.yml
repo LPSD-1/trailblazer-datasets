@@ -36,10 +36,12 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  # The tests install PyPI packages (PyYAML, unpinned), so they run in a job
-  # whose token can only read and is not left in .git/config: nothing pip
-  # installs can push, edit issues or reach the check job below, which
-  # takes nothing from this one but its result.
+  # The tests need PyYAML from PyPI, installed only as the exact wheel
+  # whose hash is in tools/requirements-order-register.txt. They run in a
+  # job whose token can only read and is not left in .git/config, apart
+  # from the check job below, which takes nothing from this one but its
+  # result: the tests never run beside the token that pushes and opens
+  # issues.
   tests:
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -56,7 +58,8 @@ jobs:
           python-version: '3.12'
 
       - name: Install what the tests read
-        run: pip install --quiet pyyaml
+        run: |
+          pip install --quiet --require-hashes --only-binary :all: -r tools/requirements-order-register.txt
 
       - name: Run the tests before trusting the check
         run: |

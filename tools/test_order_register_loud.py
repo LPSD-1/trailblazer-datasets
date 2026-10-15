@@ -20,6 +20,7 @@ import json
 import os
 import re
 import shutil
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -478,8 +479,9 @@ class Wiring(unittest.TestCase):
     def test_the_tests_dependency_is_installed_first(self):
         steps = self.steps("tests")
         at, step = steps["Install what the tests read"]
-        self.assertEqual(step["run"].split(), ["pip", "install", "--quiet",
-                                               "pyyaml"])
+        self.assertEqual(step["run"].split(), [
+            "pip", "install", "--quiet", "--require-hashes", "--only-binary",
+            ":all:", "-r", "tools/requirements-order-register.txt"])
         self.assertLess(at, steps["Run the tests before trusting the "
                                   "check"][0])
 
@@ -529,42 +531,88 @@ class Wiring(unittest.TestCase):
         self.assertIn("never quietly baselined", flat(reg.check.__doc__))
         self.assertIn("order_register.py scrub [--dry-run]", reg.__doc__)
 
-    @staticmethod
-    def can_write(perms):
-        """True when a job's token can write anything. No permissions key
-        means the repository default, which may be write: count it so."""
-        if perms is None or perms == "write-all":
-            return True
-        if isinstance(perms, dict):
-            return "write" in perms.values()
-        return False
+    # pip and uv installs only: other installers (apt, npm, curl | sh) are
+    # not looked for.
+    INSTALLS = re.compile(r"\b(python3? -m )?pip3?\s+install\b"
+                          r"|\buv\s+(pip\s+)?(install|add|sync)\b")
 
-    def test_no_unpinned_install_in_a_job_that_can_write(self):
-        # PR #39 security review: an unpinned `pip install` in a job holding
-        # contents: write and issues: write lets whatever PyPI serves run
-        # with a token that pushes to the repository.
+    @staticmethod
+    def commands(run):
+        """A run block as the shell reads it: continuation lines joined and
+        comments dropped, one command line each."""
+        joined = re.sub(r"\\\n", " ", run or "")
+        return [re.sub(r"(^|\s)#.*$", "", line).strip()
+                for line in joined.splitlines()]
+
+    @staticmethod
+    def bash(script, env):
+        """Runs a step's script as GitHub runs an unset `shell:` on Linux
+        (bash --noprofile --norc -eo pipefail). No bash is a failure, never a
+        skip: these tests are the only check on what the steps do."""
+        bash = shutil.which("bash")
+        if bash is None:
+            raise AssertionError("bash is needed to run the workflow steps")
+        tmp = tempfile.mkdtemp()
+        try:
+            with open(os.path.join(tmp, "step.sh"), "w", encoding="utf-8",
+                      newline="\n") as fh:
+                fh.write(script)
+            return subprocess.run(
+                [bash, "--noprofile", "--norc", "-eo", "pipefail", "step.sh"],
+                cwd=tmp, env=dict(os.environ, **env), capture_output=True,
+                text=True, timeout=60).returncode
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
+    def needs_tests(self, job):
+        self.assertIn(job.get("needs"), ("tests", ["tests"]))
+
+    def test_every_pip_or_uv_install_is_pinned_and_hashed(self):
+        """PR #39 security review: an unpinned `pip install` in a job holding
+        contents: write and issues: write lets whatever PyPI serves run with
+        a token that pushes to the repository; in a read-only job it can
+        still take the runner's cache token and plant Actions cache entries
+        other workflows restore. So every job, whatever its permissions.
+        Guards pip and uv installs only."""
         flow = self.parsed()
-        top = flow.get("permissions")
         # A job added later without its own permissions inherits these.
-        self.assertEqual(top, {"contents": "read"})
-        installs = re.compile(r"\bpip3?\s+install\b"
-                              r"|\buv\s+(pip\s+)?(install|add|sync)\b")
+        self.assertEqual(flow.get("permissions"), {"contents": "read"})
         for line in ("pip install --quiet pyyaml",
                      "python -m pip install pyyaml==6.0.3",
                      "pip3 install -r requirements.txt",
                      "uv pip install pyyaml"):
-            self.assertTrue(installs.search(line), line)
+            self.assertTrue(self.INSTALLS.search(line), line)
+        self.assertFalse(self.INSTALLS.search("set -o pipefail"))
+        self.assertEqual(self.commands("pip \\\n  install x  # y\n# pip"),
+                         ["pip    install x", ""])
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        seen = 0
         for name, job in flow["jobs"].items():
-            if not self.can_write(job.get("permissions", top)):
-                continue
             for step in job.get("steps", []):
-                run = step.get("run", "")
-                for line in run.splitlines():
-                    if not installs.search(line):
+                for line in self.commands(step.get("run")):
+                    if not self.INSTALLS.search(line):
                         continue
-                    with self.subTest(job=name, line=line.strip()):
-                        self.assertIn("--require-hashes", line)
-                        self.assertIn("--only-binary", line)
+                    seen += 1
+                    with self.subTest(job=name, line=line):
+                        words = line.split()
+                        self.assertIn("--require-hashes", words)
+                        self.assertIn("--only-binary", words)
+                        self.assertEqual(
+                            words[words.index("--only-binary") + 1], ":all:")
+                        self.assertIn("-r", words)
+                        self.check_requirements(os.path.join(
+                            root, words[words.index("-r") + 1]))
+        # The tests job needs PyYAML, so there is one install to check.
+        self.assertEqual(seen, 1)
+
+    def check_requirements(self, path):
+        """Every requirement pinned to one version and carrying a hash."""
+        with open(path, encoding="utf-8") as fh:
+            reqs = [c for c in self.commands(fh.read()) if c]
+        self.assertTrue(reqs)
+        for req in reqs:
+            self.assertRegex(req, r"^[A-Za-z0-9_.-]+==[0-9][^\s]* ")
+            self.assertRegex(req, r"--hash=sha256:[0-9a-f]{64}\b")
 
     def test_the_tests_run_with_a_token_that_cannot_write(self):
         flow = self.parsed()
@@ -576,30 +624,65 @@ class Wiring(unittest.TestCase):
         self.assertIs(checkout[0]["with"]["persist-credentials"], False)
         self.assertNotIn("upload-artifact", self.workflow())
         runs = " ".join(s.get("run", "") for s in tests["steps"])
-        for script in ("test_polite_http.py", "test_order_register.py",
-                       "test_order_register_loud.py",
-                       "test_manual_inbox.py"):
-            self.assertIn("python tools/" + script, runs)
         self.assertNotIn("git push", runs)
         self.assertNotIn("GH_TOKEN", str(tests))
+
+    def test_a_failing_test_fails_the_tests_job(self):
+        tests = self.parsed()["jobs"]["tests"]
+        self.assertNotIn("continue-on-error", tests)
+        for step in tests["steps"]:
+            with self.subTest(step=step.get("name") or step.get("uses")):
+                self.assertNotIn("continue-on-error", step)
+                self.assertNotIn("if", step)
+                # GitHub's default for `run` is bash -eo pipefail; the
+                # bash() runner below relies on it.
+                self.assertNotIn("shell", step)
+                for line in self.commands(step.get("run")):
+                    for swallow in ("|| true", "; true", "|| :", "set +e"):
+                        self.assertNotIn(swallow, line)
+        step = self.steps("tests")["Run the tests before trusting the "
+                                   "check"][1]
+        # Every python call is stood in for by a function failing only for
+        # the script named in FAIL_ON, so the step's own logic is what runs.
+        stub = ('python() { case "$*" in *"$FAIL_ON"*) return 3;; esac; '
+                'return 0; }\n')
+        scripts = ("test_polite_http.py", "test_order_register.py",
+                   "test_order_register_loud.py", "test_manual_inbox.py")
+        for script in scripts:
+            self.assertIn("python tools/" + script, step["run"])
+            with self.subTest(failing=script):
+                self.assertNotEqual(
+                    self.bash(stub + step["run"], {"FAIL_ON": script}), 0)
+        self.assertEqual(self.bash(stub + step["run"],
+                                   {"FAIL_ON": "nothing-fails"}), 0)
 
     def test_the_write_job_waits_for_the_tests_and_says_when_they_fail(self):
         flow = self.parsed()
         check = flow["jobs"]["check"]
-        self.assertEqual(check["needs"], "tests")
+        self.needs_tests(check)
+        self.needs_tests({"needs": ["tests"]})
         # It still runs when the tests fail, so its failure() step raises
         # the alarm issue; it then stops before reading or writing anything.
         self.assertEqual(check["if"], "${{ !cancelled() }}")
+        self.assertNotIn("continue-on-error", check)
         names = [s.get("name") or s.get("uses") for s in check["steps"]]
         gate = names.index("Stop unless the tests passed")
         self.assertTrue(names[0].startswith("actions/checkout@"))
         self.assertEqual(gate, 1)
         step = check["steps"][gate]
+        for key in ("if", "continue-on-error", "shell"):
+            self.assertNotIn(key, step)
         self.assertEqual(step["env"]["TESTS"], "${{ needs.tests.result }}")
-        self.assertIn('[ "$TESTS" = "success" ]', step["run"])
-        self.assertIn("exit 1", step["run"])
-        self.assertNotIn("pip", " ".join(s.get("run", "")
-                                         for s in check["steps"]))
+        for result in ("success", "failure", "skipped", "cancelled", ""):
+            with self.subTest(tests=result):
+                code = self.bash(step["run"], {"TESTS": result})
+                if result == "success":
+                    self.assertEqual(code, 0)
+                else:
+                    self.assertNotEqual(code, 0)
+        for s in check["steps"]:
+            for line in self.commands(s.get("run")):
+                self.assertFalse(self.INSTALLS.search(line), line)
 
 
 
