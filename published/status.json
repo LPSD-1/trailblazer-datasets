@@ -1,6 +1,6 @@
 {
  "schema": 1,
- "generated": "2026-10-17T21:48:26Z",
+ "generated": "2026-10-17T22:28:27Z",
  "datasets": [
   {
    "id": "lanes",
@@ -17,9 +17,9 @@
    "name": "Traffic orders and closures",
    "what": "Legal orders and closures on the lanes, from the Department for Transport's D-TRO service and councils' own notices",
    "schedule": "Every 6 hours",
-   "last_run": "2026-10-17T17:18:59Z",
+   "last_run": "2026-10-17T22:26:56Z",
    "result": "ok",
-   "last_ok": "2026-10-17T17:18:59Z",
+   "last_ok": "2026-10-17T22:26:56Z",
    "data_as_of": "2026-10-17"
   },
   {
@@ -1371,12 +1371,17 @@
    "kind": "council",
    "byways": 8,
    "unsurfaced_roads": 0,
-   "dtro_records": 0,
-   "dtro": "Not on D-TRO yet",
+   "dtro_records": 1,
+   "dtro": "Publishes to D-TRO",
    "sources": [
     {
      "what": "Byways",
      "from": "London Borough of Hounslow, via rowmaps.com",
+     "as_of": null
+    },
+    {
+     "what": "Traffic orders",
+     "from": "London Borough of Hounslow, via the Department for Transport's D-TRO service",
      "as_of": null
     }
    ],
