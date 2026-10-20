@@ -438,6 +438,29 @@ def test_the_workflow_runs_it_and_rings():
           and "contents: write" not in text and "secrets." not in text)
     check("no pull_request_target", not re.search(
         r"^\s*pull_request_target\s*:", text, re.M))
+    check("it is named", re.search(r"^name: Data freshness$", text, re.M)
+          is not None)
+    check("on the Python the tests are written for", re.search(
+        r"actions/setup-python@[0-9a-f]{40}.*\n\s+with:\n\s+python-version: "
+        r"'3\.12'", text) is not None)
+    check("one run at a time, never cut short", re.search(
+        r"^concurrency:\n\s+group: freshness\n\s+cancel-in-progress: false",
+        text, re.M) is not None)
+
+
+def test_the_script_exits_with_the_verdict():
+    """Run as the workflow runs it: a process, judged by its exit code."""
+    import subprocess
+    script = os.path.join(HERE, "check_freshness.py")
+    for label, mutate, want in (("fresh", None, 0), ("stale", "lanes", 1)):
+        with tree() as root:
+            if mutate:
+                set_last_ok(root, mutate, "2026-09-20T00:00:00Z")
+            proc = subprocess.run([sys.executable, script, "--root", root,
+                                   "--now", iso(NOW)], capture_output=True,
+                                  text=True)
+            check("script exits %d when %s" % (want, label),
+                  proc.returncode == want, proc.stdout + proc.stderr)
 
 
 def main():

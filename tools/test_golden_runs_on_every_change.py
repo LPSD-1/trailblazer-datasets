@@ -66,6 +66,14 @@ def main():
                                         r"\s*\n(?!\s+\w+:)", text, re.M)
           is not None and "write" not in text, text)
     check("no secrets", "secrets." not in text)
+    check("it is named", re.search(r"^name: Golden build$", text, re.M)
+          is not None)
+    check("on the lane refresh's Python", re.search(
+        r"actions/setup-python@[0-9a-f]{40}.*\n\s+with:\n\s+python-version: "
+        r"'3\.12'", text) is not None)
+    check("a newer push replaces an older run of the same ref", re.search(
+        r"^concurrency:\n\s+group: golden-\$\{\{ github\.ref \}\}\n"
+        r"\s+cancel-in-progress: true", text, re.M) is not None)
     check("the checkout keeps no token", "persist-credentials: false" in text)
     run_lines = re.findall(r"^\s+run:\s*(.+)$", text, re.M)
     check("it runs golden.py", "python tools/golden.py" in run_lines,

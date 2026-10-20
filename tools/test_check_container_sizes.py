@@ -348,6 +348,31 @@ def test_wired_before_every_publish():
           "--published-rev HEAD --new dist/catalogue.json" in body, body)
 
 
+def test_the_script_exits_with_the_verdict():
+    """Run as refresh-data.yml runs it: a process, judged by its exit code."""
+    import subprocess
+    script = os.path.join(HERE, "check_container_sizes.py")
+    tmp = tempfile.mkdtemp(prefix="sizes-proc-")
+    try:
+        old = os.path.join(tmp, "old.json")
+        new = os.path.join(tmp, "new.json")
+        with open(old, "w", encoding="utf-8", newline="\n") as fh:
+            json.dump(base(), fh)
+        for label, cat, want in (
+                ("unchanged", base(), 0),
+                ("emptied", edit(base(), "gb-wales-ways", featureCount=0), 1)):
+            with open(new, "w", encoding="utf-8", newline="\n") as fh:
+                json.dump(cat, fh)
+            proc = subprocess.run(
+                [sys.executable, script, "--published", old, "--new", new,
+                 "--override", os.path.join(tmp, "none.json")],
+                capture_output=True, text=True)
+            check("script exits %d when %s" % (want, label),
+                  proc.returncode == want, proc.stdout + proc.stderr)
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
 def main():
     for name, fn in sorted(globals().items()):
         if name.startswith("test_") and callable(fn):
