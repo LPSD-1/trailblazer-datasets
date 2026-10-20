@@ -302,6 +302,10 @@ def test_main_exit_codes():
                 '{"against_sha256": " ", "reason": "x"}}}'):
         rc, out = run_main(base(), base(), bad)
         check("malformed override refused: %s" % bad, rc == 1, out)
+        if "gb-wales-ways" in bad:
+            check("and says what the pin must be: %s" % bad,
+                  "needs an `against_sha256` string and a `reason`" in out,
+                  out)
 
 
 def test_published_rev_reads_git():
