@@ -17,7 +17,6 @@ import datetime
 import io
 import json
 import os
-import re
 import shutil
 import sys
 import tempfile
@@ -378,14 +377,71 @@ def test_workflow_problems():
             l.startswith("STALE height:") and "cannot be read" in l
             for l in stale_lines(out)), out)
     with tree() as root:
-        # A workflow taken off its schedule is said, and not judged.
+        # A workflow taken off its schedule no longer runs on its own, which
+        # is exactly the stall this exists to catch, however fresh its last
+        # run still looks.
         with open(os.path.join(root, ".github", "workflows", "height.yml"),
                   "w", encoding="utf-8", newline="\n") as fh:
             fh.write("on:\n  workflow_dispatch:\n")
-        set_last_ok(root, "height", "2020-01-01T00:00:00Z")
         rc, out = run(root)
-        check("unscheduled workflow is a note, not stale", rc == 0
-              and "note  height:" in out, out)
+        check("unscheduled workflow is stale", rc == 1 and any(
+            l.startswith("STALE height:") and "no schedule" in l
+            for l in stale_lines(out)), out)
+    with tree() as root:
+        # YAML takes a cron unquoted too; it must not read as no schedule.
+        with open(os.path.join(root, ".github", "workflows", "height.yml"),
+                  "w", encoding="utf-8", newline="\n") as fh:
+            fh.write("on:\n  schedule:\n    - cron: 17 3 * * *   # daily\n")
+        set_last_ok(root, "height", iso(NOW - datetime.timedelta(hours=47)))
+        rc, out = run(root)
+        check("unquoted cron is read and judged", rc == 0 and
+              "ok    height: last good run" in out and "limit 2.0 days" in out,
+              out)
+        set_last_ok(root, "height", iso(NOW - datetime.timedelta(hours=49)))
+        rc, out = run(root)
+        check("unquoted cron still gates", rc == 1, out)
+
+
+def test_workflow_crons_reads_every_quoting():
+    tmp = tempfile.mkdtemp(prefix="crons-")
+    try:
+        path = os.path.join(tmp, "w.yml")
+        with open(path, "w", encoding="utf-8", newline="\n") as fh:
+            fh.write("on:\n  schedule:\n"
+                     "    - cron: '1 2 * * *'\n"
+                     "    - cron: \"3 4 * * *\"  # double\n"
+                     "    - cron: 5 6 * * 1\n"
+                     "    - cron: 7 8 * * 2   # unquoted, commented\n"
+                     "  workflow_dispatch:\n")
+        got = F.workflow_crons(path)
+        check("every quoting read", got == ["1 2 * * *", "3 4 * * *",
+                                            "5 6 * * 1", "7 8 * * 2"], got)
+        check("a missing file has none",
+              F.workflow_crons(os.path.join(tmp, "nope.yml")) == [])
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_a_date_in_the_future_is_stale():
+    for minutes, want in ((59, 0), (61, 1), (60 * 24 * 30, 1)):
+        with tree() as root:
+            set_last_ok(root, "lanes", iso(NOW + datetime.timedelta(
+                minutes=minutes)))
+            rc, out = run(root)
+            check("last_ok %dm ahead -> %d" % (minutes, want), rc == want, out)
+            if want:
+                check("says future at %dm" % minutes, any(
+                    l.startswith("STALE lanes:") and "in the future" in l
+                    for l in stale_lines(out)), out)
+    # A bare day covers the whole day: today is not the future, tomorrow is.
+    for day, want in ((NOW, 0), (NOW + datetime.timedelta(days=1), 1)):
+        with tree() as root:
+            idx = read(root, "tro/index.json")
+            idx["generated"] = day.strftime("%Y-%m-%d")
+            write(root, "tro/index.json", idx)
+            rc, out = run(root)
+            check("orders generated %s -> %d" % (idx["generated"], want),
+                  rc == want, out)
 
 
 def test_bad_now_is_refused():
@@ -398,54 +454,6 @@ def test_bad_now_is_refused():
             check("naive --now refused", exc.code == 2, exc.code)
         else:
             check("naive --now refused", False, "no SystemExit")
-
-
-def test_the_workflow_runs_it_and_rings():
-    """freshness.yml: scheduled and on demand, red on stale, one issue."""
-    root = os.path.dirname(HERE)
-    path = os.path.join(root, ".github", "workflows", "freshness.yml")
-    try:
-        with open(path, encoding="utf-8") as fh:
-            text = fh.read()
-    except OSError as exc:
-        check("freshness.yml exists", False, exc)
-        return
-    crons = build_status.workflow_crons(path)
-    check("it is scheduled", bool(crons), crons)
-    try:
-        gap = F.cadence(crons)
-    except ValueError as exc:
-        gap = None
-        check("its cron reads", False, exc)
-    check("it runs at least every six hours", gap is not None
-          and gap <= datetime.timedelta(hours=6), gap)
-    check("it can be run on demand",
-          re.search(r"^  workflow_dispatch:", text, re.M) is not None)
-    check("it runs the check", "python tools/check_freshness.py" in text)
-    check("it runs the tests first", -1 < text.find(
-        "python tools/test_check_freshness.py") < text.find(
-        "python tools/check_freshness.py"))
-    check("the check's exit code reaches the step",
-          'exit "${PIPESTATUS[0]}"' in text)
-    check("never continue-on-error", "continue-on-error" not in text)
-    check("an issue is raised on failure", "if: failure()" in text
-          and "gh issue create --label data-stale" in text)
-    check("one issue, not one per run", "--label data-stale --state open"
-          in text and 'if [ -n "$EXISTING" ]' in text)
-    check("stood down on success", "if: success()" in text
-          and "gh issue close" in text)
-    check("least privilege", "contents: read" in text
-          and "contents: write" not in text and "secrets." not in text)
-    check("no pull_request_target", not re.search(
-        r"^\s*pull_request_target\s*:", text, re.M))
-    check("it is named", re.search(r"^name: Data freshness$", text, re.M)
-          is not None)
-    check("on the Python the tests are written for", re.search(
-        r"actions/setup-python@[0-9a-f]{40}.*\n\s+with:\n\s+python-version: "
-        r"'3\.12'", text) is not None)
-    check("one run at a time, never cut short", re.search(
-        r"^concurrency:\n\s+group: freshness\n\s+cancel-in-progress: false",
-        text, re.M) is not None)
 
 
 def test_the_script_exits_with_the_verdict():

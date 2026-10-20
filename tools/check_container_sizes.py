@@ -18,8 +18,8 @@ WHAT IT COMPARES, per container id, the new catalogue entry against the entry
 in the catalogue that is published now: `bytes` (the file size) and
 `featureCount` (the lanes it holds).
 
-  * zero lanes                  - always refused
-  * a container that vanished   - refused
+  * zero lanes, or zero bytes   - always refused; no override excuses it
+  * a container that vanished   - refused, unless an override names it
   * a fall beyond MAX_BYTES_DROP or MAX_FEATURES_DROP
   * a rise beyond MAX_GROWTH, in either number
 
@@ -46,9 +46,11 @@ A DELIBERATE CHANGE IS NAMED, NOT FORCED. tools/container_size_override.json:
         "against_sha256": "<sha256 of the published entry it excuses>",
         "reason": "why this container may move this much"}}}
 
-It excuses that one container and stops applying the moment the published
-entry is no longer the one it names, so it cannot be left behind to excuse a
-later fault. "against_sha256": null excuses a container not yet published.
+It excuses that one container - a fall, a rise, or retiring it altogether -
+and stops applying the moment the published entry is no longer the one it
+names, so it cannot be left behind to excuse a later fault. It never excuses
+an empty container, and it cannot name a published entry that carries no
+sha256: there is nothing to pin it to.
 """
 import argparse
 import json
@@ -93,18 +95,22 @@ def _number(value):
 
 
 def judge(cid, old, new):
-    """The reasons one container may not publish, or []."""
-    problems = []
+    """(hard, soft): the reasons one container may not publish.
+
+    `hard` reasons (an empty container) no override can excuse; `soft` ones (a
+    vanished container, a fall, a rise) an override naming it can.
+    """
+    hard, problems = [], []
     if new is None:
-        return ["it is published now and the new build has no %s at all"
-                % cid]
+        return [], ["it is published now and the new build has no %s at all"
+                    % cid]
     n_bytes, n_feat = _number(new.get("bytes")), _number(new.get("featureCount"))
     if n_feat is None or n_feat <= 0:
-        problems.append("it holds %r lanes" % (new.get("featureCount"),))
+        hard.append("it holds %r lanes" % (new.get("featureCount"),))
     if n_bytes is None or n_bytes <= 0:
-        problems.append("its size is %r bytes" % (new.get("bytes"),))
-    if old is None or problems:
-        return problems
+        hard.append("its size is %r bytes" % (new.get("bytes"),))
+    if old is None or hard:
+        return hard, problems
     o_bytes, o_feat = _number(old.get("bytes")), _number(old.get("featureCount"))
     for label, was, now, drop in (("lanes", o_feat, n_feat, MAX_FEATURES_DROP),
                                   ("bytes", o_bytes, n_bytes, MAX_BYTES_DROP)):
@@ -117,7 +123,7 @@ def judge(cid, old, new):
         elif now > was * MAX_GROWTH:
             problems.append("%s rose %.1f%% (%d -> %d); the limit is x%g"
                             % (label, 100 * change, was, now, MAX_GROWTH))
-    return problems
+    return hard, problems
 
 
 def load_override(path):
@@ -129,18 +135,24 @@ def load_override(path):
     if not isinstance(entries, dict):
         raise ValueError("%s has no `containers` object" % path)
     for cid, entry in entries.items():
-        if not isinstance(entry, dict) or "against_sha256" not in entry \
+        if not isinstance(entry, dict) \
+                or not isinstance(entry.get("against_sha256"), str) \
+                or not entry["against_sha256"].strip() \
                 or not str(entry.get("reason") or "").strip():
-            raise ValueError("%s: %s needs `against_sha256` and a `reason`"
-                             % (path, cid))
+            raise ValueError("%s: %s needs an `against_sha256` string and a "
+                             "`reason`" % (path, cid))
     return entries
 
 
 def excused(cid, old, override):
     entry = override.get(cid)
-    if not entry:
+    if not entry or not old:
         return None
-    published = old.get("sha256") if old else None
+    published = old.get("sha256")
+    # A published entry with no sha256 cannot be pinned, so it is never
+    # excused: None == None must not read as a match.
+    if not isinstance(published, str) or not published:
+        return None
     if entry.get("against_sha256") != published:
         return None
     return entry["reason"]
@@ -151,7 +163,11 @@ def check(published, new, override):
     old_c, new_c = containers(published), containers(new)
     refused, notes = [], []
     for cid in sorted(set(old_c) | set(new_c), key=str):
-        problems = judge(cid, old_c.get(cid), new_c.get(cid))
+        hard, problems = judge(cid, old_c.get(cid), new_c.get(cid))
+        if hard:
+            refused.append("REFUSED %s: %s (no override excuses an empty "
+                           "container)" % (cid, "; ".join(hard + problems)))
+            continue
         if not problems:
             continue
         reason = excused(cid, old_c.get(cid), override)

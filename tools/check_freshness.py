@@ -89,6 +89,11 @@ KNOWN_STALLS = {
         "(gated above) is the date that moves",
 }
 
+#: How far ahead of the clock a date may be before it is treated as wrong. A
+#: run stamp can lead a runner's clock by seconds, never by an hour; a date in
+#: the future would otherwise pass as fresh for as long as it is ahead.
+MAX_SKEW = datetime.timedelta(hours=1)
+
 #: The workflow whose cron the status file and the conditions feeds keep.
 STATUS_WORKFLOW = "status.yml"
 CONDITIONS_WORKFLOW = "refresh-data.yml"
@@ -186,6 +191,26 @@ def cadence(crons):
     return max(b - a for a, b in zip(times, times[1:]))
 
 
+_CRON_LINE = re.compile(
+    r"""^\s*-\s*cron:\s*(?:'([^']*)'|"([^"]*)"|([^#'"\n]*?))\s*(?:#.*)?$""",
+    re.M)
+
+
+def workflow_crons(path):
+    """The `cron:` strings in a workflow file, quoted or not.
+
+    build_status.workflow_crons reads only quoted ones; YAML accepts both, and
+    a cron this missed would read as "no schedule".
+    """
+    try:
+        with open(path, encoding="utf-8") as fh:
+            text = fh.read()
+    except OSError:
+        return []
+    return [next(g for g in m.groups() if g is not None).strip()
+            for m in _CRON_LINE.finditer(text)]
+
+
 def limit_for(gap):
     return gap + max(gap, MIN_MARGIN)
 
@@ -246,6 +271,17 @@ class Report:
             self.stale.append("STALE %s: %s is %r, which is not a date; it "
                               "cannot show it is fresh" % (kind, field, value))
             return
+        # A bare day covers the whole day, so only its START can be early.
+        earliest = when
+        if re.match(r"^\d{4}-\d{2}-\d{2}$", value):
+            earliest -= datetime.timedelta(hours=23, minutes=59, seconds=59)
+        if earliest > now + MAX_SKEW:
+            self.stale.append("STALE %s: %s %s is in the future (now %s); a "
+                              "date that has not happened cannot show "
+                              "anything is fresh" % (kind, field, value,
+                                                     now.strftime(
+                                                         "%Y-%m-%dT%H:%M:%SZ")))
+            return
         age = now - when
         if age > limit:
             self.stale.append("STALE %s: %s %s is %s old; the limit is %s (%s)"
@@ -264,13 +300,14 @@ def _workflow_limit(root, workflow, report, kind):
                             "says how fresh it should be" % (kind, workflow))
         return None
     try:
-        gap = cadence(build_status.workflow_crons(path))
+        gap = cadence(workflow_crons(path))
     except ValueError as exc:
         report.stale.append("STALE %s: the schedule of %s cannot be read (%s)"
                             % (kind, workflow, exc))
         return None
     if gap is None:
-        report.notes.append("note  %s: %s has no schedule; not gated"
+        report.stale.append("STALE %s: %s has no schedule, so it no longer "
+                            "runs on its own and nothing keeps it fresh"
                             % (kind, workflow))
         return None
     return limit_for(gap), "%s runs at least every %s" % (workflow, human(gap))

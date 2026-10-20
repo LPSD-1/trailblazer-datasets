@@ -52,8 +52,13 @@ jobs:
       - name: Run the tests before trusting the check
         run: python tools/test_check_freshness.py
 
+      # pipefail: without it the step takes tee's exit code, which is 0, and
+      # stale data would leave the run green. tools/test_freshness_workflow.py
+      # pins these two lines exactly.
       - name: Is every published kind within its schedule?
-        run: python tools/check_freshness.py | tee /tmp/freshness.txt; exit "${PIPESTATUS[0]}"
+        run: |
+          set -o pipefail
+          python tools/check_freshness.py | tee /tmp/freshness.txt
 
       - name: Raise an issue if anything is stale
         if: failure()

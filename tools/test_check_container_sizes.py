@@ -204,10 +204,51 @@ def test_override():
     r, _ = refused(base(), both, good)
     check("override excuses only its own container", len(r) == 1 and
           "gb-south-east-ways" in r[0], r)
-    fresh = catalogue(lane("gb-new-ways", 1000, 0))
-    r, _ = refused(catalogue(), fresh,
-                   {"gb-new-ways": {"against_sha256": None, "reason": "x"}})
-    check("null against_sha256 excuses an unpublished container", r == [], r)
+    # A null pin must never match: not a published entry that has a sha256,
+    # and not one that lacks it (None == None).
+    null = {"gb-wales-ways": {"against_sha256": None, "reason": "x"}}
+    r, _ = refused(base(), new, null)
+    check("null against_sha256 does not excuse a published entry",
+          len(r) == 1, r)
+    unpinned = edit(base(), "gb-wales-ways", sha256=None)
+    for label, ov in (("null", null), ("a sha", good)):
+        r, _ = refused(unpinned, edit(unpinned, "gb-wales-ways",
+                                      featureCount=10), ov)
+        check("a published entry with no sha256 is never excused (%s)"
+              % label, len(r) == 1, r)
+    nokey = copy.deepcopy(base())
+    for cont in nokey["continents"]:
+        for country in cont["countries"]:
+            for area in country["areas"]:
+                for p in area["packs"]:
+                    if p.get("id") == "gb-wales-ways":
+                        del p["sha256"]
+    r, _ = refused(nokey, edit(nokey, "gb-wales-ways", featureCount=10), null)
+    check("a published entry with no sha256 key is never excused",
+          len(r) == 1, r)
+
+
+def test_empty_is_refused_even_under_an_override():
+    for field in ("featureCount", "bytes"):
+        new = edit(base(), "gb-wales-ways", **{field: 0})
+        good = {"gb-wales-ways": {"against_sha256": "w" * 64,
+                                  "reason": "test"}}
+        r, notes = refused(base(), new, good)
+        check("zero %s refused under an override" % field, len(r) == 1
+              and r[0].startswith("REFUSED gb-wales-ways:") and notes == [],
+              (r, notes))
+
+
+def test_a_retired_container_may_be_excused():
+    gone = drop(base(), "gb-wales-ways")
+    good = {"gb-wales-ways": {"against_sha256": "w" * 64,
+                              "reason": "region retired"}}
+    r, notes = refused(base(), gone, good)
+    check("a vanished container named by an override is excused", r == []
+          and len(notes) == 1 and "excused gb-wales-ways" in notes[0],
+          (r, notes))
+    r, _ = refused(base(), gone, {})
+    check("and without one it is refused", len(r) == 1, r)
 
 
 def run_main(old, new, override_obj=None):
@@ -249,12 +290,16 @@ def test_main_exit_codes():
     check("main refuses a non-object published", rc == 1, out)
     rc, out = run_main(base(), catalogue())
     check("main refuses a catalogue with no containers", rc == 1, out)
-    rc, out = run_main(base(), edit(base(), "gb-wales-ways", featureCount=0),
+    rc, out = run_main(base(), edit(base(), "gb-wales-ways", featureCount=10),
                        {"containers": {"gb-wales-ways": {
                            "against_sha256": "w" * 64, "reason": "test"}}})
     check("main honours the override file", rc == 0 and "excused" in out, out)
     for bad in ('{"containers": []}', '{"containers": {"gb-wales-ways": '
-                '{"against_sha256": "w"}}}', "{nope"):
+                '{"against_sha256": "w"}}}', "{nope",
+                '{"containers": {"gb-wales-ways": '
+                '{"against_sha256": null, "reason": "x"}}}',
+                '{"containers": {"gb-wales-ways": '
+                '{"against_sha256": " ", "reason": "x"}}}'):
         rc, out = run_main(base(), base(), bad)
         check("malformed override refused: %s" % bad, rc == 1, out)
 
@@ -313,40 +358,61 @@ def test_committed_override_is_well_formed():
 
 
 def test_wired_before_every_publish():
-    """refresh-data.yml runs the gate before Publish moves anything, and
-    again inside the retry that rebuilds the catalogue on a new tip."""
+    """refresh-data.yml runs the gate before Publish moves anything, as a
+    step that cannot be skipped or swallowed, and again inside the retry that
+    rebuilds the catalogue on a new tip. Parsed as YAML: the whole step is
+    judged, not the text before its command."""
+    import yaml
     with open(os.path.join(ROOT, ".github", "workflows", "refresh-data.yml"),
               encoding="utf-8") as fh:
-        text = fh.read()
-    gate = "python tools/check_container_sizes.py"
-    first = text.find(gate)
-    publish = text.find("      - name: Publish\n")
-    move = text.find("mv dist/containers containers")
-    check("the gate is in refresh-data.yml", first != -1)
-    check("the gate runs before the Publish step", -1 < first < publish,
-          (first, publish))
-    check("before the containers are moved", -1 < first < move, (first, move))
-    # The gate's step must not be allowed to fail quietly or be skipped by
-    # the dry-run switch's opposite.
-    step = text[text.rfind("      - name:", 0, first):first]
-    check("the gate step is not continue-on-error",
-          "continue-on-error" not in step, step)
-    check("the gate step has no if:", not re.search(r"^\s+if:", step, re.M),
-          step)
-    check("it judges the new catalogue against the published one",
-          "--published catalogue.json" in text[first:first + 200]
-          and "--new dist/catalogue.json" in text[first:first + 200],
-          text[first:first + 200])
-    retry = text.find("rebuild_on_the_new_tip() {", publish)
-    end = text.find("\n          }\n", retry)
-    check("the retry function is found", -1 < retry < end, (retry, end))
-    body = text[retry:end]
-    check("the retry re-runs the gate",
-          gate in body and "|| return 1" in body[body.find(gate):]
-          .split("\n")[0], body)
-    check("the retry judges against the new tip's catalogue",
-          "--published-rev HEAD --new dist/catalogue.json" in body, body)
+        wf = yaml.safe_load(fh)
+    job = (wf.get("jobs") or {}).get("refresh") or {}
+    check("the refresh job cannot fail quietly",
+          "continue-on-error" not in job, job.get("continue-on-error"))
+    steps = job.get("steps") or []
+    names = [st.get("name") for st in steps]
+    gate_name = "Would a map container shrink, swell or empty?"
+    check("the gate step exists", gate_name in names, names)
+    check("Publish exists", "Publish" in names, names)
+    if gate_name not in names or "Publish" not in names:
+        return
+    gi, pi = names.index(gate_name), names.index("Publish")
+    check("after the catalogue is built",
+          "Build the catalogue" in names
+          and names.index("Build the catalogue") < gi, names)
+    check("before Publish", gi < pi, (gi, pi))
+    gate = steps[gi]
+    check("the gate step is a name and a run, nothing that can skip or "
+          "swallow it", set(gate) == {"name", "run"}, gate)
+    check("its script is exactly the tests and the check",
+          gate.get("run") == GATE_RUN, gate.get("run"))
+    publish = steps[pi].get("run") or ""
+    move = publish.find("mv dist/containers containers")
+    check("nothing between them moves the containers", all(
+        "mv dist/containers" not in (st.get("run") or "")
+        for st in steps[gi + 1:pi]))
+    retry = publish.find("rebuild_on_the_new_tip() {")
+    end_fn = publish.find("\n}\n", retry)
+    check("the retry function is found", -1 < move < retry < end_fn,
+          (move, retry, end_fn))
+    body = publish[retry:end_fn].split("\n")
+    lines = [ln.strip() for ln in body]
+    check("the retry re-runs the gate against the new tip, exactly",
+          RETRY_LINE in lines, lines)
+    if RETRY_LINE in lines and "mv dist/catalogue.json catalogue.json" in lines:
+        check("before the rebuilt catalogue is moved into place",
+              lines.index(RETRY_LINE)
+              < lines.index("mv dist/catalogue.json catalogue.json"), lines)
+    else:
+        check("before the rebuilt catalogue is moved into place", False,
+              lines)
 
+
+GATE_RUN = ("python tools/test_check_container_sizes.py\n"
+            "python tools/check_container_sizes.py \\\n"
+            "  --published catalogue.json --new dist/catalogue.json\n")
+RETRY_LINE = ("python tools/check_container_sizes.py --published-rev HEAD "
+              "--new dist/catalogue.json || return 1")
 
 def test_the_script_exits_with_the_verdict():
     """Run as refresh-data.yml runs it: a process, judged by its exit code."""
