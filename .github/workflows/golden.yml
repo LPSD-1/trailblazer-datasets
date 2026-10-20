@@ -1,0 +1,58 @@
+name: Golden build
+
+# THE REPRODUCIBILITY PROOF, ON EVERY CHANGE TO THE BUILDERS.
+#
+# tools/golden.py builds one small region end to end from fixed inputs and
+# compares the bytes: identical inputs must give identical bytes, the run
+# clock must not reach the data, and a real change must still move them. Two
+# clock bugs shipped before it existed (see its header), each sending every
+# rider a full re-download of unchanged data.
+#
+# Until this file it ran only inside the scheduled lane refresh, so a pull
+# request that broke it went green and the break surfaced hours after the
+# merge, as a stopped lane refresh. Now it runs on every pull request to main
+# and on every push to main that touches tools/.
+#
+# Read-only: no secrets, `contents: read`, and the checkout keeps no token.
+# It runs the pull request's own code, which is safe here only because there
+# is nothing to steal - keep it that way. Never `pull_request_target`.
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+    paths:
+      - 'tools/**'
+      - '.github/workflows/golden.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: golden-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  golden:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09  # v5
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1  # v6
+        with:
+          python-version: '3.12'
+
+      # The lane refresh's own line, so the build here is the build there.
+      - name: Install dependencies
+        run: pip install --quiet cryptography Pillow pyyaml
+
+      - name: Identical inputs give identical bytes
+        run: python tools/golden.py
+
+      - name: A real change still moves the bytes
+        run: python tools/golden.py --mutate

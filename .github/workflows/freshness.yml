@@ -1,0 +1,95 @@
+name: Data freshness
+
+# IS ANYTHING WE PUBLISH OLDER THAN ITS OWN SCHEDULE ALLOWS?
+#
+# tools/check_freshness.py reads the published files on main - the status
+# file, the catalogue and the traffic-order index - and compares every dated
+# kind, and every data workflow's last good run, with that workflow's cron
+# plus a margin. It names each stale kind and its age.
+#
+# Every failure it exists for went unseen for days with every run green or
+# nobody looking: the D-TRO extract stalled from 6 Sep 2026, the lane refresh
+# stopped publishing from 27 Sep to 2 Oct, and a cold cache once published an
+# old order pack. Each workflow's own alarm only rings when THAT workflow runs
+# and fails; this rings when the data stops moving for any reason, including a
+# workflow that no longer runs at all.
+#
+# HOW IT ALERTS: the way every job here does. The run goes red and one issue
+# is opened under the `data-stale` label, then closed by the first run that
+# finds everything fresh. One issue and no comment per run, as status.yml
+# does, so a stall is one open issue, not four a day. No email is sent.
+#
+# Reads only this checkout: no network beyond GitHub's own issue commands, no
+# secrets, nothing committed.
+on:
+  schedule:
+    - cron: '11 1,7,13,19 * * *'   # six-hourly, clear of every other job here
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write   # the data-stale issue, opened and closed below
+
+concurrency:
+  group: freshness
+  cancel-in-progress: false
+
+jobs:
+  freshness:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09  # v5
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1  # v6
+        with:
+          python-version: '3.12'
+
+      # Standard library only: nothing to install.
+      - name: Run the tests before trusting the check
+        run: python tools/test_check_freshness.py
+
+      - name: Is every published kind within its schedule?
+        run: python tools/check_freshness.py | tee /tmp/freshness.txt; exit "${PIPESTATUS[0]}"
+
+      - name: Raise an issue if anything is stale
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          EXISTING=$(gh issue list --label data-stale --state open \
+                       --json number --jq '.[0].number' 2>/dev/null || true)
+          if [ -n "$EXISTING" ]; then
+            echo "issue #$EXISTING is already open"
+            exit 0
+          fi
+          STALE=$(grep '^STALE' /tmp/freshness.txt 2>/dev/null | head -20 || true)
+          if [ -z "$STALE" ]; then
+            STALE="The check itself failed before it could say what is stale; the run log has the error."
+          fi
+          gh label create data-stale --color D93F0B \
+            --description "Published data older than its schedule allows" 2>/dev/null || true
+          printf '%s\n\n%s\n\n%s\n' \
+            "$RUN_URL found published data older than its own workflow's schedule allows:" \
+            "$STALE" \
+            "Each line names the kind, its date and its age. A workflow's last good run that is too old means that workflow has been failing or has stopped running; read its recent runs. This issue closes itself when a check finds everything fresh." \
+            > /tmp/issue.md
+          gh issue create --label data-stale \
+            --title "Published data is stale" --body-file /tmp/issue.md
+
+      - name: Stand the alarm down if everything is fresh
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          for n in $(gh issue list --label data-stale --state open \
+                       --json number --jq '.[].number' 2>/dev/null || true); do
+            gh issue close "$n" --comment "Fresh again: $RUN_URL" || true
+          done
