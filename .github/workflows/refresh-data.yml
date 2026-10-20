@@ -833,6 +833,17 @@ jobs:
           # a build that otherwise succeeds. It has happened three times.
           python tools/verify_catalogue.py dist/catalogue.json
 
+      # A container that suddenly shrank, swelled or emptied does not publish.
+      # check_build.py judges the packages; this judges the .tbmap files
+      # riders actually download, against the catalogue published now. A
+      # deliberate change is named in tools/container_size_override.json.
+      # The Publish retry below runs it again on the new tip.
+      - name: Would a map container shrink, swell or empty?
+        run: |
+          python tools/test_check_container_sizes.py
+          python tools/check_container_sizes.py \
+            --published catalogue.json --new dist/catalogue.json
+
       # Only the CC BY imagery layer is ever published, and never a pack
       # withdrawn on 9 Oct 2026 (tools/imagery_withdrawn.py). Fails the job
       # before Publish; the retries below run the same check.
@@ -1140,6 +1151,7 @@ jobs:
             python tools/verify_catalogue.py dist/catalogue.json || return 1
             python tools/imagery_withdrawn.py --index satellite/index.json --catalogue dist/catalogue.json || return 1
             python tools/validate_catalogue.py dist/catalogue.json || return 1
+            python tools/check_container_sizes.py --published-rev HEAD --new dist/catalogue.json || return 1
             mv dist/catalogue.json catalogue.json
           }
           for attempt in 1 2 3; do
