@@ -343,5 +343,21 @@ class KeepsTheLanes(unittest.TestCase):
         self.assertEqual(after, before)
 
 
+    def test_the_union_is_sorted_whatever_order_it_arrives_in(self):
+        theirs = dtro_closure(ways=["EX-9"], ways_by="named")
+        merge([theirs], [closure(ways=["EX-3"], match="reference")])
+        self.assertEqual(theirs["properties"]["ways"], ["EX-3", "EX-9"])
+
+    def test_named_lanes_joined_by_a_geometry_guess_say_geometry(self):
+        theirs = dtro_closure(ways=["EX-1"], ways_by="named")
+        merge([theirs], [closure(ways=["EX-2"], match="geometry")])
+        self.assertEqual(theirs["properties"]["ways_by"], "geometry")
+
+    def test_lanes_of_unstated_kind_joined_by_named_say_geometry(self):
+        theirs = dtro_closure(ways=["EX-1"])
+        merge([theirs], [closure(ways=["EX-2"], match="reference")])
+        self.assertEqual(theirs["properties"]["ways_by"], "geometry")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=1)
