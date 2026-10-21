@@ -215,5 +215,85 @@ class Dedupe(unittest.TestCase):
                          "essex-register")
 
 
+
+def closure(**kw):
+    """A temporary full closure that folds into `dtro_closure()`."""
+    base = dict(form="temporary", vehicles="all_users",
+                start="2026-10-01", end="2026-12-01")
+    base.update(kw)
+    return council(**base)
+
+
+def dtro_closure(**kw):
+    return dtro(line([(0, 3), (800, 3)]), oform="seasonal",
+                start="2026-10-02", end="2026-12-10", **kw)
+
+
+class KeepsTheLanes(unittest.TestCase):
+    """A council order folded into a D-TRO order still names its lanes, so
+    the app can close exactly the lanes the council named."""
+
+    def test_feature_of_says_how_the_lanes_were_found(self):
+        f = co.feature_of(item(match="reference"), SOURCE, "2026-10-07")
+        self.assertEqual(f["properties"]["ways_by"], "reference")
+        f = co.feature_of(item(match="geometry"), SOURCE, "2026-10-07")
+        self.assertEqual(f["properties"]["ways_by"], "geometry")
+
+    def test_no_lanes_no_ways_by(self):
+        f = co.feature_of(item(ways=[], match="reference"), SOURCE,
+                          "2026-10-07")
+        self.assertNotIn("ways", f["properties"])
+        self.assertNotIn("ways_by", f["properties"])
+
+    def test_a_merge_keeps_the_union_of_the_lanes(self):
+        a = closure(id="a", ways=["EX-9", "EX-75"], match="reference")
+        b = closure(id="b", ways=["EX-3", "EX-75"], match="reference")
+        theirs = dtro_closure()
+        added, folded = merge([theirs], [a, b])
+        self.assertEqual((added, folded), ([], 2))
+        self.assertEqual(theirs["properties"]["ways"],
+                         ["EX-3", "EX-75", "EX-9"])
+
+    def test_lanes_already_on_the_kept_feature_stay(self):
+        theirs = dtro_closure(ways=["EX-1"], ways_by="reference")
+        merge([theirs], [closure(ways=["EX-2"], match="reference")])
+        self.assertEqual(theirs["properties"]["ways"], ["EX-1", "EX-2"])
+        self.assertEqual(theirs["properties"]["ways_by"], "reference")
+
+    def test_every_contributor_by_reference_says_reference(self):
+        a = closure(id="a", ways=["EX-1"], match="reference")
+        b = closure(id="b", ways=["EX-2"], match="reference")
+        theirs = dtro_closure()
+        merge([theirs], [a, b])
+        self.assertEqual(theirs["properties"]["ways_by"], "reference")
+
+    def test_one_geometry_guess_makes_it_geometry(self):
+        a = closure(id="a", ways=["EX-1"], match="reference")
+        b = closure(id="b", ways=["EX-2"], match="geometry")
+        theirs = dtro_closure()
+        merge([theirs], [a, b])
+        self.assertEqual(theirs["properties"]["ways_by"], "geometry")
+
+    def test_lanes_with_no_match_kind_count_as_geometry(self):
+        theirs = dtro_closure()
+        merge([theirs], [closure(ways=["EX-2"])])
+        self.assertEqual(theirs["properties"]["ways"], ["EX-2"])
+        self.assertEqual(theirs["properties"]["ways_by"], "geometry")
+
+    def test_a_dtro_order_with_no_council_match_is_unchanged(self):
+        theirs = dtro_closure(tra=1900)
+        before = {k: v for k, v in theirs["properties"].items()}
+        added, folded = merge([theirs], [closure(match="reference")])
+        self.assertEqual(folded, 0)
+        self.assertEqual(theirs["properties"], before)
+        self.assertNotIn("ways", theirs["properties"])
+
+    def test_a_folded_order_with_no_lanes_adds_none(self):
+        theirs = dtro_closure()
+        merge([theirs], [closure(ways=[], match="reference")])
+        self.assertNotIn("ways", theirs["properties"])
+        self.assertNotIn("ways_by", theirs["properties"])
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=1)

@@ -225,6 +225,10 @@ def feature_of(item, source, day, tra_of=None, horizon_days=HORIZON_DAYS):
         props["url"] = item["url"]
     if item.get("ways"):
         props["ways"] = sorted(item["ways"])
+        # HOW THE LANES WERE FOUND: "reference" when the council named them,
+        # "geometry" when they were matched to the order's drawn line.
+        if item.get("match") in ("reference", "geometry"):
+            props["ways_by"] = item["match"]
     # WHO IS ASKING, on a request: "Wiltshire Council asks riders not to use
     # this lane". Only on a voluntary closure - every other item is an order,
     # and an order is made, not asked.
@@ -329,6 +333,22 @@ def same_place(fa, fb, tol=25.0, min_share=0.5, min_length=20.0):
     return share >= min_share
 
 
+def _keep_ways(kept, folded):
+    """Give `kept` the lanes of the order folded into it.
+
+    The union of both features' `ways`, sorted. `ways_by` is "reference" only
+    when every feature that brought lanes named them by reference; a lane
+    found by geometry, or by an unstated method, makes it "geometry". A
+    folded order with no lanes changes nothing.
+    """
+    if not folded.get("ways"):
+        return
+    kinds = [p.get("ways_by") for p in (kept, folded) if p.get("ways")]
+    kept["ways"] = sorted(set(kept.get("ways") or ()) | set(folded["ways"]))
+    kept["ways_by"] = ("reference" if all(k == "reference" for k in kinds)
+                       else "geometry")
+
+
 def merge_council(dtro_features, council, precedence_of):
     """Lay council features over D-TRO's without counting an order twice.
 
@@ -412,6 +432,7 @@ def merge_council(dtro_features, council, precedence_of):
                 also.append(note)
                 also.sort(key=lambda n: (n.get("source") or "",
                                          n.get("ref") or ""))
+            _keep_ways(twin["properties"], props)
             folded += 1
             continue
         added.append(feature)
