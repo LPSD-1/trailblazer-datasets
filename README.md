@@ -136,6 +136,13 @@ publish themselves. D-TRO is not mandatory and carries almost no byway orders
 run alongside it indefinitely. An order D-TRO already holds is not repeated:
 the council's copy is folded into it and listed under `also`.
 
+An order's `ways` lists the lanes matched to it, in addition to the order's
+own drawn line and never instead of it. `ways_by` says how those lanes were
+matched: `named` (by the council's order reference, a match checked by hand,
+or the street's Unique Street Reference Number, USRN) or `geometry` (by the
+order's drawn line). A match is a guide to where an order may apply; the
+order as made by the council is what counts.
+
 Read by `council-orders.yml` (`tools/council_sources.py`), committed to
 `tro/council/`, each order carrying its `source`, `source_name` and the
 council's own `url` for it:

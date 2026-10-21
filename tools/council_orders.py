@@ -225,6 +225,7 @@ def feature_of(item, source, day, tra_of=None, horizon_days=HORIZON_DAYS):
         props["url"] = item["url"]
     if item.get("ways"):
         props["ways"] = sorted(item["ways"])
+        props["ways_by"] = ways_by(item.get("match"))
     # WHO IS ASKING, on a request: "Wiltshire Council asks riders not to use
     # this lane". Only on a voluntary closure - every other item is an order,
     # and an order is made, not asked.
@@ -329,6 +330,35 @@ def same_place(fa, fb, tol=25.0, min_share=0.5, min_length=20.0):
     return share >= min_share
 
 
+# Matches that name the lanes: the council's own reference, a person's
+# review (order_register), or the street's USRN (street_manager).
+NAMED_MATCHES = ("reference", "reviewed", "usrn")
+
+
+def ways_by(match):
+    """How an order's `ways` were found: "named" when the lanes were named
+    (see NAMED_MATCHES), "geometry" otherwise - matched to the order's drawn
+    line, or by an unstated or unknown method."""
+    return "named" if match in NAMED_MATCHES else "geometry"
+
+
+def _keep_ways(kept, folded):
+    """Give `kept` the lanes of the order folded into it.
+
+    `ways` is additive: it lists lanes the order is known to cover, beside
+    its line, and never narrows what the line covers. The kept feature gets
+    the sorted union of both features' `ways`. `ways_by` is "named" only
+    when every feature that brought lanes says "named"; anything else makes
+    it "geometry". A folded order with no lanes changes nothing.
+    """
+    if not folded.get("ways"):
+        return
+    kinds = [p.get("ways_by") for p in (kept, folded) if p.get("ways")]
+    kept["ways"] = sorted(set(kept.get("ways") or ()) | set(folded["ways"]))
+    kept["ways_by"] = ("named" if all(k == "named" for k in kinds)
+                       else "geometry")
+
+
 def merge_council(dtro_features, council, precedence_of):
     """Lay council features over D-TRO's without counting an order twice.
 
@@ -412,6 +442,7 @@ def merge_council(dtro_features, council, precedence_of):
                 also.append(note)
                 also.sort(key=lambda n: (n.get("source") or "",
                                          n.get("ref") or ""))
+            _keep_ways(twin["properties"], props)
             folded += 1
             continue
         added.append(feature)

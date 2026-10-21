@@ -9,6 +9,7 @@ ones that would put a wrong picture on a rider's map - a seasonal ban drawn
 all year, a permanent ban that leaves the map when an unrelated one-day road
 closure ends, a closure folded into a dot on a crossing road.
 """
+import json
 import math
 import os
 import sys
@@ -213,6 +214,149 @@ class Dedupe(unittest.TestCase):
         self.assertEqual(added[0]["properties"]["source"], "essex-prow-tros")
         self.assertEqual(added[0]["properties"]["also"][0]["source"],
                          "essex-register")
+
+
+
+def closure(**kw):
+    """A temporary full closure that folds into `dtro_closure()`."""
+    base = dict(form="temporary", vehicles="all_users",
+                start="2026-10-01", end="2026-12-01")
+    base.update(kw)
+    return council(**base)
+
+
+def dtro_closure(**kw):
+    return dtro(line([(0, 3), (800, 3)]), oform="seasonal",
+                start="2026-10-02", end="2026-12-10", **kw)
+
+
+class KeepsTheLanes(unittest.TestCase):
+    """A council order folded into a D-TRO order still names its lanes, so
+    the app can close exactly the lanes the council named."""
+
+    def test_feature_of_says_how_the_lanes_were_found(self):
+        f = co.feature_of(item(match="reference"), SOURCE, "2026-10-07")
+        self.assertEqual(f["properties"]["ways_by"], "named")
+        f = co.feature_of(item(match="geometry"), SOURCE, "2026-10-07")
+        self.assertEqual(f["properties"]["ways_by"], "geometry")
+
+    def test_no_lanes_no_ways_by(self):
+        f = co.feature_of(item(ways=[], match="reference"), SOURCE,
+                          "2026-10-07")
+        self.assertNotIn("ways", f["properties"])
+        self.assertNotIn("ways_by", f["properties"])
+
+    def test_a_merge_keeps_the_union_of_the_lanes(self):
+        a = closure(id="a", ways=["EX-9", "EX-75"], match="reference")
+        b = closure(id="b", ways=["EX-3", "EX-75"], match="reference")
+        theirs = dtro_closure()
+        added, folded = merge([theirs], [a, b])
+        self.assertEqual((added, folded), ([], 2))
+        self.assertEqual(theirs["properties"]["ways"],
+                         ["EX-3", "EX-75", "EX-9"])
+
+    def test_lanes_already_on_the_kept_feature_stay(self):
+        theirs = dtro_closure(ways=["EX-1"], ways_by="named")
+        merge([theirs], [closure(ways=["EX-2"], match="reference")])
+        self.assertEqual(theirs["properties"]["ways"], ["EX-1", "EX-2"])
+        self.assertEqual(theirs["properties"]["ways_by"], "named")
+
+    def test_every_contributor_by_reference_says_named(self):
+        a = closure(id="a", ways=["EX-1"], match="reference")
+        b = closure(id="b", ways=["EX-2"], match="reference")
+        theirs = dtro_closure()
+        merge([theirs], [a, b])
+        self.assertEqual(theirs["properties"]["ways_by"], "named")
+
+    def test_one_geometry_guess_makes_it_geometry(self):
+        a = closure(id="a", ways=["EX-1"], match="reference")
+        b = closure(id="b", ways=["EX-2"], match="geometry")
+        theirs = dtro_closure()
+        merge([theirs], [a, b])
+        self.assertEqual(theirs["properties"]["ways_by"], "geometry")
+
+    def test_lanes_with_no_match_kind_count_as_geometry(self):
+        theirs = dtro_closure()
+        merge([theirs], [closure(ways=["EX-2"])])
+        self.assertEqual(theirs["properties"]["ways"], ["EX-2"])
+        self.assertEqual(theirs["properties"]["ways_by"], "geometry")
+
+    def test_a_dtro_order_with_no_council_match_is_unchanged(self):
+        theirs = dtro_closure(tra=1900)
+        before = {k: v for k, v in theirs["properties"].items()}
+        added, folded = merge([theirs], [closure(match="reference")])
+        self.assertEqual(folded, 0)
+        self.assertEqual(theirs["properties"], before)
+        self.assertNotIn("ways", theirs["properties"])
+
+    def test_a_folded_order_with_no_lanes_adds_none(self):
+        theirs = dtro_closure()
+        merge([theirs], [closure(ways=[], match="reference")])
+        self.assertNotIn("ways", theirs["properties"])
+        self.assertNotIn("ways_by", theirs["properties"])
+
+
+    def test_a_lone_reviewed_item_is_named(self):
+        f = co.feature_of(item(match="reviewed"), SOURCE, "2026-10-07")
+        self.assertEqual(f["properties"]["ways_by"], "named")
+
+    def test_a_lone_usrn_item_is_named(self):
+        f = co.feature_of(item(match="usrn"), SOURCE, "2026-10-07")
+        self.assertEqual(f["properties"]["ways_by"], "named")
+
+    def test_lanes_with_an_unknown_or_missing_kind_say_geometry(self):
+        for kw in ({}, {"match": "guess"}):
+            f = co.feature_of(item(**kw), SOURCE, "2026-10-07")
+            self.assertEqual(f["properties"]["ways_by"], "geometry", kw)
+
+    def test_reviewed_and_usrn_folded_together_are_named(self):
+        a = closure(id="a", ways=["EX-1"], match="reviewed")
+        b = closure(id="b", ways=["EX-2"], match="usrn")
+        theirs = dtro_closure()
+        merge([theirs], [a, b])
+        self.assertEqual(theirs["properties"]["ways"], ["EX-1", "EX-2"])
+        self.assertEqual(theirs["properties"]["ways_by"], "named")
+
+    def test_reviewed_and_geometry_folded_together_say_geometry(self):
+        a = closure(id="a", ways=["EX-1"], match="reviewed")
+        b = closure(id="b", ways=["EX-2"], match="geometry")
+        theirs = dtro_closure()
+        merge([theirs], [a, b])
+        self.assertEqual(theirs["properties"]["ways_by"], "geometry")
+
+    def test_ways_add_to_a_longer_line_and_never_narrow_it(self):
+        # `ways` is additive: an 800 m council order folded into a 1,600 m
+        # D-TRO line names the lane it covers, and the D-TRO line - which
+        # runs on past that lane - keeps its geometry and every other prop.
+        theirs = dtro(line([(0, 3), (1600, 3)]), oform="seasonal",
+                      start="2026-10-02", end="2026-12-10")
+        geometry = json.loads(json.dumps(theirs["geometry"]))
+        before = dict(theirs["properties"])
+        added, folded = merge([theirs], [closure(ways=["EX-75"],
+                                                 match="reference")])
+        self.assertEqual((added, folded), ([], 1))
+        self.assertEqual(theirs["geometry"], geometry)
+        after = dict(theirs["properties"])
+        self.assertEqual(after.pop("ways"), ["EX-75"])
+        self.assertEqual(after.pop("ways_by"), "named")
+        self.assertEqual(len(after.pop("also")), 1)
+        self.assertEqual(after, before)
+
+
+    def test_the_union_is_sorted_whatever_order_it_arrives_in(self):
+        theirs = dtro_closure(ways=["EX-9"], ways_by="named")
+        merge([theirs], [closure(ways=["EX-3"], match="reference")])
+        self.assertEqual(theirs["properties"]["ways"], ["EX-3", "EX-9"])
+
+    def test_named_lanes_joined_by_a_geometry_guess_say_geometry(self):
+        theirs = dtro_closure(ways=["EX-1"], ways_by="named")
+        merge([theirs], [closure(ways=["EX-2"], match="geometry")])
+        self.assertEqual(theirs["properties"]["ways_by"], "geometry")
+
+    def test_lanes_of_unstated_kind_joined_by_named_say_geometry(self):
+        theirs = dtro_closure(ways=["EX-1"])
+        merge([theirs], [closure(ways=["EX-2"], match="reference")])
+        self.assertEqual(theirs["properties"]["ways_by"], "geometry")
 
 
 if __name__ == "__main__":
