@@ -135,6 +135,10 @@ publish themselves. D-TRO is not mandatory and carries almost no byway orders
 (81 of 146,202 records in the 6 September 2026 extract name a byway), so these
 run alongside it indefinitely. An order D-TRO already holds is not repeated:
 the council's copy is folded into it and listed under `also`.
+An order's `ways` lists the lanes it is known to cover, in addition to its
+line and never instead of it; `ways_by` says how those lanes were matched:
+`named` (by the council's reference, a review or the street's USRN) or
+`geometry` (by the order's drawn line).
 
 Read by `council-orders.yml` (`tools/council_sources.py`), committed to
 `tro/council/`, each order carrying its `source`, `source_name` and the
