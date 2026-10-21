@@ -46,6 +46,7 @@ workflows commit catalogue.json to main, in five concurrency groups):
 import hashlib
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -198,6 +199,37 @@ PY
 '''
 
 
+# The steps the scenarios run, as (workflow, job, step).
+STEPS = (
+    ("traffic-orders.yml", "build", "Commit the index and the catalogue"),
+    ("refresh-data.yml", "conditions", "Publish"),
+    ("refresh-data.yml", "refresh", "Publish"),
+)
+
+TOOL_CALL = re.compile(r"\b(python3?|bash)\s+tools/([\w.-]+)")
+
+
+def python_tools_called():
+    """Every tools/*.py the STEPS invoke, read from their run blocks.
+
+    A tool that is neither python nor the catalogue recipe has no stand-in
+    here, so it stops the hunt by name rather than failing a scenario on a
+    missing file."""
+    names = set()
+    for workflow, job, step in STEPS:
+        for line in step_script(workflow, job, step).split("\n"):
+            if line.lstrip().startswith("#"):
+                continue
+            for runner, name in TOOL_CALL.findall(line):
+                if name == "rebuild_catalogue.sh":
+                    continue
+                if runner == "bash" or not name.endswith(".py"):
+                    raise SystemExit("%s/%s runs tools/%s, which this hunt "
+                                     "has no stand-in for" % (job, step, name))
+                names.add(name)
+    return sorted(names)
+
+
 def tro_index(sha):
     return {"generated": "2026-09-06", "packs": [{
         "id": "gb-tro", "kind": "tro", "sha256": sha, "bytes": 10,
@@ -214,13 +246,17 @@ def seed(tmp):
     write(os.path.join(seed_dir, ".gitignore"), "dist/\n")
     write(os.path.join(seed_dir, "tools", "rebuild_catalogue.sh"),
           STUB_REBUILD)
-    # STUBS THAT ALWAYS PASS. These three checks exit 0 here whatever they
-    # are handed, so this hunt says nothing about whether a rebuilt
-    # catalogue is verified, or refused for withdrawn imagery: only about
-    # the push races above. Their own suites (test_verify_catalogue,
-    # test_imagery_withdrawn) hold them.
-    for name in ("verify_catalogue.py", "validate_catalogue.py",
-                 "imagery_withdrawn.py"):
+    # STUBS THAT ALWAYS PASS. Every python tool the scenarios' steps run
+    # (verify_catalogue, validate_catalogue, imagery_withdrawn,
+    # check_container_sizes, ...) exits 0 here whatever it is handed, so
+    # this hunt says nothing about whether a rebuilt catalogue is verified,
+    # refused for withdrawn imagery or sized sanely: only about the push
+    # races above. Their own suites hold them. The list is READ FROM THE
+    # STEPS, not written here: a hand list went stale when the refresh
+    # Publish re-anchor gained check_container_sizes.py, and scenario C then
+    # failed on a file the fixture never had, not on anything the real job
+    # does (its checkout is the whole repository).
+    for name in python_tools_called():
         write(os.path.join(seed_dir, "tools", name),
               "import sys\nsys.exit(0)\n")
     write_json(os.path.join(seed_dir, "tro", "index.json"), tro_index(OLD))
@@ -310,8 +346,7 @@ def scenario_a(tmp):
        "dist/catalogue.json")
     # Meanwhile, another workflow pushed.
     conditions_publishes(tmp, remote)
-    code, log = run_step(job, step_script("traffic-orders.yml", "build",
-                                          "Commit the index and the catalogue"))
+    code, log = run_step(job, step_script(*STEPS[0]))
     index_sha, cat_sha = published_state(tmp, remote)
     return {
         "name": "A. traffic-orders: push race after the release asset was "
@@ -336,8 +371,7 @@ def scenario_b(tmp):
                 "stations": {"1": 3.1}})
     # Meanwhile the traffic-orders job published a new pack.
     traffic_orders_publishes_new(tmp, remote)
-    code, log = run_step(job, step_script("refresh-data.yml", "conditions",
-                                          "Publish"))
+    code, log = run_step(job, step_script(*STEPS[1]))
     index_sha, cat_sha = published_state(tmp, remote)
     return {
         "name": "B. conditions Publish re-anchors over a traffic-orders "
@@ -372,8 +406,7 @@ def scenario_c(tmp):
     sh(job, BASH, "tools/rebuild_catalogue.sh", "dist/manifest.json",
        "dist/catalogue.json")
     traffic_orders_publishes_new(tmp, remote)
-    code, log = run_step(job, step_script("refresh-data.yml", "refresh",
-                                          "Publish"))
+    code, log = run_step(job, step_script(*STEPS[2]))
     index_sha, cat_sha = published_state(tmp, remote)
     return {
         "name": "C. lane refresh Publish re-anchors over a traffic-orders "
