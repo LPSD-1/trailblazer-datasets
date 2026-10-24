@@ -1,6 +1,6 @@
 {
  "schema": 2,
- "generated": "2026-10-24T07:29:30Z",
+ "generated": "2026-10-24T08:25:27Z",
  "attribution": "Map and routing data (c) OpenStreetMap contributors, ODbL. United Kingdom rights of way contain public sector information licensed under the Open Government Licence v3.0, via rowmaps.com. Unsurfaced unclassified roads from the highway records of Devon County Council, North Yorkshire Council, Norfolk County Council, Lincolnshire County Council, Northumberland County Council, East Riding of Yorkshire Council, Oxfordshire County Council and Surrey County Council.",
  "baseUrl": "https://lpsd-1.github.io/trailblazer-datasets/",
  "overviews": [
@@ -81,108 +81,108 @@
     "kind": "wet",
     "region": "east-anglia",
     "file": "https://lpsd-1.github.io/trailblazer-datasets/published/wet/east-anglia.json",
-    "sha256": "4915537553dab25e5c4e564fee4215f193866d7e437a46037378455167ae4138",
-    "bytes": 29511,
-    "asOf": "2026-10-24T00:01:16Z"
+    "sha256": "a8754ee8a1fe1484d0b1f325195a16262a32874d3944b5a5f67389485aa3543e",
+    "bytes": 28826,
+    "asOf": "2026-10-24T08:19:18Z"
    },
    {
     "id": "gb-midlands-wet",
     "kind": "wet",
     "region": "midlands",
     "file": "https://lpsd-1.github.io/trailblazer-datasets/published/wet/midlands.json",
-    "sha256": "28ef593d93f32ef093741257cae13c587f174acfa648d6a56aa12d0a390e180f",
-    "bytes": 47054,
-    "asOf": "2026-10-24T00:01:16Z"
+    "sha256": "d22ef6298b371b8964d32948caf51923026aae0e168b83c8e61244a2aaac787a",
+    "bytes": 45782,
+    "asOf": "2026-10-24T08:19:18Z"
    },
    {
     "id": "gb-north-wet",
     "kind": "wet",
     "region": "north",
     "file": "https://lpsd-1.github.io/trailblazer-datasets/published/wet/north.json",
-    "sha256": "967888d517e1f1f55272efa851d91679a75d51af1c9055860e2dcacdf5b8f539",
-    "bytes": 42589,
-    "asOf": "2026-10-24T00:01:16Z"
+    "sha256": "ea07d6435dd44de85508a430ccca8308bd085dea66a92b675650b934293c720c",
+    "bytes": 41759,
+    "asOf": "2026-10-24T08:19:18Z"
    },
    {
     "id": "gb-south-east-wet",
     "kind": "wet",
     "region": "south-east",
     "file": "https://lpsd-1.github.io/trailblazer-datasets/published/wet/south-east.json",
-    "sha256": "2947629539b7630b0b9f8668eb169d2a579d478176c4d1b9e67072662a4c9868",
-    "bytes": 40380,
-    "asOf": "2026-10-24T00:01:16Z"
+    "sha256": "5674d9ddf82b09f96cef508cb5e8b3a8dc95b15b5ac9056f60c03e5c102d416b",
+    "bytes": 39801,
+    "asOf": "2026-10-24T08:19:18Z"
    },
    {
     "id": "gb-south-west-wet",
     "kind": "wet",
     "region": "south-west",
     "file": "https://lpsd-1.github.io/trailblazer-datasets/published/wet/south-west.json",
-    "sha256": "9c90a3d9cef9ff3e056bbabdbbba9d412af16648f6074917b7f4b4627b72b359",
-    "bytes": 27786,
-    "asOf": "2026-10-24T00:01:16Z"
+    "sha256": "c6b16db3db1a050f29fb72e803fe9223eb57d5dc7f9a7d5269f2cdf6cc8dceef",
+    "bytes": 27119,
+    "asOf": "2026-10-24T08:19:18Z"
    },
    {
     "id": "gb-wales-wet",
     "kind": "wet",
     "region": "wales",
     "file": "https://lpsd-1.github.io/trailblazer-datasets/published/wet/wales.json",
-    "sha256": "7e642e76f965488b3310576f94a381c544921529fa45d0690054446cf4dade48",
-    "bytes": 15138,
-    "asOf": "2026-10-24T00:01:16Z"
+    "sha256": "5f75560093f64429e2550246051139165103f6b00cabc9eb3cdbf21a26b279bb",
+    "bytes": 15025,
+    "asOf": "2026-10-24T08:19:18Z"
    },
    {
     "id": "gb-east-anglia-rivers",
     "kind": "rivers",
     "region": "east-anglia",
     "file": "https://lpsd-1.github.io/trailblazer-datasets/published/rivers/east-anglia.json",
-    "sha256": "321b2f5aeb73c036f633e2568141bb0c2b1fbce77cd81ca35a94f77625ab0740",
-    "bytes": 3467,
-    "asOf": "2026-10-24T00:04:48Z"
+    "sha256": "ee7f1b37d42be0f3f74630be8557e3bcbe0e42aec5020a1bc641f84bd65b9ec8",
+    "bytes": 3469,
+    "asOf": "2026-10-24T08:22:25Z"
    },
    {
     "id": "gb-midlands-rivers",
     "kind": "rivers",
     "region": "midlands",
     "file": "https://lpsd-1.github.io/trailblazer-datasets/published/rivers/midlands.json",
-    "sha256": "e6ca8937c202b9be0818492beb0e2681dbde4905ccf11580bb61502bd90f9a3d",
-    "bytes": 5678,
-    "asOf": "2026-10-24T00:04:48Z"
+    "sha256": "841cf83d679d9b444c19d77d53f5295f6470e407e4e65f0b5c40c3d632abdf08",
+    "bytes": 5669,
+    "asOf": "2026-10-24T08:22:25Z"
    },
    {
     "id": "gb-north-rivers",
     "kind": "rivers",
     "region": "north",
     "file": "https://lpsd-1.github.io/trailblazer-datasets/published/rivers/north.json",
-    "sha256": "a7dec404cc36ec9bcc49dc03cbd7757eb8b6ab8533321b3a6c89e8f0fbd31f25",
-    "bytes": 9141,
-    "asOf": "2026-10-24T00:04:48Z"
+    "sha256": "b0a1787be536afe0c93606090afe7373ce9e446804d2d11957ef9283f10f088b",
+    "bytes": 9143,
+    "asOf": "2026-10-24T08:22:25Z"
    },
    {
     "id": "gb-south-east-rivers",
     "kind": "rivers",
     "region": "south-east",
     "file": "https://lpsd-1.github.io/trailblazer-datasets/published/rivers/south-east.json",
-    "sha256": "e06628be0504c9e6105966028db4bab56c1f16d7fb1f28d7629b14c8505e0368",
-    "bytes": 5365,
-    "asOf": "2026-10-24T00:04:48Z"
+    "sha256": "65a4d7a4fc1fcf7dcb1bbc4c81e2e09d95397ce03b6fd11053ff116f129051fa",
+    "bytes": 5359,
+    "asOf": "2026-10-24T08:22:25Z"
    },
    {
     "id": "gb-south-west-rivers",
     "kind": "rivers",
     "region": "south-west",
     "file": "https://lpsd-1.github.io/trailblazer-datasets/published/rivers/south-west.json",
-    "sha256": "081a2c8f4df7dae635501dd683d245817177bab449b822c820c3a326d10e3bf0",
+    "sha256": "014b76cbe2974aab6cec2d2130431d0bfc841fdf2dccafe5db51242eb8d8e4c0",
     "bytes": 3279,
-    "asOf": "2026-10-24T00:04:48Z"
+    "asOf": "2026-10-24T08:22:25Z"
    },
    {
     "id": "gb-wales-rivers",
     "kind": "rivers",
     "region": "wales",
     "file": "https://lpsd-1.github.io/trailblazer-datasets/published/rivers/wales.json",
-    "sha256": "31037138f90d9c83eb55cee0dc0e83248598979498bb75747b3f26cb857d1188",
-    "bytes": 2402,
-    "asOf": "2026-10-24T00:04:48Z"
+    "sha256": "ae89f80b6ac678db61b16dad57cb579203ae48872fb0face1dbc2a1c908c305f",
+    "bytes": 2397,
+    "asOf": "2026-10-24T08:22:25Z"
    }
   ]
  },
@@ -295,7 +295,7 @@
           "east": 5,
           "north": 50
          },
-         "file": "https://github.com/lpsd-1/trailblazer-datasets/releases/download/routing/E0_N45.rd5",
+         "file": "https://github.com/LPSD-1/trailblazer-datasets/releases/download/routing/E0_N45.rd5",
          "sha256": "d56bd50e79a131b6002b22bed79ef09fb1b00cb8d51e2f134cd8add716901cc4",
          "bytes": 127261650
         },
@@ -323,7 +323,7 @@
           "east": 5,
           "north": 55
          },
-         "file": "https://github.com/lpsd-1/trailblazer-datasets/releases/download/routing/E0_N50.rd5",
+         "file": "https://github.com/LPSD-1/trailblazer-datasets/releases/download/routing/E0_N50.rd5",
          "sha256": "a0699206f185d88a29c63a5c96fc945ff2a867b061163baf94d0227e0a68ade0",
          "bytes": 79459452
         },
@@ -783,7 +783,7 @@
           "east": -5,
           "north": 50
          },
-         "file": "https://github.com/lpsd-1/trailblazer-datasets/releases/download/routing/W10_N45.rd5",
+         "file": "https://github.com/LPSD-1/trailblazer-datasets/releases/download/routing/W10_N45.rd5",
          "sha256": "bbadae4466ab6d68dffe1032feb4176a009d3a5db378727e818faff590ea347b",
          "bytes": 144971
         },
@@ -797,7 +797,7 @@
           "east": 0,
           "north": 50
          },
-         "file": "https://github.com/lpsd-1/trailblazer-datasets/releases/download/routing/W5_N45.rd5",
+         "file": "https://github.com/LPSD-1/trailblazer-datasets/releases/download/routing/W5_N45.rd5",
          "sha256": "2797283e62629fd67a87dca442335b4e8885e24a6c54fce3ae509a4cd33921c1",
          "bytes": 64221161
         },
@@ -811,7 +811,7 @@
           "east": 5,
           "north": 50
          },
-         "file": "https://github.com/lpsd-1/trailblazer-datasets/releases/download/routing/E0_N45.rd5",
+         "file": "https://github.com/LPSD-1/trailblazer-datasets/releases/download/routing/E0_N45.rd5",
          "sha256": "d56bd50e79a131b6002b22bed79ef09fb1b00cb8d51e2f134cd8add716901cc4",
          "bytes": 127261650
         },
@@ -839,7 +839,7 @@
           "east": -5,
           "north": 55
          },
-         "file": "https://github.com/lpsd-1/trailblazer-datasets/releases/download/routing/W10_N50.rd5",
+         "file": "https://github.com/LPSD-1/trailblazer-datasets/releases/download/routing/W10_N50.rd5",
          "sha256": "3ad9054c84108543be7d4e9dc403b5ee78ec1432a321b5291eca8c6714249e1a",
          "bytes": 43155455
         },
@@ -853,7 +853,7 @@
           "east": 0,
           "north": 55
          },
-         "file": "https://github.com/lpsd-1/trailblazer-datasets/releases/download/routing/W5_N50.rd5",
+         "file": "https://github.com/LPSD-1/trailblazer-datasets/releases/download/routing/W5_N50.rd5",
          "sha256": "bad9fe1b84e72bca06c7c613c624595322ea6ea8ef1806d6e24b42a52c484468",
          "bytes": 139184075
         },
@@ -867,7 +867,7 @@
           "east": 5,
           "north": 55
          },
-         "file": "https://github.com/lpsd-1/trailblazer-datasets/releases/download/routing/E0_N50.rd5",
+         "file": "https://github.com/LPSD-1/trailblazer-datasets/releases/download/routing/E0_N50.rd5",
          "sha256": "a0699206f185d88a29c63a5c96fc945ff2a867b061163baf94d0227e0a68ade0",
          "bytes": 79459452
         },
@@ -1341,7 +1341,7 @@
           "east": -5,
           "north": 55
          },
-         "file": "https://github.com/lpsd-1/trailblazer-datasets/releases/download/routing/W10_N50.rd5",
+         "file": "https://github.com/LPSD-1/trailblazer-datasets/releases/download/routing/W10_N50.rd5",
          "sha256": "3ad9054c84108543be7d4e9dc403b5ee78ec1432a321b5291eca8c6714249e1a",
          "bytes": 43155455
         },
@@ -1355,7 +1355,7 @@
           "east": -5,
           "north": 60
          },
-         "file": "https://github.com/lpsd-1/trailblazer-datasets/releases/download/routing/W10_N55.rd5",
+         "file": "https://github.com/LPSD-1/trailblazer-datasets/releases/download/routing/W10_N55.rd5",
          "sha256": "b8d5c40d4f2972f3213ce8f418fca7e584695ba3bd7bb4606690caaa70768bd8",
          "bytes": 5517791
         }
@@ -1543,7 +1543,7 @@
           "east": 5,
           "north": 55
          },
-         "file": "https://github.com/lpsd-1/trailblazer-datasets/releases/download/routing/E0_N50.rd5",
+         "file": "https://github.com/LPSD-1/trailblazer-datasets/releases/download/routing/E0_N50.rd5",
          "sha256": "a0699206f185d88a29c63a5c96fc945ff2a867b061163baf94d0227e0a68ade0",
          "bytes": 79459452
         },
@@ -1595,7 +1595,7 @@
           "east": 5,
           "north": 60
          },
-         "file": "https://github.com/lpsd-1/trailblazer-datasets/releases/download/routing/E0_N55.rd5",
+         "file": "https://github.com/LPSD-1/trailblazer-datasets/releases/download/routing/E0_N55.rd5",
          "sha256": "15d5aac89190affac79c07d61d3fd300e333ad515a72f1d402aa667baf7f2ee0",
          "bytes": 40546
         },
@@ -3459,7 +3459,7 @@
           "east": -5,
           "north": 55
          },
-         "file": "https://github.com/lpsd-1/trailblazer-datasets/releases/download/routing/W10_N50.rd5",
+         "file": "https://github.com/LPSD-1/trailblazer-datasets/releases/download/routing/W10_N50.rd5",
          "sha256": "3ad9054c84108543be7d4e9dc403b5ee78ec1432a321b5291eca8c6714249e1a",
          "bytes": 43155455
         },
@@ -3473,7 +3473,7 @@
           "east": 0,
           "north": 55
          },
-         "file": "https://github.com/lpsd-1/trailblazer-datasets/releases/download/routing/W5_N50.rd5",
+         "file": "https://github.com/LPSD-1/trailblazer-datasets/releases/download/routing/W5_N50.rd5",
          "sha256": "bad9fe1b84e72bca06c7c613c624595322ea6ea8ef1806d6e24b42a52c484468",
          "bytes": 139184075
         },
@@ -3487,7 +3487,7 @@
           "east": 5,
           "north": 55
          },
-         "file": "https://github.com/lpsd-1/trailblazer-datasets/releases/download/routing/E0_N50.rd5",
+         "file": "https://github.com/LPSD-1/trailblazer-datasets/releases/download/routing/E0_N50.rd5",
          "sha256": "a0699206f185d88a29c63a5c96fc945ff2a867b061163baf94d0227e0a68ade0",
          "bytes": 79459452
         },
@@ -3501,7 +3501,7 @@
           "east": -5,
           "north": 60
          },
-         "file": "https://github.com/lpsd-1/trailblazer-datasets/releases/download/routing/W10_N55.rd5",
+         "file": "https://github.com/LPSD-1/trailblazer-datasets/releases/download/routing/W10_N55.rd5",
          "sha256": "b8d5c40d4f2972f3213ce8f418fca7e584695ba3bd7bb4606690caaa70768bd8",
          "bytes": 5517791
         },
@@ -3515,7 +3515,7 @@
           "east": 0,
           "north": 60
          },
-         "file": "https://github.com/lpsd-1/trailblazer-datasets/releases/download/routing/W5_N55.rd5",
+         "file": "https://github.com/LPSD-1/trailblazer-datasets/releases/download/routing/W5_N55.rd5",
          "sha256": "e139bfc6a44663da49154403cbf403cc6c625938f03db0bfbb5016e9eae934ee",
          "bytes": 26397038
         },
@@ -3529,7 +3529,7 @@
           "east": 5,
           "north": 60
          },
-         "file": "https://github.com/lpsd-1/trailblazer-datasets/releases/download/routing/E0_N55.rd5",
+         "file": "https://github.com/LPSD-1/trailblazer-datasets/releases/download/routing/E0_N55.rd5",
          "sha256": "15d5aac89190affac79c07d61d3fd300e333ad515a72f1d402aa667baf7f2ee0",
          "bytes": 40546
         },
