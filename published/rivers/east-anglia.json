@@ -1,52 +1,52 @@
 {
- "as_of": "2026-10-25T18:36:04Z",
+ "as_of": "2026-10-25T23:27:57Z",
  "licence": "Environment Agency flood-monitoring data, OGL v3",
  "region": "east-anglia",
  "schema": 1,
  "stale_after_h": 6,
  "stations": {
   "2810TH": {
-   "at": "2026-10-25T18:15:00Z",
-   "m": 0.401,
+   "at": "2026-10-25T23:00:00Z",
+   "m": 0.393,
    "state": "normal",
    "typical_high_m": 1.5,
    "typical_low_m": 0.046,
-   "vs_typical_high_m": -1.099
+   "vs_typical_high_m": -1.107
   },
   "2821TH": {
-   "at": "2026-10-25T18:15:00Z",
-   "m": 0.943,
+   "at": "2026-10-25T23:00:00Z",
+   "m": 0.931,
    "state": "normal",
    "typical_high_m": 1.8,
    "typical_low_m": 0.827,
-   "vs_typical_high_m": -0.857
+   "vs_typical_high_m": -0.869
   },
   "4650TH": {
-   "at": "2026-10-25T18:15:00Z",
-   "m": 0.823,
+   "at": "2026-10-25T23:00:00Z",
+   "m": 0.814,
    "state": "normal",
    "typical_high_m": 1.3,
    "typical_low_m": 0.698,
-   "vs_typical_high_m": -0.477
+   "vs_typical_high_m": -0.486
   },
   "4815TH": {
-   "at": "2026-10-25T18:15:00Z",
-   "m": 0.116,
+   "at": "2026-10-25T23:00:00Z",
+   "m": 0.114,
    "state": "normal",
    "typical_high_m": 1.225,
    "typical_low_m": -0.07,
-   "vs_typical_high_m": -1.109
+   "vs_typical_high_m": -1.111
   },
   "4912TH": {
-   "at": "2026-10-25T18:15:00Z",
-   "m": 0.066,
-   "state": "normal",
+   "at": "2026-10-25T23:00:00Z",
+   "m": 0.06,
+   "state": "below",
    "typical_high_m": 1.3,
    "typical_low_m": 0.061,
-   "vs_typical_high_m": -1.234
+   "vs_typical_high_m": -1.24
   },
   "5039TH": {
-   "at": "2026-10-25T18:15:00Z",
+   "at": "2026-10-25T23:00:00Z",
    "m": 0.029,
    "state": "normal",
    "typical_high_m": 0.82,
@@ -54,16 +54,16 @@
    "vs_typical_high_m": -0.791
   },
   "5189TH": {
-   "at": "2026-10-25T18:15:00Z",
-   "m": 0.094,
+   "at": "2026-10-25T23:00:00Z",
+   "m": 0.086,
    "state": "normal",
    "typical_high_m": 1.9,
    "typical_low_m": 0.053,
-   "vs_typical_high_m": -1.806
+   "vs_typical_high_m": -1.814
   },
   "E21117": {
-   "at": "2026-10-25T18:15:00Z",
-   "m": 13.304,
+   "at": "2026-10-25T23:00:00Z",
+   "m": 13.307,
    "state": "unknown",
    "typical_high_m": null,
    "typical_low_m": null,
@@ -78,52 +78,52 @@
    "vs_typical_high_m": null
   },
   "E21778": {
-   "at": "2026-10-25T18:15:00Z",
-   "m": 0.151,
+   "at": "2026-10-25T23:00:00Z",
+   "m": 0.145,
    "state": "normal",
    "typical_high_m": 0.333,
    "typical_low_m": 0.109,
-   "vs_typical_high_m": -0.182
+   "vs_typical_high_m": -0.188
   },
   "E21985": {
-   "at": "2026-10-25T18:15:00Z",
-   "m": 70.421,
+   "at": "2026-10-25T23:00:00Z",
+   "m": 70.415,
    "state": "unknown",
    "typical_high_m": null,
    "typical_low_m": null,
    "vs_typical_high_m": null
   },
   "E22843": {
-   "at": "2026-10-25T18:15:00Z",
-   "m": 0.231,
+   "at": "2026-10-25T23:00:00Z",
+   "m": 0.221,
    "state": "normal",
    "typical_high_m": 1.29,
    "typical_low_m": 0.077,
-   "vs_typical_high_m": -1.059
+   "vs_typical_high_m": -1.069
   },
   "E22869": {
-   "at": "2026-10-25T18:15:00Z",
-   "m": 0.175,
+   "at": "2026-10-25T23:00:00Z",
+   "m": 0.174,
    "state": "normal",
    "typical_high_m": 0.75,
    "typical_low_m": 0.061,
-   "vs_typical_high_m": -0.575
+   "vs_typical_high_m": -0.576
   },
   "E22944": {
-   "at": "2026-10-25T18:15:00Z",
-   "m": -1.438,
+   "at": "2026-10-25T23:00:00Z",
+   "m": 3.221,
    "state": "unknown",
    "typical_high_m": null,
    "typical_low_m": null,
    "vs_typical_high_m": null
   },
   "E23036": {
-   "at": "2026-10-25T18:00:00Z",
-   "m": 0.229,
+   "at": "2026-10-25T22:15:00Z",
+   "m": 0.225,
    "state": "normal",
    "typical_high_m": 0.9,
    "typical_low_m": 0.151,
-   "vs_typical_high_m": -0.671
+   "vs_typical_high_m": -0.675
   },
   "E24267": {
    "at": "2026-10-25T17:00:00Z",
@@ -150,8 +150,8 @@
    "vs_typical_high_m": -0.203
   },
   "E24323": {
-   "at": "2026-10-25T18:15:00Z",
-   "m": -0.443,
+   "at": "2026-10-25T23:00:00Z",
+   "m": 3.126,
    "state": "unknown",
    "typical_high_m": null,
    "typical_low_m": null,
