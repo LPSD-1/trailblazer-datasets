@@ -1,6 +1,6 @@
 {
  "schema": 1,
- "generated": "2026-10-25T17:43:03Z",
+ "generated": "2026-10-25T17:53:26Z",
  "datasets": [
   {
    "id": "lanes",
@@ -87,8 +87,8 @@
    "name": "Satellite imagery",
    "what": "Satellite photos of the ground, from the 2016 Sentinel-2 cloudless mosaic",
    "schedule": "Twice a day",
-   "last_run": "2026-10-25T07:48:24Z",
-   "result": "ok",
+   "last_run": "2026-10-25T17:49:15Z",
+   "result": "running",
    "last_ok": "2026-10-25T07:48:24Z",
    "data_as_of": null
   },
