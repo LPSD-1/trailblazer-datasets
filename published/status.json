@@ -1,6 +1,6 @@
 {
  "schema": 1,
- "generated": "2026-10-25T12:49:50Z",
+ "generated": "2026-10-25T13:16:36Z",
  "datasets": [
   {
    "id": "lanes",
@@ -17,9 +17,9 @@
    "name": "Traffic orders and closures",
    "what": "Legal orders and closures on the lanes, from the Department for Transport's D-TRO service and councils' own notices",
    "schedule": "Every 6 hours",
-   "last_run": "2026-10-25T07:40:24Z",
+   "last_run": "2026-10-25T13:14:32Z",
    "result": "ok",
-   "last_ok": "2026-10-25T07:40:24Z",
+   "last_ok": "2026-10-25T13:14:32Z",
    "data_as_of": "2026-10-25"
   },
   {
@@ -676,7 +676,7 @@
    "kind": "council",
    "byways": 727,
    "unsurfaced_roads": 0,
-   "dtro_records": 4293,
+   "dtro_records": 4303,
    "dtro": "Publishes to D-TRO",
    "sources": [
     {
@@ -1922,7 +1922,7 @@
    "kind": "council",
    "byways": 75,
    "unsurfaced_roads": 545,
-   "dtro_records": 4260,
+   "dtro_records": 4264,
    "dtro": "Publishes to D-TRO",
    "sources": [
     {
@@ -2493,7 +2493,7 @@
    "kind": "council",
    "byways": 10,
    "unsurfaced_roads": 0,
-   "dtro_records": 992,
+   "dtro_records": 996,
    "dtro": "Publishes to D-TRO",
    "sources": [
     {
