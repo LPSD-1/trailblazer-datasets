@@ -1,6 +1,6 @@
 {
  "schema": 1,
- "generated": "2026-10-27T06:54:23Z",
+ "generated": "2026-10-27T08:07:24Z",
  "datasets": [
   {
    "id": "lanes",
@@ -17,10 +17,10 @@
    "name": "Traffic orders and closures",
    "what": "Legal orders and closures on the lanes, from the Department for Transport's D-TRO service and councils' own notices",
    "schedule": "Every 6 hours",
-   "last_run": "2026-10-26T23:56:37Z",
+   "last_run": "2026-10-27T08:01:40Z",
    "result": "ok",
-   "last_ok": "2026-10-26T23:56:37Z",
-   "data_as_of": "2026-10-26"
+   "last_ok": "2026-10-27T08:01:40Z",
+   "data_as_of": "2026-10-27"
   },
   {
    "id": "council-closures",
@@ -608,7 +608,7 @@
    "kind": "council",
    "byways": 28,
    "unsurfaced_roads": 0,
-   "dtro_records": 2640,
+   "dtro_records": 2641,
    "dtro": "Publishes to D-TRO",
    "sources": [
     {
@@ -939,7 +939,7 @@
    "kind": "council",
    "byways": 59,
    "unsurfaced_roads": 0,
-   "dtro_records": 2086,
+   "dtro_records": 2087,
    "dtro": "Publishes to D-TRO",
    "sources": [
     {
@@ -1124,7 +1124,7 @@
    "kind": "council",
    "byways": 8,
    "unsurfaced_roads": 0,
-   "dtro_records": 210,
+   "dtro_records": 211,
    "dtro": "Publishes to D-TRO",
    "sources": [
     {
@@ -1477,7 +1477,7 @@
    "kind": "council",
    "byways": 230,
    "unsurfaced_roads": 0,
-   "dtro_records": 11678,
+   "dtro_records": 11679,
    "dtro": "Publishes to D-TRO",
    "sources": [
     {
@@ -1520,7 +1520,7 @@
    "kind": "council",
    "byways": 89,
    "unsurfaced_roads": 0,
-   "dtro_records": 1029,
+   "dtro_records": 1030,
    "dtro": "Publishes to D-TRO",
    "sources": [
     {
@@ -1789,7 +1789,7 @@
    "kind": "council",
    "byways": 0,
    "unsurfaced_roads": 0,
-   "dtro_records": 1259,
+   "dtro_records": 1261,
    "dtro": "Publishes to D-TRO",
    "sources": [
     {
@@ -2840,7 +2840,7 @@
    "kind": "council",
    "byways": 327,
    "unsurfaced_roads": 0,
-   "dtro_records": 7598,
+   "dtro_records": 7599,
    "dtro": "Publishes to D-TRO",
    "sources": [
     {
