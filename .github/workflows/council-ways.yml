@@ -65,6 +65,7 @@ jobs:
       - name: Run the tests before trusting the read
         run: |
           python tools/test_polite_http.py
+          python tools/test_council_files.py
           python tools/test_council_ways.py
           python tools/test_council_ucrs.py
 

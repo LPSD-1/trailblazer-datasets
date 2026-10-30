@@ -755,6 +755,7 @@ except ValueError:
 
 import base64  # noqa: E402
 import contextlib  # noqa: E402
+import datetime  # noqa: E402
 import io  # noqa: E402
 
 _E2E_ROWS = {
@@ -778,25 +779,43 @@ _E2E_ROWS = {
 }
 
 
-def _e2e(*extra, rows_by_type=None):
+def _e2e(*extra, rows_by_type=None, council=None,
+         authority=("DE", "Derbyshire")):
     """main() over the fixture cache -> (manifest, [sealed bodies], root).
 
     Runs with --previous '' so the repository's published manifest.json is
     never read, and with cache_dir/dist_dir pointed at a scratch directory so
     the checkout is never written. [rows_by_type] replaces _E2E_ROWS; a row
-    may carry a third item, its rowmaps Description.
+    may carry a third item, its rowmaps Description. [council] is Derbyshire's
+    own byway file (council_ways.py's shape), read today; without it the
+    council-ways folder is empty, so the repository's own is never read.
+    [authority] is the (code, name) the cache and council file are under.
+    The council-ucrs folder is an empty one too, so no authority's real
+    unsurfaced roads (Surrey's, say) join the fixture.
     """
+    code, name = authority
     root = tempfile.mkdtemp(prefix="tbways-e2e-")
     cache, dist = os.path.join(root, "cache"), os.path.join(root, "dist")
-    os.makedirs(os.path.join(cache, "DE"))
+    ways_dir = os.path.join(root, "council-ways")
+    ucrs_dir = os.path.join(root, "council-ucrs")
+    os.makedirs(ucrs_dir)
+    os.makedirs(os.path.join(cache, code))
     os.makedirs(dist)
+    os.makedirs(ways_dir)
+    if council is not None:
+        with open(os.path.join(ways_dir, "%s.json" % code), "w") as fh:
+            json.dump(council, fh)
+        with open(os.path.join(ways_dir, "status.json"), "w") as fh:
+            json.dump({code: {"ok": True, "last_ok":
+                              datetime.date.today().isoformat()}}, fh)
     with open(os.path.join(cache, "authorities.json"), "w") as fh:
-        json.dump({"DE": "Derbyshire"}, fh)
+        json.dump({code: name}, fh)
     for row_type, rows in (rows_by_type or _E2E_ROWS).items():
-        with open(os.path.join(cache, "DE", "%s.json" % row_type), "w") as fh:
+        with open(os.path.join(cache, code, "%s.json" % row_type),
+                  "w") as fh:
             json.dump({"type": "FeatureCollection", "features": [
                 {"type": "Feature",
-                 "properties": {"Name": "DE|%s" % row[0],
+                 "properties": {"Name": "%s|%s" % (code, row[0]),
                                 "Description": row[2] if len(row) > 2
                                 else ""},
                  "geometry": {"type": "LineString", "coordinates": row[1]}}
@@ -805,16 +824,29 @@ def _e2e(*extra, rows_by_type=None):
     with open(keyfile, "w") as fh:
         fh.write(base64.b64encode(KEY).decode("ascii"))
 
-    real = (build_packages.cache_dir, build_packages.dist_dir, sys.argv)
+    ways = build_packages.council_ways
+    used = (build_packages.COUNCIL_LAYERS_USED,
+            build_packages.COUNCIL_SOURCES_USED)
+    ucr = build_packages.council_ucrs
+    real = (build_packages.cache_dir, build_packages.dist_dir, sys.argv,
+            ways.OUT, [l[:] for l in used], ucr.OUT)
+    ucr.OUT = ucrs_dir
     build_packages.cache_dir = lambda: cache
     build_packages.dist_dir = lambda: dist
+    ways.OUT = ways_dir
+    for l in used:
+        l[:] = []   # main() appends to them: one run's, not every run's
     sys.argv = (["build_packages.py", "--key", keyfile, "--previous", ""]
                 + list(extra))
     try:
         with contextlib.redirect_stdout(io.StringIO()):
             build_packages.main()
     finally:
-        build_packages.cache_dir, build_packages.dist_dir, sys.argv = real
+        (build_packages.cache_dir, build_packages.dist_dir, sys.argv,
+         ways.OUT) = real[:4]
+        for l, was in zip(used, real[4]):
+            l[:] = was
+        ucr.OUT = real[5]
 
     manifest, bodies = None, []
     mpath = os.path.join(dist, "manifest.json")
@@ -850,6 +882,105 @@ check("and every manifest entry",
       sorted(set(e["contextScope"] for e in _m["packages"])), ["none"])
 check_true("the pack note no longer promises a 1 km radius",
            all("1 km" not in e["note"] for e in _m["packages"]))
+shutil.rmtree(_root, ignore_errors=True)
+
+# --- A COUNCIL'S OWN BYWAYS, END TO END: credited where riders read it ------
+#
+# Derbyshire's own byway layer, published without a stated licence, draws
+# both BOATs. main() must hand the council's source to every pack it seals
+# (write_package's byway_sources) and to the manifest (bywaySources, the
+# licence and the attribution, through byway_sources_in). Drop either and
+# the council's words never reach a rider, though every unit test of the
+# credit functions still passes.
+_DE_SOURCE = build_packages.council_ways.public({
+    "code": "DE", "council": "Derbyshire County Council",
+    "url": "https://d.example/row.zip", "licence": None})
+_de_words = ("Source: Derbyshire County Council's public rights of way "
+             "layer, as published by the council. The council publishes it "
+             "without stating a licence.")
+check("the fixture's credit is the council's own words",
+      _DE_SOURCE["attribution"], _de_words)
+_m, _bodies, _root = _e2e(council={
+    "source": _DE_SOURCE, "records": 2,
+    "ways": [{"id": str(i), "parish": "1", "number": str(i + 1),
+              "lines": [[list(p) for p in coords]]}
+             for i, (_n, coords) in enumerate(
+                 _E2E_ROWS["byway_open_to_all_traffic"])]})
+_boats = [f["properties"] for b in _bodies for f in b["features"]
+          if f["properties"]["class"] == "boat"]
+check("both BOATs came from the council's layer",
+      sorted(p["source"].split(":")[0] for p in _boats),
+      ["council", "council"])
+check_true("the manifest credits the council in its own words (%s)"
+           % _m["attribution"], _de_words in _m["attribution"])
+check("the manifest lists the layer and the lanes it gave",
+      [(s.get("code"), s.get("count"), s.get("licence"))
+       for s in _m.get("bywaySources") or []], [("DE", 2, None)])
+check("the manifest names the authority whose layer was used",
+      _m.get("councilLayers"), ["Derbyshire"])
+check("and says where the byways came from, in the singular",
+      _m.get("source"), "Local highway authority definitive maps via "
+      "rowmaps.com; byways for 1 authority from the council's own layer")
+check_true("the manifest licence says it states none (%s)" % _m["licence"],
+           "without a stated licence" in _m["licence"])
+_de_packs = [b for b in _bodies if any(
+    f["properties"]["source"].startswith("council:") for f in b["features"])]
+check_true("a pack holds the council's byways", bool(_de_packs))
+check_true("every pack holding them credits the council in its own words",
+           all(_de_words in b["attribution"] for b in _de_packs))
+for _where, _said in [("manifest", _m["attribution"])] + [
+        ("pack", b["attribution"]) for b in _de_packs]:
+    check_true("the %s still credits rowmaps.com for the rest (%s)"
+               % (_where, _said),
+               _said.endswith("Other rights of way: " + build_packages.OGL)
+               and "via rowmaps.com" in _said)
+    check_true("the %s puts no label before the council's 'Source:' (%s)"
+               % (_where, _said), ": Source:" not in _said)
+shutil.rmtree(_root, ignore_errors=True)
+
+# --- SURREY'S ORDNANCE SURVEY CREDIT, END TO END ---------------------------
+#
+# Surrey's file asks for "Contains OS data (c) Crown copyright and database
+# right <year>", the year read from the file itself. fetch_one writes it
+# into the council file's source; main() must carry it into every pack
+# holding Surrey's byways and into the manifest, or riders never see it.
+# The year is 2025, not this year, so a credit stamped with today's year
+# would not pass.
+_SU_OS = "Contains OS data © Crown copyright and database right 2025."
+_su_layer = dict(next(l for l in build_packages.council_ways.LAYERS
+                      if l["code"] == "SU"))
+_su_ways = [{"id": str(i), "parish": "1", "number": str(i + 1),
+             "lines": [[list(p) for p in coords]]}
+            for i, (_n, coords) in enumerate(
+                _E2E_ROWS["byway_open_to_all_traffic"])]
+_su_layer["read"] = lambda _client, _layer: (2, _su_ways,
+                                             {"credit": _SU_OS})
+_su_dir = tempfile.mkdtemp(prefix="tbways-su-")
+_su_entry = build_packages.council_ways.fetch_one(
+    _su_layer, None, _su_dir, datetime.date.today().isoformat(),
+    cache=os.path.join(_su_dir, "cache"))
+check_true("the Surrey read is written (%s)" % _su_entry, _su_entry["ok"])
+with open(os.path.join(_su_dir, "SU.json"), encoding="utf8") as fh:
+    _su_file = json.load(fh)
+shutil.rmtree(_su_dir, ignore_errors=True)
+check_true("the council file's credit carries the OS line (%s)"
+           % _su_file["source"]["attribution"],
+           _SU_OS in _su_file["source"]["attribution"])
+_m, _bodies, _root = _e2e(council=_su_file, authority=("SU", "Surrey"))
+_su_packs = [b for b in _bodies if any(
+    f["properties"]["source"].startswith("council:") for f in b["features"])]
+check_true("a pack holds Surrey's byways", bool(_su_packs))
+check_true("every pack holding them carries the OS credit (%s)"
+           % [b["attribution"] for b in _su_packs],
+           all(_SU_OS in b["attribution"] for b in _su_packs))
+check_true("the manifest attribution carries the OS credit (%s)"
+           % _m["attribution"], _SU_OS in _m["attribution"])
+check("and the manifest lists Surrey's layer with it",
+      [(s.get("code"), s.get("licence"), s.get("credit"))
+       for s in _m.get("bywaySources") or []], [("SU", "OGL-3.0", _SU_OS)])
+check("Surrey's layer is OGL, so the licence stays OGL-3.0",
+      _m["licence"], "OGL-3.0")
+check("the manifest names Surrey", _m.get("councilLayers"), ["Surrey"])
 shutil.rmtree(_root, ignore_errors=True)
 
 # The fixture is one where the old decision WOULD carry context: without this

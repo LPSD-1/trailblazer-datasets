@@ -2,19 +2,33 @@
 
 Public rights-of-way data for the TrailBlazer app, packaged for offline use.
 
-Every package here is built from **local highway authority definitive maps** —
-the legal record of public rights of way in England and Wales — obtained via
-[rowmaps.com](https://www.rowmaps.com) and published under the
-[Open Government Licence v3.0](https://www.nationalarchives.gov.uk/doc/open-government-licence/version/3/).
+The rights of way here come from **local highway authority definitive maps** —
+the legal record of public rights of way in England and Wales — read through
+[rowmaps.com](https://www.rowmaps.com). Where a council publishes its own
+byway layer and we read it, its byways come from that layer and are credited
+to the council; the exceptions are listed under
+[Byways from the councils' own layers](#byways-from-the-councils-own-layers).
+The unsurfaced unclassified roads come from councils' highway records.
 
-> Contains public sector information licensed under the Open Government Licence
-> v3.0. Source: local highway authority definitive maps, via rowmaps.com.
+> Rights of way from the definitive maps, via rowmaps.com, contain public
+> sector information licensed under the
+> [Open Government Licence v3.0](https://www.nationalarchives.gov.uk/doc/open-government-licence/version/3/).
+> Byways from councils' own layers, and unsurfaced roads, carry the credit
+> each council states, and the licence where one is stated, as set out in
+> the lane data.
 
 Since 8 October 2026 the lanes also include **unsurfaced unclassified roads**
 read from the councils' own highway records - Devon, North Yorkshire, Norfolk,
 Lincolnshire, Northumberland, East Riding of Yorkshire, Oxfordshire and Surrey,
-each credited to its council. Those layers are not published under the Open
-Government Licence; see [Unsurfaced unclassified roads](#unsurfaced-unclassified-roads-ucrs).
+each credited to its council. No licence is stated for these
+unsurfaced-road layers; see [Unsurfaced unclassified roads](#unsurfaced-unclassified-roads-ucrs).
+
+Except as noted below, where a council publishes its own byway layer, its
+byways are read from that layer, with rowmaps.com as the fallback, and
+credited to the council under the licence it states, or noted as published
+without a stated licence. The Isle of Wight's, Hampshire's and Calderdale's layers are used
+only if rowmaps.com has no file for that council; see
+[Byways from the councils' own layers](#byways-from-the-councils-own-layers).
 
 ## What this is not
 
@@ -169,9 +183,10 @@ council's row in its `authorities` block lists which sources cover it.
 How they are read: an honest User-Agent naming this repository, robots.txt
 obeyed (RFC 9309), a gap between requests, read-only calls only, redirects
 followed only where the same rules allow, and nothing behind a bot challenge
-(`tools/polite_http.py`). By the owner's policy of 7 October 2026, a council
-that refuses GitHub's shared runners (Dorset, Powys) is read from one fixed,
-honestly named collector server instead, with the same client and rules
+(`tools/polite_http.py`). Since 7 October 2026, the
+closures of a council whose servers do not answer GitHub's shared runners
+(Dorset, Powys) are read from one fixed, honestly named collector server
+instead, with the same client and rules
 (`HOME-COLLECTOR.md`), and so is Wiltshire's closures register, which
 answers that server and has not been tried from the runners. The coverage
 table credits each "collected directly from the council" with the date.
@@ -184,8 +199,8 @@ as a person pressing Search does. The owner approved that on 7 October
 2026, and `tools/polite_http.py` allows a POST to that one form and no
 other (`FORM_POSTS`). Its voluntary closures are requests, not orders, and
 are held for review rather than drawn as closures. West Berkshire's closures
-layer is listed and not read: its GIS host's robots.txt disallows all
-automated access. No personal data is stored: contact names, phone numbers,
+layer is read from its GIS host `gis.westberks.gov.uk`; its other hosts are
+not read. No personal data is stored: contact names, phone numbers,
 e-mail addresses and applicants are dropped before anything is written. A
 source that fails, or suddenly returns nothing, keeps its last good copy.
 
@@ -258,29 +273,66 @@ do not shut the way are left out.
 ## Byways from the councils' own layers
 
 rowmaps.com copies each council's definitive map, and many of its copies are
-over a year old. Sixteen councils publish their rights of way live, and for
-them `council-ways.yml` reads the byways (BOATs only) from the council every
-day into `council-ways/<CODE>.json` (`tools/council_ways.py`):
+over a year old. Where a council publishes its own rights of way data,
+`council-ways.yml` reads the byways (BOATs only) from the council into
+`council-ways/<CODE>.json` (`tools/council_ways.py`). A map server that can be
+asked for byways alone is read every day. A file the council publishes for
+download is read once a week, since the councils replace theirs monthly at
+most, and so are Dudley's and St Helens' map servers, which must be read
+whole:
 
-| Code | Council | Layer | Licence |
-|---|---|---|---|
-| CB | Cambridgeshire County Council | iShare WFS `ccc:public_rights_of_way` | OGL v3.0 |
-| BK | Central Bedfordshire Council | iShare WFS `RoW_Legal_Network_1` | OGL v3.0 |
-| WJ | Wokingham Borough Council | ArcGIS `PRoW_in_Wokingham_(Public)` | OGL v3.0 |
-| DN | Devon County Council | ArcGIS `Environment/Public_Access/0` | not stated |
-| CH | Cheshire East Council | GeoServer `CEOpenData` BOAT layer | not stated |
-| CC | Cheshire West and Chester Council | GeoServer `CWaCOpenData` BOAT layer | OGL v3.0 |
-| ON | Oxfordshire County Council | ArcGIS `CAMS_PRoW` | OGL v3.0 |
-| LA | Lancashire County Council | ArcGIS `Public_Rights_of_Way` | OGL v3.0 |
-| ND | Northumberland County Council | ArcGIS `PRoW_rowwork_ln_MASTER_view` | OGL v3.0 |
-| ES | East Sussex County Council | ArcGIS `Rights_of_Way_(non_definitive)` | OGL v3.0 |
-| HD | Hertfordshire County Council | ArcGIS `public/row/3` | OGL v3.0 |
-| EX | Essex County Council | ArcGIS `PROW_view` | not stated |
-| WT | Wiltshire Council | ArcGIS `OpenData/PublicRightsofWay` (query only) | OGL v3.0 |
-| BC | Bracknell Forest Council | ArcGIS `GIS_PublicRightsOfWay/7` | OGL v3.0 |
-| WB | West Berkshire Council | ArcGIS `gis.westberks.gov.uk` `PUBLIC_RIGHTS_OF_WAY/1` (query only) | not stated |
-| IW | Isle of Wight Council | ArcGIS `arcgis.iow.gov.uk` `PublicRightsOfWay/0`: a cross-check only, used if rowmaps ever has no Isle of Wight file | not stated |
-| HA | Hampshire County Council | ArcGIS Online `Hampshire_Rights_of_Way` (June 2023): a cross-check only, used if rowmaps ever has no Hampshire file | not stated |
+| Code | Council | Layer | Read | Licence |
+|---|---|---|---|---|
+| CB | Cambridgeshire County Council | iShare WFS `ccc:public_rights_of_way` | daily | OGL v3.0 |
+| BK | Central Bedfordshire Council | iShare WFS `RoW_Legal_Network_1` | daily | OGL v3.0 |
+| WJ | Wokingham Borough Council | ArcGIS `PRoW_in_Wokingham_(Public)` | daily | OGL v3.0 |
+| DN | Devon County Council | ArcGIS `Environment/Public_Access/0` | daily | not stated |
+| CH | Cheshire East Council | GeoServer `CEOpenData` BOAT layer | daily | not stated |
+| CC | Cheshire West and Chester Council | GeoServer `CWaCOpenData` BOAT layer | daily | OGL v3.0 |
+| ON | Oxfordshire County Council | ArcGIS `CAMS_PRoW` | daily | OGL v3.0 |
+| LA | Lancashire County Council | ArcGIS `Public_Rights_of_Way` | daily | OGL v3.0 |
+| ND | Northumberland County Council | ArcGIS `PRoW_rowwork_ln_MASTER_view` | daily | OGL v3.0 |
+| ES | East Sussex County Council | ArcGIS `Rights_of_Way_(non_definitive)` | daily | OGL v3.0 |
+| HD | Hertfordshire County Council | ArcGIS `public/row/3` | daily | OGL v3.0 |
+| EX | Essex County Council | ArcGIS `PROW_view` | daily | not stated |
+| WT | Wiltshire Council | ArcGIS `OpenData/PublicRightsofWay` (query only) | daily | OGL v3.0 |
+| BC | Bracknell Forest Council | ArcGIS `GIS_PublicRightsOfWay/7` | daily | OGL v3.0 |
+| WB | West Berkshire Council | ArcGIS `gis.westberks.gov.uk` `PUBLIC_RIGHTS_OF_WAY/1` (query only) | daily | not stated |
+| DY | Derbyshire County Council | GeoServer WFS `DCC:Rights_Of_Way_OpenData` | daily | OGL v3.0 |
+| BM | Buckinghamshire Council | download `ROW_2025.zip` (shapefile) | weekly | OGL v3.0 |
+| DZ | Dudley Metropolitan Borough Council | iShare WFS `row_lines`, read whole | weekly | OGL v3.0 |
+| DU | Durham County Council | `prow.zip` (shapefile) on Data Mill North | weekly | OGL v3.0 |
+| KL | Kirklees Council | download `PROW_polyline.zip` (shapefile) | weekly | OGL v3.0 |
+| L1 | Lake District National Park Authority | download `LDNPA_PROW.shz` (shapefile) | weekly | OGL v3.0 |
+| LD | Leeds City Council | `Def_Paths.zip` (shapefile) on Data Mill North | weekly | OGL v3.0 |
+| NY | North Yorkshire Council | the month's shapefile, linked from its open data hub | weekly | OGL v3.0 |
+| SN | St Helens Council | iShare WFS `Public_Rights_of_Way`, read whole | weekly | OGL v3.0 |
+| YY | Stockport Metropolitan Borough Council | `definitive_rights_of_way.json`, the council's own open data file, listed on Data Mill North | weekly | OGL v3.0 |
+| SU | Surrey County Council | the dated GeoPackage linked from its open data page | weekly | OGL v3.0, with the Ordnance Survey's credit |
+| WP | Telford & Wrekin Council | download `BTW_PROW.zip` (shapefile) | weekly | OGL v3.0 |
+| IW | Isle of Wight Council | ArcGIS `arcgis.iow.gov.uk` `PublicRightsOfWay/0`: a cross-check only, used if rowmaps ever has no Isle of Wight file | daily | not stated |
+| HP | Hampshire County Council | ArcGIS Online `Hampshire_Rights_of_Way` (June 2023): a cross-check only, used if rowmaps ever has no Hampshire file | daily | not stated |
+| CA | Calderdale Metropolitan Borough Council | a GeoJSON snapshot from January 2022 that is never updated: a cross-check only, used if rowmaps ever has no Calderdale file | weekly | OGL v3.0 |
+
+Each way from a council's own layer carries that council's credit, under the
+council's own licence, or says that the council states none. The lane
+manifest lists those councils in `bywaySources` (shaped like `ucrSources`),
+and the catalogue's attribution names each one, credits rowmaps.com only for
+the other authorities, and never calls a layer published without a licence
+Open Government Licence. Surrey's file contains Ordnance Survey data, so its
+credit adds "Contains OS data © Crown copyright and database right" with
+the year of the file's own date; a file that gives no date is not used.
+
+Every host read is listed in `council_ways.HOSTS`, and the request client
+refuses any other, including wherever a redirect leads. Stockport's file
+lies on a storage host other people use too, so only the council's own folder
+on it is read (`council_ways.HOST_PATHS`).
+
+Norfolk's byways stay on rowmaps.com for now, until we have confirmed the
+terms of the licence its file states. Powys's map server did not respond to
+our request on 30 October 2026, so Powys's byways stay on rowmaps.com. (The
+collector server reads Powys's closures and order documents, not its
+byways.)
 
 The lane build lets the council's layer decide which byways exist and keeps
 every unchanged way's rowmaps record byte for byte, so its id does not move: a
@@ -291,11 +343,10 @@ fallback: an unreadable layer keeps its last good file, a council file
 that disagrees with rowmaps too much to be the same network is not used,
 and neither is one whose last good read is 30 days old or more
 (`council_ways.MAX_AGE_DAYS`), since rowmaps may have added byways since.
-West Berkshire's older GIS host (robots.txt) and its website (a bot
-challenge) are not read; its newer GIS host has no robots.txt and is. Dorset
-refuses GitHub's runners and is read by the collector server
-(HOME-COLLECTOR.md). Kent's, Dartmoor's and Exmoor's own layers carry
-licences that restrict their use and are not read.
+West Berkshire's byways are read from its GIS host `gis.westberks.gov.uk`;
+its other hosts are not read. Dorset's map server does not answer
+requests from GitHub's runners, so Dorset's byways stay on rowmaps.com.
+Kent's, Dartmoor's and Exmoor's own layers are not read at present.
 
 ## Unsurfaced unclassified roads (UCRs)
 
@@ -304,8 +355,8 @@ unclassified county roads the council maintains and lists in its List of
 Streets (Highways Act 1980 s36(6)) - that were never given a hard surface. The
 Natural Environment and Rural Communities Act 2006 s67(2)(b) kept the motor
 vehicle rights over ways in that list. They are on no definitive map, so
-rowmaps has none of them. On 8 October 2026 the owner decided that every green
-lane is to be shown, so `council-ways.yml` also reads the councils that publish
+rowmaps has none of them. Since the decision of 8 October 2026 that every
+green lane is to be shown, `council-ways.yml` also reads the councils that publish
 their unsurfaced roads, every day, into `council-ucrs/<CODE>.json`
 (`tools/council_ucrs.py`; its own status in `council-ucrs/status.json`).
 
@@ -318,30 +369,30 @@ NERC test below), with the roads that went wholly in brackets:
 |---|---|---|---|---|---|---|---|
 | Devon | Devon County Council: `Environment_Intranet/Public_Access_Intranet/MapServer/5`, "PROW CAT 12" - unsurfaced unclassified county roads, maintenance category 12 | 8 Oct 2026 | 1,143 sections, 960 routes | 952 (583 km) | 17 sections (8) | 0 | not stated - see below |
 | North Yorkshire | North Yorkshire Council: `highways/Highways_Network/FeatureServer/3` "U_Roads" (through the ArcGIS utility proxy its public rights of way map uses), HIERARCHY 6; a road is its pre-2023 district and U number | 8 Oct 2026 | 1,005 sections, 685 roads | 633 (669 km) | 63 (40) | 30 (12) | not stated - see below |
-| Norfolk | Norfolk County Council: `layers_ext/crm/MapServer/16`, "Norfolk County Council Maintained Unsurfaced Roads" | 8 Oct 2026 | 711 sections, 586 roads | 545 (480 km) | 43 (36) | 5 (5) | not stated - see below |
+| Norfolk | Norfolk County Council: `layers_ext/crm/MapServer/16`, "Norfolk County Council Maintained Unsurfaced Roads" (a different layer from Norfolk's byway file) | 8 Oct 2026 | 711 sections, 586 roads | 545 (480 km) | 43 (36) | 5 (5) | not stated - see below |
 | Lincolnshire | Lincolnshire County Council: `Highways_Assets_Carriageway_2_view/FeatureServer/3`, Road_Class 'Green Lane' | 8 Oct 2026 | 536 sections, 479 roads | 370 (255 km) | 134 (106) | 5 (3) | not stated - see below |
 | Northumberland | Northumberland County Council: `adopted_highway_master_view/FeatureServer/4` (its List of Streets), maintenance category '8 - Unsurfaced Roads', all-purpose sections | 8 Oct 2026 | 305 sections, 237 roads | 75 (69 km) | 8 (7) | 213 (155) | not stated - see below |
 | East Riding of Yorkshire | East Riding of Yorkshire Council: `LSG_ESU_Dedications/FeatureServer/9` (street gazetteer, last edited Sept 2022), 'GREEN LANE' or '6 Unmetalled', dedicated to all vehicles, council maintained | 8 Oct 2026 | 192 sections, 112 roads | 101 (89 km) | 17 (11) | 0 | not stated - see below |
 | Oxfordshire | Oxfordshire County Council: `WMS/Highways_Centreline/MapServer/1` (its List of Streets), STREET_SURF 'Unmetalled' (not 'Mixed') | 8 Oct 2026 | 106 streets | 41 (20 km) | 95 (61: most are restricted byways) | 6 (4) | not stated - see below |
 | Surrey | Surrey County Council: `Surrey_Interactive_Map/RoadsTransport_Roads_Publicly_Maintained/MapServer/33`, surface 'UM', road_type 'Unclassified' | 8 Oct 2026 | 167 sections, 92 roads | 41 (16 km) | 11 (9) | 101 (42) | not stated - see below |
-| Worcestershire | not read: its 'Keep Safe Only' maintenance tier (193 sections) is not tied to unsurfaced roads by any council publication found (tools/council_ucrs.py says which were read) | - | - | - | - | - | - |
+| Worcestershire | not read: its 'Keep Safe Only' maintenance tier (193 sections) is not tied to unsurfaced roads by any council publication found | - | - | - | - | - | - |
 | Suffolk, Herefordshire | not read: their terms forbid copying | - | - | - | - | - | - |
 | every other authority | not yet read; each council found is one entry in `UCR_LAYERS` | - | - | - | - | - | - |
 
 Where a council's roads are not read, the app says so: an absence of UCRs on
 the map is never an absence on the ground.
 
-**None of these layers states a licence. Each is published on the owner's
-decision of 8 October 2026** that it is public highway information - a
-council's highway records must be open to public inspection - credited to the
-council by name (Devon County Council, North Yorkshire Council, Norfolk County
-Council, Lincolnshire County Council, Northumberland County Council, East
-Riding of Yorkshire Council, Oxfordshire County Council, Surrey County
-Council) on every road, pack and container that carries it, and each will be
-taken down if its council objects. Every road says, in its `attribution`,
-"Source: <the council's layer>, read from the council." followed by that
-decision (`council_ucrs.owner_decision_note`). The decision named
-Worcestershire too; it is held out on the evidence above, not the licence.
+**No licence is stated for these layers. Each road is credited to its
+council by name, and Trail Blazer will remove a council's roads if the council
+objects.** The credit (Devon
+County Council, North Yorkshire Council, Norfolk County Council, Lincolnshire
+County Council, Northumberland County Council, East Riding of Yorkshire
+Council, Oxfordshire County Council, Surrey County Council) is on every road,
+pack and container that carries a council's roads. Every road says, in its
+`attribution`, "Source: <the council's layer>, read from the council.
+Credited to <council>. No licence has been stated for these roads. Trail
+Blazer will remove them if the council objects." Worcestershire's unsurfaced
+roads are not yet included.
 
 **THE NERC TEST.** The Natural Environment and Rural Communities Act 2006 s67
 took the motor vehicle rights off every way recorded on the definitive map as
@@ -402,8 +453,7 @@ already read Devon's and Oxfordshire's map servers and Northumberland's
 ArcGIS Online host (`services2.arcgis.com`) for byways; Lincolnshire's and
 East Riding's are ArcGIS Online too, and North Yorkshire's is Esri's own
 proxy (`utility.arcgis.com`). Norfolk's map server answered an ordinary
-address without a challenge (its www site refuses data centres; this host is
-untried from the runners). Surrey's map server sets an Imperva cookie: if it
+address without a challenge on 8 October 2026. Surrey's map server sets an Imperva cookie: if it
 refuses the runners, the collector server (HOME-COLLECTOR.md) is the honest
 route, and nothing is worked round.
 
@@ -428,13 +478,18 @@ the page as read. Only public bodies' pages; nothing is taken from a site
 
 ## Licence
 
-Data: Open Government Licence v3.0 — attribution required, no share-alike -
-except the unsurfaced unclassified roads above, which are credited to the
-council that publishes them under the terms stated there. The manifest says
-the same: its `licence` is "OGL-3.0" only while no council's roads are in the
-build, and otherwise names what each part is published under, and its
-`attribution` labels the rights-of-way credit and each council's
-(`build_packages.dataset_licence`, `dataset_attribution`).
-The attribution string above travels on the collection *and* on every single
-feature, because losing it silently would put users in breach while everything
-still appeared to work.
+Data: Open Government Licence v3.0 — attribution required, no share-alike —
+for the rights of way read through rowmaps.com and the byways from the
+councils' own layers published under it; Surrey's byway file also carries the
+Ordnance Survey's credit. The byway layers that state no licence (Devon,
+Cheshire East, Essex and West Berkshire, and the Isle of Wight and Hampshire if
+rowmaps ever has no file for them) and the unsurfaced unclassified roads above
+are credited to each council, without a stated licence. The manifest says the
+same: its `licence` is "OGL-3.0" only while every way in the build is from
+rowmaps.com or from a council byway layer published under OGL, and otherwise
+names what each part is published under, and its `attribution` labels the
+rights-of-way credit and each council's (`build_packages.dataset_licence`,
+`dataset_attribution`).
+Each lane pack carries its attribution, and each byway and road in it carries
+its council's or source's credit, so the credit travels with the data in the
+pack.

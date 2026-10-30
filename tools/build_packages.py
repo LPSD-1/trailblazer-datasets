@@ -844,7 +844,7 @@ def normalise(feature, authority_code, authority_name, row_type):
             # statutory and OSM-derived ways side by side once the world tier
             # lands, and the map colours them differently.
             "legal_tier": rule["legal_tier"],
-            # A byway read from the council's own live layer says so, and
+            # A byway read from the council's own publication says so, and
             # credits that council (council_ways.py); every other way came
             # from the council's definitive map via rowmaps.
             "source": ("council:%s" if props.get("TB_council")
@@ -871,6 +871,8 @@ def normalise(feature, authority_code, authority_name, row_type):
 COUNCIL_LAYER_TYPE = "byway_open_to_all_traffic"
 #: The authorities whose byways this build took from the council's layer.
 COUNCIL_LAYERS_USED = []
+#: Their sources, as each council file states it (council_ways.public).
+COUNCIL_SOURCES_USED = []
 
 
 def load_all(authorities):
@@ -901,13 +903,15 @@ def load_all(authorities):
                 continue
             features = fc.get("features", [])
             if row_type == COUNCIL_LAYER_TYPE:
-                # The council's live layer decides which byways exist, where
+                # The council's own layer decides which byways exist, where
                 # it publishes one; rowmaps stays the fallback. Unchanged
                 # ways keep their rowmaps record, so their ids do not move.
                 rowmaps = features
                 features, _report = council_ways.byways_for(code, rowmaps)
                 if features is not rowmaps:
                     COUNCIL_LAYERS_USED.append(name)
+                    COUNCIL_SOURCES_USED.append(dict(
+                        council_ways.council_source(code) or {}, code=code))
             for f in features:
                 lane = normalise(f, code, name, row_type)
                 if lane is None:
@@ -1688,7 +1692,8 @@ def in_region(feature, box):
 
 def write_package(pkg_name, region_id, region_label, area_label, features,
                   key, stamp, published=None, note=None,
-                  context=DEFAULT_CONTEXT, ucrs=None, ucr_sources=None):
+                  context=DEFAULT_CONTEXT, ucrs=None, ucr_sources=None,
+                  byway_sources=None):
     """Seal one downloadable piece.
 
     [context] is the step 1.2c option these [features] were selected under,
@@ -1708,8 +1713,15 @@ def write_package(pkg_name, region_id, region_label, area_label, features,
     member, `ucrFeatures`, never in `features`: an app before 119 reads a
     pack's `features` on its GeoJSON path and would draw a `ucr` red. A
     package with none is sealed exactly as before, byte for byte.
+
+    [byway_sources] are the councils whose own byway layers the build used
+    (COUNCIL_SOURCES_USED). A package holding byways from any of them is
+    credited to those councils, each in its own words and licence
+    (rights_of_way_attribution); one holding none is sealed as before.
     """
     ucrs = list(ucrs or [])
+    rights_of_way = rights_of_way_attribution(
+        byway_sources_in(byway_sources, features))
     area_id = region_id if area_label is None else \
         "%s-%s" % (region_id, slugify(area_label))
     shown = region_label if area_label is None else area_label
@@ -1749,7 +1761,7 @@ def write_package(pkg_name, region_id, region_label, area_label, features,
             "note": note or "",
             "contextScope": scope["contextScope"],
             "contextNote": scope["contextNote"],
-            "attribution": OGL,
+            "attribution": rights_of_way,
             "features": features,
         }
         if ucrs:
@@ -1758,7 +1770,7 @@ def write_package(pkg_name, region_id, region_label, area_label, features,
             # The Open Government Licence sentence is the rights of way's,
             # not the councils' highway records' (dataset_attribution).
             collection["attribution"] = dataset_attribution(
-                OGL, collection["ucrSources"])
+                rights_of_way, collection["ucrSources"])
         body = json.dumps(collection, separators=(",", ":")).encode("utf8")
         return body, pack(body, key)
 
@@ -1847,25 +1859,44 @@ def _councils(sources):
     return names[0] if len(names) == 1 else         ", ".join(names[:-1]) + " and " + names[-1]
 
 
-def dataset_licence(ucr_sources):
+def _own_layers(n):
+    """One council's own layer, or several councils' own layers."""
+    return ("the council's own layer" if n == 1
+            else "the councils' own layers")
+
+
+def dataset_licence(ucr_sources, byway_sources=None):
     """The manifest's `licence`: "OGL-3.0" while every way is from the
-    definitive map, as it always was; with council highway records in the
-    build, what each part is published under, honestly. Never "OGL-3.0" over
+    definitive map or an OGL council layer, as it always was; with council
+    highway records, or byways from a council layer under another licence or
+    none, what each part is published under, honestly. Never "OGL-3.0" over
     a council layer that states no licence."""
     used = [s for s in ucr_sources or [] if s.get("count")]
-    if not used:
+    byways = [s for s in byway_sources or []
+              if s.get("count") and s.get("licence") != "OGL-3.0"]
+    if not used and not byways:
         return "OGL-3.0"
     ogl = [s for s in used if s.get("licence") == "OGL-3.0"]
     none = [s for s in used if s.get("licence") != "OGL-3.0"]
     out = "OGL-3.0 for the rights of way"
+    unstated = [s for s in byways if not s.get("licence")]
+    if unstated:
+        out += (", except the byways of %s, read from %s, which are "
+                "published without a stated licence and credited to each "
+                "council in the lane data"
+                % (_councils(unstated), _own_layers(len(unstated))))
+    for s in byways:
+        if s.get("licence"):
+            out += ("; the byways of %s are published under %s"
+                    % (_councils([s]), s["licence"]))
     if ogl:
         out += ("; OGL-3.0 for the unsurfaced unclassified roads of %s"
                 % _councils(ogl))
     if none:
         out += ("; the unsurfaced unclassified roads of %s are council "
-                "highway records published without a stated licence, on the "
-                "owner's decision of 8 October 2026, credited to each "
-                "council (ucrSources)" % _councils(none))
+                "highway records published without a stated licence, "
+                "credited to each council in the lane data"
+                % _councils(none))
     return out
 
 
@@ -1879,6 +1910,58 @@ def dataset_attribution(rights_of_way, ucr_sources):
         return rights_of_way
     return ("Rights of way: " + rights_of_way + " Unsurfaced unclassified "
             "roads: " + " ".join(s["attribution"] for s in used))
+
+
+def byway_sources_in(sources, lanes):
+    """The council byway layers these lanes came from (a lane whose `source`
+    is council:...), each with how many lanes it gave; none, an empty
+    list."""
+    counts = Counter(f["properties"].get("authorityCode") for f in lanes
+                     if str(f["properties"].get("source") or "")
+                     .startswith("council:"))
+    out, seen = [], set()
+    for source in sources or []:
+        code = source.get("code")
+        if counts.get(code) and code not in seen:
+            seen.add(code)
+            out.append(dict(source, count=counts[code]))
+    return out
+
+
+def rights_of_way_attribution(byway_sources):
+    """The rights of way's credit: OGL, exactly as it always was, while
+    every byway came from rowmaps; with byways from councils' own layers,
+    one plain sentence saying so, each council's own credit (its licence,
+    or that it states none), and the rowmaps credit labelled as the other
+    rights of way's. Each council's credit begins with its licence or its
+    own "Source:", so no label runs into it."""
+    used = [s for s in byway_sources or [] if s.get("count")]
+    if not used:
+        return OGL
+    return ("Some byways are read from %s. " % _own_layers(len(used))
+            + " ".join(s["attribution"] for s in used)
+            + " Other rights of way: " + OGL)
+
+
+def manifest_credit(ucr_sources, layers_used, byway_sources):
+    """The manifest's attribution, licence and source keys, in that order;
+    with no council byway layer used, exactly as they always were."""
+    return {
+        "attribution": dataset_attribution(
+            rights_of_way_attribution(byway_sources), ucr_sources),
+        "licence": dataset_licence(ucr_sources, byway_sources),
+        "source": "Local highway authority definitive maps via rowmaps.com"
+                  + ("; byways for %d %s from %s"
+                     % (len(layers_used), "authority" if len(layers_used) == 1
+                        else "authorities", _own_layers(len(layers_used)))
+                     if layers_used else ""),
+        **({"councilLayers": sorted(set(clean_text(n) for n in
+                                        layers_used))}
+           if layers_used else {}),
+        # Shaped as ucrSources: each council layer the byways came from,
+        # its licence and credit, and how many lanes it gave.
+        **({"bywaySources": byway_sources} if byway_sources else {}),
+    }
 
 
 def _sources_in(sources, ucrs):
@@ -2060,7 +2143,8 @@ def main():
                                   area_label, part, key, stamp,
                                   published=published, note=note,
                                   context=args.context, ucrs=part_ucrs,
-                                  ucr_sources=ucr_sources)
+                                  ucr_sources=ucr_sources,
+                                  byway_sources=COUNCIL_SOURCES_USED)
             entries.append(entry)
             over = "  OVER BUDGET" \
                 if entry["plainBytes"] > MAX_PLAIN_BYTES else ""
@@ -2114,19 +2198,8 @@ def main():
         "schema": 1,
         "schemaVersion": 1,
         "generated": stamp,
-        "attribution": dataset_attribution(OGL + (
-            " Byways for %s read from the councils' own live layers."
-            % ", ".join(sorted(set(clean_text(n) for n in
-                                   COUNCIL_LAYERS_USED)))
-            if COUNCIL_LAYERS_USED else ""), ucr_sources),
-        "licence": dataset_licence(ucr_sources),
-        "source": "Local highway authority definitive maps via rowmaps.com"
-                  + ("; byways for %d authorities from the council's own "
-                     "live layer" % len(COUNCIL_LAYERS_USED)
-                     if COUNCIL_LAYERS_USED else ""),
-        **({"councilLayers": sorted(set(clean_text(n) for n in
-                                        COUNCIL_LAYERS_USED))}
-           if COUNCIL_LAYERS_USED else {}),
+        **manifest_credit(ucr_sources, COUNCIL_LAYERS_USED,
+                          byway_sources_in(COUNCIL_SOURCES_USED, pool)),
         "authorities": len(authorities),
         "maxPlainBytes": MAX_PLAIN_BYTES,
         "dataset": DATASET,

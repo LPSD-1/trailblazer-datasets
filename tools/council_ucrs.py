@@ -80,20 +80,20 @@ OWNER_DECISION = "2026-10-08"
 
 #: The council layers this table holds and their notes all say the same
 #: thing; one wording, so no council is credited differently. The owner's
-#: decision of 8 October 2026 covers Devon and, by name, North Yorkshire,
-#: Norfolk, Lincolnshire, Northumberland, East Riding of Yorkshire,
-#: Oxfordshire, Surrey and Worcestershire. Suffolk and Herefordshire stay
-#: out: their terms forbid copying.
-def owner_decision_note(council):
+#: decision of 8 October 2026 (OWNER_DECISION, each layer's "decided")
+#: covers Devon and, by name, North Yorkshire, Norfolk, Lincolnshire,
+#: Northumberland, East Riding of Yorkshire, Oxfordshire, Surrey and
+#: Worcestershire. Suffolk and Herefordshire stay out: their terms forbid
+#: copying. The note riders read states the facts plainly, without the
+#: decision behind them.
+def council_licence_note(council):
     """What every road of `council`'s says about a layer with no licence."""
-    return ("%s publishes this layer without stating a licence. "
-            "Trail Blazer publishes it on the owner's decision of 8 October "
-            "2026 that it is public highway information - highway records "
-            "must be open to public inspection - credited to %s, and will "
-            "take it down if the council objects." % (council, council))
+    return ("Credited to %s. No licence has been stated for these roads. "
+            "Trail Blazer will remove them if the council objects."
+            % council)
 
 
-DEVON_LICENCE_NOTE = owner_decision_note("Devon County Council")
+DEVON_LICENCE_NOTE = council_licence_note("Devon County Council")
 
 #: Generic words a council's name field holds where the road has no name:
 #: Devon's layer says "Unknown" on 28 routes, "Track" on 3 and "UNNAMED
@@ -209,7 +209,7 @@ UCR_LAYERS = [
                               "SEL": "Selby"}},
      "min_records": 500,
      "licence": None,
-     "licence_note": owner_decision_note("North Yorkshire Council"),
+     "licence_note": council_licence_note("North Yorkshire Council"),
      "decided": OWNER_DECISION},
 
     # Norfolk County Council's layer "Norfolk County Council Maintained
@@ -231,7 +231,7 @@ UCR_LAYERS = [
                "per_parish": False},
      "min_records": 350,
      "licence": None,
-     "licence_note": owner_decision_note("Norfolk County Council"),
+     "licence_note": council_licence_note("Norfolk County Council"),
      "decided": OWNER_DECISION},
 
     # Lincolnshire County Council's "Highways_Assets_Carriageway 2 view"
@@ -258,7 +258,7 @@ UCR_LAYERS = [
                "name": "Street", "per_parish": False},
      "min_records": 270,
      "licence": None,
-     "licence_note": owner_decision_note("Lincolnshire County Council"),
+     "licence_note": council_licence_note("Lincolnshire County Council"),
      "decided": OWNER_DECISION},
 
     # Northumberland County Council's "Adopted Highways Master View", its
@@ -283,7 +283,7 @@ UCR_LAYERS = [
                "parish": None, "number": "ROAD_NAME", "per_parish": False},
      "min_records": 150,
      "licence": None,
-     "licence_note": owner_decision_note("Northumberland County Council"),
+     "licence_note": council_licence_note("Northumberland County Council"),
      "decided": OWNER_DECISION},
 
     # East Riding of Yorkshire Council's "LSG_ESU_Dedications", its local
@@ -313,7 +313,7 @@ UCR_LAYERS = [
                "name": "site_name", "per_parish": False},
      "min_records": 100,
      "licence": None,
-     "licence_note": owner_decision_note("East Riding of Yorkshire Council"),
+     "licence_note": council_licence_note("East Riding of Yorkshire Council"),
      "decided": OWNER_DECISION},
 
     # Oxfordshire County Council's "Oxfordshire Maintained" streets (its List
@@ -338,7 +338,7 @@ UCR_LAYERS = [
                "number": "USRN", "name": "STREET", "per_parish": False},
      "min_records": 50,
      "licence": None,
-     "licence_note": owner_decision_note("Oxfordshire County Council"),
+     "licence_note": council_licence_note("Oxfordshire County Council"),
      "decided": OWNER_DECISION},
 
     # Surrey County Council's "Roads & Transport - Roads" (its publicly
@@ -359,7 +359,7 @@ UCR_LAYERS = [
                "name": "roadname", "per_parish": False},
      "min_records": 80,
      "licence": None,
-     "licence_note": owner_decision_note("Surrey County Council"),
+     "licence_note": council_licence_note("Surrey County Council"),
      "decided": OWNER_DECISION},
 
     # NOT READ: Worcestershire. Its "Highways and Footways" layer

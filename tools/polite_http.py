@@ -350,6 +350,7 @@ class Robots(object):
 
     def __init__(self, text):
         groups, agents, rules, in_rules = [], [], [], False
+        delays = {}   # id(rules of a group) -> its Crawl-delay
         for raw in (text or "").splitlines():
             line = raw.split("#", 1)[0].strip()
             if ":" not in line:
@@ -365,15 +366,24 @@ class Robots(object):
                 in_rules = True
                 if agents:
                     rules.append((key == "allow", value))
+            elif key == "crawl-delay" and agents:
+                # Not in RFC 9309, but a host asking for it is obeyed.
+                in_rules = True
+                try:
+                    delays[id(rules)] = float(value)
+                except ValueError:
+                    pass
         if agents:
             groups.append((agents, rules))
         # RFC 9309 2.2.1: our group is one whose user-agent value is our
         # product token, matched case-insensitively - equality, not a
         # substring, or a `User-agent: data` group would be taken as ours.
-        own = [r for a, rs in groups for r in rs
-               if any(_is_us(x) for x in a)]
-        self.rules = own if own else [r for a, rs in groups for r in rs
-                                      if "*" in a]
+        own = [(a, rs) for a, rs in groups if any(_is_us(x) for x in a)]
+        mine = own or [(a, rs) for a, rs in groups if "*" in a]
+        self.rules = [r for _a, rs in mine for r in rs]
+        #: Seconds between requests the host asks of us, or None.
+        found = [delays[id(rs)] for _a, rs in mine if id(rs) in delays]
+        self.delay = max(found) if found else None
 
     @staticmethod
     def _matches(pattern, path):
@@ -449,8 +459,14 @@ class PoliteClient(object):
 
     def __init__(self, min_gap=2.0, retries=2, timeout=90, max_wait=120,
                  opener=None, sleep=time.sleep, clock=time.monotonic,
-                 log=print, overrides=None, override_log=None, today=None):
+                 log=print, overrides=None, override_log=None, today=None,
+                 allow=None):
         self.min_gap = min_gap
+        #: {host: path prefix or None}: when given, the only hosts (and,
+        #: where a prefix is set, the only paths on them) this client
+        #: requests - the URL asked for and every redirect alike. None
+        #: leaves every host open to the other checks.
+        self.allow = None if allow is None else dict(allow)
         self.retries = retries
         self.timeout = timeout
         self.max_wait = max_wait
@@ -508,9 +524,17 @@ class PoliteClient(object):
             return e.code, dict(e.headers or {}), body
 
     def _pace(self, host):
+        gap = self.min_gap
+        verdict = self._robots.get(host)
+        if isinstance(verdict, Robots) and verdict.delay:
+            if verdict.delay > self.max_wait:
+                raise Refused("robots.txt on %s asks %.0f s between "
+                              "requests, longer than we wait"
+                              % (host, verdict.delay))
+            gap = max(gap, verdict.delay)
         last = self._last.get(host)
         if last is not None:
-            wait = self.min_gap - (self._clock() - last)
+            wait = gap - (self._clock() - last)
             if wait > 0:
                 self._sleep(wait)
         self._last[host] = self._clock()
@@ -713,13 +737,30 @@ class PoliteClient(object):
         if blocked(host) and not (override and _under(host, ROBOTS_HOSTS)):
             raise Refused("%s is on the block list" % host)
         check_read_only(url)
-        if urllib.parse.urlsplit(url).path == "/robots.txt":
+        path = urllib.parse.urlsplit(url).path
+        if self.allow is not None:
+            self._check_allowed(host, path)
+        if path == "/robots.txt":
             return   # robots.txt is never disallowed by robots.txt
         if override is None and not self.allowed(url):
             raise Refused("robots.txt on %s disallows %s" % (host, url))
         if override is not None and not self.allowed(url):
             # robots.txt says no, and the owner has decided to read this.
             self._override_due(url, override)
+
+    def _check_allowed(self, host, path):
+        """Refused unless `host` is in `allow` and `path` lies under its
+        prefix. robots.txt is read wherever its host is listed."""
+        if host not in self.allow:
+            raise Refused("%s is not a host this run reads" % host)
+        prefix = self.allow[host]
+        if prefix is None or path == "/robots.txt":
+            return
+        plain = urllib.parse.unquote(path)
+        outside = not (path.startswith(prefix) and plain.startswith(prefix))
+        if outside or ".." in plain.split("/"):
+            raise Refused("only %s on %s is read, not %s"
+                          % (prefix, host, path))
 
     def _retry_after(self, headers, attempt):
         value = None

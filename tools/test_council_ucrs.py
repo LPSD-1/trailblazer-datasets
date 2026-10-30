@@ -227,9 +227,39 @@ class Fetch(unittest.TestCase):
         held = self._held()
         self.assertEqual(len(held["routes"]), 8)
         self.assertEqual(held["source"]["council"], "Devon County Council")
-        self.assertIn("8 October 2026", held["source"]["licence_note"])
+        self.assertIn("Credited to Devon County Council. No licence has "
+                      "been stated", held["source"]["licence_note"])
         self.assertIsNone(held["source"]["licence"])
         self.assertEqual(status["DN"]["last_ok"], "2026-10-08")
+
+    def test_a_stored_file_with_the_old_note_is_rewritten(self):
+        # A file written before the note was reworded: the roads are the
+        # same, but its source still carries the old words. The next good
+        # read must replace them, or riders keep reading the old note.
+        self._fetch(lambda c, l: (12, routes()), today="2026-10-08")
+        path = os.path.join(self.out, "DN.json")
+        held = self._held()
+        old = ("Devon County Council publishes this layer without stating a "
+               "licence. Trail Blazer publishes it on the owner's decision of "
+               "8 October 2026 that it is public highway information - "
+               "highway records must be open to public inspection - "
+               "credited to Devon County Council, and will take it down if "
+               "the council objects.")
+        held["source"]["licence_note"] = old
+        held["source"]["attribution"] = (
+            held["source"]["attribution"].split(" Credited to ")[0]
+            + " " + old)
+        with open(path, "w", encoding="utf-8", newline="\n") as fh:
+            json.dump(held, fh)
+        status, failed = self._fetch(lambda c, l: (12, routes()),
+                                     today="2026-10-09")
+        self.assertEqual(failed, [])
+        self.assertTrue(status["DN"]["changed"])
+        again = self._held()
+        self.assertEqual(again["source"], cu.public(self.layer))
+        self.assertEqual(again["source"]["licence_note"],
+                         cu.council_licence_note("Devon County Council"))
+        self.assertNotIn("owner", json.dumps(again["source"]))
 
     def test_an_unchanged_read_keeps_its_since_date(self):
         self._fetch(lambda c, l: (12, routes()), today="2026-10-08")
@@ -321,11 +351,11 @@ class Layers(unittest.TestCase):
                     self.assertNotIn(word, field, layer["code"])
             self.assertNotEqual(layer["fields"].strip(), "*")
 
-    def test_the_devon_layer_is_credited_and_its_licence_decision_dated(self):
+    def test_the_devon_layer_is_credited_and_says_no_licence_is_stated(self):
         said = cu.attribution(LAYER)
         self.assertIn("Devon County Council", said)
-        self.assertIn("8 October 2026", said)
-        self.assertIn("without stating a licence", said)
+        self.assertIn("No licence has been stated for these roads.", said)
+        self.assertNotIn("8 October 2026", said)
 
 
 class Build(unittest.TestCase):
@@ -1238,14 +1268,25 @@ class Councils(unittest.TestCase):
 
 
 class Licence(unittest.TestCase):
-    def test_every_council_is_credited_and_its_decision_recorded(self):
+    def test_every_council_is_credited_in_plain_words(self):
         for layer in cu.UCR_LAYERS:
             said = cu.attribution(layer)
             self.assertIn(layer["council"], said, layer["code"])
-            self.assertIn("8 October 2026", said, layer["code"])
-            self.assertIn("take it down if the council objects", said,
-                          layer["code"])
+            self.assertIn("Trail Blazer will remove them if the council "
+                          "objects.", said, layer["code"])
+            self.assertNotIn("Open Government Licence", said, layer["code"])
+            self.assertNotIn("OGL", said, layer["code"])
+            for word in ("owner", "decision", "must be open"):
+                self.assertNotIn(word, said, layer["code"])
             self.assertEqual(layer["decided"], "2026-10-08")
+
+    def test_the_note_says_exactly_what_riders_read(self):
+        self.assertFalse(hasattr(cu, "owner_decision_note"))
+        self.assertEqual(
+            cu.council_licence_note("Surrey County Council"),
+            "Credited to Surrey County Council. No licence has been stated "
+            "for these roads. Trail Blazer will remove them if the council "
+            "objects.")
 
     def test_suffolk_herefordshire_and_worcestershire_are_not_read(self):
         codes = set(l["code"] for l in cu.UCR_LAYERS)
@@ -1265,7 +1306,11 @@ class Licence(unittest.TestCase):
         self.assertIn("Devon County Council and North Yorkshire Council",
                       said)
         self.assertIn("without a stated licence", said)
-        self.assertIn("8 October 2026", said)
+        # The licence points at where each council is credited, in plain
+        # words; every road's own attribution names its council
+        # (test_every_council_is_credited_in_plain_words).
+        self.assertIn("credited to each council in the lane data", said)
+        self.assertNotIn("decision", said)
         att = P.dataset_attribution("OGL.", used)
         self.assertTrue(att.startswith("Rights of way: OGL."))
         self.assertIn("North Yorkshire Council", att)

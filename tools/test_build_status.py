@@ -672,6 +672,44 @@ class WithoutThePublishersFile(Fixture):
         self.assertFalse([h for h in s["honours"] if bs.DTRO in h["reasons"]])
 
 
+class TheSwitchedCouncilsAreCredited(unittest.TestCase):
+    """The councils moved off rowmaps.com on 30 October 2026 (Calderdale's
+    a cross-check, used only if rowmaps has no file): once their own byways
+    are built, status.json credits the council, never rowmaps, and says
+    Open Government Licence only where the council gives it. Norfolk stays
+    on rowmaps, held back on its licence."""
+
+    SWITCHED = ("BM", "CA", "DY", "DZ", "DU", "KL", "L1", "LD", "NY", "SN",
+                "YY", "SU", "WP")
+
+    def test_each_council_is_named_with_its_licence(self):
+        import council_ways
+        tmp = tempfile.mkdtemp(prefix="status-")
+        self.addCleanup(shutil.rmtree, tmp, True)
+        rows = bs.load_table(os.path.join(HERE, "tro_authorities.csv"))
+        with open(os.path.join(os.path.dirname(HERE), "manual",
+                               "authorities.json"), encoding="utf-8") as fh:
+            lanes = json.load(fh)
+        layers = council_ways.by_code()
+        for code in self.SWITCHED:
+            layer = layers[code]
+            lane = lanes[code]["authority"]
+            ways = [(lane, "boat", "council:x")] * 3
+            out = bs.build_authorities(tmp, rows, ways, {},
+                                       council_ways.LAYERS)
+            mine = [a for a in out if a["full_name"] == layer["council"]]
+            self.assertEqual(len(mine), 1, code)
+            byways = [s for s in mine[0]["sources"]
+                      if s["what"] == "Byways"]
+            self.assertEqual([s["from"] for s in byways],
+                             [layer["council"]], code)
+            self.assertNotIn("rowmaps", json.dumps(mine[0]), code)
+            ogl = bs.OGL in mine[0]["honours"]
+            self.assertEqual(ogl, layer["licence"] == "OGL-3.0", code)
+            if ogl:   # two reasons: honours are shown from two up
+                self.assertIn(bs.OPEN_DATA, mine[0]["honours"], code)
+
+
 class TheRealTable(unittest.TestCase):
     """WALES against the real council table and GeoPlace's code ranges."""
 

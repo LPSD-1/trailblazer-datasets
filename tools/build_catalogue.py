@@ -119,34 +119,87 @@ GB_ROUTING_TILES = frozenset((
 # the arithmetic the plan does ("~1,708 MB ... fails by 208 MB").
 DEFAULT_UK_BUDGET_BYTES = 1_500_000_000
 
-ATTRIBUTION = (
-    "Map and routing data (c) OpenStreetMap contributors, ODbL. "
-    "United Kingdom rights of way contain public sector information licensed "
-    "under the Open Government Licence v3.0, via rowmaps.com."
-)
+OSM_ATTRIBUTION = ("Map and routing data © OpenStreetMap contributors, "
+                   "ODbL.")
+OGL_SAID = ("contain public sector information licensed under the Open "
+            "Government Licence v3.0")
+# England and Wales: the coverage, and all rowmaps' definitive maps hold.
+ATTRIBUTION = (OSM_ATTRIBUTION + " Rights of way in England and Wales "
+               + OGL_SAID + ", via rowmaps.com.")
 
 
-def catalogue_attribution(lanes_manifest):
-    """ATTRIBUTION, and - where the lane build carries councils' unsurfaced
-    roads (the manifest's ucrSources) - a plain credit naming each council,
-    which the Open Government Licence sentence does not cover. Unchanged,
-    byte for byte, with none."""
-    try:
-        with open(lanes_manifest, encoding="utf8") as fh:
-            sources = json.load(fh).get("ucrSources") or []
-    except (OSError, ValueError, TypeError):
-        sources = []
+def _named(sources):
+    """The councils of `sources` that gave anything, in order, once each."""
     names = []
     for s in sources:
         name = (s.get("council") or "").strip()
         if s.get("count") and name and name not in names:
             names.append(name)
-    if not names:
-        return ATTRIBUTION
-    said = (names[0] if len(names) == 1 else
+    return names
+
+
+def _said(names):
+    return (names[0] if len(names) == 1 else
             ", ".join(names[:-1]) + " and " + names[-1])
-    return (ATTRIBUTION + " Unsurfaced unclassified roads from the highway "
-            "records of " + said + ".")
+
+
+def _own_layers(names):
+    """One council's own layer, or several councils' own layers."""
+    return ("the council's own layer" if len(names) == 1
+            else "the councils' own layers")
+
+
+def rights_of_way_credit(byway_sources):
+    """The rights of way's sentences. With no byways from a council's own
+    layer, ATTRIBUTION's, byte for byte. Otherwise each council read
+    directly is named under its own licence - Open Government Licence only
+    where the council gives it, "without a stated licence" where it gives
+    none - with any credit the council asks for (Surrey's Ordnance Survey
+    line), and rowmaps.com is credited for the other authorities only."""
+    used = [s for s in byway_sources if s.get("count")]
+    if not used:
+        return ATTRIBUTION
+    ogl = _named(s for s in used if s.get("licence") == "OGL-3.0")
+    none = _named(s for s in used if not s.get("licence"))
+    out = [OSM_ATTRIBUTION]
+    if ogl:
+        out.append("Byways for %s, from %s, %s."
+                   % (_said(ogl), _own_layers(ogl), OGL_SAID))
+    if none:
+        out.append("Byways for %s come from %s, published without a "
+                   "stated licence." % (_said(none), _own_layers(none)))
+    for s in used:
+        if s.get("licence") not in (None, "", "OGL-3.0"):
+            out.append(s.get("attribution") or "")
+    # The catalogue covers England and Wales only.
+    out.append("Other rights of way in England and Wales %s, via "
+               "rowmaps.com." % OGL_SAID)
+    for s in used:
+        credit = (s.get("credit") or "").strip()
+        if credit and credit not in out:
+            out.append(credit)
+    return " ".join(x for x in out if x)
+
+
+def catalogue_attribution(lanes_manifest):
+    """The rights of way's credit (rights_of_way_credit, from the manifest's
+    bywaySources), and - where the lane build carries councils' unsurfaced
+    roads (the manifest's ucrSources) - a plain credit naming each council,
+    which the Open Government Licence sentence does not cover. ATTRIBUTION,
+    unchanged byte for byte, with neither."""
+    try:
+        with open(lanes_manifest, encoding="utf8") as fh:
+            manifest = json.load(fh)
+        sources = manifest.get("ucrSources") or []
+        byways = manifest.get("bywaySources") or []
+    except (OSError, ValueError, TypeError, AttributeError):
+        sources, byways = [], []
+    said = rights_of_way_credit(byways)
+    names = _named(sources)
+    if not names:
+        return said
+    return (said + " Unsurfaced unclassified roads from the highway "
+            "records of " + _said(names) + ".")
 
 
 def tile_name(lon, lat):
@@ -422,7 +475,7 @@ def ways_cut_of(container):
     stopped at the build manifest: this file never copied it, so the app had
     nothing to date a region by but the restamp, and a rider browsing for an
     area read "cut <the POI refresh>" over lanes cut months before - the
-    freshness over-claim the paid tier must never make.
+    freshness over-claim the catalogue must never make.
 
     Left out, not written as null, where the manifest has none, so an index
     for unchanged data stays byte-identical to the one before it.
@@ -1063,7 +1116,7 @@ def build(lanes_manifest, base_url, stamp, satellite_index=None,
         # riders want lanes and closures as fresh as they can be), which is
         # how often refresh-data.yml rebuilds them; the check is a few
         # kilobytes and a lane download still waits for wifi by default. The
-        # rider can still override any of it; they pay for the connection.
+        # rider can still override any of it; the connection is theirs.
         "updates": {
             "lanes": "sixHourly",
             "routing": "monthly",

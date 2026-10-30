@@ -412,6 +412,43 @@ class Gentle(unittest.TestCase):
         self.assertTrue(stand.slept and min(stand.slept) > 0)
         self.assertAlmostEqual(sum(stand.slept), 4.0)
 
+    def test_a_crawl_delay_for_everyone_spaces_requests_to_that_host(self):
+        robots = b"User-agent: *\nCrawl-delay: 10\nDisallow: /api/\n"
+        stand = Stand({"/robots.txt": (200, {}, robots),
+                       "/a": (200, {}, b"1")})
+        client = stand.client(min_gap=2.0)
+        client.get("https://h.example/a")
+        client.get("https://h.example/a")
+        self.assertEqual(stand.slept, [10.0, 10.0])
+        client.get("https://other.example/a")   # its own host, its own rules
+        self.assertEqual(stand.slept, [10.0, 10.0, 10.0])
+
+    def test_a_crawl_delay_for_another_agent_is_not_ours(self):
+        robots = b"User-agent: SlowBot\nCrawl-delay: 30\n\nUser-agent: *\n" \
+            b"Disallow: /api/\n"
+        stand = Stand({"/robots.txt": (200, {}, robots),
+                       "/a": (200, {}, b"1")})
+        client = stand.client(min_gap=2.0)
+        client.get("https://h.example/a")
+        client.get("https://h.example/a")
+        self.assertEqual(stand.slept, [2.0, 2.0])
+
+    def test_a_crawl_delay_longer_than_we_wait_is_a_refusal(self):
+        robots = b"User-agent: *\nCrawl-delay: 600\n"
+        stand = Stand({"/robots.txt": (200, {}, robots),
+                       "/a": (200, {}, b"1")})
+        with self.assertRaises(Refused):
+            stand.client(max_wait=120).get("https://h.example/a")
+        self.assertEqual(stand.asked, ["https://h.example/robots.txt"])
+
+    def test_a_crawl_delay_that_is_not_a_number_is_ignored(self):
+        robots = b"User-agent: *\nCrawl-delay: soon\n"
+        stand = Stand({"/robots.txt": (200, {}, robots),
+                       "/a": (200, {}, b"1")})
+        client = stand.client(min_gap=2.0)
+        client.get("https://h.example/a")
+        self.assertEqual(stand.slept, [2.0])
+
     def test_a_429_waits_as_long_as_it_is_told_then_retries(self):
         stand = Stand({"/robots.txt": (404, {}, b""),
                        "/a": [(429, {"Retry-After": "60"}, b""),
@@ -733,6 +770,147 @@ class TheOnePost(unittest.TestCase):
                            "requests"):
                 self.assertNotRegex(text, r"(?m)^\s*(import|from)\s+%s"
                                     % needle.replace(".", r"\."), name)
+
+
+class CrawlDelayEdges(unittest.TestCase):
+    def test_a_delay_shorter_than_our_gap_keeps_our_gap(self):
+        robots = b"User-agent: *\nCrawl-delay: 1\n"
+        stand = Stand({"/robots.txt": (200, {}, robots),
+                       "/a": (200, {}, b"1")})
+        client = stand.client(min_gap=3.0)
+        client.get("https://h.example/a")
+        client.get("https://h.example/a")
+        self.assertEqual(stand.slept, [3.0, 3.0])
+
+    def test_a_delay_of_exactly_our_longest_wait_is_obeyed(self):
+        robots = b"User-agent: *\nCrawl-delay: 120\n"
+        stand = Stand({"/robots.txt": (200, {}, robots),
+                       "/a": (200, {}, b"1")})
+        client = stand.client(min_gap=2.0, max_wait=120)
+        self.assertEqual(client.get("https://h.example/a"), b"1")
+        self.assertEqual(stand.slept, [120.0])
+        stand = Stand({"/robots.txt": (200, {}, robots),
+                       "/a": (200, {}, b"1")})
+        with self.assertRaises(Refused):
+            stand.client(max_wait=119.9).get("https://h.example/a")
+
+    def test_our_own_group_is_chosen_over_everyones(self):
+        robots = (b"User-agent: *\nCrawl-delay: 30\n\n"
+                  b"User-agent: TrailBlazer-datasets\nCrawl-delay: 5\n")
+        stand = Stand({"/robots.txt": (200, {}, robots),
+                       "/a": (200, {}, b"1")})
+        client = stand.client(min_gap=2.0)
+        client.get("https://h.example/a")
+        client.get("https://h.example/a")
+        self.assertEqual(stand.slept, [5.0, 5.0])
+
+    def test_of_two_groups_of_our_own_the_longer_delay_is_obeyed(self):
+        # RFC 9309 combines groups naming the same agent; asked two delays,
+        # we keep to the longer, whichever group comes first.
+        for first, second in ((5, 9), (9, 5)):
+            robots = ("User-agent: TrailBlazer-datasets\nCrawl-delay: %d\n\n"
+                      "User-agent: *\nCrawl-delay: 30\n\n"
+                      "User-agent: trailblazer-datasets/1.0\nCrawl-delay: %d\n"
+                      % (first, second)).encode()
+            self.assertEqual(polite_http.Robots(robots.decode()).delay, 9.0,
+                             (first, second))
+            stand = Stand({"/robots.txt": (200, {}, robots),
+                           "/a": (200, {}, b"1")})
+            client = stand.client(min_gap=2.0)
+            client.get("https://h.example/a")
+            client.get("https://h.example/a")
+            self.assertEqual(stand.slept, [9.0, 9.0], (first, second))
+
+
+class Allow(unittest.TestCase):
+    """A caller that names its hosts (council_ways: HOSTS and HOST_PATHS)
+    has every URL - the first and each redirect - kept to them."""
+
+    S3 = "https://s3.example"
+    ROBOTS = (200, {}, b"User-agent: *\nDisallow:\n")
+
+    def asked(self, transport):
+        return [u for u, _h in transport.asked]
+
+    def test_a_redirect_from_one_listed_host_to_another_is_followed(self):
+        # Buckinghamshire's www host answers its file with a 302 to its
+        # media host (30 October 2026); both are listed, the second only
+        # under /documents/.
+        client, transport = real_client({
+            "https://h.example/robots.txt": self.ROBOTS,
+            "https://h.example/a": (302, {"Location":
+                                          "https://media.example/docs/f.zip"},
+                                    b""),
+            "https://h.example/b": (302, {"Location":
+                                          "https://media.example/other/f.zip"},
+                                    b""),
+            "https://media.example/robots.txt": (403, {}, b""),
+            "https://media.example/docs/f.zip": (200, {}, b"the file"),
+            "https://media.example/other/f.zip": (200, {}, b"not this")},
+            allow={"h.example": None, "media.example": "/docs/"})
+        self.assertEqual(client.get("https://h.example/a"), b"the file")
+        self.assertIn("https://media.example/docs/f.zip",
+                      self.asked(transport))
+        with self.assertRaises(Refused):
+            client.get("https://h.example/b")
+        self.assertNotIn("https://media.example/other/f.zip",
+                         self.asked(transport))
+
+    def test_a_redirect_to_a_host_not_listed_is_refused(self):
+        client, transport = real_client({
+            "https://h.example/robots.txt": self.ROBOTS,
+            "https://h.example/a": (302, {"Location":
+                                          "https://other.example/x"}, b""),
+            "https://other.example/robots.txt": self.ROBOTS,
+            "https://other.example/x": (200, {}, b"elsewhere")},
+            allow={"h.example": None})
+        with self.assertRaises(Refused):
+            client.get("https://h.example/a")
+        self.assertFalse([u for u in self.asked(transport)
+                          if "other.example" in u])
+
+    def test_a_host_not_listed_is_never_asked_at_all(self):
+        client, transport = real_client({}, allow={"h.example": None})
+        with self.assertRaises(Refused):
+            client.get("https://other.example/x")
+        self.assertEqual(transport.asked, [])
+
+    def test_another_bucket_on_the_same_host_is_refused(self):
+        mine = self.S3 + "/smbc-opendata/data/row.json"
+        client, transport = real_client({
+            self.S3 + "/robots.txt": (403, {}, b""),
+            self.S3 + "/smbc-opendata/data/moved.json": (
+                302, {"Location": self.S3 + "/someone-else/row.json"}, b""),
+            self.S3 + "/someone-else/row.json": (200, {}, b"theirs"),
+            mine: (200, {}, b"ours")},
+            allow={"s3.example": "/smbc-opendata/"})
+        self.assertEqual(client.get(mine), b"ours")
+        # robots.txt is read, though it lies outside the bucket.
+        self.assertIn(self.S3 + "/robots.txt", self.asked(transport))
+        for url in (self.S3 + "/someone-else/row.json",
+                    self.S3 + "/smbc-opendata/../someone-else/row.json",
+                    self.S3 + "/smbc-opendata/%2e%2e/someone-else/row.json",
+                    self.S3 + "/smbc-opendataX/row.json",
+                    self.S3 + "/smbc-opendata/data/moved.json"):
+            with self.assertRaises(Refused, msg=url):
+                client.get(url)
+        self.assertNotIn(self.S3 + "/someone-else/row.json",
+                         self.asked(transport))
+
+    def test_robots_txt_lies_outside_every_prefix_and_is_still_read(self):
+        client, _t = real_client({
+            self.S3 + "/robots.txt": (200, {}, b"User-agent: *\n")},
+            allow={"s3.example": "/smbc-opendata/"})
+        self.assertEqual(client.get(self.S3 + "/robots.txt"),
+                         b"User-agent: *\n")
+        with self.assertRaises(Refused):
+            client.get(self.S3 + "/robots.txt.bak")
+
+    def test_without_a_list_every_host_is_as_before(self):
+        client, _t = real_client({
+            "https://other.example/robots.txt": self.ROBOTS,
+            "https://other.example/x": (200, {}, b"fine")})
+        self.assertEqual(client.get("https://other.example/x"), b"fine")
 
 
 if __name__ == "__main__":
