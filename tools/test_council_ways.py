@@ -1660,8 +1660,7 @@ class ReadmeSaysWhatIsRead(unittest.TestCase):
                 "collector server reads Powys's closures and order "
                 "documents, not its byways.)",
                 "Norfolk's map server answered an ordinary address without "
-                "a challenge (this host has not yet been tried from the "
-                "runners)."):
+                "a challenge. Surrey's"):
             self.assertIn(said, self.text)
 
     def test_no_decision_is_put_on_the_owner_for_the_roads(self):
@@ -1672,9 +1671,10 @@ class ReadmeSaysWhatIsRead(unittest.TestCase):
         self.assertIn("Since 7 October 2026, the closures of a council "
                       "whose servers do not answer GitHub's shared runners",
                       self.text)
-        self.assertIn("**No licence is stated for these layers. Each is "
-                      "credited to its council by name, and will be taken "
-                      "down if its council objects.**", self.text)
+        self.assertIn("**The councils have not stated a licence for these "
+                      "layers. Each road is credited to its council by name, "
+                      "and Trail Blazer will remove a council's roads if it "
+                      "objects.**", self.text)
         self.assertNotIn("must be open to public inspection", self.text)
         self.assertNotIn("refuses data centres", self.text)
         # The roads' credit note stands alone: nothing points back to a
@@ -1688,10 +1688,11 @@ class ReadmeSaysWhatIsRead(unittest.TestCase):
                       "<the council's layer>, read from the council. "
                       + cu.council_licence_note("<council>") + "\"",
                       self.text)
-        self.assertIn("Worcestershire's roads are not included, because no "
-                      "council publication we have found ties its 'Keep "
-                      "Safe Only' maintenance tier to unsurfaced roads.",
+        self.assertIn("Worcestershire's roads are not yet included.",
                       self.text)
+        self.assertEqual(self.text.count("Worcestershire's roads"), 1)
+        self.assertNotIn("(tools/council_ucrs.py says which were read)",
+                         self.text)
 
     def test_the_licence_section_says_what_each_part_is_under(self):
         section = self.text.split("## Licence", 1)[1]
@@ -1719,6 +1720,12 @@ class ReadmeSaysWhatIsRead(unittest.TestCase):
             self.assertIn(said, section)
         self.assertNotIn("only while no council's roads are in the build",
                          section)
+        self.assertIn("Each pack carries that `attribution`, *and* every "
+                      "feature in it carries its own source's credit, so "
+                      "the credit stays with the data wherever it goes.",
+                      section)
+        self.assertNotIn("put users in breach", section)
+        self.assertNotIn("The attribution string above", section)
 
 
 if __name__ == "__main__":

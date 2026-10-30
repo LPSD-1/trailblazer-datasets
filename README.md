@@ -375,24 +375,24 @@ NERC test below), with the roads that went wholly in brackets:
 | East Riding of Yorkshire | East Riding of Yorkshire Council: `LSG_ESU_Dedications/FeatureServer/9` (street gazetteer, last edited Sept 2022), 'GREEN LANE' or '6 Unmetalled', dedicated to all vehicles, council maintained | 8 Oct 2026 | 192 sections, 112 roads | 101 (89 km) | 17 (11) | 0 | not stated - see below |
 | Oxfordshire | Oxfordshire County Council: `WMS/Highways_Centreline/MapServer/1` (its List of Streets), STREET_SURF 'Unmetalled' (not 'Mixed') | 8 Oct 2026 | 106 streets | 41 (20 km) | 95 (61: most are restricted byways) | 6 (4) | not stated - see below |
 | Surrey | Surrey County Council: `Surrey_Interactive_Map/RoadsTransport_Roads_Publicly_Maintained/MapServer/33`, surface 'UM', road_type 'Unclassified' | 8 Oct 2026 | 167 sections, 92 roads | 41 (16 km) | 11 (9) | 101 (42) | not stated - see below |
-| Worcestershire | not read: its 'Keep Safe Only' maintenance tier (193 sections) is not tied to unsurfaced roads by any council publication found (tools/council_ucrs.py says which were read) | - | - | - | - | - | - |
+| Worcestershire | not read: its 'Keep Safe Only' maintenance tier (193 sections) is not tied to unsurfaced roads by any council publication found | - | - | - | - | - | - |
 | Suffolk, Herefordshire | not read: their terms forbid copying | - | - | - | - | - | - |
 | every other authority | not yet read; each council found is one entry in `UCR_LAYERS` | - | - | - | - | - | - |
 
 Where a council's roads are not read, the app says so: an absence of UCRs on
 the map is never an absence on the ground.
 
-**No licence is stated for these layers. Each is credited to its council by
-name, and will be taken down if its council objects.** The credit (Devon
+**The councils have not stated a licence for these layers. Each road is
+credited to its council by name, and Trail Blazer will remove a council's
+roads if it objects.** The credit (Devon
 County Council, North Yorkshire Council, Norfolk County Council, Lincolnshire
 County Council, Northumberland County Council, East Riding of Yorkshire
 Council, Oxfordshire County Council, Surrey County Council) is on every road,
 pack and container that carries a council's roads. Every road says, in its
 `attribution`, "Source: <the council's layer>, read from the council.
-<council> publishes this layer without stating a licence. Trail Blazer shows
-it credited to <council>, and will take it down if the council objects."
-Worcestershire's roads are not included, because no council publication we
-have found ties its 'Keep Safe Only' maintenance tier to unsurfaced roads.
+Credited to <council>, which has not stated a licence for these roads. Trail
+Blazer will remove them if the council objects." Worcestershire's roads are
+not yet included.
 
 **THE NERC TEST.** The Natural Environment and Rural Communities Act 2006 s67
 took the motor vehicle rights off every way recorded on the definitive map as
@@ -453,8 +453,7 @@ already read Devon's and Oxfordshire's map servers and Northumberland's
 ArcGIS Online host (`services2.arcgis.com`) for byways; Lincolnshire's and
 East Riding's are ArcGIS Online too, and North Yorkshire's is Esri's own
 proxy (`utility.arcgis.com`). Norfolk's map server answered an ordinary
-address without a challenge (this host has not yet been tried from the
-runners). Surrey's map server sets an Imperva cookie: if it
+address without a challenge. Surrey's map server sets an Imperva cookie: if it
 refuses the runners, the collector server (HOME-COLLECTOR.md) is the honest
 route, and nothing is worked round.
 
@@ -491,6 +490,5 @@ rowmaps.com or from a council byway layer published under OGL, and otherwise
 names what each part is published under, and its `attribution` labels the
 rights-of-way credit and each council's (`build_packages.dataset_licence`,
 `dataset_attribution`).
-The attribution string above travels on the collection *and* on every single
-feature, because losing it silently would put users in breach while everything
-still appeared to work.
+Each pack carries that `attribution`, *and* every feature in it carries its
+own source's credit, so the credit stays with the data wherever it goes.

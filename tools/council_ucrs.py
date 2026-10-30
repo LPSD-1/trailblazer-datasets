@@ -88,9 +88,9 @@ OWNER_DECISION = "2026-10-08"
 #: decision behind them.
 def council_licence_note(council):
     """What every road of `council`'s says about a layer with no licence."""
-    return ("%s publishes this layer without stating a licence. "
-            "Trail Blazer shows it credited to %s, and will take it down "
-            "if the council objects." % (council, council))
+    return ("Credited to %s, which has not stated a licence for these "
+            "roads. Trail Blazer will remove them if the council objects."
+            % council)
 
 
 DEVON_LICENCE_NOTE = council_licence_note("Devon County Council")
