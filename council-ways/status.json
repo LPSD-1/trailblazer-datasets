@@ -3,7 +3,7 @@
   "changed": false,
   "council": "Bracknell Forest Council",
   "failing_since": null,
-  "last_ok": "2026-10-29",
+  "last_ok": "2026-10-30",
   "merge": {
    "added": [],
    "dropped": [],
@@ -21,7 +21,7 @@
   "changed": false,
   "council": "Central Bedfordshire Council",
   "failing_since": null,
-  "last_ok": "2026-10-29",
+  "last_ok": "2026-10-30",
   "merge": {
    "added": [],
    "dropped": [],
@@ -36,17 +36,28 @@
   "ways": 81
  },
  "CB": {
+  "changed": false,
   "council": "Cambridgeshire County Council",
-  "error": "maps.cambridgeshire.gov.uk refused https://maps.cambridgeshire.gov.uk/getows.ashx?mapsource=ccc/inspire&SERVICE=WFS&VERSION=1.1.0&REQUEST=GetFeature&typeName=ccc%3Apublic_rights_of_way&outputFormat=application%2Fjson%3B+subtype%3Dgeojson&FILTER=%3CFilter+xmlns%3D%22http%3A%2F%2Fwww.opengis.net%2Fogc",
-  "failing_since": "2026-10-29",
-  "last_ok": "2026-10-28",
-  "ok": false
+  "failing_since": null,
+  "last_ok": "2026-10-30",
+  "merge": {
+   "added": [],
+   "dropped": [],
+   "kept": 441,
+   "new_share": 0.0,
+   "rowmaps": 441,
+   "used": true,
+   "why_not": null
+  },
+  "ok": true,
+  "records": 401,
+  "ways": 401
  },
  "CC": {
   "changed": false,
   "council": "Cheshire West and Chester Council",
   "failing_since": null,
-  "last_ok": "2026-10-29",
+  "last_ok": "2026-10-30",
   "merge": {
    "added": [],
    "dropped": [],
@@ -64,7 +75,7 @@
   "changed": false,
   "council": "Cheshire East Council",
   "failing_since": null,
-  "last_ok": "2026-10-29",
+  "last_ok": "2026-10-30",
   "merge": {
    "added": [],
    "dropped": [],
@@ -82,7 +93,7 @@
   "changed": false,
   "council": "Devon County Council",
   "failing_since": null,
-  "last_ok": "2026-10-29",
+  "last_ok": "2026-10-30",
   "merge": {
    "added": [],
    "dropped": [],
@@ -100,7 +111,7 @@
   "changed": false,
   "council": "East Sussex County Council",
   "failing_since": null,
-  "last_ok": "2026-10-29",
+  "last_ok": "2026-10-30",
   "merge": {
    "added": [],
    "dropped": [],
@@ -118,7 +129,7 @@
   "changed": false,
   "council": "Essex County Council",
   "failing_since": null,
-  "last_ok": "2026-10-29",
+  "last_ok": "2026-10-30",
   "merge": {
    "added": [],
    "dropped": [],
@@ -136,7 +147,7 @@
   "changed": false,
   "council": "Hertfordshire County Council",
   "failing_since": null,
-  "last_ok": "2026-10-29",
+  "last_ok": "2026-10-30",
   "merge": {
    "added": [],
    "dropped": [],
@@ -154,7 +165,7 @@
   "changed": false,
   "council": "Hampshire County Council",
   "failing_since": null,
-  "last_ok": "2026-10-29",
+  "last_ok": "2026-10-30",
   "merge": {
    "added": [
     "HP|Abbotts Ann|001/KS101-HST01/1"
@@ -174,7 +185,7 @@
   "changed": false,
   "council": "Isle of Wight Council",
   "failing_since": null,
-  "last_ok": "2026-10-29",
+  "last_ok": "2026-10-30",
   "merge": {
    "added": [],
    "dropped": [
@@ -214,7 +225,7 @@
   "changed": false,
   "council": "Lancashire County Council",
   "failing_since": null,
-  "last_ok": "2026-10-29",
+  "last_ok": "2026-10-30",
   "merge": {
    "added": [
     "LA|0106|026",
@@ -235,7 +246,7 @@
   "changed": false,
   "council": "Northumberland County Council",
   "failing_since": null,
-  "last_ok": "2026-10-29",
+  "last_ok": "2026-10-30",
   "merge": {
    "added": [
     "ND|502|155",
@@ -256,7 +267,7 @@
   "changed": false,
   "council": "Oxfordshire County Council",
   "failing_since": null,
-  "last_ok": "2026-10-29",
+  "last_ok": "2026-10-30",
   "merge": {
    "added": [],
    "dropped": [],
@@ -274,7 +285,7 @@
   "changed": true,
   "council": "West Berkshire Council",
   "failing_since": null,
-  "last_ok": "2026-10-29",
+  "last_ok": "2026-10-30",
   "merge": {
    "added": [],
    "dropped": [],
@@ -292,7 +303,7 @@
   "changed": false,
   "council": "Wokingham Borough Council",
   "failing_since": null,
-  "last_ok": "2026-10-29",
+  "last_ok": "2026-10-30",
   "merge": {
    "added": [],
    "dropped": [],
@@ -310,7 +321,7 @@
   "changed": false,
   "council": "Wiltshire Council",
   "failing_since": null,
-  "last_ok": "2026-10-29",
+  "last_ok": "2026-10-30",
   "merge": {
    "added": [],
    "dropped": [],
