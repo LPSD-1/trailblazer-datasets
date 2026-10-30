@@ -22,7 +22,7 @@
   "items": 3,
   "last_ok": "2026-10-30",
   "name": "Devon County Council - temporary path closures",
-  "records": 42,
+  "records": 41,
   "review": 0,
   "unmatched": 0
  },
@@ -76,16 +76,14 @@
   "items": 7,
   "last_ok": "2026-10-30",
   "name": "Northumberland County Council - rights of way closures and TTROs",
-  "records": 39,
+  "records": 40,
   "review": 0,
   "unmatched": 0
  },
  "somerset-closures": {
   "authority": "Somerset",
-  "error": "HTTP 503 for https://www.somerset.gov.uk/wp-json/wp/v2/row_closures?per_page=100&page=1: b'<!DOCTYPE html>\\n<html>\\n<head>\\n\\t<meta charset=\"UTF-8\">\\n\\t<title>Your access to this site has been limited by the site owner</title>\\n\\t<style>\\n\\t\\thtml {\\n\\t\\t\\tfont-family: \"Helvetica Neue\", Helvetica, A",
-  "failing_since": "2026-10-30",
   "items": 0,
-  "last_ok": "2026-10-29",
+  "last_ok": "2026-10-30",
   "name": "Somerset Council - rights of way closures and traffic orders",
   "records": 800,
   "review": 0,

@@ -71,10 +71,11 @@ def stale_regions(cache="cache/pois", today=None, max_age_days=MAX_AGE_DAYS):
     return out
 
 
-def main(argv=None):
+def main(argv=None, today=None):
+    """`today` is for tests only: the workflow runs on the real date."""
     argv = sys.argv[1:] if argv is None else argv
     cache = argv[0] if argv else os.environ.get("POI_CACHE", "cache/pois")
-    print("regions=" + ",".join(stale_regions(cache)))
+    print("regions=" + ",".join(stale_regions(cache, today=today)))
     return 0
 
 

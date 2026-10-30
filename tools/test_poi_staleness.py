@@ -159,18 +159,69 @@ def test_the_regions_are_the_pack_regions():
           ALL == [r for r, _l, _b in P.REGIONS], "got %r" % ALL)
 
 
+class _Clock(object):
+    """Stands in for poi_staleness's `datetime` module with the wall clock set
+    to `when`, so a check can prove its verdict does not depend on the date
+    the suite happens to run. Only `date.today` is changed."""
+
+    def __init__(self, when):
+        real = datetime.date
+
+        class _Date(real):
+            @classmethod
+            def today(cls):
+                return when
+        self.date = _Date
+        self.timedelta = datetime.timedelta
+
+
+#: The wall clocks every main() check runs under: years before and after the
+#: fixtures, and whatever the real date is. A fixture date compared with the
+#: real clock went red a month after it was written and stopped the lane
+#: refresh in CI; these make that kind of break show up on the day it is made.
+CLOCKS = [None, datetime.date(2000, 1, 1), datetime.date(2100, 1, 1)]
+
+
+def _main_under(clock, argv, today):
+    import contextlib
+    saved = S.datetime
+    if clock is not None:
+        S.datetime = _Clock(clock)
+    buf = io.StringIO()
+    try:
+        with contextlib.redirect_stdout(buf):
+            S.main(argv, today=today)
+    finally:
+        S.datetime = saved
+    return buf.getvalue().strip()
+
+
 def test_the_output_is_the_shape_actions_reads():
     tmp = tempfile.mkdtemp()
     try:
         root = _cache(tmp, {r: "2026-09-23" for r in ALL})
-        import contextlib
-        buf = io.StringIO()
-        with contextlib.redirect_stdout(buf):
-            S.main([root])
-        line = buf.getvalue().strip()
-        check("it prints a GITHUB_OUTPUT assignment",
-              line.startswith("regions="), line)
-        check("and an empty one when nothing is due", line == "regions=", line)
+        for clock in CLOCKS:
+            line = _main_under(clock, [root], TODAY)
+            check("it prints a GITHUB_OUTPUT assignment (clock %s)" % clock,
+                  line.startswith("regions="), line)
+            check("and an empty one when nothing is due (clock %s)" % clock,
+                  line == "regions=", line)
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_main_judges_by_the_today_it_is_given():
+    """The other side of the empty line: the same cache, a year on, lists
+    every region in pack order. With the empty-line check above this proves
+    main() passes `today` through, whatever the wall clock says."""
+    tmp = tempfile.mkdtemp()
+    try:
+        root = _cache(tmp, {r: "2026-09-23" for r in ALL})
+        later = TODAY + datetime.timedelta(days=365)
+        for clock in CLOCKS:
+            line = _main_under(clock, [root], later)
+            check("a year-old cache lists every region (clock %s)" % clock,
+                  line == "regions=" + ",".join(ALL), line)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
