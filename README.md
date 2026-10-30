@@ -369,7 +369,7 @@ NERC test below), with the roads that went wholly in brackets:
 |---|---|---|---|---|---|---|---|
 | Devon | Devon County Council: `Environment_Intranet/Public_Access_Intranet/MapServer/5`, "PROW CAT 12" - unsurfaced unclassified county roads, maintenance category 12 | 8 Oct 2026 | 1,143 sections, 960 routes | 952 (583 km) | 17 sections (8) | 0 | not stated - see below |
 | North Yorkshire | North Yorkshire Council: `highways/Highways_Network/FeatureServer/3` "U_Roads" (through the ArcGIS utility proxy its public rights of way map uses), HIERARCHY 6; a road is its pre-2023 district and U number | 8 Oct 2026 | 1,005 sections, 685 roads | 633 (669 km) | 63 (40) | 30 (12) | not stated - see below |
-| Norfolk | Norfolk County Council: `layers_ext/crm/MapServer/16`, "Norfolk County Council Maintained Unsurfaced Roads" | 8 Oct 2026 | 711 sections, 586 roads | 545 (480 km) | 43 (36) | 5 (5) | not stated - see below |
+| Norfolk | Norfolk County Council: `layers_ext/crm/MapServer/16`, "Norfolk County Council Maintained Unsurfaced Roads" (a different layer from Norfolk's byway file) | 8 Oct 2026 | 711 sections, 586 roads | 545 (480 km) | 43 (36) | 5 (5) | not stated - see below |
 | Lincolnshire | Lincolnshire County Council: `Highways_Assets_Carriageway_2_view/FeatureServer/3`, Road_Class 'Green Lane' | 8 Oct 2026 | 536 sections, 479 roads | 370 (255 km) | 134 (106) | 5 (3) | not stated - see below |
 | Northumberland | Northumberland County Council: `adopted_highway_master_view/FeatureServer/4` (its List of Streets), maintenance category '8 - Unsurfaced Roads', all-purpose sections | 8 Oct 2026 | 305 sections, 237 roads | 75 (69 km) | 8 (7) | 213 (155) | not stated - see below |
 | East Riding of Yorkshire | East Riding of Yorkshire Council: `LSG_ESU_Dedications/FeatureServer/9` (street gazetteer, last edited Sept 2022), 'GREEN LANE' or '6 Unmetalled', dedicated to all vehicles, council maintained | 8 Oct 2026 | 192 sections, 112 roads | 101 (89 km) | 17 (11) | 0 | not stated - see below |
@@ -382,17 +382,17 @@ NERC test below), with the roads that went wholly in brackets:
 Where a council's roads are not read, the app says so: an absence of UCRs on
 the map is never an absence on the ground.
 
-**The councils have not stated a licence for these layers. Each road is
-credited to its council by name, and Trail Blazer will remove a council's
-roads if it objects.** The credit (Devon
+**No licence is stated for these layers. Each road is credited to its
+council by name, and Trail Blazer will remove a council's roads if the council
+objects.** The credit (Devon
 County Council, North Yorkshire Council, Norfolk County Council, Lincolnshire
 County Council, Northumberland County Council, East Riding of Yorkshire
 Council, Oxfordshire County Council, Surrey County Council) is on every road,
 pack and container that carries a council's roads. Every road says, in its
 `attribution`, "Source: <the council's layer>, read from the council.
-Credited to <council>, which has not stated a licence for these roads. Trail
-Blazer will remove them if the council objects." Worcestershire's roads are
-not yet included.
+Credited to <council>. No licence has been stated for these roads. Trail
+Blazer will remove them if the council objects." Worcestershire's unsurfaced
+roads are not yet included.
 
 **THE NERC TEST.** The Natural Environment and Rural Communities Act 2006 s67
 took the motor vehicle rights off every way recorded on the definitive map as
@@ -453,7 +453,7 @@ already read Devon's and Oxfordshire's map servers and Northumberland's
 ArcGIS Online host (`services2.arcgis.com`) for byways; Lincolnshire's and
 East Riding's are ArcGIS Online too, and North Yorkshire's is Esri's own
 proxy (`utility.arcgis.com`). Norfolk's map server answered an ordinary
-address without a challenge. Surrey's map server sets an Imperva cookie: if it
+address without a challenge on 8 October 2026. Surrey's map server sets an Imperva cookie: if it
 refuses the runners, the collector server (HOME-COLLECTOR.md) is the honest
 route, and nothing is worked round.
 
@@ -490,5 +490,6 @@ rowmaps.com or from a council byway layer published under OGL, and otherwise
 names what each part is published under, and its `attribution` labels the
 rights-of-way credit and each council's (`build_packages.dataset_licence`,
 `dataset_attribution`).
-Each pack carries that `attribution`, *and* every feature in it carries its
-own source's credit, so the credit stays with the data wherever it goes.
+Each lane pack carries its attribution, and each byway and road in it carries
+its council's or source's credit, so the credit travels with the data in the
+pack.

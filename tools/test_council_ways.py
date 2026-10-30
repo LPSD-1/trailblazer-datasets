@@ -1660,7 +1660,10 @@ class ReadmeSaysWhatIsRead(unittest.TestCase):
                 "collector server reads Powys's closures and order "
                 "documents, not its byways.)",
                 "Norfolk's map server answered an ordinary address without "
-                "a challenge. Surrey's"):
+                "a challenge on 8 October 2026. Surrey's",
+                # The roads' layer is not the byway file held back above.
+                "\"Norfolk County Council Maintained Unsurfaced Roads\" (a "
+                "different layer from Norfolk's byway file)"):
             self.assertIn(said, self.text)
 
     def test_no_decision_is_put_on_the_owner_for_the_roads(self):
@@ -1671,9 +1674,9 @@ class ReadmeSaysWhatIsRead(unittest.TestCase):
         self.assertIn("Since 7 October 2026, the closures of a council "
                       "whose servers do not answer GitHub's shared runners",
                       self.text)
-        self.assertIn("**The councils have not stated a licence for these "
-                      "layers. Each road is credited to its council by name, "
-                      "and Trail Blazer will remove a council's roads if it "
+        self.assertIn("**No licence is stated for these layers. Each road "
+                      "is credited to its council by name, and Trail Blazer "
+                      "will remove a council's roads if the council "
                       "objects.**", self.text)
         self.assertNotIn("must be open to public inspection", self.text)
         self.assertNotIn("refuses data centres", self.text)
@@ -1688,9 +1691,10 @@ class ReadmeSaysWhatIsRead(unittest.TestCase):
                       "<the council's layer>, read from the council. "
                       + cu.council_licence_note("<council>") + "\"",
                       self.text)
-        self.assertIn("Worcestershire's roads are not yet included.",
-                      self.text)
-        self.assertEqual(self.text.count("Worcestershire's roads"), 1)
+        self.assertIn("Worcestershire's unsurfaced roads are not yet "
+                      "included.", self.text)
+        self.assertEqual(self.text.count("Worcestershire's roads"), 0)
+        self.assertEqual(self.text.count("Worcestershire's unsurfaced"), 1)
         self.assertNotIn("(tools/council_ucrs.py says which were read)",
                          self.text)
 
@@ -1720,10 +1724,13 @@ class ReadmeSaysWhatIsRead(unittest.TestCase):
             self.assertIn(said, section)
         self.assertNotIn("only while no council's roads are in the build",
                          section)
-        self.assertIn("Each pack carries that `attribution`, *and* every "
-                      "feature in it carries its own source's credit, so "
-                      "the credit stays with the data wherever it goes.",
-                      section)
+        closing = ("Each lane pack carries its attribution, and each byway "
+                   "and road in it carries its council's or source's "
+                   "credit, so the credit travels with the data in the "
+                   "pack.")
+        self.assertIn(closing, section)
+        self.assertNotIn("`", closing)
+        self.assertNotIn("*", closing)
         self.assertNotIn("put users in breach", section)
         self.assertNotIn("The attribution string above", section)
 

@@ -227,8 +227,8 @@ class Fetch(unittest.TestCase):
         held = self._held()
         self.assertEqual(len(held["routes"]), 8)
         self.assertEqual(held["source"]["council"], "Devon County Council")
-        self.assertIn("Credited to Devon County Council, which has not "
-                      "stated a licence", held["source"]["licence_note"])
+        self.assertIn("Credited to Devon County Council. No licence has "
+                      "been stated", held["source"]["licence_note"])
         self.assertIsNone(held["source"]["licence"])
         self.assertEqual(status["DN"]["last_ok"], "2026-10-08")
 
@@ -354,7 +354,7 @@ class Layers(unittest.TestCase):
     def test_the_devon_layer_is_credited_and_says_no_licence_is_stated(self):
         said = cu.attribution(LAYER)
         self.assertIn("Devon County Council", said)
-        self.assertIn("which has not stated a licence for these roads", said)
+        self.assertIn("No licence has been stated for these roads.", said)
         self.assertNotIn("8 October 2026", said)
 
 
@@ -1284,9 +1284,9 @@ class Licence(unittest.TestCase):
         self.assertFalse(hasattr(cu, "owner_decision_note"))
         self.assertEqual(
             cu.council_licence_note("Surrey County Council"),
-            "Credited to Surrey County Council, which has not stated a "
-            "licence for these roads. Trail Blazer will remove them if the "
-            "council objects.")
+            "Credited to Surrey County Council. No licence has been stated "
+            "for these roads. Trail Blazer will remove them if the council "
+            "objects.")
 
     def test_suffolk_herefordshire_and_worcestershire_are_not_read(self):
         codes = set(l["code"] for l in cu.UCR_LAYERS)
