@@ -1501,10 +1501,19 @@ class BywayCreditsReachRiders(unittest.TestCase):
               "licence": None}])
         self.assertIn("the unsurfaced unclassified roads of Devon County "
                       "Council are council highway records published "
-                      "without a stated licence, on the decision of 8 "
-                      "October 2026, credited to each council (ucrSources)",
-                      licence)
+                      "without a stated licence, credited to each council "
+                      "in the lane data", licence)
         self.assertNotIn("owner", licence)
+        # Plain words for the public: no decision-speak, no JSON key names.
+        byways = P.dataset_licence(
+            [], [{"code": "DN", "council": "Devon County Council",
+                  "count": 3, "licence": None}])
+        self.assertIn("which are published without a stated licence and "
+                      "credited to each council in the lane data", byways)
+        for said in (licence, byways):
+            self.assertNotIn("decision", said)
+            self.assertNotIn("October 2026", said)
+            self.assertNotIn("Sources)", said)
 
     def test_a_pack_with_roads_and_council_byways_credits_both(self):
         P = build_packages
@@ -1586,23 +1595,44 @@ class ReadmeSaysWhatIsRead(unittest.TestCase):
         with open(path, encoding="utf-8") as fh:
             self.text = " ".join(fh.read().split())
 
-    def test_the_opening_credit_names_every_kind_of_source(self):
-        self.assertNotIn("Every package here is built from", self.text)
-        self.assertIn("> Source: local highway authority definitive maps, "
-                      "via rowmaps.com, and > councils' own layers as "
-                      "credited in the lane data.", self.text)
+    def rendered(self):
+        """The README as read: blockquote markers and link targets gone,
+        so re-wrapping the quote or relinking it changes nothing here."""
+        path = os.path.join(os.path.dirname(os.path.dirname(
+            os.path.abspath(__file__))), "README.md")
+        with open(path, encoding="utf-8") as fh:
+            raw = fh.read()
+        raw = re.sub(r"(?m)^[ \t]*>[ \t]?", "", raw)
+        raw = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", raw)
+        return " ".join(raw.split())
 
-    def test_west_berkshire_names_the_host_read_and_the_one_not(self):
-        import polite_http
-        read, not_read = "gis.westberks.gov.uk", "gis2.westberks.gov.uk"
+    def test_the_opening_credit_names_every_kind_of_source(self):
+        text = self.rendered()
+        self.assertNotIn("Every package here is built from", text)
+        self.assertIn("Where a council publishes its own byway layer and we "
+                      "read it, its byways come from that layer and are "
+                      "credited to the council; the exceptions are listed "
+                      "below.", text)
+        self.assertIn("Rights of way from the definitive maps, via "
+                      "rowmaps.com, contain public sector information "
+                      "licensed under the Open Government Licence v3.0. "
+                      "Byways from councils' own layers, and unsurfaced "
+                      "roads, carry the licence or credit each council "
+                      "states, as set out in the lane data.", text)
+        self.assertNotIn("Contains public sector information licensed "
+                         "under the Open Government Licence v3.0. Source:",
+                         text)
+
+    def test_west_berkshire_names_only_the_host_read(self):
+        read = "gis.westberks.gov.uk"
         self.assertIn(read, cw.HOSTS)
-        self.assertIn(not_read, polite_http.ROBOTS_HOSTS)
         said = re.findall(r"West Berkshire's (?:byways are|closures layer "
-                          r"is) read from the council's GIS host `([^`]+)`, "
-                          r"which has no robots.txt[;.] (?:its|Its) older GIS "
-                          r"host, `([^`]+)`, whose robots.txt disallows "
-                          r"automated access, is not read", self.text)
-        self.assertEqual(said, [(read, not_read)] * 2)
+                          r"is) read from its GIS host `([^`]+)`; its other "
+                          r"hosts are not read\.", self.text)
+        self.assertEqual(said, [read] * 2)
+        # Neutral: nothing about the council's own access controls.
+        self.assertNotIn("gis2.westberks.gov.uk", self.text)
+        self.assertNotIn("www.westberks.gov.uk", self.text)
 
     def test_kent_dartmoor_and_exmoor_are_said_plainly(self):
         self.assertIn("Kent's, Dartmoor's and Exmoor's own layers are not "
@@ -1630,6 +1660,15 @@ class ReadmeSaysWhatIsRead(unittest.TestCase):
     def test_no_decision_is_put_on_the_owner_for_the_roads(self):
         self.assertNotIn("the owner decided", self.text)
         self.assertNotIn("on the owner's decision of 8 October", self.text)
+        self.assertNotIn("on the decision of 8 October 2026", self.text)
+        self.assertNotIn("owner's policy", self.text)
+        self.assertIn("Since 7 October 2026, the closures of a council "
+                      "whose servers do not answer GitHub's shared runners",
+                      self.text)
+        self.assertIn("No licence is stated for these unsurfaced-road "
+                      "layers. Each is published as public highway "
+                      "information** - a council's highway records",
+                      self.text)
 
 
 if __name__ == "__main__":

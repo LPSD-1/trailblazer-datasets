@@ -5,13 +5,15 @@ Public rights-of-way data for the TrailBlazer app, packaged for offline use.
 The rights of way here come from **local highway authority definitive maps** —
 the legal record of public rights of way in England and Wales — read through
 [rowmaps.com](https://www.rowmaps.com). Where a council publishes its own
-byway layer, its byways come from that layer and are credited to the council.
+byway layer and we read it, its byways come from that layer and are credited
+to the council; the exceptions are listed below.
 The unsurfaced unclassified roads come from councils' highway records.
 
-> Contains public sector information licensed under the
+> Rights of way from the definitive maps, via rowmaps.com, contain public
+> sector information licensed under the
 > [Open Government Licence v3.0](https://www.nationalarchives.gov.uk/doc/open-government-licence/version/3/).
-> Source: local highway authority definitive maps, via rowmaps.com, and
-> councils' own layers as credited in the lane data.
+> Byways from councils' own layers, and unsurfaced roads, carry the licence
+> or credit each council states, as set out in the lane data.
 
 Since 8 October 2026 the lanes also include **unsurfaced unclassified roads**
 read from the councils' own highway records - Devon, North Yorkshire, Norfolk,
@@ -179,7 +181,7 @@ council's row in its `authorities` block lists which sources cover it.
 How they are read: an honest User-Agent naming this repository, robots.txt
 obeyed (RFC 9309), a gap between requests, read-only calls only, redirects
 followed only where the same rules allow, and nothing behind a bot challenge
-(`tools/polite_http.py`). By the owner's policy of 7 October 2026, the
+(`tools/polite_http.py`). Since 7 October 2026, the
 closures of a council whose servers do not answer GitHub's shared runners
 (Dorset, Powys) are read from one fixed, honestly named collector server
 instead, with the same client and rules
@@ -195,9 +197,8 @@ as a person pressing Search does. The owner approved that on 7 October
 2026, and `tools/polite_http.py` allows a POST to that one form and no
 other (`FORM_POSTS`). Its voluntary closures are requests, not orders, and
 are held for review rather than drawn as closures. West Berkshire's closures
-layer is read from the council's GIS host `gis.westberks.gov.uk`, which has
-no robots.txt; its older GIS host, `gis2.westberks.gov.uk`, whose
-robots.txt disallows automated access, is not read. No personal data is stored: contact names, phone numbers,
+layer is read from its GIS host `gis.westberks.gov.uk`; its other hosts are
+not read. No personal data is stored: contact names, phone numbers,
 e-mail addresses and applicants are dropped before anything is written. A
 source that fails, or suddenly returns nothing, keeps its last good copy.
 
@@ -339,11 +340,8 @@ fallback: an unreadable layer keeps its last good file, a council file
 that disagrees with rowmaps too much to be the same network is not used,
 and neither is one whose last good read is 30 days old or more
 (`council_ways.MAX_AGE_DAYS`), since rowmaps may have added byways since.
-West Berkshire's byways are read from the council's GIS host
-`gis.westberks.gov.uk`, which has no robots.txt. Its older GIS host,
-`gis2.westberks.gov.uk`, whose robots.txt disallows automated access, is not
-read, and nor is its website, `www.westberks.gov.uk`, which answers
-automated requests with a bot check. Dorset's map server does not answer
+West Berkshire's byways are read from its GIS host `gis.westberks.gov.uk`;
+its other hosts are not read. Dorset's map server does not answer
 requests from GitHub's runners, so Dorset's byways stay on rowmaps.com.
 Kent's, Dartmoor's and Exmoor's own layers are not read at present.
 
@@ -382,7 +380,7 @@ Where a council's roads are not read, the app says so: an absence of UCRs on
 the map is never an absence on the ground.
 
 **No licence is stated for these unsurfaced-road layers. Each is published
-on the decision of 8 October 2026** that it is public highway information - a
+as public highway information** - a
 council's highway records must be open to public inspection - credited to the
 council by name (Devon County Council, North Yorkshire Council, Norfolk County
 Council, Lincolnshire County Council, Northumberland County Council, East

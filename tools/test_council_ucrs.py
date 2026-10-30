@@ -1265,7 +1265,11 @@ class Licence(unittest.TestCase):
         self.assertIn("Devon County Council and North Yorkshire Council",
                       said)
         self.assertIn("without a stated licence", said)
-        self.assertIn("8 October 2026", said)
+        # The licence points at where each council is credited, in plain
+        # words; the decision itself is dated on every road's attribution
+        # (test_every_council_is_credited_and_its_decision_recorded).
+        self.assertIn("credited to each council in the lane data", said)
+        self.assertNotIn("decision", said)
         att = P.dataset_attribution("OGL.", used)
         self.assertTrue(att.startswith("Rights of way: OGL."))
         self.assertIn("North Yorkshire Council", att)

@@ -119,7 +119,7 @@ GB_ROUTING_TILES = frozenset((
 # the arithmetic the plan does ("~1,708 MB ... fails by 208 MB").
 DEFAULT_UK_BUDGET_BYTES = 1_500_000_000
 
-OSM_ATTRIBUTION = ("Map and routing data (c) OpenStreetMap contributors, "
+OSM_ATTRIBUTION = ("Map and routing data © OpenStreetMap contributors, "
                    "ODbL.")
 OGL_SAID = ("contain public sector information licensed under the Open "
             "Government Licence v3.0")

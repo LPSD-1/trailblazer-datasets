@@ -1883,7 +1883,7 @@ def dataset_licence(ucr_sources, byway_sources=None):
     if unstated:
         out += (", except the byways of %s, read from %s, which are "
                 "published without a stated licence and credited to each "
-                "council (bywaySources)"
+                "council in the lane data"
                 % (_councils(unstated), _own_layers(len(unstated))))
     for s in byways:
         if s.get("licence"):
@@ -1894,9 +1894,9 @@ def dataset_licence(ucr_sources, byway_sources=None):
                 % _councils(ogl))
     if none:
         out += ("; the unsurfaced unclassified roads of %s are council "
-                "highway records published without a stated licence, on "
-                "the decision of 8 October 2026, credited to each council "
-                "(ucrSources)" % _councils(none))
+                "highway records published without a stated licence, "
+                "credited to each council in the lane data"
+                % _councils(none))
     return out
 
 

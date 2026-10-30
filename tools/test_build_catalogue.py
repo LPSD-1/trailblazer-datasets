@@ -297,7 +297,7 @@ _byways = [
 ]
 _with = _with_byways(_byways)
 ok(bc.ATTRIBUTION == (
-    "Map and routing data (c) OpenStreetMap contributors, ODbL. Rights of "
+    "Map and routing data \u00a9 OpenStreetMap contributors, ODbL. Rights of "
     "way in England and Wales contain public sector information licensed "
     "under the Open Government Licence v3.0, via rowmaps.com."),
    "the default credit names England and Wales, the coverage, not the "
@@ -317,7 +317,7 @@ ok(_with_byways([]) == bc.ATTRIBUTION,
 ok(_with_byways([dict(_byways[0], count=0)]) == bc.ATTRIBUTION,
    "NEGATIVE PAIR: a layer that gave no byway changes nothing")
 ok(_with == (
-    "Map and routing data (c) OpenStreetMap contributors, ODbL. Byways for "
+    "Map and routing data \u00a9 OpenStreetMap contributors, ODbL. Byways for "
     "Buckinghamshire Council and Surrey County Council, from the councils' "
     "own layers, contain public sector information licensed under "
     "the Open Government Licence v3.0. Byways for Devon County Council and "
