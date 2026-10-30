@@ -1,7 +1,7 @@
 {
  "schema": 1,
  "schemaVersion": 1,
- "generated": "2026-10-23T08:45:56Z",
+ "generated": "2026-10-30T16:11:03Z",
  "attribution": "Rights of way: Contains public sector information licensed under the Open Government Licence v3.0. Source: local highway authority definitive maps, via rowmaps.com. Byways for Bracknell Forest, Cambridgeshire, Central Bedfordshire, Cheshire East, Cheshire West and Chester, Devon, East Sussex, Essex, Hertfordshire, Lancashire, Northumberland, Oxfordshire, West Berkshire, Wiltshire, Wokingham read from the councils' own live layers. Unsurfaced unclassified roads: Source: Devon County Council's unsurfaced unclassified county roads (maintenance category 12), read from the council. Devon County Council publishes this layer without stating a licence. Trail Blazer publishes it on the owner's decision of 8 October 2026 that it is public highway information - highway records must be open to public inspection - credited to Devon County Council, and will take it down if the council objects. Source: North Yorkshire Council's unsurfaced unclassified roads (U roads of maintenance hierarchy 6), read from the council. North Yorkshire Council publishes this layer without stating a licence. Trail Blazer publishes it on the owner's decision of 8 October 2026 that it is public highway information - highway records must be open to public inspection - credited to North Yorkshire Council, and will take it down if the council objects. Source: Norfolk County Council's maintained unsurfaced roads, read from the council. Norfolk County Council publishes this layer without stating a licence. Trail Blazer publishes it on the owner's decision of 8 October 2026 that it is public highway information - highway records must be open to public inspection - credited to Norfolk County Council, and will take it down if the council objects. Source: Lincolnshire County Council's green lanes (carriageway assets of road class 'Green Lane'), read from the council. Lincolnshire County Council publishes this layer without stating a licence. Trail Blazer publishes it on the owner's decision of 8 October 2026 that it is public highway information - highway records must be open to public inspection - credited to Lincolnshire County Council, and will take it down if the council objects. Source: Northumberland County Council's unsurfaced roads (adopted highway of maintenance category 8), read from the council. Northumberland County Council publishes this layer without stating a licence. Trail Blazer publishes it on the owner's decision of 8 October 2026 that it is public highway information - highway records must be open to public inspection - credited to Northumberland County Council, and will take it down if the council objects. Source: East Riding of Yorkshire Council's green lanes and unmetalled roads (street gazetteer, dedicated to all vehicles), read from the council. East Riding of Yorkshire Council publishes this layer without stating a licence. Trail Blazer publishes it on the owner's decision of 8 October 2026 that it is public highway information - highway records must be open to public inspection - credited to East Riding of Yorkshire Council, and will take it down if the council objects. Source: Oxfordshire County Council's unmetalled streets maintainable at public expense, read from the council. Oxfordshire County Council publishes this layer without stating a licence. Trail Blazer publishes it on the owner's decision of 8 October 2026 that it is public highway information - highway records must be open to public inspection - credited to Oxfordshire County Council, and will take it down if the council objects. Source: Surrey County Council's unmetalled unclassified roads, read from the council. Surrey County Council publishes this layer without stating a licence. Trail Blazer publishes it on the owner's decision of 8 October 2026 that it is public highway information - highway records must be open to public inspection - credited to Surrey County Council, and will take it down if the council objects.",
  "licence": "OGL-3.0 for the rights of way; the unsurfaced unclassified roads of Devon County Council, North Yorkshire Council, Norfolk County Council, Lincolnshire County Council, Northumberland County Council, East Riding of Yorkshire Council, Oxfordshire County Council and Surrey County Council are council highway records published without a stated licence, on the owner's decision of 8 October 2026, credited to each council (ucrSources)",
  "source": "Local highway authority definitive maps via rowmaps.com; byways for 15 authorities from the council's own live layer",
@@ -29,7 +29,7 @@
  "contextRadiusKm": null,
  "contextNote": "Bridleways and restricted byways are not on this map: it carries only the ways a motor vehicle may use. Where none is shown, this map has not looked - it does not mean there is none on the ground.",
  "wayClassCounts": {
-  "boat": 8363
+  "boat": 8365
  },
  "ucrCount": 2758,
  "ucrSources": [
@@ -69,7 +69,7 @@
    "licence_note": "Norfolk County Council publishes this layer without stating a licence. Trail Blazer publishes it on the owner's decision of 8 October 2026 that it is public highway information - highway records must be open to public inspection - credited to Norfolk County Council, and will take it down if the council objects.",
    "url": "https://maps.norfolk.gov.uk/arcgis/rest/services/layers_ext/crm/MapServer/16",
    "what": "Norfolk County Council's maintained unsurfaced roads",
-   "since": "2026-10-23",
+   "since": "2026-10-30",
    "count": 545
   },
   {
@@ -82,7 +82,7 @@
    "licence_note": "Lincolnshire County Council publishes this layer without stating a licence. Trail Blazer publishes it on the owner's decision of 8 October 2026 that it is public highway information - highway records must be open to public inspection - credited to Lincolnshire County Council, and will take it down if the council objects.",
    "url": "https://services-eu1.arcgis.com/WZPLjyOOFu4PQ3GJ/arcgis/rest/services/Highways_Assets_Carriageway_2_view/FeatureServer/3",
    "what": "Lincolnshire County Council's green lanes (carriageway assets of road class 'Green Lane')",
-   "since": "2026-10-23",
+   "since": "2026-10-30",
    "count": 370
   },
   {
@@ -252,12 +252,12 @@
    "note": "Byways open to all traffic - the lanes you may legally ride. Bridleways and restricted byways are not on this map: it carries only the ways a motor vehicle may use. Where none is shown, this map has not looked - it does not mean there is none on the ground.",
    "contextScope": "none",
    "file": "packages/ways-east-anglia.tbpack",
-   "sha256": "b6641b407859a2fff31df457bfcf2d4d66643958c9545a135a672eb3bbcb8588",
-   "bytes": 483125,
+   "sha256": "d3ea36983f6d32e3cec072883a3be40e6bde69e7eb8a593c6eefe57bd9704751",
+   "bytes": 483130,
    "plainBytes": 3410088,
    "laneCount": 1280,
    "lengthKm": 1077.506,
-   "generated": "2026-10-23T08:45:56Z",
+   "generated": "2026-10-30T16:11:03Z",
    "ucrCount": 708,
    "ucrLengthKm": 574.784
   },
@@ -271,12 +271,12 @@
    "note": "Byways open to all traffic - the lanes you may legally ride. Bridleways and restricted byways are not on this map: it carries only the ways a motor vehicle may use. Where none is shown, this map has not looked - it does not mean there is none on the ground.",
    "contextScope": "none",
    "file": "packages/ways-midlands.tbpack",
-   "sha256": "9da405b92a01e4b702c4189560b78fdb59a5ecef28137744027bf6ec064b8804",
-   "bytes": 361853,
+   "sha256": "2baa256680674a561e6c447f03c71f707116325ca0a4da6a7ed6cfeebb322c42",
+   "bytes": 361855,
    "plainBytes": 2969133,
    "laneCount": 1771,
    "lengthKm": 1077.369,
-   "generated": "2026-10-23T08:45:56Z",
+   "generated": "2026-10-30T16:11:03Z",
    "ucrCount": 338,
    "ucrLengthKm": 232.528
   },
@@ -307,12 +307,12 @@
    "note": "Byways open to all traffic - the lanes you may legally ride. Bridleways and restricted byways are not on this map: it carries only the ways a motor vehicle may use. Where none is shown, this map has not looked - it does not mean there is none on the ground.",
    "contextScope": "none",
    "file": "packages/ways-north.tbpack",
-   "sha256": "75c6c9903d40ba31a37ac072ef449c95d1a84bbd78762677bfcc59ffbd3a34cf",
-   "bytes": 464360,
-   "plainBytes": 3901260,
-   "laneCount": 1457,
-   "lengthKm": 1137.077,
-   "generated": "2026-10-23T08:45:56Z",
+   "sha256": "c0b579ca97b9dd35279972c7295fe8f11a8bd31c2d592403bd65bbd031471eed",
+   "bytes": 464559,
+   "plainBytes": 3903357,
+   "laneCount": 1459,
+   "lengthKm": 1137.887,
+   "generated": "2026-10-30T16:11:03Z",
    "ucrCount": 999,
    "ucrLengthKm": 964.875
   }
