@@ -1,6 +1,6 @@
 {
  "schema": 1,
- "generated": "2026-10-30T10:27:58Z",
+ "generated": "2026-10-30T14:37:32Z",
  "datasets": [
   {
    "id": "lanes",
@@ -27,9 +27,9 @@
    "name": "Council closures",
    "what": "Closures and orders read from councils' own websites and maps",
    "schedule": "Every 6 hours",
-   "last_run": "2026-10-30T07:45:46Z",
+   "last_run": "2026-10-30T14:35:24Z",
    "result": "ok",
-   "last_ok": "2026-10-30T07:45:46Z",
+   "last_ok": "2026-10-30T14:35:24Z",
    "data_as_of": "2026-10-30"
   },
   {
@@ -2613,7 +2613,7 @@
     {
      "what": "Closures",
      "from": "Somerset Council - rights of way closures and traffic orders",
-     "as_of": "2026-10-29"
+     "as_of": "2026-10-30"
     },
     {
      "what": "Traffic orders",
