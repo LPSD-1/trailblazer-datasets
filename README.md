@@ -6,14 +6,16 @@ The rights of way here come from **local highway authority definitive maps** —
 the legal record of public rights of way in England and Wales — read through
 [rowmaps.com](https://www.rowmaps.com). Where a council publishes its own
 byway layer and we read it, its byways come from that layer and are credited
-to the council; the exceptions are listed below.
+to the council; the exceptions are listed under
+[Byways from the councils' own layers](#byways-from-the-councils-own-layers).
 The unsurfaced unclassified roads come from councils' highway records.
 
 > Rights of way from the definitive maps, via rowmaps.com, contain public
 > sector information licensed under the
 > [Open Government Licence v3.0](https://www.nationalarchives.gov.uk/doc/open-government-licence/version/3/).
-> Byways from councils' own layers, and unsurfaced roads, carry the licence
-> or credit each council states, as set out in the lane data.
+> Byways from councils' own layers, and unsurfaced roads, carry the credit
+> each council states, and the licence where one is stated, as set out in
+> the lane data.
 
 Since 8 October 2026 the lanes also include **unsurfaced unclassified roads**
 read from the councils' own highway records - Devon, North Yorkshire, Norfolk,
@@ -329,7 +331,8 @@ on it is read (`council_ways.HOST_PATHS`).
 Norfolk's byways stay on rowmaps.com for now, until we have confirmed the
 terms of the licence its file states. Powys's map server did not respond to
 our request on 30 October 2026, so Powys's byways stay on rowmaps.com. (The
-collector server reads Powys's closures only; that is a separate pipeline.)
+collector server reads Powys's closures and order documents, not its
+byways.)
 
 The lane build lets the council's layer decide which byways exist and keeps
 every unchanged way's rowmaps record byte for byte, so its id does not move: a
@@ -379,18 +382,17 @@ NERC test below), with the roads that went wholly in brackets:
 Where a council's roads are not read, the app says so: an absence of UCRs on
 the map is never an absence on the ground.
 
-**No licence is stated for these unsurfaced-road layers. Each is published
-as public highway information** - a
-council's highway records must be open to public inspection - credited to the
-council by name (Devon County Council, North Yorkshire Council, Norfolk County
-Council, Lincolnshire County Council, Northumberland County Council, East
-Riding of Yorkshire Council, Oxfordshire County Council, Surrey County
-Council) on every road, pack and container that carries it, and each will be
-taken down if its council objects. Every road says, in its `attribution`,
-"Source: <the council's layer>, read from the council." followed by a note
-that the council publishes the layer without stating a licence, that the road
-is credited to the council, and that it will be taken down if the council
-objects. Worcestershire's roads are not read yet, on the evidence above.
+**No licence is stated for these layers. Each is credited to its council by
+name, and will be taken down if its council objects.** The credit (Devon
+County Council, North Yorkshire Council, Norfolk County Council, Lincolnshire
+County Council, Northumberland County Council, East Riding of Yorkshire
+Council, Oxfordshire County Council, Surrey County Council) is on every road,
+pack and container that carries a council's roads. Every road says, in its
+`attribution`, "Source: <the council's layer>, read from the council.
+<council> publishes this layer without stating a licence. Trail Blazer shows
+it credited to <council>, and will take it down if the council objects."
+Worcestershire's roads are not included, because no council publication we
+have found ties its 'Keep Safe Only' maintenance tier to unsurfaced roads.
 
 **THE NERC TEST.** The Natural Environment and Rural Communities Act 2006 s67
 took the motor vehicle rights off every way recorded on the definitive map as
@@ -451,8 +453,8 @@ already read Devon's and Oxfordshire's map servers and Northumberland's
 ArcGIS Online host (`services2.arcgis.com`) for byways; Lincolnshire's and
 East Riding's are ArcGIS Online too, and North Yorkshire's is Esri's own
 proxy (`utility.arcgis.com`). Norfolk's map server answered an ordinary
-address without a challenge (its www site refuses data centres; this host is
-untried from the runners). Surrey's map server sets an Imperva cookie: if it
+address without a challenge (this host has not yet been tried from the
+runners). Surrey's map server sets an Imperva cookie: if it
 refuses the runners, the collector server (HOME-COLLECTOR.md) is the honest
 route, and nothing is worked round.
 
@@ -477,13 +479,18 @@ the page as read. Only public bodies' pages; nothing is taken from a site
 
 ## Licence
 
-Data: Open Government Licence v3.0 — attribution required, no share-alike -
-except the unsurfaced unclassified roads above, which are credited to the
-council that publishes them under the terms stated there. The manifest says
-the same: its `licence` is "OGL-3.0" only while no council's roads are in the
-build, and otherwise names what each part is published under, and its
-`attribution` labels the rights-of-way credit and each council's
-(`build_packages.dataset_licence`, `dataset_attribution`).
+Data: Open Government Licence v3.0 — attribution required, no share-alike —
+for the rights of way read through rowmaps.com and the byways from the
+councils' own layers published under it; Surrey's byway file also carries the
+Ordnance Survey's credit. The byway layers that state no licence (Devon,
+Cheshire East, Essex and West Berkshire, and the Isle of Wight and Hampshire if
+rowmaps ever has no file for them) and the unsurfaced unclassified roads above
+are credited to each council, without a stated licence. The manifest says the
+same: its `licence` is "OGL-3.0" only while every way in the build is from
+rowmaps.com or from a council byway layer published under OGL, and otherwise
+names what each part is published under, and its `attribution` labels the
+rights-of-way credit and each council's (`build_packages.dataset_licence`,
+`dataset_attribution`).
 The attribution string above travels on the collection *and* on every single
 feature, because losing it silently would put users in breach while everything
 still appeared to work.

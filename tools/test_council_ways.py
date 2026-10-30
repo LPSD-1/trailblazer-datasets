@@ -1612,13 +1612,17 @@ class ReadmeSaysWhatIsRead(unittest.TestCase):
         self.assertIn("Where a council publishes its own byway layer and we "
                       "read it, its byways come from that layer and are "
                       "credited to the council; the exceptions are listed "
-                      "below.", text)
+                      "under Byways from the councils' own layers.", text)
+        # The link goes to that section's own anchor.
+        self.assertIn("(#byways-from-the-councils-own-layers)", self.text)
+        self.assertIn("## Byways from the councils' own layers", self.text)
         self.assertIn("Rights of way from the definitive maps, via "
                       "rowmaps.com, contain public sector information "
                       "licensed under the Open Government Licence v3.0. "
                       "Byways from councils' own layers, and unsurfaced "
-                      "roads, carry the licence or credit each council "
-                      "states, as set out in the lane data.", text)
+                      "roads, carry the credit each council states, and the "
+                      "licence where one is stated, as set out in the lane "
+                      "data.", text)
         self.assertNotIn("Contains public sector information licensed "
                          "under the Open Government Licence v3.0. Source:",
                          text)
@@ -1653,8 +1657,11 @@ class ReadmeSaysWhatIsRead(unittest.TestCase):
                 "states.",
                 "Powys's map server did not respond to our request on 30 "
                 "October 2026, so Powys's byways stay on rowmaps.com. (The "
-                "collector server reads Powys's closures only; that is a "
-                "separate pipeline.)"):
+                "collector server reads Powys's closures and order "
+                "documents, not its byways.)",
+                "Norfolk's map server answered an ordinary address without "
+                "a challenge (this host has not yet been tried from the "
+                "runners)."):
             self.assertIn(said, self.text)
 
     def test_no_decision_is_put_on_the_owner_for_the_roads(self):
@@ -1665,20 +1672,53 @@ class ReadmeSaysWhatIsRead(unittest.TestCase):
         self.assertIn("Since 7 October 2026, the closures of a council "
                       "whose servers do not answer GitHub's shared runners",
                       self.text)
-        self.assertIn("No licence is stated for these unsurfaced-road "
-                      "layers. Each is published as public highway "
-                      "information** - a council's highway records",
-                      self.text)
+        self.assertIn("**No licence is stated for these layers. Each is "
+                      "credited to its council by name, and will be taken "
+                      "down if its council objects.**", self.text)
+        self.assertNotIn("must be open to public inspection", self.text)
+        self.assertNotIn("refuses data centres", self.text)
         # The roads' credit note stands alone: nothing points back to a
         # decision the README no longer states.
         self.assertNotIn("followed by that decision", self.text)
         self.assertNotIn("The decision named Worcestershire", self.text)
-        self.assertIn("read from the council.\" followed by a note that the "
-                      "council publishes the layer without stating a "
-                      "licence, that the road is credited to the council, "
-                      "and that it will be taken down if the council "
-                      "objects. Worcestershire's roads are not read yet, on "
-                      "the evidence above.", self.text)
+        # The README quotes the note riders read, exactly as the code
+        # writes it.
+        import council_ucrs as cu
+        self.assertIn("Every road says, in its `attribution`, \"Source: "
+                      "<the council's layer>, read from the council. "
+                      + cu.council_licence_note("<council>") + "\"",
+                      self.text)
+        self.assertIn("Worcestershire's roads are not included, because no "
+                      "council publication we have found ties its 'Keep "
+                      "Safe Only' maintenance tier to unsurfaced roads.",
+                      self.text)
+
+    def test_the_licence_section_says_what_each_part_is_under(self):
+        section = self.text.split("## Licence", 1)[1]
+        unstated = sorted(l["council"] for l in cw.LAYERS
+                          if not l.get("licence"))
+        self.assertEqual(unstated, [
+            "Cheshire East Council", "Devon County Council",
+            "Essex County Council", "Hampshire County Council",
+            "Isle of Wight Council", "West Berkshire Council"])
+        for said in (
+                "Data: Open Government Licence v3.0 \u2014 attribution "
+                "required, no share-alike \u2014 for the rights of way read "
+                "through rowmaps.com and the byways from the councils' own "
+                "layers published under it; Surrey's byway file also "
+                "carries the Ordnance Survey's credit.",
+                "The byway layers that state no licence (Devon, Cheshire "
+                "East, Essex and West Berkshire, and the Isle of Wight and "
+                "Hampshire if rowmaps ever has no file for them) and the "
+                "unsurfaced unclassified roads above are credited to each "
+                "council, without a stated licence.",
+                "its `licence` is \"OGL-3.0\" only while every way in the "
+                "build is from rowmaps.com or from a council byway layer "
+                "published under OGL, and otherwise names what each part "
+                "is published under"):
+            self.assertIn(said, section)
+        self.assertNotIn("only while no council's roads are in the build",
+                         section)
 
 
 if __name__ == "__main__":
