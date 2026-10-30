@@ -1,6 +1,6 @@
 {
  "BC": {
-  "changed": false,
+  "changed": true,
   "council": "Bracknell Forest Council",
   "failing_since": null,
   "last_ok": "2026-10-30",
@@ -18,7 +18,7 @@
   "ways": 20
  },
  "BK": {
-  "changed": false,
+  "changed": true,
   "council": "Central Bedfordshire Council",
   "failing_since": null,
   "last_ok": "2026-10-30",
@@ -35,8 +35,44 @@
   "records": 81,
   "ways": 81
  },
+ "BM": {
+  "changed": true,
+  "council": "Buckinghamshire Council",
+  "failing_since": null,
+  "last_ok": "2026-10-30",
+  "merge": {
+   "added": [],
+   "dropped": [],
+   "kept": 61,
+   "new_share": 0.0,
+   "rowmaps": 61,
+   "used": true,
+   "why_not": null
+  },
+  "ok": true,
+  "records": 9019,
+  "ways": 61
+ },
+ "CA": {
+  "changed": true,
+  "council": "Calderdale Metropolitan Borough Council",
+  "failing_since": null,
+  "last_ok": "2026-10-30",
+  "merge": {
+   "added": [],
+   "dropped": [],
+   "kept": 17,
+   "new_share": 0.0,
+   "rowmaps": 17,
+   "used": false,
+   "why_not": "a cross-check layer: compared with rowmaps, and used only if rowmaps has no file for the authority"
+  },
+  "ok": true,
+  "records": 6616,
+  "ways": 17
+ },
  "CB": {
-  "changed": false,
+  "changed": true,
   "council": "Cambridgeshire County Council",
   "failing_since": null,
   "last_ok": "2026-10-30",
@@ -54,43 +90,21 @@
   "ways": 401
  },
  "CC": {
-  "changed": false,
   "council": "Cheshire West and Chester Council",
-  "failing_since": null,
+  "error": "maps.cheshireeast.gov.uk refused https://maps.cheshireeast.gov.uk/geoserver/CWaCOpenData/wfs?&service=WFS&version=2.0.0&request=GetFeature&outputFormat=application%2Fjson&srsName=EPSG%3A27700&typeNames=CWaCOpenData%3ATN_S_ROWBywaysOpenToAllTraffic_LINE_CURRENT (HTTP 403)",
+  "failing_since": "2026-10-30",
   "last_ok": "2026-10-30",
-  "merge": {
-   "added": [],
-   "dropped": [],
-   "kept": 36,
-   "new_share": 0.0,
-   "rowmaps": 36,
-   "used": true,
-   "why_not": null
-  },
-  "ok": true,
-  "records": 36,
-  "ways": 36
+  "ok": false
  },
  "CH": {
-  "changed": false,
   "council": "Cheshire East Council",
-  "failing_since": null,
+  "error": "maps.cheshireeast.gov.uk refused https://maps.cheshireeast.gov.uk/geoserver/CEOpenData/wfs?&service=WFS&version=2.0.0&request=GetFeature&outputFormat=application%2Fjson&srsName=EPSG%3A27700&typeNames=CEOpenData%3ATN_S_ROWBywaysOpenToAllTraffic_LINE_CURRENT (HTTP 403)",
+  "failing_since": "2026-10-30",
   "last_ok": "2026-10-30",
-  "merge": {
-   "added": [],
-   "dropped": [],
-   "kept": 28,
-   "new_share": 0.0,
-   "rowmaps": 28,
-   "used": true,
-   "why_not": null
-  },
-  "ok": true,
-  "records": 28,
-  "ways": 28
+  "ok": false
  },
  "DN": {
-  "changed": false,
+  "changed": true,
   "council": "Devon County Council",
   "failing_since": null,
   "last_ok": "2026-10-30",
@@ -107,8 +121,62 @@
   "records": 178,
   "ways": 178
  },
+ "DU": {
+  "changed": true,
+  "council": "Durham County Council",
+  "failing_since": null,
+  "last_ok": "2026-10-30",
+  "merge": {
+   "added": [],
+   "dropped": [],
+   "kept": 131,
+   "new_share": 0.0,
+   "rowmaps": 131,
+   "used": true,
+   "why_not": null
+  },
+  "ok": true,
+  "records": 9304,
+  "ways": 131
+ },
+ "DY": {
+  "changed": true,
+  "council": "Derbyshire County Council",
+  "failing_since": null,
+  "last_ok": "2026-10-30",
+  "merge": {
+   "added": [],
+   "dropped": [],
+   "kept": 158,
+   "new_share": 0.0,
+   "rowmaps": 158,
+   "used": true,
+   "why_not": null
+  },
+  "ok": true,
+  "records": 159,
+  "ways": 159
+ },
+ "DZ": {
+  "changed": true,
+  "council": "Dudley Metropolitan Borough Council",
+  "failing_since": null,
+  "last_ok": "2026-10-30",
+  "merge": {
+   "added": [],
+   "dropped": [],
+   "kept": 1,
+   "new_share": 0.0,
+   "rowmaps": 1,
+   "used": true,
+   "why_not": null
+  },
+  "ok": true,
+  "records": 1807,
+  "ways": 1
+ },
  "ES": {
-  "changed": false,
+  "changed": true,
   "council": "East Sussex County Council",
   "failing_since": null,
   "last_ok": "2026-10-30",
@@ -126,7 +194,7 @@
   "ways": 189
  },
  "EX": {
-  "changed": false,
+  "changed": true,
   "council": "Essex County Council",
   "failing_since": null,
   "last_ok": "2026-10-30",
@@ -144,7 +212,7 @@
   "ways": 297
  },
  "HD": {
-  "changed": false,
+  "changed": true,
   "council": "Hertfordshire County Council",
   "failing_since": null,
   "last_ok": "2026-10-30",
@@ -162,7 +230,7 @@
   "ways": 217
  },
  "HP": {
-  "changed": false,
+  "changed": true,
   "council": "Hampshire County Council",
   "failing_since": null,
   "last_ok": "2026-10-30",
@@ -182,7 +250,7 @@
   "ways": 664
  },
  "IW": {
-  "changed": false,
+  "changed": true,
   "council": "Isle of Wight Council",
   "failing_since": null,
   "last_ok": "2026-10-30",
@@ -221,8 +289,44 @@
   "records": 95,
   "ways": 95
  },
+ "KL": {
+  "changed": true,
+  "council": "Kirklees Council",
+  "failing_since": null,
+  "last_ok": "2026-10-30",
+  "merge": {
+   "added": [],
+   "dropped": [],
+   "kept": 89,
+   "new_share": 0.0,
+   "rowmaps": 89,
+   "used": true,
+   "why_not": null
+  },
+  "ok": true,
+  "records": 4675,
+  "ways": 89
+ },
+ "L1": {
+  "changed": true,
+  "council": "Lake District National Park Authority",
+  "failing_since": null,
+  "last_ok": "2026-10-30",
+  "merge": {
+   "added": [],
+   "dropped": [],
+   "kept": 37,
+   "new_share": 0.0,
+   "rowmaps": 37,
+   "used": true,
+   "why_not": null
+  },
+  "ok": true,
+  "records": 2945,
+  "ways": 37
+ },
  "LA": {
-  "changed": false,
+  "changed": true,
   "council": "Lancashire County Council",
   "failing_since": null,
   "last_ok": "2026-10-30",
@@ -242,8 +346,26 @@
   "records": 69,
   "ways": 69
  },
+ "LD": {
+  "changed": true,
+  "council": "Leeds City Council",
+  "failing_since": null,
+  "last_ok": "2026-10-30",
+  "merge": {
+   "added": [],
+   "dropped": [],
+   "kept": 21,
+   "new_share": 0.0,
+   "rowmaps": 21,
+   "used": true,
+   "why_not": null
+  },
+  "ok": true,
+  "records": 2425,
+  "ways": 21
+ },
  "ND": {
-  "changed": false,
+  "changed": true,
   "council": "Northumberland County Council",
   "failing_since": null,
   "last_ok": "2026-10-30",
@@ -263,8 +385,15 @@
   "records": 431,
   "ways": 431
  },
+ "NY": {
+  "council": "North Yorkshire Council",
+  "error": "hub.datanorthyorkshire.org refused https://hub.datanorthyorkshire.org/dataset/north-yorkshire-county-council-public-rights-of-way (HTTP 403)",
+  "failing_since": "2026-10-30",
+  "last_ok": null,
+  "ok": false
+ },
  "ON": {
-  "changed": false,
+  "changed": true,
   "council": "Oxfordshire County Council",
   "failing_since": null,
   "last_ok": "2026-10-30",
@@ -280,6 +409,42 @@
   "ok": true,
   "records": 223,
   "ways": 223
+ },
+ "SN": {
+  "changed": true,
+  "council": "St Helens Council",
+  "failing_since": null,
+  "last_ok": "2026-10-30",
+  "merge": {
+   "added": [],
+   "dropped": [],
+   "kept": 14,
+   "new_share": 0.0,
+   "rowmaps": 14,
+   "used": true,
+   "why_not": null
+  },
+  "ok": true,
+  "records": 372,
+  "ways": 14
+ },
+ "SU": {
+  "changed": true,
+  "council": "Surrey County Council",
+  "failing_since": null,
+  "last_ok": "2026-10-30",
+  "merge": {
+   "added": [],
+   "dropped": [],
+   "kept": 371,
+   "new_share": 0.0,
+   "rowmaps": 371,
+   "used": true,
+   "why_not": null
+  },
+  "ok": true,
+  "records": 10848,
+  "ways": 371
  },
  "WB": {
   "changed": true,
@@ -300,7 +465,7 @@
   "ways": 484
  },
  "WJ": {
-  "changed": false,
+  "changed": true,
   "council": "Wokingham Borough Council",
   "failing_since": null,
   "last_ok": "2026-10-30",
@@ -317,8 +482,26 @@
   "records": 115,
   "ways": 115
  },
+ "WP": {
+  "changed": true,
+  "council": "Telford & Wrekin Council",
+  "failing_since": null,
+  "last_ok": "2026-10-30",
+  "merge": {
+   "added": [],
+   "dropped": [],
+   "kept": 8,
+   "new_share": 0.0,
+   "rowmaps": 8,
+   "used": true,
+   "why_not": null
+  },
+  "ok": true,
+  "records": 1077,
+  "ways": 8
+ },
  "WT": {
-  "changed": false,
+  "changed": true,
   "council": "Wiltshire Council",
   "failing_since": null,
   "last_ok": "2026-10-30",
@@ -334,5 +517,25 @@
   "ok": true,
   "records": 714,
   "ways": 714
+ },
+ "YY": {
+  "changed": true,
+  "council": "Stockport Metropolitan Borough Council",
+  "failing_since": null,
+  "last_ok": "2026-10-30",
+  "merge": {
+   "added": [
+    "YY|M|28"
+   ],
+   "dropped": [],
+   "kept": 11,
+   "new_share": 0.043,
+   "rowmaps": 11,
+   "used": true,
+   "why_not": null
+  },
+  "ok": true,
+  "records": 662,
+  "ways": 12
  }
 }
