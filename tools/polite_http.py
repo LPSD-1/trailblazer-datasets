@@ -350,6 +350,7 @@ class Robots(object):
 
     def __init__(self, text):
         groups, agents, rules, in_rules = [], [], [], False
+        delays = {}   # id(rules of a group) -> its Crawl-delay
         for raw in (text or "").splitlines():
             line = raw.split("#", 1)[0].strip()
             if ":" not in line:
@@ -365,15 +366,24 @@ class Robots(object):
                 in_rules = True
                 if agents:
                     rules.append((key == "allow", value))
+            elif key == "crawl-delay" and agents:
+                # Not in RFC 9309, but a host asking for it is obeyed.
+                in_rules = True
+                try:
+                    delays[id(rules)] = float(value)
+                except ValueError:
+                    pass
         if agents:
             groups.append((agents, rules))
         # RFC 9309 2.2.1: our group is one whose user-agent value is our
         # product token, matched case-insensitively - equality, not a
         # substring, or a `User-agent: data` group would be taken as ours.
-        own = [r for a, rs in groups for r in rs
-               if any(_is_us(x) for x in a)]
-        self.rules = own if own else [r for a, rs in groups for r in rs
-                                      if "*" in a]
+        own = [(a, rs) for a, rs in groups if any(_is_us(x) for x in a)]
+        mine = own or [(a, rs) for a, rs in groups if "*" in a]
+        self.rules = [r for _a, rs in mine for r in rs]
+        #: Seconds between requests the host asks of us, or None.
+        found = [delays[id(rs)] for _a, rs in mine if id(rs) in delays]
+        self.delay = max(found) if found else None
 
     @staticmethod
     def _matches(pattern, path):
@@ -508,9 +518,17 @@ class PoliteClient(object):
             return e.code, dict(e.headers or {}), body
 
     def _pace(self, host):
+        gap = self.min_gap
+        verdict = self._robots.get(host)
+        if isinstance(verdict, Robots) and verdict.delay:
+            if verdict.delay > self.max_wait:
+                raise Refused("robots.txt on %s asks %.0f s between "
+                              "requests, longer than we wait"
+                              % (host, verdict.delay))
+            gap = max(gap, verdict.delay)
         last = self._last.get(host)
         if last is not None:
-            wait = self.min_gap - (self._clock() - last)
+            wait = gap - (self._clock() - last)
             if wait > 0:
                 self._sleep(wait)
         self._last[host] = self._clock()

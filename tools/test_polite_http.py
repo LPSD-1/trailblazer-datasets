@@ -412,6 +412,43 @@ class Gentle(unittest.TestCase):
         self.assertTrue(stand.slept and min(stand.slept) > 0)
         self.assertAlmostEqual(sum(stand.slept), 4.0)
 
+    def test_a_crawl_delay_for_everyone_spaces_requests_to_that_host(self):
+        robots = b"User-agent: *\nCrawl-delay: 10\nDisallow: /api/\n"
+        stand = Stand({"/robots.txt": (200, {}, robots),
+                       "/a": (200, {}, b"1")})
+        client = stand.client(min_gap=2.0)
+        client.get("https://h.example/a")
+        client.get("https://h.example/a")
+        self.assertEqual(stand.slept, [10.0, 10.0])
+        client.get("https://other.example/a")   # its own host, its own rules
+        self.assertEqual(stand.slept, [10.0, 10.0, 10.0])
+
+    def test_a_crawl_delay_for_another_agent_is_not_ours(self):
+        robots = b"User-agent: SlowBot\nCrawl-delay: 30\n\nUser-agent: *\n" \
+            b"Disallow: /api/\n"
+        stand = Stand({"/robots.txt": (200, {}, robots),
+                       "/a": (200, {}, b"1")})
+        client = stand.client(min_gap=2.0)
+        client.get("https://h.example/a")
+        client.get("https://h.example/a")
+        self.assertEqual(stand.slept, [2.0, 2.0])
+
+    def test_a_crawl_delay_longer_than_we_wait_is_a_refusal(self):
+        robots = b"User-agent: *\nCrawl-delay: 600\n"
+        stand = Stand({"/robots.txt": (200, {}, robots),
+                       "/a": (200, {}, b"1")})
+        with self.assertRaises(Refused):
+            stand.client(max_wait=120).get("https://h.example/a")
+        self.assertEqual(stand.asked, ["https://h.example/robots.txt"])
+
+    def test_a_crawl_delay_that_is_not_a_number_is_ignored(self):
+        robots = b"User-agent: *\nCrawl-delay: soon\n"
+        stand = Stand({"/robots.txt": (200, {}, robots),
+                       "/a": (200, {}, b"1")})
+        client = stand.client(min_gap=2.0)
+        client.get("https://h.example/a")
+        self.assertEqual(stand.slept, [2.0])
+
     def test_a_429_waits_as_long_as_it_is_told_then_retries(self):
         stand = Stand({"/robots.txt": (404, {}, b""),
                        "/a": [(429, {"Retry-After": "60"}, b""),
