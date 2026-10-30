@@ -12,7 +12,14 @@ projection we cannot name would put every byway in the wrong place.
 
 The standard library only (zipfile, struct, sqlite3, xml.etree), because the
 data jobs install nothing beyond cryptography, Pillow and pyyaml.
+
+A FILE CUT SHORT OR CORRUPTED IS A FetchFailed. Every reader here is
+`_refusing`: whatever a damaged file makes the parsing raise (struct.error,
+IndexError, a bad zip, a malformed database, nesting too deep) comes out as
+FetchFailed, so council_ways keeps the council's last good file and goes on
+to the next council, rather than one bad download stopping the run.
 """
+import functools
 import io
 import json
 import os
@@ -27,17 +34,58 @@ from polite_http import FetchFailed
 from council_sources import _wgs
 
 
+def _refusing(reader):
+    """`reader`, with anything a damaged file makes it raise turned into
+    FetchFailed (a FetchFailed it raises itself passes unchanged)."""
+    @functools.wraps(reader)
+    def read(*args, **kw):
+        try:
+            return reader(*args, **kw)
+        except FetchFailed:
+            raise
+        except Exception as e:  # noqa: BLE001 - the file is the stranger
+            raise FetchFailed("an unreadable file (%s): %s"
+                              % (type(e).__name__, str(e)[:200]))
+    return read
+
+
 # ------------------------------------------------------------ projections
 
-#: A .prj naming the British National Grid.
-_BNG = re.compile(r"British_National_Grid|OSGB[_ ]?1936|27700", re.I)
+#: The British National Grid by name: ArcGIS's "British_National_Grid",
+#: EPSG's "OSGB 1936 / British National Grid" (before 2020) and
+#: "OSGB36 / British National Grid" (since).
+_BNG_NAME = re.compile(r'^\s*PROJCS\[\s*"(?:OSGB[ _]?(?:1936|36)[ _]?/[ _]?)?'
+                       r'British[ _]National[ _]Grid"', re.I)
+#: ... or by its EPSG code: the PROJCS's own AUTHORITY, which WKT puts
+#: last, never the code of a node inside it.
+_BNG_CODE = re.compile(r'AUTHORITY\[\s*"EPSG"\s*,\s*"?27700"?\s*\]\s*\]\s*$',
+                       re.I)
+#: On the OSGB 1936 datum.
+_OSGB36 = re.compile(r'GEOGCS\[\s*"(?:GCS_)?OSGB[ _]?(?:1936|36)"', re.I)
+#: With the grid's own Transverse Mercator: a file naming the grid with
+#: any other origin is not on it.
+_BNG_PARAMETERS = {"latitude_of_origin": 49.0, "central_meridian": -2.0,
+                   "scale_factor": 0.9996012717, "false_easting": 400000.0,
+                   "false_northing": -100000.0}
+
+
+def _is_bng(text):
+    if not (_BNG_NAME.search(text) or _BNG_CODE.search(text)):
+        return False
+    if not _OSGB36.search(text) or not re.search(
+            r'PROJECTION\[\s*"Transverse_Mercator"', text, re.I):
+        return False
+    given = dict((k.lower(), float(v)) for k, v in re.findall(
+        r'PARAMETER\[\s*"(\w+)"\s*,\s*([-+0-9.eE]+)\s*\]', text, re.I))
+    return all(k in given and abs(given[k] - v) < 1e-9
+               for k, v in _BNG_PARAMETERS.items())
 
 
 def _projection(prj_text):
     """'bng' or 'wgs84' from a .prj, or FetchFailed."""
     text = prj_text or ""
     if text.lstrip().upper().startswith("PROJCS"):
-        if _BNG.search(text):
+        if _is_bng(text):
             return "bng"
         raise FetchFailed("a projection this reader does not know: %s"
                           % text[:120])
@@ -48,11 +96,10 @@ def _projection(prj_text):
 
 
 def _lonlat(points):
-    """WGS84 points as (lon, lat), rounded as _wgs rounds, repeats dropped."""
+    """WGS84 points as (lon, lat), rounded as _wgs rounds, repeats dropped,
+    and anything outside the range of degrees dropped."""
     out = []
     for p in points:
-        if len(p) < 2:
-            continue
         lon, lat = float(p[0]), float(p[1])
         if not (-180 <= lon <= 180 and -90 <= lat <= 90):
             continue
@@ -62,9 +109,19 @@ def _lonlat(points):
     return out
 
 
+def _xy(point):
+    """A point's first two coordinates as numbers. A point with fewer is a
+    broken file, not a point to skip."""
+    if isinstance(point, (str, bytes)) or len(point) < 2:
+        raise FetchFailed("a point without two coordinates: %r"
+                          % (point,))
+    return float(point[0]), float(point[1])
+
+
 def _to_wgs(projection, parts):
     convert = _wgs if projection == "bng" else _lonlat
-    return [l for l in (convert(p) for p in parts) if len(l) >= 2]
+    return [l for l in (convert([_xy(p) for p in part]) for part in parts)
+            if len(l) >= 2]
 
 
 # -------------------------------------------------------------- shapefile
@@ -78,6 +135,12 @@ def shp_parts(data):
     lists of (x, y). A null shape gives []."""
     if len(data) < 100 or struct.unpack(">i", data[:4])[0] != 9994:
         raise FetchFailed("not a shapefile")
+    # The header gives the file's length (in 16-bit words): a file shorter
+    # than that lost records at its end, even if it ends between two.
+    declared = struct.unpack(">i", data[24:28])[0] * 2
+    if len(data) < declared:
+        raise FetchFailed("the .shp is %d bytes and its header says %d: cut "
+                          "short" % (len(data), declared))
     kind = struct.unpack("<i", data[32:36])[0]
     if kind not in _POLYLINES + (0,):
         raise FetchFailed("shapefile of shape type %d, not lines" % kind)
@@ -86,8 +149,8 @@ def shp_parts(data):
         length = struct.unpack(">i", data[pos + 4:pos + 8])[0] * 2
         rec = data[pos + 8:pos + 8 + length]
         pos += 8 + length
-        if len(rec) < 4:
-            break
+        if len(rec) < max(length, 4):
+            raise FetchFailed("a .shp record cut short")
         shape = struct.unpack("<i", rec[:4])[0]
         if shape == 0:
             out.append([])
@@ -121,7 +184,7 @@ def dbf_records(data, encoding="latin-1"):
     for i in range(count):
         rec = data[header + i * size:header + (i + 1) * size]
         if len(rec) < size:
-            break
+            raise FetchFailed("the .dbf ends before its %d records" % count)
         if rec[:1] == b"*":
             out.append(None)
             continue
@@ -143,6 +206,7 @@ def _members(z, stem, ext):
     return names
 
 
+@_refusing
 def shapefile_records(blob, stem=None):
     """[(attributes, lines)] from a zipped shapefile. `stem` picks one
     shapefile where the zip holds several."""
@@ -180,6 +244,7 @@ def shapefile_records(blob, stem=None):
 
 # --------------------------------------------------------------- GeoJSON
 
+@_refusing
 def geojson_records(blob, projection):
     """[(attributes, lines)] from a GeoJSON file. `projection` ('bng' or
     'wgs84') is the layer's own, stated where the layer is defined: a file's
@@ -208,52 +273,60 @@ def geojson_records(blob, projection):
 
 # ------------------------------------------------------------ GeoPackage
 
+#: The flag GDAL's old "2.5D" WKB set for Z. A GeoPackage stores ISO WKB
+#: (Z, M and ZM as 1000, 2000 and 3000 added to the type), but one written
+#: by an older GDAL can carry this flag. PostGIS's other EWKB flags (M, and
+#: an SRID) never appear in a GeoPackage, whose SRID is in the geometry's own
+#: header: a type carrying them is refused as unknown.
+_WKB_25D = 0x80000000
+
+
 def wkb_lines(blob):
     """The line parts of a WKB LineString or MultiLineString (2D, Z, M or
-    ZM; ISO or EWKB-style flags) as lists of (x, y)."""
-    def read(pos):
+    ZM) as lists of (x, y). A MultiLineString holds LineStrings only."""
+    def header(pos):
         order = "<" if blob[pos] == 1 else ">"
         kind = struct.unpack(order + "I", blob[pos + 1:pos + 5])[0]
-        pos += 5
         dims = 2
-        if kind & 0x80000000:
-            dims += 1
-        if kind & 0x40000000:
-            dims += 1
-        if kind & 0x20000000:   # EWKB SRID
-            pos += 4
-        kind &= 0x0FFFFFFF
-        if kind >= 3000:
-            dims, kind = 4, kind - 3000
-        elif kind >= 2000:
-            dims, kind = 3, kind - 2000
-        elif kind >= 1000:
-            dims, kind = 3, kind - 1000
-        if kind == 2:
-            n = struct.unpack(order + "I", blob[pos:pos + 4])[0]
-            pos += 4
-            vals = struct.unpack(order + "%dd" % (n * dims),
-                                 blob[pos:pos + 8 * n * dims])
-            pos += 8 * n * dims
-            return [[(vals[i * dims], vals[i * dims + 1])
-                     for i in range(n)]], pos
-        if kind == 5:
-            n = struct.unpack(order + "I", blob[pos:pos + 4])[0]
-            pos += 4
-            out = []
-            for _ in range(n):
-                lines, pos = read(pos)
-                out.extend(lines)
-            return out, pos
-        raise FetchFailed("a WKB geometry of type %d, not lines" % kind)
+        if kind & _WKB_25D:
+            dims, kind = 3, kind & ~_WKB_25D
+        elif 1000 <= kind < 4000:
+            # 1000s Z, 2000s M, 3000s ZM.
+            dims, kind = (3, 3, 4)[kind // 1000 - 1], kind % 1000
+        return order, kind, dims, pos + 5
 
-    return read(0)[0]
+    def line(order, dims, pos):
+        n = struct.unpack(order + "I", blob[pos:pos + 4])[0]
+        pos += 4
+        vals = struct.unpack(order + "%dd" % (n * dims),
+                             blob[pos:pos + 8 * n * dims])
+        return ([(vals[i * dims], vals[i * dims + 1]) for i in range(n)],
+                pos + 8 * n * dims)
+
+    order, kind, dims, pos = header(0)
+    if kind == 2:
+        return [line(order, dims, pos)[0]]
+    if kind != 5:
+        raise FetchFailed("a WKB geometry of type %d, not lines" % kind)
+    n = struct.unpack(order + "I", blob[pos:pos + 4])[0]
+    pos += 4
+    out = []
+    for _ in range(n):
+        order, kind, dims, pos = header(pos)
+        if kind != 2:
+            raise FetchFailed("a WKB MultiLineString holding a geometry of "
+                              "type %d" % kind)
+        points, pos = line(order, dims, pos)
+        out.append(points)
+    return out
 
 
 def gpkg_geometry(blob):
     """The WKB inside a GeoPackage geometry blob, or None when empty."""
     if blob is None or bytes(blob[:2]) != b"GP":
         raise FetchFailed("not a GeoPackage geometry")
+    if len(blob) < 8:
+        raise FetchFailed("a GeoPackage geometry header cut short")
     flags = blob[3]
     if flags & 0x10:
         return None   # empty geometry
@@ -261,11 +334,15 @@ def gpkg_geometry(blob):
         if (flags >> 1) & 0x07 <= 4 else None
     if envelope is None:
         raise FetchFailed("a GeoPackage envelope this reader does not know")
+    if len(blob) <= 8 + envelope:
+        raise FetchFailed("a GeoPackage geometry with no WKB after its "
+                          "header")
     return bytes(blob[8 + envelope:])
 
 
-def gpkg_records(blob, table=None):
-    """[(attributes, lines)] from a GeoPackage, or a zip holding one."""
+def _gpkg(blob, read, table=None):
+    """read(connection, (table, geometry column, srs)) on the one feature
+    table of a GeoPackage, or of a zip holding one."""
     if blob[:2] == b"PK":
         try:
             z = zipfile.ZipFile(io.BytesIO(blob))
@@ -295,33 +372,58 @@ def gpkg_records(blob, table=None):
                 raise FetchFailed("expected one feature table%s, found %d"
                                   % (" " + table if table else "",
                                      len(rows)))
-            name, column, srs = rows[0]
-            if srs == 27700:
-                projection = "bng"
-            elif srs == 4326:
-                projection = "wgs84"
-            else:
-                raise FetchFailed("a GeoPackage in SRS %s" % srs)
-            cur = conn.execute('SELECT * FROM "%s"'
-                               % name.replace('"', '""'))
-            cols = [d[0] for d in cur.description]
-            out = []
-            for row in cur:
-                attrs = {}
-                geom = None
-                for col, val in zip(cols, row):
-                    if col == column:
-                        geom = val
-                    else:
-                        attrs[col] = "" if val is None else str(val)
-                wkb = gpkg_geometry(geom) if geom is not None else None
-                parts = wkb_lines(wkb) if wkb else []
-                out.append((attrs, _to_wgs(projection, parts)))
-            return out
+            return read(conn, rows[0])
         finally:
             conn.close()
     finally:
         os.remove(path)
+
+
+@_refusing
+def gpkg_year(blob, table=None):
+    """The year of the feature table's own date (gpkg_contents
+    last_change) as text, or None where the file gives none: the year an
+    Ordnance Survey credit states, never guessed from today."""
+    def read(conn, row):
+        try:
+            got = conn.execute("SELECT last_change FROM gpkg_contents "
+                               "WHERE table_name = ?", (row[0],)).fetchall()
+        except sqlite3.OperationalError:
+            return None   # no gpkg_contents table
+        m = re.match(r"(\d{4})-\d\d-\d\d", str(got[0][0] or "")) \
+            if len(got) == 1 else None
+        return m.group(1) if m else None
+    return _gpkg(blob, read, table)
+
+
+@_refusing
+def gpkg_records(blob, table=None):
+    """[(attributes, lines)] from a GeoPackage, or a zip holding one."""
+    def read(conn, row):
+        name, column, srs = row
+        if srs == 27700:
+            projection = "bng"
+        elif srs == 4326:
+            projection = "wgs84"
+        else:
+            raise FetchFailed("a GeoPackage in SRS %s" % srs)
+        cur = conn.execute('SELECT * FROM "%s"'
+                           % name.replace('"', '""'))
+        cols = [d[0] for d in cur.description]
+        out = []
+        for values in cur:
+            attrs = {}
+            geom = None
+            for col, val in zip(cols, values):
+                if col == column:
+                    geom = val
+                else:
+                    attrs[col] = "" if val is None else str(val)
+            wkb = gpkg_geometry(geom) if geom is not None else None
+            parts = wkb_lines(wkb) if wkb else []
+            out.append((attrs, _to_wgs(projection, parts)))
+        return out
+    return _gpkg(blob, read, table)
 
 
 # ------------------------------------------------------------------- KML
@@ -330,6 +432,7 @@ def _local(tag):
     return tag.rsplit("}", 1)[-1]
 
 
+@_refusing
 def kml_records(blob):
     """[(attributes, lines)] from a KML, or a KMZ holding one. Attributes
     are the placemark's `name`, the `folder` it sits in, and its

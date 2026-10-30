@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Byways read from the councils' own live layers, kept beside rowmaps.
+"""Byways read from the councils' own layers and files, kept beside rowmaps.
 
     python tools/council_ways.py fetch                 # every layer
     python tools/council_ways.py fetch --only CB,DN    # just these
@@ -69,8 +69,9 @@ BOAT_FILE = "byway_open_to_all_traffic.json"
 FLOOR_SHARE = 2.0 / 3.0
 
 #: A council file last read well this many days ago or more is not used:
-#: the build falls back to rowmaps. A month: the layers are read daily, so a
-#: few days' outage (a council server down over a weekend) changes nothing,
+#: the build falls back to rowmaps. A month: the layers are read daily or
+#: weekly, so a few days' outage (a council server down over a weekend)
+#: changes nothing,
 #: while rowmaps refreshes its copies far less often than monthly, so a
 #: council file a month old is about the age at which rowmaps' copy may be
 #: the newer of the two.
@@ -134,8 +135,8 @@ def _ref_wokingham(a):
     return _split_code(a.get("prowuid"))
 
 
-def _ref_wokingham_like(a):
-    """Dudley: 'SED0557' -> ('SED', '0557')."""
+def _ref_dudley(a):
+    """'SED0557' -> ('SED', '0557')."""
     return _split_code(a.get("prow_id"))
 
 
@@ -359,16 +360,32 @@ def _find(client, layer):
 def read_file(client, layer):
     """A file the council publishes for download (zipped shapefile or
     GeoPackage, KMZ, GeoJSON), read whole by `format` (council_files), its
-    byways picked out by `match`."""
+    byways picked out by `match`. Anything the file makes `format`, `match`
+    or `ref` throw is FetchFailed: one council's odd file is a failed read
+    of that council, never the end of the run.
+
+    -> (records, ways), or (records, ways, {"credit": text}) for a layer
+    whose `credit` is read from the file itself (Surrey's year)."""
     url = _find(client, layer) if layer.get("find") else layer["url"]
-    records = layer["format"](client.get(url))
-    ways = []
-    for i, (a, lines) in enumerate(records):
-        if lines and layer["match"](a):
-            oid = a.get(layer["oid"]) if layer.get("oid") else None
-            ways.append(_way(oid if oid not in (None, "") else i,
-                             layer["ref"](a), lines))
-    return len(records), ways
+    blob = client.get(url)
+    try:
+        records = layer["format"](blob)
+        ways = []
+        for i, (a, lines) in enumerate(records):
+            if lines and layer["match"](a):
+                oid = a.get(layer["oid"]) if layer.get("oid") else None
+                ways.append(_way(oid if oid not in (None, "") else i,
+                                 layer["ref"](a), lines))
+        credit = layer["credit"](blob) if callable(layer.get("credit")) \
+            else None
+    except (Refused, FetchFailed):
+        raise
+    except Exception as e:  # noqa: BLE001 - the file is the stranger
+        raise FetchFailed("%s could not be read (%s): %s"
+                          % (url, type(e).__name__, str(e)[:200]))
+    if credit is None:
+        return len(records), ways
+    return len(records), ways, {"credit": credit}
 
 
 def _is(field, *values):
@@ -386,6 +403,18 @@ def _geojson_wgs84(blob):
 
 def _geojson_bng(blob):
     return council_files.geojson_records(blob, "bng")
+
+
+def _os_credit_dated(blob):
+    """The Ordnance Survey's credit, in the year of the file's own date
+    (gpkg_contents last_change) - never today's year, which would claim a
+    survey the file does not hold. A file with no date is not used."""
+    year = council_files.gpkg_year(blob)
+    if not year:
+        raise FetchFailed("the GeoPackage gives no date for its Ordnance "
+                          "Survey credit")
+    return ("Contains OS data \u00a9 Crown copyright and database right "
+            "%s." % year)
 
 
 # ----------------------------------------------------------------- layers
@@ -518,9 +547,14 @@ LAYERS = [
      "url": "https://www.buckinghamshire.gov.uk/documents/38315/ROW_2025.zip",
      "match": _is("StatusDesc", "BOAT"), "ref": _slash("RouteCode"),
      "oid": "MI_PRINX", "every_days": 7},
-    # The file says EPSG:27700 over coordinates in degrees.
+    # A CROSS-CHECK, NOT A SOURCE: Calderdale's file is an immutable
+    # snapshot taken in January 2022 (its name says so, and it is never
+    # replaced), older than rowmaps' copy. Compared and reported; used only
+    # if rowmaps ever has no Calderdale file. The file says EPSG:27700 over
+    # coordinates in degrees.
     {"code": "CA", "council": "Calderdale Metropolitan Borough Council",
      "licence": "OGL-3.0", "read": read_file, "format": _geojson_wgs84,
+     "role": "cross-check",
      "url": "https://dataworks.calderdale.gov.uk/download/24qmx/p18/"
             "Public%20Rights%20of%20Way%20-%20Jan%202022%20-%20JSON.json",
      "match": _is("StatusDesc", "BOAT"), "ref": _slash("RouteCode"),
@@ -536,7 +570,7 @@ LAYERS = [
     # Helens answer a server-side filter with HTTP 500 and 404 (30 October
     # 2026), so the whole layer is read, weekly, and picked out here.
     {"code": "DZ", "council": "Dudley Metropolitan Borough Council",
-     "licence": "OGL-3.0", "read": read_wfs_gml, "ref": _ref_wokingham_like,
+     "licence": "OGL-3.0", "read": read_wfs_gml, "ref": _ref_dudley,
      "url": "https://maps.dudley.gov.uk/getows.ashx?"
             "mapsource=mapsources/inspire",
      "params": dict(_ISHARE_11, typeName="row_lines"),
@@ -566,17 +600,9 @@ LAYERS = [
             "46cccff6-dc09-4913-a266-0dbde0ff47a7/Def_Paths.zip",
      "match": _is("PROW_STATU", "BY"), "ref": _fields("LOCAL_AR_1", "PROW_ID"),
      "oid": "OBJECTID", "every_days": 7},
-    # The file itself says it is published under the OS Open Data Licence
-    # (data.gov.uk lists it under Creative Commons Attribution): the file's
-    # own words are the ones credited.
-    {"code": "NK", "council": "Norfolk County Council",
-     "licence": "OS-OpenData", "read": read_file,
-     "format": council_files.kml_records,
-     "url": "https://maps.norfolk.gov.uk/inspire/data/norfolk_county_council/"
-            "prow/Norfolk_Public_Rights_of_Way.kmz",
-     "match": _is("folder", "Byway Open to All Traffic"),
-     "ref": lambda a: _last_word(a.get("name")), "oid": "name",
-     "every_days": 7},
+    # Norfolk stays on rowmaps, held back on its licence: its file says the
+    # OS Open Data Licence where data.gov.uk says Creative Commons, and
+    # which one binds is not settled.
     # A new file each month, linked from the dataset page; the page's own
     # host serves it.
     {"code": "NY", "council": "North Yorkshire Council",
@@ -595,7 +621,10 @@ LAYERS = [
      "params": dict(_ISHARE_11, typeName="Public_Rights_of_Way"),
      "match": _is("row_classification", "Byway Open to All Traffic"),
      "every_days": 7},
-    # Stockport's own bucket, linked from its Data Mill North entry.
+    # Stockport's own bucket (only its path is read: HOST_PATHS), linked
+    # from its Data Mill North entry,
+    # https://datamillnorth.org/dataset/stockport-rights-of-way-em7wl
+    # (publisher Stockport MBC, OGL v3), which links the smbc-opendata files.
     {"code": "YY", "council": "Stockport Metropolitan Borough Council",
      "licence": "OGL-3.0", "read": read_file, "format": _geojson_bng,
      "url": "https://s3-eu-west-1.amazonaws.com/smbc-opendata/data/"
@@ -607,8 +636,7 @@ LAYERS = [
     {"code": "SU", "council": "Surrey County Council",
      "licence": "OGL-3.0", "read": read_file,
      "format": council_files.gpkg_records,
-     "credit": "Contains Ordnance Survey data, Crown copyright and "
-               "database rights.",
+     "credit": _os_credit_dated,
      "url": "https://www.surreycc.gov.uk/culture-and-leisure/countryside/"
             "management/footpaths-byways-and-bridleways/rights-of-way/"
             "open-data",
@@ -657,7 +685,6 @@ HOSTS = {
                          "AI crawlers, not us)",
     "www.kirklees.gov.uk": "robots.txt allows /beta/information-and-data/",
     "volunteering.lake-district.gov.uk": "no robots.txt (404)",
-    "maps.norfolk.gov.uk": "no robots.txt (404)",
     "hub.datanorthyorkshire.org": "robots.txt allows /dataset/ and asks a "
                                   "10 s crawl delay; /api/ is disallowed and "
                                   "never used",
@@ -670,22 +697,45 @@ HOSTS = {
 }
 
 
+#: A host shared with others is read only under its council's own path.
+#: polite_http enforces it on every request and every redirect.
+HOST_PATHS = {
+    "s3-eu-west-1.amazonaws.com": "/smbc-opendata/",
+}
+
+
+def client_allow():
+    """{host: path prefix or None}: every host and path a fetch may ask for,
+    for polite_http.PoliteClient(allow=...)."""
+    return dict((host, HOST_PATHS.get(host)) for host in HOSTS)
+
+
 def unlisted(layer):
-    """Why `layer` may not be fetched (its host is not in HOSTS), or None."""
+    """Why `layer` may not be fetched (its host is not in HOSTS, or its path
+    is outside the host's HOST_PATHS), or None."""
     host = host_of(layer["url"])
-    if host in HOSTS:
-        return None
-    return "%s is not in council_ways.HOSTS; not fetched" % host
+    if host not in HOSTS:
+        return "%s is not in council_ways.HOSTS; not fetched" % host
+    prefix = HOST_PATHS.get(host)
+    if prefix and not urllib.parse.urlsplit(layer["url"]).path.startswith(
+            prefix):
+        return "only %s on %s is read (HOST_PATHS); not fetched" \
+            % (prefix, host)
+    return None
 
 
 def by_code():
     return dict((l["code"], l) for l in LAYERS)
 
 
-def attribution(layer):
-    said = "Source: %s's public rights of way layer, read from the council." \
-        % layer["council"]
-    extra = (" " + layer["credit"]) if layer.get("credit") else ""
+def attribution(layer, credit=None):
+    """The credit a way from `layer` carries. `credit` is the one read from
+    the file (read_file), where the layer's own is read from it."""
+    said = ("Source: %s's public rights of way layer, as published by the "
+            "council." % layer["council"])
+    if credit is None and isinstance(layer.get("credit"), str):
+        credit = layer["credit"]
+    extra = (" " + credit) if credit else ""
     if layer.get("licence") == "OGL-3.0":
         return OGL + " " + said + extra
     if layer.get("licence") == "OS-OpenData":
@@ -694,10 +744,14 @@ def attribution(layer):
         + extra
 
 
-def public(layer):
+def public(layer, credit=None):
+    if credit is None and isinstance(layer.get("credit"), str):
+        credit = layer["credit"]
     out = {"code": layer["code"], "council": layer["council"],
            "url": layer["url"], "licence": layer.get("licence"),
-           "attribution": attribution(layer)}
+           "attribution": attribution(layer, credit)}
+    if credit:
+        out["credit"] = credit
     if layer.get("role"):
         out["role"] = layer["role"]
     return out
@@ -994,6 +1048,13 @@ def too_old(code, out_dir, today, max_age_days=MAX_AGE_DAYS):
     return None
 
 
+def council_source(code, out_dir=None):
+    """The `source` (public()) the council file for `code` was written
+    with, or None: what the build credits for byways it took from it."""
+    council = read_json(os.path.join(out_dir or OUT, "%s.json" % code))
+    return (council or {}).get("source")
+
+
 def byways_for(code, rowmaps_features, out_dir=None, log=print, today=None):
     """What build_packages uses for an authority's byways: the merge when a
     council file exists, is recent and agrees with rowmaps, else rowmaps
@@ -1034,10 +1095,12 @@ def fetch_one(layer, client, out_dir, today, cache=None):
     previous = read_json(path) or {}
     entry = {"council": layer["council"]}
     try:
-        records, ways = layer["read"](client, layer)
+        got = layer["read"](client, layer)
     except (Refused, FetchFailed) as e:
         entry.update({"ok": False, "error": str(e)[:300]})
         return entry
+    records, ways = got[0], got[1]
+    credit = (got[2] if len(got) > 2 else {}).get("credit")
     before = len(previous.get("ways") or [])
     if not ways:
         entry.update({"ok": False, "error": "read %d records and no byway "
@@ -1053,7 +1116,8 @@ def fetch_one(layer, client, out_dir, today, cache=None):
                     "lines": [[[round(p[0], 5), round(p[1], 5)] for p in l]
                               for l in w["lines"]]} for w in ways),
                   key=lambda w: (w["parish"], w["number"], w["id"]))
-    data = {"source": public(layer), "records": records, "ways": ways}
+    data = {"source": public(layer, credit), "records": records,
+            "ways": ways}
     entry.update({"ok": True, "records": records, "ways": len(ways),
                   "changed": write_json(path, data), "last_ok": today})
     rowmaps = load_rowmaps(layer["code"], cache)
@@ -1073,7 +1137,7 @@ def fetch_one(layer, client, out_dir, today, cache=None):
 def fetch(codes=None, out_dir=None, today=None, client=None, report=None):
     out_dir = out_dir or OUT
     today = today or datetime.date.today().isoformat()
-    client = client or polite_http.PoliteClient()
+    client = client or polite_http.PoliteClient(allow=client_allow())
     status_path = os.path.join(out_dir, "status.json")
     status = read_json(status_path, {}) or {}
     failed = []
@@ -1098,6 +1162,14 @@ def fetch(codes=None, out_dir=None, today=None, client=None, report=None):
             # Read well recently enough: a download is replaced monthly at
             # most. A failed read keeps the old last_ok, so it is tried
             # again the next day.
+            if codes:
+                # Asked for by name: say why nothing was read.
+                due = datetime.date.fromisoformat(old["last_ok"]) + \
+                    datetime.timedelta(days=every)
+                print("%s %-34s not read: read well on %s, and read every "
+                      "%d days, so next due %s" % (
+                          layer["code"], layer["council"], old["last_ok"],
+                          every, due.isoformat()))
             continue
         why = unlisted(layer)
         if why:

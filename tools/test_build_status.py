@@ -673,12 +673,14 @@ class WithoutThePublishersFile(Fixture):
 
 
 class TheSwitchedCouncilsAreCredited(unittest.TestCase):
-    """The 14 councils moved off rowmaps.com on 30 October 2026: once their
-    own byways are built, status.json credits the council, never rowmaps,
-    and says Open Government Licence only where the council gives it."""
+    """The councils moved off rowmaps.com on 30 October 2026 (Calderdale's
+    a cross-check, used only if rowmaps has no file): once their own byways
+    are built, status.json credits the council, never rowmaps, and says
+    Open Government Licence only where the council gives it. Norfolk stays
+    on rowmaps, held back on its licence."""
 
-    SWITCHED = ("BM", "CA", "DY", "DZ", "DU", "KL", "L1", "LD", "NK",
-                "NY", "SN", "YY", "SU", "WP")
+    SWITCHED = ("BM", "CA", "DY", "DZ", "DU", "KL", "L1", "LD", "NY", "SN",
+                "YY", "SU", "WP")
 
     def test_each_council_is_named_with_its_licence(self):
         import council_ways
