@@ -11,6 +11,7 @@ as the repository's other pack tests do).
 import copy
 import json
 import os
+import re
 import shutil
 import sys
 import tempfile
@@ -312,6 +313,54 @@ class Gml(unittest.TestCase):
                         b"bad</ows:Exception></ows:ExceptionReport>",
                         cw._ref_central_beds)
 
+    def test_match_sees_each_records_attributes_and_keeps_only_its_picks(
+            self):
+        body = gml_layer("row_lines", [
+            {"ogc_fid": "861", "feature": "Byway Open to All Traffic",
+             "prow_id": "SED0557"},
+            {"ogc_fid": "862", "feature": "Byway", "prow_id": "SED0558"},
+            {"ogc_fid": "863", "feature": "Footpath", "prow_id": "SED0559"}])
+        seen = []
+
+        def match(a):
+            seen.append((a.get("ogc_fid"), a.get("feature")))
+            return a.get("feature") == "Byway Open to All Traffic"
+        records, ways = cw.gml_ways(body, cw._ref_wokingham_like, match)
+        self.assertEqual(records, 3)
+        self.assertEqual(seen, [("861", "Byway Open to All Traffic"),
+                                ("862", "Byway"), ("863", "Footpath")])
+        self.assertEqual([(w["id"], w["parish"], w["number"]) for w in ways],
+                         [("row_lines.861", "SED", "0557")])
+
+    def test_without_a_match_every_record_with_a_line_is_a_way(self):
+        body = gml_layer("row_lines", [
+            {"ogc_fid": "1", "feature": "Footpath", "prow_id": "SED1"},
+            {"ogc_fid": "2", "feature": "Byway", "prow_id": "SED2"}])
+        records, ways = cw.gml_ways(body, cw._ref_wokingham_like)
+        self.assertEqual((records, len(ways)), (2, 2))
+
+
+def gml_layer(type_name, rows):
+    """A WFS 1.1 GML answer as an iShare server gives it: one line per row,
+    each row's fields as elements beside its geometry."""
+    members = []
+    for i, row in enumerate(rows):
+        fields = "".join("<ms:%s>%s</ms:%s>" % (k, v, k)
+                         for k, v in row.items())
+        members.append(
+            '<gml:featureMember><ms:%s gml:id="%s.%s">'
+            '<ms:msGeometry><gml:LineString srsName="EPSG:27700">'
+            '<gml:posList srsDimension="2">%d 291000 %d 291050'
+            '</gml:posList></gml:LineString></ms:msGeometry>%s'
+            '</ms:%s></gml:featureMember>'
+            % (type_name, type_name, row.get("ogc_fid", i), 393000 + i * 500,
+               393100 + i * 500, fields, type_name))
+    return ('<?xml version="1.0"?><wfs:FeatureCollection '
+            'xmlns:wfs="http://www.opengis.net/wfs" '
+            'xmlns:gml="http://www.opengis.net/gml" '
+            'xmlns:ms="http://mapserver.gis.umn.edu/mapserver">%s'
+            '</wfs:FeatureCollection>' % "".join(members)).encode("utf-8")
+
 
 class Fetch(unittest.TestCase):
     LAYER = {"code": "ZZ", "council": "Zedshire County Council",
@@ -401,9 +450,14 @@ class Layers(unittest.TestCase):
         for layer in cw.LAYERS:
             self.assertTrue(layer["url"].startswith("https://"), layer["code"])
             self.assertIn(layer["read"], (cw.read_arcgis, cw.read_wfs_json,
-                                          cw.read_wfs_gml), layer["code"])
+                                          cw.read_wfs_gml, cw.read_file),
+                          layer["code"])
             if layer["read"] is cw.read_arcgis:
                 self.assertTrue(layer["where"], layer["code"])
+            elif layer["read"] is cw.read_file:
+                # A download: read whole, its byways picked out here.
+                self.assertTrue(callable(layer["format"]), layer["code"])
+                self.assertTrue(callable(layer["match"]), layer["code"])
             else:
                 self.assertEqual(layer["params"].get(
                     "request", layer["params"].get("REQUEST")), "GetFeature")
@@ -433,6 +487,398 @@ class Layers(unittest.TestCase):
             text = json.dumps([layer.get("where"), layer.get("filter")])
             self.assertNotIn("Restricted", text, layer["code"])
             self.assertFalse(blocked(host_of(layer["url"])), layer["code"])
+
+
+#: The councils moved off rowmaps.com onto their own downloads by the
+#: owner's decision of 30 October 2026.
+SWITCHED = ("BM", "CA", "DY", "DZ", "DU", "KL", "L1", "LD", "NK", "NY",
+            "SN", "YY", "SU", "WP")
+
+#: Left on rowmaps.com: their councils' hosts refuse us. Powys's GeoServer
+#: answered 403 on 30 October 2026; Dorset's refuses GitHub's runners
+#: (HOME-COLLECTOR.md, measured 7 October 2026). A refusal is never asked
+#: again from the runners.
+NOT_SWITCHED = {"PW": "geo.powys.gov.uk", "DT": "gi.dorsetcouncil.gov.uk"}
+
+#: A host name in running text: what a credit must never carry.
+HOSTLIKE = re.compile(r"\b[\w-]+(\.[\w-]+)*\.(uk|org|com|net|io)\b", re.I)
+
+
+def tro_full_names():
+    import csv
+    with open(os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                           "tro_authorities.csv"), encoding="utf-8") as fh:
+        return set(r["display_name"] for r in csv.DictReader(fh))
+
+
+def cf_records(records):
+    """A `format` that ignores the bytes and answers these records."""
+    return lambda _body: [(dict(a), [list(l) for l in ls])
+                          for a, ls in records]
+
+
+class Stand(object):
+    """A stand-in client: answers by URL substring, records each GET."""
+
+    def __init__(self, answers):
+        self.answers = answers
+        self.asked = []
+
+    def get(self, url):
+        self.asked.append(url)
+        for key, value in self.answers.items():
+            if key in url:
+                if isinstance(value, Exception):
+                    raise value
+                return value
+        raise FetchFailed("HTTP 404 for %s" % url)
+
+
+class SwitchedCouncils(unittest.TestCase):
+    def test_each_is_read_from_the_council_and_credits_it_with_a_licence(
+            self):
+        layers = cw.by_code()
+        names = tro_full_names()
+        for code in SWITCHED:
+            layer = layers.get(code)
+            self.assertIsNotNone(layer, code)
+            self.assertNotIn("role", layer, code)
+            self.assertIn(layer["licence"], ("OGL-3.0", "OS-OpenData"), code)
+            credit = cw.attribution(layer)
+            self.assertIn(layer["council"], credit, code)
+            self.assertNotIn("rowmaps", credit.lower(), code)
+            self.assertIsNone(HOSTLIKE.search(credit), (code, credit))
+            self.assertNotIn("without stating a licence", credit, code)
+            # build_status finds the layer (and so its licence) by the
+            # council's name in the authority table.
+            self.assertIn(layer["council"], names, code)
+            self.assertEqual(cw.public(layer)["attribution"], credit)
+
+    def test_the_licence_said_is_the_one_the_council_gives(self):
+        layers = cw.by_code()
+        # Norfolk's file itself says the OS Open Data Licence (data.gov.uk
+        # says CC BY): the file is credited.
+        norfolk = cw.attribution(layers["NK"])
+        self.assertIn("OS OpenData Licence", norfolk)
+        self.assertNotIn("Creative Commons", norfolk)
+        self.assertNotIn("Open Government", norfolk)
+        self.assertIn("Norfolk County Council", norfolk)
+        for code in SWITCHED:
+            if code != "NK":
+                self.assertIn("Open Government Licence v3.0",
+                              cw.attribution(layers[code]), code)
+        # Surrey asks for the Ordnance Survey's credit beside the OGL.
+        self.assertIn("Ordnance Survey", cw.attribution(layers["SU"]))
+
+    def test_a_layers_own_credit_follows_whatever_its_licence(self):
+        for licence in ("OGL-3.0", "OS-OpenData", None):
+            layer = {"council": "Zedshire County Council",
+                     "licence": licence, "credit": "Contains Z data."}
+            credit = cw.attribution(layer)
+            self.assertTrue(credit.endswith(" Contains Z data."), licence)
+            self.assertIn("Zedshire County Council", credit, licence)
+
+    def test_the_host_list_covers_every_layer_and_says_its_robots(self):
+        from polite_http import blocked, host_of
+        for layer in cw.LAYERS:
+            host = host_of(layer["url"])
+            self.assertIn(host, cw.HOSTS, layer["code"])
+            self.assertIsNone(cw.unlisted(layer), layer["code"])
+        for host, said in cw.HOSTS.items():
+            self.assertIn("robots.txt", said, host)
+            self.assertFalse(blocked(host), host)
+        # and nothing more: a host no layer reads is not left listed.
+        self.assertEqual(set(cw.HOSTS),
+                         set(host_of(l["url"]) for l in cw.LAYERS))
+
+    def test_the_councils_that_refuse_us_stay_on_rowmaps(self):
+        from polite_http import host_of
+        layers = cw.by_code()
+        for code, host in NOT_SWITCHED.items():
+            self.assertFalse(code in layers, code)
+            self.assertNotIn(host, cw.HOSTS, code)
+            self.assertFalse([l for l in cw.LAYERS
+                              if host_of(l["url"]) == host], code)
+
+    def test_a_layer_on_an_unlisted_host_is_never_fetched(self):
+        stray = {"code": "ZZ", "council": "Zedshire County Council",
+                 "licence": "OGL-3.0", "url": "https://elsewhere.example/x",
+                 "read": cw.read_file, "format": cf_records([]),
+                 "match": lambda a: True, "ref": lambda a: ("", "")}
+        self.assertIn("elsewhere.example", cw.unlisted(stray))
+        tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, tmp)
+        stand = Stand({})
+        saved = cw.LAYERS[:]
+        cw.LAYERS[:] = [stray]
+        try:
+            status, failed = cw.fetch(out_dir=tmp, today="2026-10-30",
+                                      client=stand)
+        finally:
+            cw.LAYERS[:] = saved
+        self.assertEqual(stand.asked, [])
+        self.assertFalse(status["ZZ"]["ok"])
+        self.assertIn("elsewhere.example", status["ZZ"]["error"])
+        self.assertTrue(failed)
+
+
+FILE_LAYER = {"code": "ZZ", "council": "Zedshire County Council",
+              "licence": "OGL-3.0", "url": "https://z.example/row.zip",
+              "read": cw.read_file,
+              "match": lambda a: a.get("STATUS") == "BOAT",
+              "ref": lambda a: ("Ash", a.get("NO")), "oid": "ID"}
+
+
+class ReadFile(unittest.TestCase):
+    RECORDS = [({"STATUS": "BOAT", "NO": "1", "ID": "71"}, [B1]),
+               ({"STATUS": "Footpath", "NO": "2", "ID": "72"}, [B2]),
+               ({"STATUS": "BOAT", "NO": "3", "ID": ""}, [B2]),
+               ({"STATUS": "BOAT", "NO": "4", "ID": "74"}, [])]
+
+    def test_only_matching_records_with_lines_become_ways(self):
+        layer = dict(FILE_LAYER, format=cf_records(self.RECORDS))
+        stand = Stand({"row.zip": b"zip bytes"})
+        records, ways = cw.read_file(stand, layer)
+        self.assertEqual(records, 4)
+        self.assertEqual(stand.asked, ["https://z.example/row.zip"])
+        self.assertEqual([(w["id"], w["parish"], w["number"]) for w in ways],
+                         [("71", "Ash", "1"), ("2", "Ash", "3")])
+        self.assertEqual(ways[0]["lines"], [B1])
+
+    def test_without_an_id_field_the_record_number_is_the_id(self):
+        layer = dict(FILE_LAYER, format=cf_records(self.RECORDS))
+        del layer["oid"]
+        _n, ways = cw.read_file(Stand({"row.zip": b""}), layer)
+        self.assertEqual([w["id"] for w in ways], ["0", "2"])
+
+    def test_the_bytes_read_are_the_ones_handed_to_the_format(self):
+        seen = []
+        layer = dict(FILE_LAYER, format=lambda b: seen.append(b) or [])
+        cw.read_file(Stand({"row.zip": b"the file"}), layer)
+        self.assertEqual(seen, [b"the file"])
+
+    PAGE = (b'<a href="/files/2026_09-prow-shape.zip">old</a>'
+            b'<a href="https://z.example/files/2026_10-prow-shape.zip">'
+            b'shape</a><a href="/files/2026_10-prow-tab.zip">tab</a>')
+
+    def test_a_dated_file_is_found_on_the_councils_page(self):
+        layer = dict(FILE_LAYER, url="https://z.example/dataset/prow",
+                     find=r'href="([^"]*2026_10-prow-shape\.zip)"',
+                     format=cf_records(self.RECORDS))
+        stand = Stand({"/dataset/prow": self.PAGE,
+                       "2026_10-prow-shape.zip": b"zip"})
+        records, _w = cw.read_file(stand, layer)
+        self.assertEqual(records, 4)
+        self.assertEqual(stand.asked, [
+            "https://z.example/dataset/prow",
+            "https://z.example/files/2026_10-prow-shape.zip"])
+
+    def test_a_relative_link_is_taken_against_the_page(self):
+        layer = dict(FILE_LAYER, url="https://z.example/dataset/prow",
+                     find=r'href="(/files/2026_10-prow-tab\.zip)"',
+                     format=cf_records([]))
+        stand = Stand({"/dataset/prow": self.PAGE, "prow-tab.zip": b""})
+        cw.read_file(stand, layer)
+        self.assertEqual(stand.asked[-1],
+                         "https://z.example/files/2026_10-prow-tab.zip")
+
+    def test_no_link_two_links_or_another_host_is_a_failure(self):
+        for page, why in (
+                (b"<p>moved</p>", "none"),
+                (b'<a href="/f/a-prow-shape.zip"></a>'
+                 b'<a href="/f/b-prow-shape.zip"></a>', "two"),
+                (b'<a href="https://other.example/f/a-prow-shape.zip"></a>',
+                 "another host"),
+                (b'<a href="http://z.example/f/a-prow-shape.zip"></a>',
+                 "not https")):
+            layer = dict(FILE_LAYER, url="https://z.example/dataset/prow",
+                         find=r'href="([^"]*-prow-shape\.zip)"',
+                         format=cf_records([]))
+            stand = Stand({"/dataset/prow": page, ".zip": b""})
+            with self.assertRaises(FetchFailed, msg=why):
+                cw.read_file(stand, layer)
+            self.assertEqual(len(stand.asked), 1, why)
+
+    def test_the_same_link_twice_is_one_link(self):
+        page = (b'<a href="/f/a-prow-shape.zip">x</a>'
+                b'<a href="/f/a-prow-shape.zip">again</a>')
+        layer = dict(FILE_LAYER, url="https://z.example/dataset/prow",
+                     find=r'href="([^"]*-prow-shape\.zip)"',
+                     format=cf_records([]))
+        stand = Stand({"/dataset/prow": page, ".zip": b""})
+        cw.read_file(stand, layer)
+        self.assertEqual(stand.asked[-1],
+                         "https://z.example/f/a-prow-shape.zip")
+
+
+class ReadEveryFewDays(unittest.TestCase):
+    """A file the council replaces monthly or yearly is read weekly."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.tmp)
+        saved = cw.LAYERS[:]
+        self.addCleanup(cw.LAYERS.__setitem__, slice(None), saved)
+        cw.HOSTS["z.example"] = "robots.txt: a test host"
+        self.addCleanup(cw.HOSTS.pop, "z.example")
+        ways = [({"STATUS": "BOAT", "NO": str(i), "ID": str(i)},
+                 [line(0, 100 * i, 600, 100 * i)]) for i in range(5)]
+        cw.LAYERS[:] = [dict(FILE_LAYER, format=cf_records(ways),
+                             every_days=7)]
+
+    def fetch(self, today, answers=None):
+        stand = Stand(answers or {"row.zip": b""})
+        status, failed = cw.fetch(out_dir=self.tmp, today=today,
+                                  client=stand)
+        return stand, status, failed
+
+    def test_read_once_then_not_again_until_a_week_has_passed(self):
+        stand, status, _f = self.fetch("2026-10-01")
+        self.assertEqual(len(stand.asked), 1)
+        self.assertEqual(status["ZZ"]["last_ok"], "2026-10-01")
+        for day in ("2026-10-02", "2026-10-07"):
+            stand, status, _f = self.fetch(day)
+            self.assertEqual(stand.asked, [], day)
+            self.assertEqual(status["ZZ"]["last_ok"], "2026-10-01", day)
+        stand, status, _f = self.fetch("2026-10-08")
+        self.assertEqual(len(stand.asked), 1)
+        self.assertEqual(status["ZZ"]["last_ok"], "2026-10-08")
+
+    def test_a_failed_read_is_tried_again_the_next_day(self):
+        self.fetch("2026-10-01")
+        _s, status, failed = self.fetch(
+            "2026-10-08", {"row.zip": Refused("HTTP 403")})
+        self.assertFalse(status["ZZ"]["ok"])
+        self.assertEqual(status["ZZ"]["last_ok"], "2026-10-01")
+        self.assertIn("403", failed[0])
+        stand, status, _f = self.fetch("2026-10-09")
+        self.assertEqual(len(stand.asked), 1)
+        self.assertTrue(status["ZZ"]["ok"])
+
+    def test_a_layer_without_every_days_is_read_daily(self):
+        layer = dict(cw.LAYERS[0])
+        del layer["every_days"]
+        cw.LAYERS[:] = [layer]
+        self.fetch("2026-10-01")
+        stand, _s, _f = self.fetch("2026-10-02")
+        self.assertEqual(len(stand.asked), 1)
+
+
+class NewReferences(unittest.TestCase):
+    def test_each_new_councils_reference_reads_as_rowmaps_names_it(self):
+        layers = cw.by_code()
+        cases = {
+            "BM": ({"RouteCode": "NMA/19/3"}, ("NMA", "19/3")),
+            "CA": ({"RouteCode": "07/98/2"}, ("07", "98/2")),
+            "DY": ({"PARISH": "Beeley", "ROUTECODE": "NE5/13/2"},
+                   ("Beeley", "13/2")),
+            "DZ": ({"prow_id": "SED0557"}, ("SED", "0557")),
+            "DU": ({"PARISH": "Consett", "PROW_NO__F": "19"},
+                   ("Consett", "19")),
+            "KL": ({"RouteCode": "HOL/180/10"}, ("HOL", "180/10")),
+            "L1": ({"NUMBER_": "523004"}, ("523", "004")),
+            "LD": ({"LOCAL_AR_1": "MORLEY", "PROW_ID": "146"},
+                   ("MORLEY", "146")),
+            "NK": ({"name": "Burston and Shimpling BOAT36"},
+                   ("Burston and Shimpling", "BOAT36")),
+            "NY": ({"ROUTECODE": "25.104/6/2"}, ("25.104", "6/2")),
+            "SN": ({"row_number": "318"}, ("St Helens", "318")),
+            "YY": ({"row": "138M"}, ("M", "138")),
+            "SU": ({"LocArea": "Chelsham & Farleigh", "PROWNo": "9a"},
+                   ("Chelsham & Farleigh", "9a")),
+            "WP": ({"PROW_NO": "145"}, ("", "145")),
+        }
+        self.assertEqual(sorted(cases), sorted(SWITCHED))
+        for code, (attrs, want) in cases.items():
+            self.assertEqual(layers[code]["ref"](attrs), want, code)
+        # Stockport's lettered paths, Lake District's six-digit numbers.
+        self.assertEqual(layers["YY"]["ref"]({"row": "55(b)CG"}),
+                         ("CG", "55(b)"))
+        self.assertEqual(layers["L1"]["ref"]({"NUMBER_": "52"}), ("", "52"))
+
+
+class WhatEachSwitchedLayerPicks(unittest.TestCase):
+    """Each layer's choice against the council's own wording, as read on
+    30 October 2026: byways open to all traffic only."""
+
+    def test_byways_in_restricted_byways_footpaths_and_orders_out(self):
+        layers = cw.by_code()
+        cases = {
+            "BM": ("StatusDesc", ["BOAT"], ["Restricted Byway", "Bridleway",
+                                           "Footpath"]),
+            "CA": ("StatusDesc", ["BOAT"], ["Restricted Byway", "Footpath"]),
+            "DU": ("STATUS", ["BY"], ["RB", "BW", "FP"]),
+            "KL": ("Status", ["BYWAY"], ["RESTRICTED BYWAY", "FOOTPATH"]),
+            "L1": ("Type_Text", ["BOAT"], ["RB", "BW", "FP"]),
+            "LD": ("PROW_STATU", ["BY"], ["RB", "BW", "FP"]),
+            "NK": ("folder", ["Byway Open to All Traffic"],
+                   ["Restricted Byway", "Bridleway", "Footpath"]),
+            "NY": ("DESIGNATIO", ["BOAT"], ["Restricted Byways", "UUR",
+                                           "Bridleway"]),
+            "YY": ("status", ["Byway Open to All Traffic (BOAT)"],
+                   ["Restricted Byway", "Footpath"]),
+            "SU": ("Stat_Text", ["Byway"], ["Restricted Byway",
+                                            "Bridleway"]),
+            "WP": ("ALT_NAME", ["Byway open to all traffic (BOAT)"],
+                   ["DMMO (add BOAT)", "Restricted Byway",
+                    "DMMO (add Restricted Byway)"]),
+        }
+        for code, (field, yes, no) in cases.items():
+            layer = layers[code]
+            self.assertIs(layer["read"], cw.read_file, code)
+            for v in yes:
+                self.assertTrue(layer["match"]({field: v}), (code, v))
+            for v in no + ["", None]:
+                self.assertFalse(layer["match"]({field: v}), (code, v))
+        self.assertEqual(layers["DY"]["filter"], ("PROW_STATU", "BOAT"))
+
+    # Dudley and St Helens answer a server-side filter with HTTP 500 and
+    # 404 (30 October 2026): their whole layer is read and the byways are
+    # picked out here, by the field each council fills.
+    WHOLE_LAYERS = {
+        "DZ": ("feature", "prow_id", "SED0557", ("SED", "0557"),
+               ["Byway", "Footpath", "Bridleway", "Cycle Path",
+                "Permissive Path"]),
+        "SN": ("row_classification", "row_number", "212",
+               ("St Helens", "212"), ["Footpath", "Bridleway"]),
+    }
+
+    def test_dudley_and_st_helens_are_read_whole_and_picked_here(self):
+        layers = cw.by_code()
+        boat = "Byway Open to All Traffic"
+        for code, (field, ref_field, ref, want, others) in \
+                self.WHOLE_LAYERS.items():
+            layer = layers[code]
+            self.assertIs(layer["read"], cw.read_wfs_gml, code)
+            self.assertNotIn("filter", layer, code)
+            rows = [{"ogc_fid": "1", field: boat, ref_field: ref}] + [
+                {"ogc_fid": str(i + 2), field: v, ref_field: "X%d" % i}
+                for i, v in enumerate(others + [""])]
+            stand = Stand({layer["url"]: gml_layer(
+                layer["params"]["typeName"], rows)})
+            records, ways = cw.read_wfs_gml(stand, layer)
+            self.assertEqual(len(stand.asked), 1, code)
+            self.assertTrue(stand.asked[0].startswith(layer["url"] + "&"),
+                            code)
+            self.assertNotIn("FILTER", stand.asked[0].upper(), code)
+            self.assertIn("typeName=" + layer["params"]["typeName"],
+                          stand.asked[0], code)
+            self.assertEqual(records, len(rows), code)
+            self.assertEqual([(w["parish"], w["number"]) for w in ways],
+                             [want], code)
+
+    def test_derbyshire_asks_only_for_the_fields_it_uses(self):
+        props = cw.by_code()["DY"]["params"]["propertyName"]
+        self.assertNotIn("EMAIL", props.upper())
+        self.assertIn("the_geom", props)
+
+    def test_whole_files_and_whole_layers_are_read_weekly_others_daily(self):
+        for layer in cw.LAYERS:
+            if layer["read"] is cw.read_file or \
+                    layer["code"] in self.WHOLE_LAYERS:
+                self.assertEqual(layer.get("every_days"), 7, layer["code"])
+            else:
+                self.assertIsNone(layer.get("every_days"), layer["code"])
 
 
 if __name__ == "__main__":
