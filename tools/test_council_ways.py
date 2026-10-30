@@ -424,6 +424,18 @@ class Fetch(unittest.TestCase):
             self.assertIn(str(error), entry["error"])
             self.assertLessEqual(len(entry["error"]), 300)
             self.assertEqual(len(self.saved()["ways"]), 9, error)
+        # A long message is cut at exactly 300 characters, its start kept.
+        long_error = KeyError("k" * 1000)
+        entry = self.run_with(error=long_error)
+        self.assertFalse(entry["ok"])
+        self.assertEqual(len(entry["error"]), 300)
+        self.assertEqual(entry["error"], ("an unreadable answer (KeyError): "
+                                          + str(long_error))[:300])
+        self.assertEqual(len(self.saved()["ways"]), 9)
+        refused = FetchFailed("HTTP 500 " + "r" * 1000)
+        entry = self.run_with(error=refused)
+        self.assertEqual(entry["error"], str(refused)[:300])
+        self.assertEqual(len(entry["error"]), 300)
 
     def test_a_licence_left_unstated_is_said_so(self):
         layer = dict(self.LAYER, licence=None)
@@ -1466,6 +1478,34 @@ class BywayCreditsReachRiders(unittest.TestCase):
         self.assertEqual(got["councilLayers"], ["Buckinghamshire Council",
                                                 "Devon County Council"])
 
+    def test_one_council_is_named_in_the_singular(self):
+        P = build_packages
+        devon = [dict(self.SOURCES[1], count=2)]
+        got = P.manifest_credit([], ["Devon County Council"], devon)
+        self.assertEqual(got["source"], "Local highway authority definitive "
+                         "maps via rowmaps.com; byways for 1 authority from "
+                         "the council's own layer")
+        self.assertTrue(got["attribution"].startswith(
+            "Some byways are read from the council's own layer. "),
+            got["attribution"])
+        self.assertIn("except the byways of Devon County Council, read from "
+                      "the council's own layer, which are published",
+                      got["licence"])
+        for said in got.values():
+            self.assertNotIn("councils' own", str(said))
+
+    def test_the_licence_names_no_decision_maker(self):
+        P = build_packages
+        licence = P.dataset_licence(
+            [{"code": "DN", "council": "Devon County Council", "count": 4,
+              "licence": None}])
+        self.assertIn("the unsurfaced unclassified roads of Devon County "
+                      "Council are council highway records published "
+                      "without a stated licence, on the decision of 8 "
+                      "October 2026, credited to each council (ucrSources)",
+                      licence)
+        self.assertNotIn("owner", licence)
+
     def test_a_pack_with_roads_and_council_byways_credits_both(self):
         P = build_packages
         tmp = tempfile.mkdtemp()
@@ -1535,6 +1575,61 @@ class BywayCreditsReachRiders(unittest.TestCase):
         self.assertEqual(got, [dict(data["source"], count=1)])
         self.assertIn("without a stated licence",
                       P.dataset_licence([], got))
+
+
+class ReadmeSaysWhatIsRead(unittest.TestCase):
+    """The public README's account of the sources agrees with the code."""
+
+    def setUp(self):
+        path = os.path.join(os.path.dirname(os.path.dirname(
+            os.path.abspath(__file__))), "README.md")
+        with open(path, encoding="utf-8") as fh:
+            self.text = " ".join(fh.read().split())
+
+    def test_the_opening_credit_names_every_kind_of_source(self):
+        self.assertNotIn("Every package here is built from", self.text)
+        self.assertIn("> Source: local highway authority definitive maps, "
+                      "via rowmaps.com, and > councils' own layers as "
+                      "credited in the lane data.", self.text)
+
+    def test_west_berkshire_names_the_host_read_and_the_one_not(self):
+        import polite_http
+        read, not_read = "gis.westberks.gov.uk", "gis2.westberks.gov.uk"
+        self.assertIn(read, cw.HOSTS)
+        self.assertIn(not_read, polite_http.ROBOTS_HOSTS)
+        said = re.findall(r"West Berkshire's (?:byways are|closures layer "
+                          r"is) read from the council's GIS host `([^`]+)`, "
+                          r"which has no robots.txt[;.] (?:its|Its) older GIS "
+                          r"host, `([^`]+)`, whose robots.txt disallows "
+                          r"automated access, is not read", self.text)
+        self.assertEqual(said, [(read, not_read)] * 2)
+
+    def test_kent_dartmoor_and_exmoor_are_said_plainly(self):
+        self.assertIn("Kent's, Dartmoor's and Exmoor's own layers are not "
+                      "read at present.", self.text)
+        self.assertNotIn("licences that do not allow this use", self.text)
+
+    def test_each_public_correction_is_there(self):
+        for said in (
+                # The roads' layers, not the byway layers, state no licence.
+                "No licence is stated for these unsurfaced-road layers; see",
+                "Except as noted below, where a council publishes its own "
+                "byway layer,",
+                # The collector reads closures, not byways.
+                "the closures of a council whose servers do not answer "
+                "GitHub's shared runners (Dorset, Powys) are read from one "
+                "fixed, honestly named collector server",
+                "until we have confirmed the terms of the licence its file "
+                "states.",
+                "Powys's map server did not respond to our request on 30 "
+                "October 2026, so Powys's byways stay on rowmaps.com. (The "
+                "collector server reads Powys's closures only; that is a "
+                "separate pipeline.)"):
+            self.assertIn(said, self.text)
+
+    def test_no_decision_is_put_on_the_owner_for_the_roads(self):
+        self.assertNotIn("the owner decided", self.text)
+        self.assertNotIn("on the owner's decision of 8 October", self.text)
 
 
 if __name__ == "__main__":

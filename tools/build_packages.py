@@ -1859,6 +1859,12 @@ def _councils(sources):
     return names[0] if len(names) == 1 else         ", ".join(names[:-1]) + " and " + names[-1]
 
 
+def _own_layers(n):
+    """One council's own layer, or several councils' own layers."""
+    return ("the council's own layer" if n == 1
+            else "the councils' own layers")
+
+
 def dataset_licence(ucr_sources, byway_sources=None):
     """The manifest's `licence`: "OGL-3.0" while every way is from the
     definitive map or an OGL council layer, as it always was; with council
@@ -1875,10 +1881,10 @@ def dataset_licence(ucr_sources, byway_sources=None):
     out = "OGL-3.0 for the rights of way"
     unstated = [s for s in byways if not s.get("licence")]
     if unstated:
-        out += (", except the byways of %s, read from the councils' own "
-                "layers, which are published without a stated licence and "
-                "credited to each council (bywaySources)"
-                % _councils(unstated))
+        out += (", except the byways of %s, read from %s, which are "
+                "published without a stated licence and credited to each "
+                "council (bywaySources)"
+                % (_councils(unstated), _own_layers(len(unstated))))
     for s in byways:
         if s.get("licence"):
             out += ("; the byways of %s are published under %s"
@@ -1888,9 +1894,9 @@ def dataset_licence(ucr_sources, byway_sources=None):
                 % _councils(ogl))
     if none:
         out += ("; the unsurfaced unclassified roads of %s are council "
-                "highway records published without a stated licence, on the "
-                "owner's decision of 8 October 2026, credited to each "
-                "council (ucrSources)" % _councils(none))
+                "highway records published without a stated licence, on "
+                "the decision of 8 October 2026, credited to each council "
+                "(ucrSources)" % _councils(none))
     return out
 
 
@@ -1932,7 +1938,7 @@ def rights_of_way_attribution(byway_sources):
     used = [s for s in byway_sources or [] if s.get("count")]
     if not used:
         return OGL
-    return ("Some byways are read from the councils' own layers. "
+    return ("Some byways are read from %s. " % _own_layers(len(used))
             + " ".join(s["attribution"] for s in used)
             + " Other rights of way: " + OGL)
 
@@ -1945,8 +1951,9 @@ def manifest_credit(ucr_sources, layers_used, byway_sources):
             rights_of_way_attribution(byway_sources), ucr_sources),
         "licence": dataset_licence(ucr_sources, byway_sources),
         "source": "Local highway authority definitive maps via rowmaps.com"
-                  + ("; byways for %d authorities from the councils' own "
-                     "layers" % len(layers_used)
+                  + ("; byways for %d %s from %s"
+                     % (len(layers_used), "authority" if len(layers_used) == 1
+                        else "authorities", _own_layers(len(layers_used)))
                      if layers_used else ""),
         **({"councilLayers": sorted(set(clean_text(n) for n in
                                         layers_used))}

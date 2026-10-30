@@ -296,6 +296,22 @@ _byways = [
      "count": 0},
 ]
 _with = _with_byways(_byways)
+ok(bc.ATTRIBUTION == (
+    "Map and routing data (c) OpenStreetMap contributors, ODbL. Rights of "
+    "way in England and Wales contain public sector information licensed "
+    "under the Open Government Licence v3.0, via rowmaps.com."),
+   "the default credit names England and Wales, the coverage, not the "
+   "United Kingdom (%s)" % bc.ATTRIBUTION)
+_one_ogl = _with_byways(_byways[:1])
+ok("Byways for Buckinghamshire Council, from the council's own layer, "
+   "contain public sector information" in _one_ogl
+   and "councils'" not in _one_ogl,
+   "one licensed council: its own layer, singular (%s)" % _one_ogl)
+_one_none = _with_byways(_byways[2:3])
+ok("Byways for Devon County Council come from the council's own layer, "
+   "published without a stated licence." in _one_none
+   and "councils'" not in _one_none,
+   "one unlicensed council: its own layer, singular (%s)" % _one_none)
 ok(_with_byways([]) == bc.ATTRIBUTION,
    "no council byways: the attribution as it always was, byte for byte")
 ok(_with_byways([dict(_byways[0], count=0)]) == bc.ATTRIBUTION,
@@ -325,6 +341,12 @@ _both = _with_byways(_byways[:1], [{"council": "Devon County Council",
 ok(_both.endswith("Unsurfaced unclassified roads from the highway records "
                   "of Devon County Council."),
    "byways and roads: both credits (%s)" % _both)
+
+print("\nthe public source speaks of no charge")
+with open(bc.__file__, encoding="utf-8") as _fh:
+    _source = _fh.read()
+for _charge in ("paid tier", "they pay for"):
+    ok(_charge not in _source, "build_catalogue.py does not say %r" % _charge)
 
 print("\n%d checks, %d failed" % (checks, len(failures)))
 for f in failures:
