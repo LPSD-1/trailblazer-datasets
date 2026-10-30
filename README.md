@@ -387,9 +387,10 @@ Council, Lincolnshire County Council, Northumberland County Council, East
 Riding of Yorkshire Council, Oxfordshire County Council, Surrey County
 Council) on every road, pack and container that carries it, and each will be
 taken down if its council objects. Every road says, in its `attribution`,
-"Source: <the council's layer>, read from the council." followed by that
-decision (`council_ucrs.owner_decision_note`). The decision named
-Worcestershire too; it is held out on the evidence above, not the licence.
+"Source: <the council's layer>, read from the council." followed by a note
+that the council publishes the layer without stating a licence, that the road
+is credited to the council, and that it will be taken down if the council
+objects. Worcestershire's roads are not read yet, on the evidence above.
 
 **THE NERC TEST.** The Natural Environment and Rural Communities Act 2006 s67
 took the motor vehicle rights off every way recorded on the definitive map as

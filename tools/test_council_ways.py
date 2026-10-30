@@ -1669,6 +1669,16 @@ class ReadmeSaysWhatIsRead(unittest.TestCase):
                       "layers. Each is published as public highway "
                       "information** - a council's highway records",
                       self.text)
+        # The roads' credit note stands alone: nothing points back to a
+        # decision the README no longer states.
+        self.assertNotIn("followed by that decision", self.text)
+        self.assertNotIn("The decision named Worcestershire", self.text)
+        self.assertIn("read from the council.\" followed by a note that the "
+                      "council publishes the layer without stating a "
+                      "licence, that the road is credited to the council, "
+                      "and that it will be taken down if the council "
+                      "objects. Worcestershire's roads are not read yet, on "
+                      "the evidence above.", self.text)
 
 
 if __name__ == "__main__":
