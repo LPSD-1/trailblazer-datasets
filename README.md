@@ -13,12 +13,14 @@ the legal record of public rights of way in England and Wales — obtained via
 Since 8 October 2026 the lanes also include **unsurfaced unclassified roads**
 read from the councils' own highway records - Devon, North Yorkshire, Norfolk,
 Lincolnshire, Northumberland, East Riding of Yorkshire, Oxfordshire and Surrey,
-each credited to its council. Those layers are not published under the Open
-Government Licence; see [Unsurfaced unclassified roads](#unsurfaced-unclassified-roads-ucrs).
+each credited to its council. None of those councils states a licence for
+its layer; see [Unsurfaced unclassified roads](#unsurfaced-unclassified-roads-ucrs).
 
-Where a council publishes its own rights of way data, its byways are read
-from that publication instead of rowmaps.com, each credited to its council
-under the council's own licence; see
+Where a council publishes its own byway layer, its byways are read from
+that layer, with rowmaps.com as the fallback, and credited to the council
+under the licence it states, or noted as published without a stated
+licence. The Isle of Wight's, Hampshire's and Calderdale's layers are used
+only if rowmaps.com has no file for that council; see
 [Byways from the councils' own layers](#byways-from-the-councils-own-layers).
 
 ## What this is not
@@ -319,8 +321,8 @@ lies on a storage host other people use too, so only the council's own folder
 on it is read (`council_ways.HOST_PATHS`).
 
 Norfolk's byways stay on rowmaps.com for now, until the licence its file
-states is settled. Powys's map server refused our request on 30 October
-2026, so Powys stays on rowmaps.com too.
+states is settled. Powys's map server did not return our request on 30
+October 2026, so Powys stays on rowmaps.com.
 
 The lane build lets the council's layer decide which byways exist and keeps
 every unchanged way's rowmaps record byte for byte, so its id does not move: a
@@ -331,12 +333,12 @@ fallback: an unreadable layer keeps its last good file, a council file
 that disagrees with rowmaps too much to be the same network is not used,
 and neither is one whose last good read is 30 days old or more
 (`council_ways.MAX_AGE_DAYS`), since rowmaps may have added byways since.
-West Berkshire's older GIS host (robots.txt) and its website (a bot
-challenge) are not read; its newer GIS host has no robots.txt and is. Dorset's
-map server refuses GitHub's runners, so Dorset's byways stay on rowmaps.com
-(the collector server reads its closures and its register of definitive map
-applications, not its byways; HOME-COLLECTOR.md). Kent's, Dartmoor's and
-Exmoor's own layers carry licences that restrict their use and are not read.
+West Berkshire's byways are read from the council's newer GIS host; its
+older GIS host and its website ask automated tools not to read them, so
+they are not read. Dorset's map server does not answer requests from
+GitHub's runners, so Dorset's byways stay on rowmaps.com. Kent's,
+Dartmoor's and Exmoor's own layers are published under licences that do
+not allow this use, so they are not read.
 
 ## Unsurfaced unclassified roads (UCRs)
 

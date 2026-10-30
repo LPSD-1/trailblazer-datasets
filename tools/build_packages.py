@@ -1925,12 +1925,14 @@ def byway_sources_in(sources, lanes):
 def rights_of_way_attribution(byway_sources):
     """The rights of way's credit: OGL, exactly as it always was, while
     every byway came from rowmaps; with byways from councils' own layers,
-    each council's own credit (its licence, or that it states none) first,
-    and the rowmaps credit labelled as the other rights of way's."""
+    one plain sentence saying so, each council's own credit (its licence,
+    or that it states none), and the rowmaps credit labelled as the other
+    rights of way's. Each council's credit begins with its licence or its
+    own "Source:", so no label runs into it."""
     used = [s for s in byway_sources or [] if s.get("count")]
     if not used:
         return OGL
-    return ("Byways from the councils' own publications: "
+    return ("Some byways are read from the councils' own layers. "
             + " ".join(s["attribution"] for s in used)
             + " Other rights of way: " + OGL)
 
@@ -1944,7 +1946,7 @@ def manifest_credit(ucr_sources, layers_used, byway_sources):
         "licence": dataset_licence(ucr_sources, byway_sources),
         "source": "Local highway authority definitive maps via rowmaps.com"
                   + ("; byways for %d authorities from the councils' own "
-                     "publications" % len(layers_used)
+                     "layers" % len(layers_used)
                      if layers_used else ""),
         **({"councilLayers": sorted(set(clean_text(n) for n in
                                         layers_used))}

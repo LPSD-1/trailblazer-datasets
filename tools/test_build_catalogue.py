@@ -303,20 +303,21 @@ ok(_with_byways([dict(_byways[0], count=0)]) == bc.ATTRIBUTION,
 ok(_with == (
     "Map and routing data (c) OpenStreetMap contributors, ODbL. Byways for "
     "Buckinghamshire Council and Surrey County Council, from the councils' "
-    "own publications, contain public sector information licensed under "
+    "own layers, contain public sector information licensed under "
     "the Open Government Licence v3.0. Byways for Devon County Council and "
     "Essex County Council come from the councils' own layers, published "
-    "without a stated licence. Other United Kingdom rights of way contain "
-    "public sector information licensed under the Open Government Licence "
-    "v3.0, via rowmaps.com. " + _OS),
+    "without a stated licence. Other rights of way in England and Wales "
+    "contain public sector information licensed under the Open Government "
+    "Licence v3.0, via rowmaps.com. " + _OS),
    "council byways: each council named, under its own licence (%s)" % _with)
 ok("Hampshire" not in _with, "a layer that gave no byway is not named")
-ok(_with.count("rowmaps.com") == 1 and "Other United Kingdom rights of way"
-   in _with, "rowmaps is credited only for the rights of way still from it")
+ok(_with.count("rowmaps.com") == 1 and "Other rights of way in England and "
+   "Wales" in _with and "United Kingdom" not in _with,
+   "rowmaps is credited only for the rights of way still from it")
 _unstated = _with_byways(_byways[2:4])
 ok("Devon County Council and Essex County Council come from the councils' "
    "own layers, published without a stated licence" in _unstated
-   and "from the councils' own publications, contain" not in _unstated,
+   and "from the councils' own layers, contain" not in _unstated,
    "only unlicensed layers: none is called Open Government Licence (%s)"
    % _unstated)
 _both = _with_byways(_byways[:1], [{"council": "Devon County Council",

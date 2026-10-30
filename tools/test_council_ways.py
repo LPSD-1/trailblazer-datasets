@@ -410,6 +410,21 @@ class Fetch(unittest.TestCase):
             self.assertFalse(entry["ok"], kw)
             self.assertEqual(len(self.saved()["ways"]), 9, kw)
 
+    def test_a_reader_that_breaks_on_a_strange_answer_fails_that_read(self):
+        # read_arcgis, read_wfs_json and gml_ways take a council's answer
+        # apart themselves, so a malformed one can raise anything; that is
+        # one failed read, never the end of the run.
+        self.run_with([self.way(i) for i in range(9)])
+        for error in (AttributeError("'list' object has no attribute 'get'"),
+                      ValueError("could not convert string to float: 'x'"),
+                      IndexError("list index out of range")):
+            entry = self.run_with(error=error)
+            self.assertFalse(entry["ok"], error)
+            self.assertIn(type(error).__name__, entry["error"])
+            self.assertIn(str(error), entry["error"])
+            self.assertLessEqual(len(entry["error"]), 300)
+            self.assertEqual(len(self.saved()["ways"]), 9, error)
+
     def test_a_licence_left_unstated_is_said_so(self):
         layer = dict(self.LAYER, licence=None)
         self.assertIn("without stating a licence", cw.attribution(layer))
@@ -583,9 +598,12 @@ class SwitchedCouncils(unittest.TestCase):
         for host, said in cw.HOSTS.items():
             self.assertIn("robots.txt", said, host)
             self.assertFalse(blocked(host), host)
-        # and nothing more: a host no layer reads is not left listed.
+        # and nothing more: a host no layer reads, or is sent to by the
+        # council's own redirect, is not left listed.
         self.assertEqual(set(cw.HOSTS),
-                         set(host_of(l["url"]) for l in cw.LAYERS))
+                         set(host_of(l["url"]) for l in cw.LAYERS)
+                         | set(h for l in cw.LAYERS
+                               for h in l.get("redirect_hosts") or []))
 
     def test_the_councils_that_refuse_us_stay_on_rowmaps(self):
         from polite_http import host_of
@@ -1209,12 +1227,15 @@ class TheReviewRoundsDecisions(unittest.TestCase):
 
 
 class HostPaths(unittest.TestCase):
-    """The shared S3 host is read only inside Stockport's own bucket."""
+    """The shared S3 host is read only inside Stockport's own bucket, and
+    Buckinghamshire's media host only under /documents/."""
 
     S3 = "s3-eu-west-1.amazonaws.com"
+    MEDIA = "media.buckinghamshire.gov.uk"
 
     def test_the_s3_host_is_pinned_to_stockports_bucket(self):
-        self.assertEqual(cw.HOST_PATHS, {self.S3: "/smbc-opendata/"})
+        self.assertEqual(cw.HOST_PATHS, {self.S3: "/smbc-opendata/",
+                                         self.MEDIA: "/documents/"})
         self.assertIsNone(cw.unlisted(cw.by_code()["YY"]))
         why = cw.unlisted({"url": "https://%s/another-bucket/x.json"
                            % self.S3})
@@ -1228,6 +1249,42 @@ class HostPaths(unittest.TestCase):
         self.assertEqual(set(allow), set(cw.HOSTS))
         self.assertEqual(allow[self.S3], "/smbc-opendata/")
         self.assertIsNone(allow["datamillnorth.org"])
+
+    def bm_client(self, location):
+        """The real client, kept to client_allow(), over a stand-in network
+        where Buckinghamshire's file answers 302 to `location` (measured 30
+        October 2026: the www host sends it to the media host)."""
+        from test_polite_http import real_client
+        bm = cw.by_code()["BM"]
+        return bm["url"], real_client({
+            "https://www.buckinghamshire.gov.uk/robots.txt": (
+                200, {}, b"User-agent: *\nAllow: /\n"),
+            bm["url"]: (302, {"Location": location}, b""),
+            "https://%s/robots.txt" % self.MEDIA: (403, {}, b""),
+            "https://%s/documents/ROW_2025.zip" % self.MEDIA: (
+                200, {}, b"the file"),
+            "https://elsewhere.example/robots.txt": (403, {}, b""),
+            "https://elsewhere.example/documents/ROW_2025.zip": (
+                200, {}, b"not the council's")}, allow=cw.client_allow())
+
+    def test_buckinghamshires_file_is_followed_to_its_media_host(self):
+        media = "https://%s/documents/ROW_2025.zip" % self.MEDIA
+        url, (client, transport) = self.bm_client(media)
+        self.assertEqual(client.get(url), b"the file")
+        self.assertIn(media, [u for u, _h in transport.asked])
+        # Only /documents/ on the media host.
+        for other in ("https://%s/images/x.zip" % self.MEDIA,
+                      "https://%s/documents/../x.zip" % self.MEDIA):
+            with self.assertRaises(Refused, msg=other):
+                client.get(other)
+
+    def test_a_redirect_to_a_host_not_listed_is_refused(self):
+        url, (client, transport) = self.bm_client(
+            "https://elsewhere.example/documents/ROW_2025.zip")
+        with self.assertRaises(Refused):
+            client.get(url)
+        self.assertFalse([u for u, _h in transport.asked
+                          if "elsewhere.example" in u])
 
 
 class FetchOnlySaysWhyNothingWasRead(unittest.TestCase):
@@ -1337,6 +1394,15 @@ class BywayCreditsReachRiders(unittest.TestCase):
             self.assertIn(s["attribution"], said)
         self.assertTrue(said.endswith(" Other rights of way: " + P.OGL),
                         said)
+        # One plain sentence before the councils' own credits, each of
+        # which begins "Source:" or with the licence - never a label run
+        # into another label.
+        self.assertEqual(said, "Some byways are read from the councils' own "
+                         "layers. " + " ".join(s["attribution"] for s in used)
+                         + " Other rights of way: " + P.OGL)
+        self.assertNotIn(": Source:", said)
+        self.assertNotIn("publications", said)
+        self.assertIn("via rowmaps.com", said)
 
     def test_a_pack_with_council_byways_credits_each_council(self):
         P = build_packages
@@ -1396,7 +1462,7 @@ class BywayCreditsReachRiders(unittest.TestCase):
         self.assertEqual(got["licence"], P.dataset_licence([], used))
         self.assertTrue(got["source"].endswith(
             "; byways for 2 authorities from the councils' own "
-            "publications"))
+            "layers"))
         self.assertEqual(got["councilLayers"], ["Buckinghamshire Council",
                                                 "Devon County Council"])
 

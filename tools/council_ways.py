@@ -545,6 +545,8 @@ LAYERS = [
     {"code": "BM", "council": "Buckinghamshire Council",
      "licence": "OGL-3.0", "read": read_file, "format": _shapefile,
      "url": "https://www.buckinghamshire.gov.uk/documents/38315/ROW_2025.zip",
+     # Answered with a 302 to the council's media host (30 October 2026).
+     "redirect_hosts": ["media.buckinghamshire.gov.uk"],
      "match": _is("StatusDesc", "BOAT"), "ref": _slash("RouteCode"),
      "oid": "MI_PRINX", "every_days": 7},
     # A CROSS-CHECK, NOT A SOURCE: Calderdale's file is an immutable
@@ -694,13 +696,20 @@ HOSTS = {
     "www.surreycc.gov.uk": "robots.txt allows the open data page and "
                            "/__data/assets/file/",
     "map.telford.gov.uk": "no robots.txt (404)",
+    # Buckinghamshire's file on www answers 302 to this host (30 October
+    # 2026); its robots.txt, read through PoliteClient that day, answers 403,
+    # which RFC 9309 reads as no rules. Only /documents/ is read.
+    "media.buckinghamshire.gov.uk": "robots.txt 403 (none); only /documents/ "
+                                    "is read",
 }
 
 
-#: A host shared with others is read only under its council's own path.
-#: polite_http enforces it on every request and every redirect.
+#: A host shared with others is read only under its council's own path;
+#: a council's file host only where its files are. polite_http enforces it
+#: on every request and every redirect.
 HOST_PATHS = {
     "s3-eu-west-1.amazonaws.com": "/smbc-opendata/",
+    "media.buckinghamshire.gov.uk": "/documents/",
 }
 
 
@@ -1098,6 +1107,13 @@ def fetch_one(layer, client, out_dir, today, cache=None):
         got = layer["read"](client, layer)
     except (Refused, FetchFailed) as e:
         entry.update({"ok": False, "error": str(e)[:300]})
+        return entry
+    except Exception as e:  # noqa: BLE001 - the answer is the stranger
+        # read_arcgis, read_wfs_json and gml_ways take an answer apart
+        # themselves; a malformed one is this council's failed read (its
+        # last good file kept), never the end of the run.
+        entry.update({"ok": False, "error": ("an unreadable answer (%s): %s"
+                                             % (type(e).__name__, e))[:300]})
         return entry
     records, ways = got[0], got[1]
     credit = (got[2] if len(got) > 2 else {}).get("credit")

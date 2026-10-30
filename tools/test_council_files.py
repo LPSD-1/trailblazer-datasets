@@ -447,6 +447,8 @@ class Projections(unittest.TestCase):
                     '0.0174532925199433]]'), authority=None),
             "the name, another projection": BNG_PRJ.replace(
                 "Transverse_Mercator", "Lambert_Conformal_Conic"),
+            "the name, UTM's scale factor (a near miss)": BNG_PRJ.replace(
+                "0.9996012717", "0.9996"),
         }
         for why, prj in not_bng.items():
             with self.assertRaises(FetchFailed, msg=why):
@@ -590,6 +592,40 @@ class Truncated(unittest.TestCase):
             data = gpkg([(short, "Byway", "1")])
             self.assertRefused(cf.gpkg_records, data, why=short)
         self.assertRefused(cf.gpkg_records, gpkg([(b"XY", "Byway", "1")]))
+
+    def test_a_geometry_blob_with_no_wkb_after_its_header(self):
+        # gpkg_geometry itself: a header with nothing after it, and an
+        # envelope said to be longer than what follows the header.
+        wkb = wkb_line(A)
+        for flags, blob in (
+                ("no envelope, header only", b"GP\0\x00" + b"\0" * 4),
+                ("32-byte envelope, header only", b"GP\0\x02" + b"\0" * 4),
+                ("32-byte envelope cut at 16", b"GP\0\x02" + b"\0" * 20),
+                ("32-byte envelope, nothing after", b"GP\0\x02" + b"\0" * 36),
+                ("64-byte envelope cut at 48", b"GP\0\x08" + b"\0" * 52),
+                ("a header cut at 4", b"GP\0\x00")):
+            with self.assertRaises(FetchFailed, msg=flags):
+                cf.gpkg_geometry(blob)
+        # The smallest that is read: one byte of WKB after each header.
+        self.assertEqual(cf.gpkg_geometry(b"GP\0\x00" + b"\0" * 4 + b"W"),
+                         b"W")
+        self.assertEqual(cf.gpkg_geometry(b"GP\0\x02" + b"\0" * 36 + b"W"),
+                         b"W")
+        self.assertEqual(cf.gpkg_geometry(gp(wkb)), wkb)
+
+    def test_a_text_point_is_refused_not_read(self):
+        # float("12") is 12.0, so a point written as text would be read as
+        # one; a file that quotes its coordinates is not a file we know.
+        for point in (["12", "34"], [12.0, "34"], ("12", 34), [True, 34.0],
+                      [None, 1.0]):
+            with self.assertRaises(FetchFailed, msg=point):
+                cf._xy(point)
+        self.assertEqual(cf._xy([12, 34.5, 7]), (12.0, 34.5))
+        self.assertEqual(cf._xy((430000.0, 380000.0)), (430000.0, 380000.0))
+        data = json.dumps({"features": [{"geometry": {
+            "type": "LineString",
+            "coordinates": [["-1.0", "52.0"], ["-1.01", "52.0"]]}}]})
+        self.assertRefused(cf.geojson_records, data.encode(), "wgs84")
 
     def test_a_geopackage_cut_short(self):
         data = gpkg([(gp(wkb_line(A)), "Byway", str(i)) for i in range(50)])

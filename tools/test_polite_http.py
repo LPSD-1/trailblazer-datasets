@@ -804,6 +804,23 @@ class CrawlDelayEdges(unittest.TestCase):
         client.get("https://h.example/a")
         self.assertEqual(stand.slept, [5.0, 5.0])
 
+    def test_of_two_groups_of_our_own_the_longer_delay_is_obeyed(self):
+        # RFC 9309 combines groups naming the same agent; asked two delays,
+        # we keep to the longer, whichever group comes first.
+        for first, second in ((5, 9), (9, 5)):
+            robots = ("User-agent: TrailBlazer-datasets\nCrawl-delay: %d\n\n"
+                      "User-agent: *\nCrawl-delay: 30\n\n"
+                      "User-agent: trailblazer-datasets/1.0\nCrawl-delay: %d\n"
+                      % (first, second)).encode()
+            self.assertEqual(polite_http.Robots(robots.decode()).delay, 9.0,
+                             (first, second))
+            stand = Stand({"/robots.txt": (200, {}, robots),
+                           "/a": (200, {}, b"1")})
+            client = stand.client(min_gap=2.0)
+            client.get("https://h.example/a")
+            client.get("https://h.example/a")
+            self.assertEqual(stand.slept, [9.0, 9.0], (first, second))
+
 
 class Allow(unittest.TestCase):
     """A caller that names its hosts (council_ways: HOSTS and HOST_PATHS)
@@ -814,6 +831,30 @@ class Allow(unittest.TestCase):
 
     def asked(self, transport):
         return [u for u, _h in transport.asked]
+
+    def test_a_redirect_from_one_listed_host_to_another_is_followed(self):
+        # Buckinghamshire's www host answers its file with a 302 to its
+        # media host (30 October 2026); both are listed, the second only
+        # under /documents/.
+        client, transport = real_client({
+            "https://h.example/robots.txt": self.ROBOTS,
+            "https://h.example/a": (302, {"Location":
+                                          "https://media.example/docs/f.zip"},
+                                    b""),
+            "https://h.example/b": (302, {"Location":
+                                          "https://media.example/other/f.zip"},
+                                    b""),
+            "https://media.example/robots.txt": (403, {}, b""),
+            "https://media.example/docs/f.zip": (200, {}, b"the file"),
+            "https://media.example/other/f.zip": (200, {}, b"not this")},
+            allow={"h.example": None, "media.example": "/docs/"})
+        self.assertEqual(client.get("https://h.example/a"), b"the file")
+        self.assertIn("https://media.example/docs/f.zip",
+                      self.asked(transport))
+        with self.assertRaises(Refused):
+            client.get("https://h.example/b")
+        self.assertNotIn("https://media.example/other/f.zip",
+                         self.asked(transport))
 
     def test_a_redirect_to_a_host_not_listed_is_refused(self):
         client, transport = real_client({

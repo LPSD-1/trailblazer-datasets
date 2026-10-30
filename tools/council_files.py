@@ -110,10 +110,15 @@ def _lonlat(points):
 
 
 def _xy(point):
-    """A point's first two coordinates as numbers. A point with fewer is a
-    broken file, not a point to skip."""
+    """A point's first two coordinates as numbers. A point with fewer, or
+    with a coordinate that is not a number (text such as "12", which
+    float() would take), is a broken file, not a point to skip."""
     if isinstance(point, (str, bytes)) or len(point) < 2:
         raise FetchFailed("a point without two coordinates: %r"
+                          % (point,))
+    if not all(isinstance(v, (int, float)) and not isinstance(v, bool)
+               for v in point[:2]):
+        raise FetchFailed("a point whose coordinates are not numbers: %r"
                           % (point,))
     return float(point[0]), float(point[1])
 
@@ -325,8 +330,6 @@ def gpkg_geometry(blob):
     """The WKB inside a GeoPackage geometry blob, or None when empty."""
     if blob is None or bytes(blob[:2]) != b"GP":
         raise FetchFailed("not a GeoPackage geometry")
-    if len(blob) < 8:
-        raise FetchFailed("a GeoPackage geometry header cut short")
     flags = blob[3]
     if flags & 0x10:
         return None   # empty geometry

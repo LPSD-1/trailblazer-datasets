@@ -156,7 +156,7 @@ def rights_of_way_credit(byway_sources):
     none = _named(s for s in used if not s.get("licence"))
     out = [OSM_ATTRIBUTION]
     if ogl:
-        out.append("Byways for %s, from the councils' own publications, %s."
+        out.append("Byways for %s, from the councils' own layers, %s."
                    % (_said(ogl), OGL_SAID))
     if none:
         out.append("Byways for %s come from the councils' own layers, "
@@ -164,8 +164,9 @@ def rights_of_way_credit(byway_sources):
     for s in used:
         if s.get("licence") not in (None, "", "OGL-3.0"):
             out.append(s.get("attribution") or "")
-    out.append("Other United Kingdom rights of way %s, via rowmaps.com."
-               % OGL_SAID)
+    # The catalogue covers England and Wales only.
+    out.append("Other rights of way in England and Wales %s, via "
+               "rowmaps.com." % OGL_SAID)
     for s in used:
         credit = (s.get("credit") or "").strip()
         if credit and credit not in out:
