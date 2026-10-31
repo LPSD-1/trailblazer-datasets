@@ -1,9 +1,9 @@
 {
  "BC": {
-  "changed": true,
+  "changed": false,
   "council": "Bracknell Forest Council",
   "failing_since": null,
-  "last_ok": "2026-10-30",
+  "last_ok": "2026-10-31",
   "merge": {
    "added": [],
    "dropped": [],
@@ -18,10 +18,10 @@
   "ways": 20
  },
  "BK": {
-  "changed": true,
+  "changed": false,
   "council": "Central Bedfordshire Council",
   "failing_since": null,
-  "last_ok": "2026-10-30",
+  "last_ok": "2026-10-31",
   "merge": {
    "added": [],
    "dropped": [],
@@ -72,10 +72,10 @@
   "ways": 17
  },
  "CB": {
-  "changed": true,
+  "changed": false,
   "council": "Cambridgeshire County Council",
   "failing_since": null,
-  "last_ok": "2026-10-30",
+  "last_ok": "2026-10-31",
   "merge": {
    "added": [],
    "dropped": [],
@@ -90,24 +90,46 @@
   "ways": 401
  },
  "CC": {
+  "changed": true,
   "council": "Cheshire West and Chester Council",
-  "error": "maps.cheshireeast.gov.uk refused https://maps.cheshireeast.gov.uk/geoserver/CWaCOpenData/wfs?&service=WFS&version=2.0.0&request=GetFeature&outputFormat=application%2Fjson&srsName=EPSG%3A27700&typeNames=CWaCOpenData%3ATN_S_ROWBywaysOpenToAllTraffic_LINE_CURRENT (HTTP 403)",
-  "failing_since": "2026-10-30",
-  "last_ok": "2026-10-30",
-  "ok": false
+  "failing_since": null,
+  "last_ok": "2026-10-31",
+  "merge": {
+   "added": [],
+   "dropped": [],
+   "kept": 36,
+   "new_share": 0.0,
+   "rowmaps": 36,
+   "used": true,
+   "why_not": null
+  },
+  "ok": true,
+  "records": 36,
+  "ways": 36
  },
  "CH": {
+  "changed": true,
   "council": "Cheshire East Council",
-  "error": "maps.cheshireeast.gov.uk refused https://maps.cheshireeast.gov.uk/geoserver/CEOpenData/wfs?&service=WFS&version=2.0.0&request=GetFeature&outputFormat=application%2Fjson&srsName=EPSG%3A27700&typeNames=CEOpenData%3ATN_S_ROWBywaysOpenToAllTraffic_LINE_CURRENT (HTTP 403)",
-  "failing_since": "2026-10-30",
-  "last_ok": "2026-10-30",
-  "ok": false
+  "failing_since": null,
+  "last_ok": "2026-10-31",
+  "merge": {
+   "added": [],
+   "dropped": [],
+   "kept": 28,
+   "new_share": 0.0,
+   "rowmaps": 28,
+   "used": true,
+   "why_not": null
+  },
+  "ok": true,
+  "records": 28,
+  "ways": 28
  },
  "DN": {
-  "changed": true,
+  "changed": false,
   "council": "Devon County Council",
   "failing_since": null,
-  "last_ok": "2026-10-30",
+  "last_ok": "2026-10-31",
   "merge": {
    "added": [],
    "dropped": [],
@@ -143,7 +165,7 @@
   "changed": true,
   "council": "Derbyshire County Council",
   "failing_since": null,
-  "last_ok": "2026-10-30",
+  "last_ok": "2026-10-31",
   "merge": {
    "added": [],
    "dropped": [],
@@ -176,10 +198,10 @@
   "ways": 1
  },
  "ES": {
-  "changed": true,
+  "changed": false,
   "council": "East Sussex County Council",
   "failing_since": null,
-  "last_ok": "2026-10-30",
+  "last_ok": "2026-10-31",
   "merge": {
    "added": [],
    "dropped": [],
@@ -194,10 +216,10 @@
   "ways": 189
  },
  "EX": {
-  "changed": true,
+  "changed": false,
   "council": "Essex County Council",
   "failing_since": null,
-  "last_ok": "2026-10-30",
+  "last_ok": "2026-10-31",
   "merge": {
    "added": [],
    "dropped": [],
@@ -212,10 +234,10 @@
   "ways": 297
  },
  "HD": {
-  "changed": true,
+  "changed": false,
   "council": "Hertfordshire County Council",
   "failing_since": null,
-  "last_ok": "2026-10-30",
+  "last_ok": "2026-10-31",
   "merge": {
    "added": [],
    "dropped": [],
@@ -230,10 +252,10 @@
   "ways": 217
  },
  "HP": {
-  "changed": true,
+  "changed": false,
   "council": "Hampshire County Council",
   "failing_since": null,
-  "last_ok": "2026-10-30",
+  "last_ok": "2026-10-31",
   "merge": {
    "added": [
     "HP|Abbotts Ann|001/KS101-HST01/1"
@@ -250,10 +272,10 @@
   "ways": 664
  },
  "IW": {
-  "changed": true,
+  "changed": false,
   "council": "Isle of Wight Council",
   "failing_since": null,
-  "last_ok": "2026-10-30",
+  "last_ok": "2026-10-31",
   "merge": {
    "added": [],
    "dropped": [
@@ -326,10 +348,10 @@
   "ways": 37
  },
  "LA": {
-  "changed": true,
+  "changed": false,
   "council": "Lancashire County Council",
   "failing_since": null,
-  "last_ok": "2026-10-30",
+  "last_ok": "2026-10-31",
   "merge": {
    "added": [
     "LA|0106|026",
@@ -365,10 +387,10 @@
   "ways": 21
  },
  "ND": {
-  "changed": true,
+  "changed": false,
   "council": "Northumberland County Council",
   "failing_since": null,
-  "last_ok": "2026-10-30",
+  "last_ok": "2026-10-31",
   "merge": {
    "added": [
     "ND|502|155",
@@ -396,7 +418,7 @@
   "changed": true,
   "council": "Oxfordshire County Council",
   "failing_since": null,
-  "last_ok": "2026-10-30",
+  "last_ok": "2026-10-31",
   "merge": {
    "added": [],
    "dropped": [],
@@ -447,10 +469,10 @@
   "ways": 371
  },
  "WB": {
-  "changed": true,
+  "changed": false,
   "council": "West Berkshire Council",
   "failing_since": null,
-  "last_ok": "2026-10-30",
+  "last_ok": "2026-10-31",
   "merge": {
    "added": [],
    "dropped": [],
@@ -465,10 +487,10 @@
   "ways": 484
  },
  "WJ": {
-  "changed": true,
+  "changed": false,
   "council": "Wokingham Borough Council",
   "failing_since": null,
-  "last_ok": "2026-10-30",
+  "last_ok": "2026-10-31",
   "merge": {
    "added": [],
    "dropped": [],
@@ -501,10 +523,10 @@
   "ways": 8
  },
  "WT": {
-  "changed": true,
+  "changed": false,
   "council": "Wiltshire Council",
   "failing_since": null,
-  "last_ok": "2026-10-30",
+  "last_ok": "2026-10-31",
   "merge": {
    "added": [],
    "dropped": [],
