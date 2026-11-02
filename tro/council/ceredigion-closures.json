@@ -1,6 +1,48 @@
 {
- "items": [],
- "records": 162,
+ "items": [
+  {
+   "authority": "Ceredigion",
+   "end": "2026-12-02",
+   "form": "temporary",
+   "geometry": {
+    "coordinates": [
+     [
+      -4.54567,
+      52.13373
+     ],
+     [
+      -4.54559,
+      52.13359
+     ],
+     [
+      -4.54548,
+      52.1335
+     ],
+     [
+      -4.54544,
+      52.13345
+     ],
+     [
+      -4.54544,
+      52.1332
+     ]
+    ],
+    "type": "LineString"
+   },
+   "id": "751/26|2354",
+   "match": "geometry",
+   "ref": "Ceredigion 751/26",
+   "start": "2026-12-02",
+   "title": "Ceredigion County Council road closure 751/26: Poling works (08:00-17:00)",
+   "url": "https://www.ceredigion.gov.uk/resident/travel-roads-parking/roadworks/road-closures/",
+   "vehicles": "all_users",
+   "ways": [
+    "CE-13-7a94505f28"
+   ],
+   "where": "Ceredigion road closure 751/26"
+  }
+ ],
+ "records": 187,
  "review": [],
  "source": {
   "authority": "Ceredigion",
