@@ -1,6 +1,6 @@
 {
  "schema": 1,
- "generated": "2026-11-06T08:34:17Z",
+ "generated": "2026-11-06T09:40:50Z",
  "datasets": [
   {
    "id": "lanes",
@@ -17,10 +17,10 @@
    "name": "Traffic orders and closures",
    "what": "Legal orders and closures on the lanes, from the Department for Transport's D-TRO service and councils' own notices",
    "schedule": "Every 6 hours",
-   "last_run": "2026-11-05T21:07:42Z",
+   "last_run": "2026-11-06T09:31:17Z",
    "result": "ok",
-   "last_ok": "2026-11-05T21:07:42Z",
-   "data_as_of": "2026-11-05"
+   "last_ok": "2026-11-06T09:31:17Z",
+   "data_as_of": "2026-11-06"
   },
   {
    "id": "council-closures",
@@ -143,7 +143,7 @@
    "kind": "council",
    "byways": 0,
    "unsurfaced_roads": 0,
-   "dtro_records": 901,
+   "dtro_records": 902,
    "dtro": "Publishes to D-TRO",
    "sources": [
     {
@@ -162,7 +162,7 @@
    "kind": "council",
    "byways": 72,
    "unsurfaced_roads": 0,
-   "dtro_records": 1004,
+   "dtro_records": 1005,
    "dtro": "Publishes to D-TRO",
    "sources": [
     {
@@ -229,7 +229,7 @@
    "kind": "council",
    "byways": 17,
    "unsurfaced_roads": 0,
-   "dtro_records": 9660,
+   "dtro_records": 9662,
    "dtro": "Publishes to D-TRO",
    "sources": [
     {
@@ -360,7 +360,7 @@
    "kind": "council",
    "byways": 0,
    "unsurfaced_roads": 0,
-   "dtro_records": 550,
+   "dtro_records": 552,
    "dtro": "Publishes to D-TRO",
    "sources": [
     {
@@ -608,7 +608,7 @@
    "kind": "council",
    "byways": 28,
    "unsurfaced_roads": 0,
-   "dtro_records": 2721,
+   "dtro_records": 2722,
    "dtro": "Publishes to D-TRO",
    "sources": [
     {
@@ -676,7 +676,7 @@
    "kind": "council",
    "byways": 727,
    "unsurfaced_roads": 0,
-   "dtro_records": 4454,
+   "dtro_records": 4455,
    "dtro": "Publishes to D-TRO",
    "sources": [
     {
@@ -939,7 +939,7 @@
    "kind": "council",
    "byways": 59,
    "unsurfaced_roads": 0,
-   "dtro_records": 2137,
+   "dtro_records": 2139,
    "dtro": "Publishes to D-TRO",
    "sources": [
     {
@@ -1008,7 +1008,7 @@
    "kind": "council",
    "byways": 189,
    "unsurfaced_roads": 0,
-   "dtro_records": 3061,
+   "dtro_records": 3062,
    "dtro": "Publishes to D-TRO",
    "sources": [
     {
@@ -1060,7 +1060,7 @@
    "kind": "council",
    "byways": 289,
    "unsurfaced_roads": 0,
-   "dtro_records": 12062,
+   "dtro_records": 12072,
    "dtro": "Publishes to D-TRO",
    "sources": [
     {
@@ -1218,7 +1218,7 @@
    "kind": "council",
    "byways": 612,
    "unsurfaced_roads": 0,
-   "dtro_records": 5163,
+   "dtro_records": 5164,
    "dtro": "Publishes to D-TRO",
    "sources": [
     {
@@ -1319,7 +1319,7 @@
    "kind": "council",
    "byways": 209,
    "unsurfaced_roads": 0,
-   "dtro_records": 4233,
+   "dtro_records": 4234,
    "dtro": "Publishes to D-TRO",
    "sources": [
     {
@@ -1477,7 +1477,7 @@
    "kind": "council",
    "byways": 230,
    "unsurfaced_roads": 0,
-   "dtro_records": 11784,
+   "dtro_records": 11785,
    "dtro": "Publishes to D-TRO",
    "sources": [
     {
@@ -1639,7 +1639,7 @@
    "kind": "council",
    "byways": 14,
    "unsurfaced_roads": 0,
-   "dtro_records": 2041,
+   "dtro_records": 2042,
    "dtro": "Publishes to D-TRO",
    "sources": [
     {
@@ -1682,7 +1682,7 @@
    "kind": "council",
    "byways": 169,
    "unsurfaced_roads": 0,
-   "dtro_records": 3878,
+   "dtro_records": 3879,
    "dtro": "Publishes to D-TRO",
    "sources": [
     {
@@ -1725,7 +1725,7 @@
    "kind": "council",
    "byways": 55,
    "unsurfaced_roads": 370,
-   "dtro_records": 8506,
+   "dtro_records": 8509,
    "dtro": "Publishes to D-TRO",
    "sources": [
     {
@@ -1770,7 +1770,7 @@
    "kind": "council",
    "byways": 0,
    "unsurfaced_roads": 0,
-   "dtro_records": 373,
+   "dtro_records": 378,
    "dtro": "Publishes to D-TRO",
    "sources": [
     {
@@ -1789,7 +1789,7 @@
    "kind": "council",
    "byways": 0,
    "unsurfaced_roads": 0,
-   "dtro_records": 1312,
+   "dtro_records": 1314,
    "dtro": "Publishes to D-TRO",
    "sources": [
     {
@@ -1922,7 +1922,7 @@
    "kind": "council",
    "byways": 75,
    "unsurfaced_roads": 545,
-   "dtro_records": 4385,
+   "dtro_records": 4389,
    "dtro": "Publishes to D-TRO",
    "sources": [
     {
@@ -2185,7 +2185,7 @@
    "kind": "council",
    "byways": 137,
    "unsurfaced_roads": 0,
-   "dtro_records": 4423,
+   "dtro_records": 4426,
    "dtro": "Publishes to D-TRO",
    "sources": [
     {
@@ -2228,7 +2228,7 @@
    "kind": "council",
    "byways": 218,
    "unsurfaced_roads": 41,
-   "dtro_records": 590,
+   "dtro_records": 591,
    "dtro": "Publishes to D-TRO",
    "sources": [
     {
@@ -2412,7 +2412,7 @@
    "kind": "council",
    "byways": 2,
    "unsurfaced_roads": 0,
-   "dtro_records": 771,
+   "dtro_records": 772,
    "dtro": "Publishes to D-TRO",
    "sources": [
     {
@@ -2493,7 +2493,7 @@
    "kind": "council",
    "byways": 10,
    "unsurfaced_roads": 0,
-   "dtro_records": 1009,
+   "dtro_records": 1010,
    "dtro": "Publishes to D-TRO",
    "sources": [
     {
@@ -2517,7 +2517,7 @@
    "kind": "council",
    "byways": 24,
    "unsurfaced_roads": 0,
-   "dtro_records": 1083,
+   "dtro_records": 1090,
    "dtro": "Publishes to D-TRO",
    "sources": [
     {
@@ -2602,7 +2602,7 @@
    "kind": "council",
    "byways": 16,
    "unsurfaced_roads": 0,
-   "dtro_records": 5150,
+   "dtro_records": 5158,
    "dtro": "Publishes to D-TRO",
    "sources": [
     {
@@ -2755,7 +2755,7 @@
    "kind": "council",
    "byways": 69,
    "unsurfaced_roads": 0,
-   "dtro_records": 4595,
+   "dtro_records": 4603,
    "dtro": "Publishes to D-TRO",
    "sources": [
     {
@@ -2840,7 +2840,7 @@
    "kind": "council",
    "byways": 327,
    "unsurfaced_roads": 0,
-   "dtro_records": 7805,
+   "dtro_records": 7809,
    "dtro": "Publishes to D-TRO",
    "sources": [
     {
@@ -3087,7 +3087,7 @@
    "kind": "council",
    "byways": 3,
    "unsurfaced_roads": 0,
-   "dtro_records": 794,
+   "dtro_records": 795,
    "dtro": "Publishes to D-TRO",
    "sources": [
     {
@@ -3111,7 +3111,7 @@
    "kind": "council",
    "byways": 12,
    "unsurfaced_roads": 0,
-   "dtro_records": 401,
+   "dtro_records": 405,
    "dtro": "Publishes to D-TRO",
    "sources": [
     {
@@ -3204,7 +3204,7 @@
    "kind": "council",
    "byways": 484,
    "unsurfaced_roads": 0,
-   "dtro_records": 1077,
+   "dtro_records": 1078,
    "dtro": "Publishes to D-TRO",
    "sources": [
     {
@@ -3347,7 +3347,7 @@
    "kind": "council",
    "byways": 602,
    "unsurfaced_roads": 0,
-   "dtro_records": 3962,
+   "dtro_records": 3967,
    "dtro": "Publishes to D-TRO",
    "sources": [
     {
@@ -3404,7 +3404,7 @@
    "kind": "council",
    "byways": 11,
    "unsurfaced_roads": 0,
-   "dtro_records": 427,
+   "dtro_records": 428,
    "dtro": "Publishes to D-TRO",
    "sources": [
     {
@@ -3469,7 +3469,7 @@
    "kind": "council",
    "byways": 24,
    "unsurfaced_roads": 0,
-   "dtro_records": 3781,
+   "dtro_records": 3785,
    "dtro": "Publishes to D-TRO",
    "sources": [
     {
