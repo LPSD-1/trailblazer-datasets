@@ -1,24 +1,24 @@
 {
  "schema": 1,
- "generated": "2026-11-16T23:04:59Z",
+ "generated": "2026-11-16T23:35:18Z",
  "datasets": [
   {
    "id": "lanes",
    "name": "Byways and unsurfaced roads",
    "what": "The lanes on the map, from councils' rights of way and highway records",
    "schedule": "Every 6 hours",
-   "last_run": "2026-11-16T11:47:00Z",
-   "result": "problem",
-   "last_ok": "2026-10-30T16:06:25Z",
-   "data_as_of": "2026-10-30"
+   "last_run": "2026-11-16T23:05:56Z",
+   "result": "ok",
+   "last_ok": "2026-11-16T23:05:56Z",
+   "data_as_of": "2026-11-16"
   },
   {
    "id": "orders",
    "name": "Traffic orders and closures",
    "what": "Legal orders and closures on the lanes, from the Department for Transport's D-TRO service and councils' own notices",
    "schedule": "Every 6 hours",
-   "last_run": "2026-11-16T09:55:10Z",
-   "result": "ok",
+   "last_run": "2026-11-16T23:26:05Z",
+   "result": "running",
    "last_ok": "2026-11-16T09:55:10Z",
    "data_as_of": "2026-11-16"
   },
@@ -87,8 +87,8 @@
    "name": "Satellite imagery",
    "what": "Satellite photos of the ground, from the 2016 Sentinel-2 cloudless mosaic",
    "schedule": "Twice a day",
-   "last_run": "2026-11-16T10:09:57Z",
-   "result": "ok",
+   "last_run": "2026-11-16T23:29:07Z",
+   "result": "running",
    "last_ok": "2026-11-16T10:09:57Z",
    "data_as_of": null
   },
@@ -472,8 +472,8 @@
    "sources": [
     {
      "what": "Byways",
-     "from": "Buckinghamshire Council, via rowmaps.com",
-     "as_of": null
+     "from": "Buckinghamshire Council",
+     "as_of": "2026-11-13"
     },
     {
      "what": "Traffic orders",
@@ -481,7 +481,11 @@
      "as_of": null
     }
    ],
-   "honours": [],
+   "honours": [
+    "Shares its own data openly",
+    "Open Government Licence",
+    "Publishes to D-TRO"
+   ],
    "activity": []
   },
   {
@@ -806,8 +810,8 @@
    "sources": [
     {
      "what": "Byways",
-     "from": "Derbyshire County Council, via rowmaps.com",
-     "as_of": null
+     "from": "Derbyshire County Council",
+     "as_of": "2026-11-16"
     },
     {
      "what": "Traffic orders",
@@ -815,7 +819,10 @@
      "as_of": null
     }
    ],
-   "honours": [],
+   "honours": [
+    "Shares its own data openly",
+    "Open Government Licence"
+   ],
    "activity": []
   },
   {
@@ -824,7 +831,7 @@
    "country": "England",
    "kind": "council",
    "byways": 117,
-   "unsurfaced_roads": 952,
+   "unsurfaced_roads": 954,
    "dtro_records": 47,
    "dtro": "Publishes to D-TRO",
    "sources": [
@@ -925,11 +932,14 @@
    "sources": [
     {
      "what": "Byways",
-     "from": "Dudley Metropolitan Borough Council, via rowmaps.com",
-     "as_of": null
+     "from": "Dudley Metropolitan Borough Council",
+     "as_of": "2026-11-13"
     }
    ],
-   "honours": [],
+   "honours": [
+    "Shares its own data openly",
+    "Open Government Licence"
+   ],
    "activity": []
   },
   {
@@ -944,8 +954,8 @@
    "sources": [
     {
      "what": "Byways",
-     "from": "Durham County Council, via rowmaps.com",
-     "as_of": null
+     "from": "Durham County Council",
+     "as_of": "2026-11-13"
     },
     {
      "what": "Traffic orders",
@@ -953,7 +963,11 @@
      "as_of": null
     }
    ],
-   "honours": [],
+   "honours": [
+    "Shares its own data openly",
+    "Open Government Licence",
+    "Publishes to D-TRO"
+   ],
    "activity": []
   },
   {
@@ -1525,8 +1539,8 @@
    "sources": [
     {
      "what": "Byways",
-     "from": "Kirklees Council, via rowmaps.com",
-     "as_of": null
+     "from": "Kirklees Council",
+     "as_of": "2026-11-13"
     },
     {
      "what": "Traffic orders",
@@ -1534,7 +1548,11 @@
      "as_of": null
     }
    ],
-   "honours": [],
+   "honours": [
+    "Shares its own data openly",
+    "Open Government Licence",
+    "Publishes to D-TRO"
+   ],
    "activity": []
   },
   {
@@ -1568,8 +1586,8 @@
    "sources": [
     {
      "what": "Byways",
-     "from": "Lake District National Park Authority, via rowmaps.com",
-     "as_of": null
+     "from": "Lake District National Park Authority",
+     "as_of": "2026-11-13"
     },
     {
      "what": "Traffic orders",
@@ -1577,7 +1595,10 @@
      "as_of": null
     }
    ],
-   "honours": [],
+   "honours": [
+    "Shares its own data openly",
+    "Open Government Licence"
+   ],
    "activity": []
   },
   {
@@ -1644,8 +1665,8 @@
    "sources": [
     {
      "what": "Byways",
-     "from": "Leeds City Council, via rowmaps.com",
-     "as_of": null
+     "from": "Leeds City Council",
+     "as_of": "2026-11-13"
     },
     {
      "what": "Traffic orders",
@@ -1653,7 +1674,11 @@
      "as_of": null
     }
    ],
-   "honours": [],
+   "honours": [
+    "Shares its own data openly",
+    "Open Government Licence",
+    "Publishes to D-TRO"
+   ],
    "activity": []
   },
   {
@@ -2747,11 +2772,14 @@
    "sources": [
     {
      "what": "Byways",
-     "from": "St Helens Council, via rowmaps.com",
-     "as_of": null
+     "from": "St Helens Council",
+     "as_of": "2026-11-13"
     }
    ],
-   "honours": [],
+   "honours": [
+    "Shares its own data openly",
+    "Open Government Licence"
+   ],
    "activity": []
   },
   {
@@ -2783,15 +2811,15 @@
    "full_name": "Stockport Metropolitan Borough Council",
    "country": "England",
    "kind": "council",
-   "byways": 11,
+   "byways": 12,
    "unsurfaced_roads": 0,
    "dtro_records": 120,
    "dtro": "Publishes to D-TRO",
    "sources": [
     {
      "what": "Byways",
-     "from": "Stockport Metropolitan Borough Council, via rowmaps.com",
-     "as_of": null
+     "from": "Stockport Metropolitan Borough Council",
+     "as_of": "2026-11-13"
     },
     {
      "what": "Traffic orders",
@@ -2799,7 +2827,11 @@
      "as_of": null
     }
    ],
-   "honours": [],
+   "honours": [
+    "Shares its own data openly",
+    "Open Government Licence",
+    "Publishes to D-TRO"
+   ],
    "activity": []
   },
   {
@@ -2907,8 +2939,8 @@
    "sources": [
     {
      "what": "Byways",
-     "from": "Surrey County Council, via rowmaps.com",
-     "as_of": null
+     "from": "Surrey County Council",
+     "as_of": "2026-11-13"
     },
     {
      "what": "Unsurfaced roads",
@@ -2928,6 +2960,7 @@
    ],
    "honours": [
     "Shares its own data openly",
+    "Open Government Licence",
     "Publishes to D-TRO"
    ],
    "activity": []
@@ -3005,8 +3038,8 @@
    "sources": [
     {
      "what": "Byways",
-     "from": "Telford & Wrekin Council, via rowmaps.com",
-     "as_of": null
+     "from": "Telford & Wrekin Council",
+     "as_of": "2026-11-13"
     },
     {
      "what": "Traffic orders",
@@ -3014,7 +3047,11 @@
      "as_of": null
     }
    ],
-   "honours": [],
+   "honours": [
+    "Shares its own data openly",
+    "Open Government Licence",
+    "Publishes to D-TRO"
+   ],
    "activity": []
   },
   {
@@ -3991,6 +4028,14 @@
    ]
   },
   {
+   "name": "Buckinghamshire",
+   "reasons": [
+    "Shares its own data openly",
+    "Open Government Licence",
+    "Publishes to D-TRO"
+   ]
+  },
+  {
    "name": "Cambridgeshire",
    "reasons": [
     "Shares its own data openly",
@@ -4022,6 +4067,13 @@
    ]
   },
   {
+   "name": "Derbyshire",
+   "reasons": [
+    "Shares its own data openly",
+    "Open Government Licence"
+   ]
+  },
+  {
    "name": "Devon",
    "reasons": [
     "Shares its own data openly",
@@ -4031,6 +4083,21 @@
   },
   {
    "name": "Dorset",
+   "reasons": [
+    "Shares its own data openly",
+    "Open Government Licence",
+    "Publishes to D-TRO"
+   ]
+  },
+  {
+   "name": "Dudley",
+   "reasons": [
+    "Shares its own data openly",
+    "Open Government Licence"
+   ]
+  },
+  {
+   "name": "Durham",
    "reasons": [
     "Shares its own data openly",
     "Open Government Licence",
@@ -4068,7 +4135,30 @@
    ]
   },
   {
+   "name": "Kirklees",
+   "reasons": [
+    "Shares its own data openly",
+    "Open Government Licence",
+    "Publishes to D-TRO"
+   ]
+  },
+  {
+   "name": "Lake District National Park",
+   "reasons": [
+    "Shares its own data openly",
+    "Open Government Licence"
+   ]
+  },
+  {
    "name": "Lancashire",
+   "reasons": [
+    "Shares its own data openly",
+    "Open Government Licence",
+    "Publishes to D-TRO"
+   ]
+  },
+  {
+   "name": "Leeds",
    "reasons": [
     "Shares its own data openly",
     "Open Government Licence",
@@ -4128,6 +4218,21 @@
    ]
   },
   {
+   "name": "St Helens",
+   "reasons": [
+    "Shares its own data openly",
+    "Open Government Licence"
+   ]
+  },
+  {
+   "name": "Stockport",
+   "reasons": [
+    "Shares its own data openly",
+    "Open Government Licence",
+    "Publishes to D-TRO"
+   ]
+  },
+  {
    "name": "Suffolk",
    "reasons": [
     "Shares its own data openly",
@@ -4138,6 +4243,15 @@
    "name": "Surrey",
    "reasons": [
     "Shares its own data openly",
+    "Open Government Licence",
+    "Publishes to D-TRO"
+   ]
+  },
+  {
+   "name": "Telford & Wrekin",
+   "reasons": [
+    "Shares its own data openly",
+    "Open Government Licence",
     "Publishes to D-TRO"
    ]
   },
