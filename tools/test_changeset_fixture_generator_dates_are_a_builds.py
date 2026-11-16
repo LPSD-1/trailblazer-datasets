@@ -114,6 +114,31 @@ def main():
         refused = True
     check("a build no later than before's newest date is refused", refused)
 
+    # 16 NOV 2026: the published South East was restamped at 17:35 on the
+    # day a POI refresh dated 789 POIs (2026-10-30), so `before` carried a
+    # date of its own build day and a build six hours on (23:35) fell on
+    # that same day: make() refused, and the lane refresh stopped with it.
+    # The next build is the first six-hourly one on a later day.
+    six = datetime.timedelta(hours=6)
+    late = datetime.datetime(2026, 10, 30, 17, 35, 5)
+    nxt = M.next_build(late, datetime.date(2026, 10, 30))
+    check("a build stamped on the day of before's newest date is followed "
+          "by the first six-hourly build on a later day",
+          nxt == datetime.datetime(2026, 10, 31, 5, 35, 5), nxt)
+    check("which the refetch accepts",
+          M.refetch_day(nxt, datetime.date(2026, 10, 30))
+          == datetime.date(2026, 10, 31))
+    check("a build whose next run is already a later day is six hours on",
+          M.next_build(built, datetime.date(2026, 9, 24)) == built + six,
+          M.next_build(built, datetime.date(2026, 9, 24)))
+    early = datetime.datetime(2026, 10, 30, 0, 5, 0)
+    nxt = M.next_build(early, datetime.date(2026, 10, 30))
+    check("several runs on before's newest day are stepped past, in "
+          "six-hour steps",
+          nxt == datetime.datetime(2026, 10, 31, 0, 5, 0), nxt)
+    check("the step is the refresh's six hours",
+          M.NEXT_BUILD_AFTER == six, M.NEXT_BUILD_AFTER)
+
     print()
     if _failed:
         print("%d checks, %d failed:" % (_passed + len(_failed), len(_failed)))
