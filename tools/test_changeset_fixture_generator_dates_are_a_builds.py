@@ -63,7 +63,8 @@ def main():
         return 2
     with tempfile.TemporaryDirectory() as tmp:
         out = os.path.join(tmp, "fixture")
-        M.make(PUBLISHED, out)
+        report = M.make(PUBLISHED, out)
+        M.write_readme(out, report)
         before = os.path.join(out, "before.tbmap")
         after = os.path.join(out, "after.tbmap")
         old, new = _meta(before), _meta(after)
@@ -82,6 +83,18 @@ def main():
               (old.get("pois_checked"), new.get("pois_checked")))
         check("the refetch moved evidence_dates",
               old.get("evidence_dates") != new.get("evidence_dates"))
+        # What the fixture says of itself is what the generator did: after
+        # is NOT always six hours on (16 Nov 2026: it was eighteen).
+        with open(os.path.join(out, "README.md"), encoding="utf-8") as fh:
+            readme = " ".join(fh.read().split())
+        rule = "first six-hourly run on a day after the newest date"
+        check("the README states after's build rule, not 'six hours on'",
+              rule in readme and "six hours on" not in readme)
+        check("the README names after's real built_at",
+              new.get("built_at", "?") in readme, new.get("built_at"))
+        doc = " ".join((M.__doc__ or "").split())
+        check("the generator's own description states the same rule",
+              rule in doc and "built_at six hours on" not in doc)
 
         # THE CHECK CAN FAIL: a date from the future is seen. FAR future,
         # not a calendar date: this planted '2026-10-01', five days after a
@@ -113,6 +126,31 @@ def main():
     except SystemExit:
         refused = True
     check("a build no later than before's newest date is refused", refused)
+
+    # 16 NOV 2026: the published South East was restamped at 17:35 on the
+    # day a POI refresh dated 789 POIs (2026-10-30), so `before` carried a
+    # date of its own build day and a build six hours on (23:35) fell on
+    # that same day: make() refused, and the lane refresh stopped with it.
+    # The next build is the first six-hourly one on a later day.
+    six = datetime.timedelta(hours=6)
+    late = datetime.datetime(2026, 10, 30, 17, 35, 5)
+    nxt = M.next_build(late, datetime.date(2026, 10, 30))
+    check("a build stamped on the day of before's newest date is followed "
+          "by the first six-hourly build on a later day",
+          nxt == datetime.datetime(2026, 10, 31, 5, 35, 5), nxt)
+    check("which the refetch accepts",
+          M.refetch_day(nxt, datetime.date(2026, 10, 30))
+          == datetime.date(2026, 10, 31))
+    check("a build whose next run is already a later day is six hours on",
+          M.next_build(built, datetime.date(2026, 9, 24)) == built + six,
+          M.next_build(built, datetime.date(2026, 9, 24)))
+    early = datetime.datetime(2026, 10, 30, 0, 5, 0)
+    nxt = M.next_build(early, datetime.date(2026, 10, 30))
+    check("several runs on before's newest day are stepped past, in "
+          "six-hour steps",
+          nxt == datetime.datetime(2026, 10, 31, 0, 5, 0), nxt)
+    check("the step is the refresh's six hours",
+          M.NEXT_BUILD_AFTER == six, M.NEXT_BUILD_AFTER)
 
     print()
     if _failed:

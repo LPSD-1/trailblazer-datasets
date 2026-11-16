@@ -66,8 +66,9 @@ schema somebody remembered:
               the next month (2026-10-01) under a built_at of 2026-09-26, a
               check five days after the build that carried it, which no
               container can hold;
-            * built_at six hours on, and NO `ways_cut`. The ways changed, so
-              stamp_build.py's rule 2 lets the builder's own stamp stand and
+            * built_at at the first six-hourly run on a day after the
+              newest date `before` carries, and NO `ways_cut`. The ways
+              changed, so stamp_build.py's rule 2 lets the builder's own stamp stand and
               rule 3 - the only writer of `ways_cut` - never runs; the
               changeset names `ways_cut` in `removed_meta`, and the app dates
               the lanes by the new `built_at`. Until round 11 the key was
@@ -453,8 +454,22 @@ def restamp_as_rule_3(path):
     S._set_built_at(path, moved.strftime(S.STAMP_FORMAT), cut=own)
 
 
-#: How long after `before`'s stamp the next build is stamped.
+#: How long after `before`'s stamp the next build is stamped: the lane
+#: refresh's six-hourly cadence.
 NEXT_BUILD_AFTER = datetime.timedelta(hours=6)
+
+
+def next_build(before_built, as_of):
+    """When the build `after` stands for was stamped: the first six-hourly
+    run after `before`'s stamp on a day later than every date `before`
+    carries (`as_of`). A run on that same day refetches nothing newer, so it
+    could not move evidence_dates. Until 16 Nov 2026 this was always six
+    hours on, and a source restamped at 17:35 on the day of its newest POI
+    date gave a build at 23:35 that same day, which refetch_day refused."""
+    built = before_built + NEXT_BUILD_AFTER
+    while built.date() <= as_of:
+        built += NEXT_BUILD_AFTER
+    return built
 
 
 def refetch_day(built, as_of):
@@ -478,9 +493,9 @@ def make_after(before, path, as_of, source):
     edits = {}
     try:
         zooms = _zooms(db)
-        built = datetime.datetime.strptime(
+        built = next_build(datetime.datetime.strptime(
             dict(db.execute("SELECT key, value FROM meta"))["built_at"],
-            S.STAMP_FORMAT) + NEXT_BUILD_AFTER
+            S.STAMP_FORMAT), as_of)
         refetched = refetch_day(built, as_of).isoformat()
         was = {f["properties"]["lane_uid"]: f for f in features_of(db)}
         forded = _ids(db, "SELECT DISTINCT way_id FROM fords ORDER BY way_id")
@@ -822,7 +837,8 @@ def write_readme(out_dir, report):
         "(%s -> %s: the refetch that found the new POI read the region that "
         "day, and the pack was stamped hours later - no date in a build is "
         "later than its `built_at`); "
-        "`built_at` six hours on (%s) and NO `ways_cut`. The ways changed, "
+        "`built_at` at the first six-hourly run on a day after the newest "
+        "date `before` carries (%s) and NO `ways_cut`. The ways changed, "
         "so `stamp_build.py`'s rule 2 lets the builder's stamp stand and "
         "rule 3, the only writer of `ways_cut`, never runs: the app dates "
         "these lanes by `built_at`. The %d "
