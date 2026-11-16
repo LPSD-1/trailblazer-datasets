@@ -63,7 +63,8 @@ def main():
         return 2
     with tempfile.TemporaryDirectory() as tmp:
         out = os.path.join(tmp, "fixture")
-        M.make(PUBLISHED, out)
+        report = M.make(PUBLISHED, out)
+        M.write_readme(out, report)
         before = os.path.join(out, "before.tbmap")
         after = os.path.join(out, "after.tbmap")
         old, new = _meta(before), _meta(after)
@@ -82,6 +83,18 @@ def main():
               (old.get("pois_checked"), new.get("pois_checked")))
         check("the refetch moved evidence_dates",
               old.get("evidence_dates") != new.get("evidence_dates"))
+        # What the fixture says of itself is what the generator did: after
+        # is NOT always six hours on (16 Nov 2026: it was eighteen).
+        with open(os.path.join(out, "README.md"), encoding="utf-8") as fh:
+            readme = " ".join(fh.read().split())
+        rule = "first six-hourly run on a day after the newest date"
+        check("the README states after's build rule, not 'six hours on'",
+              rule in readme and "six hours on" not in readme)
+        check("the README names after's real built_at",
+              new.get("built_at", "?") in readme, new.get("built_at"))
+        doc = " ".join((M.__doc__ or "").split())
+        check("the generator's own description states the same rule",
+              rule in doc and "built_at six hours on" not in doc)
 
         # THE CHECK CAN FAIL: a date from the future is seen. FAR future,
         # not a calendar date: this planted '2026-10-01', five days after a
