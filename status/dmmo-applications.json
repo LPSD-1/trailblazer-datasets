@@ -1,7 +1,7 @@
 {
- "applications": 862,
+ "applications": 863,
  "attribution": "Applications to modify the definitive map, from the registers published by Caerphilly County Borough Council, City of Bradford Metropolitan District Council, Derbyshire County Council, Devon County Council, Dorset Council, Northumberland County Council, Northumberland County Council (2020 register), West Berkshire Council. Personal details are not included.",
- "open": 251,
+ "open": 252,
  "sources": {
   "bradford-dmmo": {
    "applications": [
@@ -621,7 +621,7 @@
     }
    ],
    "council": "City of Bradford Metropolitan District Council",
-   "last_ok": "2026-11-09",
+   "last_ok": "2026-11-16",
    "ok": true,
    "records": 3,
    "url": "https://utility.arcgis.com/usrsvcs/servers/b9aaf7350f9746478448e39e0e2c844a/rest/services/AGOL/ROWIP_Consult_Pro/MapServer/2"
@@ -1147,7 +1147,7 @@
     }
    ],
    "council": "Caerphilly County Borough Council",
-   "last_ok": "2026-11-09",
+   "last_ok": "2026-11-16",
    "ok": true,
    "records": 10,
    "url": "https://services2.arcgis.com/joiLPYpH7xAxIkcx/arcgis/rest/services/prow_claimed_rights_of_way_view/FeatureServer/0"
@@ -12089,7 +12089,7 @@
      "council": "Derbyshire County Council",
      "current": "Bridleway 10",
      "details": {
-      "stage": "Research started"
+      "stage": "Consultation in progress"
      },
      "lines": [
       [
@@ -50782,7 +50782,7 @@
     }
    ],
    "council": "Derbyshire County Council",
-   "last_ok": "2026-11-09",
+   "last_ok": "2026-11-16",
    "ok": true,
    "records": 554,
    "url": "https://wms.derbyshire.gov.uk/geoserver/DCC/wfs"
@@ -54211,7 +54211,7 @@
     }
    ],
    "council": "Devon County Council",
-   "last_ok": "2026-11-09",
+   "last_ok": "2026-11-16",
    "ok": true,
    "records": 208,
    "url": "https://map.devon.gov.uk/arcgis/rest/services/Environment/Public_Access/MapServer/3"
@@ -83216,13 +83216,86 @@
      "source": "dorset-dmmo",
      "state": "open",
      "ways": []
+    },
+    {
+     "council": "Dorset Council",
+     "current": null,
+     "details": {
+      "details": "Add a Byway Open to All Traffic along route from SY 4140 9634 to SY 4153 9634 to SY 4190 9625 in the parish of Whitchurch Canonicorum",
+      "register": "https://gi.dorsetcouncil.gov.uk/rightsofway/definitivemap/register/details/826",
+      "status": "Not started"
+     },
+     "lines": [
+      [
+       [
+        -2.82622,
+        50.76299
+       ],
+       [
+        -2.82574,
+        50.76295
+       ],
+       [
+        -2.82508,
+        50.76282
+       ]
+      ],
+      [
+       [
+        -2.83216,
+        50.76375
+       ],
+       [
+        -2.83144,
+        50.76386
+       ],
+       [
+        -2.83081,
+        50.76377
+       ],
+       [
+        -2.83034,
+        50.76366
+       ],
+       [
+        -2.82993,
+        50.76364
+       ],
+       [
+        -2.82938,
+        50.76361
+       ],
+       [
+        -2.8287,
+        50.7635
+       ],
+       [
+        -2.82766,
+        50.76332
+       ],
+       [
+        -2.82715,
+        50.76322
+       ],
+       [
+        -2.82622,
+        50.76299
+       ]
+      ]
+     ],
+     "parish": null,
+     "ref": "T826",
+     "seeks": "Add: Byway",
+     "source": "dorset-dmmo",
+     "state": "open",
+     "ways": []
     }
    ],
    "council": "Dorset Council",
-   "last_ok": "2026-11-09",
+   "last_ok": "2026-11-16",
    "ok": true,
-   "records": 428,
-   "supplied": "collected directly from the council 2026-11-09",
+   "records": 430,
+   "supplied": "collected directly from the council 2026-11-16",
    "url": "https://gi.dorsetcouncil.gov.uk/geoserver/countryside/wfs?service=WFS&version=2.0.0&request=GetFeature&typeNames=countryside:v_dmmo_public&outputFormat=application/json&propertyName=dmmo_ref_no,application_details,case_status,website_url,claimed_statuses,application_types,geom"
   },
   "northumberland-claims": {
@@ -86563,7 +86636,7 @@
     }
    ],
    "council": "Northumberland County Council",
-   "last_ok": "2026-11-09",
+   "last_ok": "2026-11-16",
    "ok": true,
    "records": 31,
    "url": "https://services2.arcgis.com/LrUbY6lLLgV3tEa5/arcgis/rest/services/Join_Features_to_NEW_PRoW_Claims_Master_view/FeatureServer/0"
@@ -109229,7 +109302,7 @@
     }
    ],
    "council": "Northumberland County Council (2020 register)",
-   "last_ok": "2026-11-09",
+   "last_ok": "2026-11-16",
    "ok": true,
    "records": 240,
    "url": "https://services2.arcgis.com/LrUbY6lLLgV3tEa5/arcgis/rest/services/PROW_ClaimedRightsOfWay/FeatureServer/0"
@@ -110391,7 +110464,7 @@
     }
    ],
    "council": "West Berkshire Council",
-   "last_ok": "2026-11-09",
+   "last_ok": "2026-11-16",
    "ok": true,
    "records": 98,
    "url": "https://gis.westberks.gov.uk/server/rest/services/Layers/PUBLIC_RIGHTS_OF_WAY_SECTION_53B_WCA81/FeatureServer/5"

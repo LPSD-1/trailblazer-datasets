@@ -2364,7 +2364,7 @@
     "council": "Derbyshire County Council",
     "current": "Bridleway 10",
     "details": {
-     "stage": "Research started"
+     "stage": "Consultation in progress"
     },
     "kind": "dmmo-application",
     "parish": "Pleasley",
@@ -39487,6 +39487,86 @@
     "kind": "dmmo-application",
     "parish": null,
     "ref": "T824",
+    "seeks": "Add: Byway",
+    "source": "dorset-dmmo",
+    "state": "open",
+    "ways": []
+   },
+   "type": "Feature"
+  },
+  {
+   "geometry": {
+    "coordinates": [
+     [
+      [
+       -2.82622,
+       50.76299
+      ],
+      [
+       -2.82574,
+       50.76295
+      ],
+      [
+       -2.82508,
+       50.76282
+      ]
+     ],
+     [
+      [
+       -2.83216,
+       50.76375
+      ],
+      [
+       -2.83144,
+       50.76386
+      ],
+      [
+       -2.83081,
+       50.76377
+      ],
+      [
+       -2.83034,
+       50.76366
+      ],
+      [
+       -2.82993,
+       50.76364
+      ],
+      [
+       -2.82938,
+       50.76361
+      ],
+      [
+       -2.8287,
+       50.7635
+      ],
+      [
+       -2.82766,
+       50.76332
+      ],
+      [
+       -2.82715,
+       50.76322
+      ],
+      [
+       -2.82622,
+       50.76299
+      ]
+     ]
+    ],
+    "type": "MultiLineString"
+   },
+   "properties": {
+    "council": "Dorset Council",
+    "current": null,
+    "details": {
+     "details": "Add a Byway Open to All Traffic along route from SY 4140 9634 to SY 4153 9634 to SY 4190 9625 in the parish of Whitchurch Canonicorum",
+     "register": "https://gi.dorsetcouncil.gov.uk/rightsofway/definitivemap/register/details/826",
+     "status": "Not started"
+    },
+    "kind": "dmmo-application",
+    "parish": null,
+    "ref": "T826",
     "seeks": "Add: Byway",
     "source": "dorset-dmmo",
     "state": "open",
