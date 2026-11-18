@@ -594,6 +594,17 @@ class TheRealFolder(unittest.TestCase):
         for word in (list(mi.LAYERS) + sorted(mi.HOW) + list(mi.CRS) +
                      [".xlsx", ".xls", ".ods", ".shp"]):
             self.assertIn("`%s`" % word, readme, word)
+        # Where a problem is said, and which requests a reply answers.
+        flat = " ".join(readme.split())
+        for words in ("Freedom of Information (FOI)",
+                      "Problems are listed on every council orders run"):
+            self.assertIn(words, flat)
+
+    def test_the_tools_own_account_names_the_formats_and_the_problems(self):
+        flat = " ".join(mi.__doc__.split())
+        for words in ("a zipped shapefile, a GeoPackage, KML or KMZ",
+                      "warned on every council-orders run"):
+            self.assertIn(words, flat)
 
 
 if __name__ == "__main__":
