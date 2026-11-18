@@ -463,6 +463,80 @@ class KeepLastGood(unittest.TestCase):
             byway_match.load_byways = real_load
 
 
+class InboxProblemsEveryRun(unittest.TestCase):
+    """A reply committed to manual/ with something wrong is said on the next
+    council-orders run (every six hours), not only in the quarterly order
+    register issue: in the log as a warning, and in the failures report
+    that run's issue is written from."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.root = tempfile.mkdtemp()
+        os.makedirs(os.path.join(self.root, "WB"))
+        with open(os.path.join(self.root, "authorities.json"), "w") as fh:
+            json.dump({"WB": {"authority": "West Berkshire"}}, fh)
+        byways = Byways([way_at(
+            "DT-5", "Dorset", "Byway open to all traffic (BOAT) S51 5",
+            (372000, 105000), (372400, 105000))])
+        source = dict(cs.by_id()["dorset-closures"])
+        self.ok = dict(source, id="ok-src", read=lambda c: cs.read_dorset(
+            Client({"route_closed": DORSET})))
+        import byway_match
+        import manual_inbox
+        saved = (cs.SOURCES, byway_match.load_byways, manual_inbox.inboxes)
+        real_inboxes = manual_inbox.inboxes
+
+        def restore():
+            cs.SOURCES, byway_match.load_byways, manual_inbox.inboxes = saved
+        self.addCleanup(restore)
+        self.addCleanup(shutil.rmtree, self.tmp)
+        self.addCleanup(shutil.rmtree, self.root)
+        byway_match.load_byways = lambda: _Many(byways)
+        manual_inbox.inboxes = lambda root=None: real_inboxes(self.root)
+        cs.SOURCES = [self.ok]
+
+    def run_main(self, *extra):
+        report = os.path.join(self.tmp, "report.txt")
+        with contextlib.redirect_stdout(io.StringIO()) as out:
+            code = cs.main(["fetch", "--out", self.tmp, "--report", report]
+                           + list(extra))
+        with open(report, encoding="utf-8") as fh:
+            return code, out.getvalue(), fh.read().splitlines()
+
+    def test_an_inbox_problem_is_warned_and_reported(self):
+        with open(os.path.join(self.root, "WB", "notes.docx"), "w") as fh:
+            fh.write("x")
+        with open(os.path.join(self.root, "WB", "manifest.json"), "w") as fh:
+            fh.write("{bad")
+        code, out, report = self.run_main()
+        self.assertEqual(code, 0, "an inbox problem alone is not a failed "
+                                  "run: the other sources still publish")
+        self.assertTrue(any("manual/WB" in l and "manifest.json unreadable"
+                            in l for l in report), report)
+        self.assertIn("::warning::", out)
+        self.assertIn("manifest.json unreadable", out)
+        # Even a run limited to other sources says so.
+        _c, _o, report = self.run_main("--only", "ok-src")
+        self.assertTrue(any("manifest.json unreadable" in l for l in report))
+
+    def test_a_clean_inbox_adds_nothing_to_the_report(self):
+        code, out, report = self.run_main()
+        self.assertEqual((code, report), (0, []))
+        self.assertNotIn("::warning::", out)
+
+    def test_inbox_problems_do_not_count_as_sources_failing(self):
+        # Every real source down still fails the run; an inbox problem
+        # beside one source that reads is not "every source failed".
+        with open(os.path.join(self.root, "WB", "notes.docx"), "w") as fh:
+            fh.write("x")
+        bad = dict(self.ok, id="bad-src", read=lambda c: (
+            _ for _ in ()).throw(FetchFailed("down")))
+        cs.SOURCES = [bad]
+        self.assertEqual(self.run_main()[0], 1)
+        cs.SOURCES = [bad, self.ok]
+        self.assertEqual(self.run_main()[0], 0)
+
+
 class _Many(object):
     """Byways that report a full country, so main()'s sanity floor passes."""
 

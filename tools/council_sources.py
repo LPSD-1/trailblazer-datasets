@@ -42,11 +42,14 @@ import argparse
 import calendar
 import datetime
 import html
+import io
 import json
+import math
 import os
 import re
 import sys
 import urllib.parse
+import zipfile
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -1055,35 +1058,186 @@ def _mapped(mapping, props, key):
     return value
 
 
-def read_manual_layer(doc):
-    """(records, candidates) from a GeoJSON file in manual/."""
-    import council_orders
-    try:
-        with open(doc["path"], encoding="utf-8-sig") as fh:
-            data = json.load(fh)
-    except (OSError, ValueError) as e:
-        raise FetchFailed("%s could not be read: %s" % (doc["id"], e))
+#: England and Wales, with a margin, in British National Grid metres and in
+#: (longitude, latitude): (west, south, east, north). The two boxes do not
+#: overlap, so a layer whose every point lies inside one is in that
+#: projection; a layer inside neither (Web Mercator, latitude before
+#: longitude, a grid reference off the map) is refused, never read as
+#: nothing matched.
+EW_BNG = (60000.0, 0.0, 670000.0, 670000.0)
+EW_WGS = (-6.5, 49.8, 1.8, 55.9)
+_BOXES = (("bng", EW_BNG), ("wgs84", EW_WGS))
+_PROJECTION_NAMES = {"bng": "British National Grid",
+                     "wgs84": "longitude and latitude"}
+
+
+def _number(value):
+    return isinstance(value, (int, float)) and \
+        not isinstance(value, bool) and math.isfinite(value)
+
+
+def _declared_crs(data):
+    """'bng', 'wgs84' or None from a GeoJSON's own `crs` member; any crs
+    this reader does not know is a FetchFailed."""
+    if "crs" not in data:
+        return None
+    crs = data["crs"]
+    props = crs.get("properties") if isinstance(crs, dict) else None
+    name = str((props or {}).get("name") or "") \
+        if isinstance(props, dict) else ""
+    if re.search(r"EPSG(?::+|/0/)27700$", name):
+        return "bng"
+    if re.search(r"(?:EPSG(?::+|/0/)4326|CRS84)$", name):
+        return "wgs84"
+    raise FetchFailed("a crs this reader does not know (%s): convert it to "
+                      "British National Grid or longitude and latitude, or "
+                      "state \"crs\" in manifest.json" % (name[:80] or crs))
+
+
+def _geojson_parts(data):
+    """[(properties, [[(x, y)]])] from a GeoJSON FeatureCollection, every
+    coordinate checked to be a finite number. A point, an area or anything
+    but a line is refused: a closure is drawn along the byway it is on."""
     feats = data.get("features") if isinstance(data, dict) else None
     if not isinstance(feats, list):
-        raise FetchFailed("%s is not a GeoJSON FeatureCollection"
-                          % doc["id"])
-    mapping = doc.get("layer") or {}
+        raise FetchFailed("not a GeoJSON FeatureCollection")
     out = []
     for i, f in enumerate(feats):
-        props = f.get("properties") or {}
-        geometry = f.get("geometry") or {}
-        coords = geometry.get("coordinates") or []
-        flat = coords
-        while isinstance(flat, list) and flat and isinstance(flat[0], list):
-            flat = flat[0]
-        if flat and abs(float(flat[0])) > 180:
-            lines = geojson_lines(geometry)          # British National Grid
-        else:
-            lines = [[(float(x), float(y)) for x, y, *_ in l]
-                     for l in ([coords] if geometry.get("type") ==
-                               "LineString" else coords)
-                     if len(l) >= 2] if geometry.get("type") in (
-                "LineString", "MultiLineString") else []
+        if not isinstance(f, dict):
+            raise FetchFailed("feature %d is not a feature" % i)
+        props = f.get("properties")
+        props = {} if props is None else props
+        if not isinstance(props, dict):
+            raise FetchFailed("feature %d: its properties are not an object"
+                              % i)
+        geometry = f.get("geometry")
+        if geometry is None:
+            out.append((props, []))
+            continue
+        kind = geometry.get("type") if isinstance(geometry, dict) else None
+        if kind not in ("LineString", "MultiLineString"):
+            raise FetchFailed("feature %d is a %s: the inbox reads lines "
+                              "only, the byways a closure is on, not points "
+                              "or areas" % (i, kind))
+        coords = geometry.get("coordinates")
+        parts = [coords] if kind == "LineString" else coords
+        if not isinstance(parts, list) or \
+                not all(isinstance(p, list) for p in parts):
+            raise FetchFailed("feature %d: its coordinates are not a %s"
+                              % (i, kind))
+        lines = []
+        for part in parts:
+            line = []
+            for point in part:
+                if not isinstance(point, list) or len(point) < 2 or \
+                        not all(_number(v) for v in point[:2]):
+                    raise FetchFailed("feature %d: a point that is not two "
+                                      "numbers: %s"
+                                      % (i, json.dumps(point)[:80]))
+                line.append((float(point[0]), float(point[1])))
+            lines.append(line)
+        out.append((props, lines))
+    return out
+
+
+def _projection_of(records, declared=None):
+    """The projection every point of `records` lies in, inside England and
+    Wales: `declared` where it is given, else whichever fits. FetchFailed
+    for a layer with no lines, or with a point outside it."""
+    points = [p for _props, lines in records for line in lines
+              for p in line]
+    if not points:
+        raise FetchFailed("holds no lines: the inbox reads the lines of "
+                          "the byways a closure is on, not points or areas")
+    outside = dict((name, sum(1 for x, y in points
+                              if not (box[0] <= x <= box[2] and
+                                      box[1] <= y <= box[3])))
+                   for name, box in _BOXES)
+    if declared:
+        if not outside[declared]:
+            return declared
+        raise FetchFailed("%d of %d points lie outside England and Wales "
+                          "in %s, the projection stated for it: check the "
+                          "projection" % (outside[declared], len(points),
+                                          _PROJECTION_NAMES[declared]))
+    for name, _box in _BOXES:
+        if not outside[name]:
+            return name
+    raise FetchFailed(
+        "its points are not all inside England and Wales in one projection "
+        "(%d of %d outside in British National Grid, %d in longitude and "
+        "latitude): Web Mercator, latitude before longitude or any other "
+        "projection is not read - convert it to one of the two"
+        % (outside["bng"], len(points), outside["wgs84"]))
+
+
+def _manual_records(doc):
+    """[(attributes, lines in WGS84)] from a layer file in manual/, by its
+    extension: GeoJSON here; shapefiles, GeoPackages and KML by
+    council_files' readers, under their own projection gate."""
+    import council_files
+    ext = os.path.splitext(doc["name"])[1].lower()
+    with open(doc["path"], "rb") as fh:
+        blob = fh.read()
+    if ext in (".geojson", ".json"):
+        try:
+            data = json.loads(blob.decode("utf-8-sig"))
+        except ValueError as e:
+            raise FetchFailed("not JSON: %s" % e)
+        records = _geojson_parts(data)
+        projection = _projection_of(
+            records, doc.get("crs") or (_declared_crs(data)
+                                        if isinstance(data, dict) else None))
+        return [(props, council_files._to_wgs(projection, lines))
+                for props, lines in records]
+    if ext in (".kml", ".kmz"):
+        records = council_files.kml_records(blob)
+    elif ext == ".gpkg":
+        records = council_files.gpkg_records(blob)
+    elif ext == ".zip":
+        try:
+            names = [n.lower() for n in
+                     zipfile.ZipFile(io.BytesIO(blob)).namelist()
+                     if not n.startswith("__MACOSX")]
+        except zipfile.BadZipFile as e:
+            raise FetchFailed("not a zip: %s" % e)
+        held = [kind for kind, end in (("shapefile", ".shp"),
+                                       ("GeoPackage", ".gpkg"),
+                                       ("KML", ".kml"))
+                if any(n.endswith(end) for n in names)]
+        if len(held) != 1:
+            raise FetchFailed("a zip holding %s: send one shapefile (.shp, "
+                              ".shx, .dbf, .prj), one GeoPackage or one KML"
+                              % (" and ".join(held) or
+                                 "no shapefile, GeoPackage or KML"))
+        records = {"shapefile": council_files.shapefile_records,
+                   "GeoPackage": council_files.gpkg_records,
+                   "KML": council_files.kml_records}[held[0]](blob)
+    else:
+        raise FetchFailed("not a kind of map layer the inbox reads")
+    _projection_of(records, "wgs84")
+    return records
+
+
+def read_manual_layer(doc):
+    """(records, candidates) from a map layer in manual/. Whatever is wrong
+    with the file is a FetchFailed for this source alone, naming the file:
+    the council's last good copy is kept and every other source is read."""
+    try:
+        return _read_manual_layer(doc)
+    except FetchFailed as e:
+        raise FetchFailed("%s: %s" % (doc["id"], e))
+    except Exception as e:  # noqa: BLE001 - the file is the stranger
+        raise FetchFailed("%s could not be read (%s): %s"
+                          % (doc["id"], type(e).__name__, str(e)[:200]))
+
+
+def _read_manual_layer(doc):
+    import council_orders
+    records = _manual_records(doc)
+    mapping = doc.get("layer") or {}
+    out = []
+    for i, (props, lines) in enumerate(records):
         text = clean_text(str(_mapped(mapping, props, "vehicles") or ""))
         if text in council_orders.VEHICLES:
             vehicles, width = text, None
@@ -1109,7 +1263,7 @@ def read_manual_layer(doc):
         if vehicles is None:
             item["label"] = (text[:1].upper() + text[1:80]) or "Restriction"
         out.append(item)
-    return len(feats), out
+    return len(records), out
 
 
 def _manual_date(value):
@@ -1415,10 +1569,19 @@ def main(argv=None):
             failures.append("%s: %s" % (source["id"], why))
     write_json(status_path, status)
     print("requests made: %d" % client.requests)
+    # WHAT IS WRONG IN manual/, on every run: a council's reply committed
+    # today with an unreadable manifest or a file the pipeline cannot read
+    # is said within six hours, in the log and in the report the
+    # council-sources issue is written from - not only in the quarterly
+    # order register issue. Not a source failing, so never a failed run.
+    inbox = ["manual inbox: %s" % p for box in manual_inbox.inboxes()
+             for p in box["problems"]]
     if args.report:
         with open(args.report, "w", encoding="utf-8", newline="\n") as fh:
-            for line in failures:
+            for line in failures + inbox:
                 fh.write(line + "\n")
+    for line in inbox:
+        print("::warning::%s" % line)
     tried = [s for s in sources if not s.get("blocked")
              and (not wanted or s["id"] in wanted)]
     if tried and len(failures) == len(tried):
