@@ -721,6 +721,32 @@ class TheRealFolder(unittest.TestCase):
                       "Problems are listed on every council orders run"):
             self.assertIn(words, flat)
 
+    def test_the_readme_starts_with_steps_and_redacts_every_reply(self):
+        with open(os.path.join(ROOT, "manual", "README.md"),
+                  encoding="utf-8") as fh:
+            readme = fh.read()
+        flat = " ".join(readme.split())
+        self.assertLess(readme.index("## Steps"),
+                        readme.index("## Where each file goes"))
+        steps = readme[readme.index("## Steps"):
+                       readme.index("## Where each file goes")]
+        for n in range(1, 6):
+            self.assertIn("\n%d. " % n, steps)
+        for words in ("manual/authorities.json", "pull request", "main"):
+            self.assertIn(words, " ".join(steps.split()))
+        # This repository is public: the rule applies to every file, so it
+        # is a bullet of its own under "What to drop".
+        drop = readme[readme.index("## What to drop"):
+                      readme.index("## manifest.json")]
+        self.assertIn("- **Before you commit a council's reply, remove the "
+                      "requester's name, address and email from it.**",
+                      " ".join(drop.split()))
+        for words in ("do not respond to requests from GitHub's servers",
+                      "the coordinate system (crs)",
+                      "A value starting with `$`", "`council`:", "`title`:"):
+            self.assertIn(words, flat)
+        self.assertNotIn("refuse GitHub's servers", flat)
+
     def test_the_tools_own_account_names_the_formats_and_the_problems(self):
         flat = " ".join(mi.__doc__.split())
         for words in ("a zipped shapefile, a GeoPackage, KML or KMZ",
