@@ -1179,7 +1179,12 @@ class TheModulesAccount(unittest.TestCase):
         flat = " ".join(cf.__doc__.split())
         for words in ("A HOSTILE FILE IS HELD TO A BUDGET", "MAX_UNZIPPED",
                       "trusted_schema off", "GPKG_STEPS", "MAX_GPKG_ROWS",
-                      "not a view"):
+                      "not a view",
+                      "a generated or hidden column in any table is refused "
+                      "before anything else runs",
+                      "quick_check makes every one",
+                      "opened read-only (so the check runs no CHECK "
+                      "constraint)"):
             self.assertIn(words, flat)
 
 
