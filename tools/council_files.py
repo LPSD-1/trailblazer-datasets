@@ -31,7 +31,9 @@ with a generated or hidden column is refused (a generated value is made as
 it is read, outside that budget), and the size of every value is measured
 before any is read (MAX_GPKG_VALUE each, MAX_GPKG_BYTES in all). A .dbf's
 record count and size are checked against the file before a record is
-read.
+read. A GeoPackage must pass SQLite's quick_check before
+any query on its feature table, with cell_size_check on and SQLite's
+length limit set to MAX_GPKG_VALUE.
 """
 import functools
 import io
@@ -409,7 +411,24 @@ def _gpkg(blob, read, table=None):
             return spent[0] > GPKG_STEPS
         try:
             conn.execute("PRAGMA trusted_schema = OFF")
+            conn.execute("PRAGMA cell_size_check = ON")
+            if hasattr(conn, "setlimit"):        # Python 3.11 and later
+                # One past the cap, so the size pass below can say which value.
+                conn.setlimit(sqlite3.SQLITE_LIMIT_LENGTH,
+                              MAX_GPKG_VALUE + 1)
             conn.set_progress_handler(budget, 1000)
+            # A corrupt file (a page referenced twice, an overflow chain
+            # looping on itself) can make one query copy without end, and
+            # copying is not counted by the budget: SQLite's own check
+            # first, before any query on the feature table.
+            try:
+                check = conn.execute("PRAGMA quick_check").fetchall()
+            except sqlite3.DatabaseError as e:
+                raise FetchFailed("a GeoPackage failing its integrity "
+                                  "check: %s" % e)
+            if check != [("ok",)]:
+                raise FetchFailed("a GeoPackage failing its integrity "
+                                  "check: %s" % str(check[:3])[:160])
             try:
                 rows = conn.execute(
                     "SELECT table_name, column_name, srs_id "
@@ -479,7 +498,8 @@ def gpkg_records(blob, table=None):
         sizes = ", ".join('max(length(CAST("%s" AS BLOB))), '
                           'sum(length(CAST("%s" AS BLOB)))'
                           % ((c.replace('"', '""'),) * 2) for c in cols)
-        got = conn.execute("SELECT %s FROM %s" % (sizes, quoted)).fetchone()
+        got = conn.execute("SELECT %s FROM (SELECT * FROM %s LIMIT %d)"
+                           % (sizes, quoted, MAX_GPKG_ROWS + 1)).fetchone()
         biggest = max([v or 0 for v in got[0::2]] or [0])
         total = sum(v or 0 for v in got[1::2])
         if biggest > MAX_GPKG_VALUE or total > MAX_GPKG_BYTES:

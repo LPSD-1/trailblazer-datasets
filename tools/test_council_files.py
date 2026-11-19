@@ -1047,6 +1047,50 @@ class DbfHeader(unittest.TestCase):
         self.assertEqual(len(cf.dbf_records(good)), 2)
 
 
+def _gpkg_one_leaf():
+    """A GeoPackage whose table's interior root page has every child
+    pointer aimed at one leaf: the same rows over and over, the corruption
+    that turns a pre-pass into a copy of gigabytes."""
+    data = bytearray(_gpkg_extra(None, rows=20, text="x" * 1500))
+    size = struct.unpack(">H", bytes(data[16:18]))[0]
+    fd, path = tempfile.mkstemp(suffix=".gpkg")
+    with os.fdopen(fd, "wb") as fh:
+        fh.write(bytes(data))
+    conn = sqlite3.connect(path)
+    root = conn.execute("SELECT rootpage FROM sqlite_master "
+                        "WHERE name = 'row'").fetchone()[0]
+    conn.close()
+    os.remove(path)
+    base = (root - 1) * size
+    assert data[base] == 5, "the table's root is not an interior page"
+    cells = struct.unpack(">H", bytes(data[base + 3:base + 5]))[0]
+    offsets = [struct.unpack(">H", bytes(data[base + 12 + 2 * i:
+                                             base + 14 + 2 * i]))[0]
+               for i in range(cells)]
+    leaf = bytes(data[base + offsets[0]:base + offsets[0] + 4])
+    for off in offsets:
+        data[base + off:base + off + 4] = leaf
+    data[base + 8:base + 12] = leaf
+    return bytes(data)
+
+
+class GeoPackageIntegrity(unittest.TestCase):
+    """A corrupt GeoPackage is refused by SQLite's own quick check before
+    any query on its feature table."""
+
+    def test_pages_referenced_twice_are_refused(self):
+        bad = _gpkg_one_leaf()
+        for read in (cf.gpkg_records, cf.gpkg_year):
+            with self.subTest(read=read.__name__):
+                with self.assertRaises(FetchFailed) as got:
+                    read(bad)
+                self.assertIn("integrity", str(got.exception))
+
+    def test_a_sound_file_passes_the_check(self):
+        self.assertEqual(len(cf.gpkg_records(_gpkg_extra(
+            None, rows=20, text="x" * 1500))), 20)
+
+
 class TheModulesAccount(unittest.TestCase):
     def test_the_docstring_names_each_budget(self):
         flat = " ".join(cf.__doc__.split())
