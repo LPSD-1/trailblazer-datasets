@@ -20,8 +20,9 @@ FetchFailed, so council_ways keeps the council's last good file and goes on
 to the next council, rather than one bad download stopping the run.
 
 A HOSTILE FILE IS HELD TO A BUDGET, for the same reason. A zip inflates to
-at most MAX_UNZIPPED bytes in all (the sizes it states are checked before
-anything is inflated, and each read stops at the cap whatever it states). A
+at most MAX_UNZIPPED bytes in all: the sizes it states are checked before
+anything is inflated, and zipfile stops each read at the size stated (a
+member longer than it says fails its CRC check). A
 GeoPackage is a database its sender wrote: its feature table must be a real
 table, not a view that could run for ever; the read runs with
 trusted_schema off, under a budget of GPKG_STEPS progress calls (each a
@@ -229,21 +230,7 @@ def _zip(blob):
     if stated > MAX_UNZIPPED:
         raise FetchFailed("a zip too big to read: it inflates to %d bytes, "
                           "over the cap of %d" % (stated, MAX_UNZIPPED))
-    z.read_so_far = 0
     return z
-
-
-def _unzip(z, name):
-    """One member of a zip from _zip, the read stopped at the cap whatever
-    size the zip states for it."""
-    left = MAX_UNZIPPED - z.read_so_far
-    with z.open(name) as fh:
-        data = fh.read(left + 1)
-    if len(data) > left:
-        raise FetchFailed("a zip too big to read: %s inflates past the cap "
-                          "of %d bytes" % (name[:80], MAX_UNZIPPED))
-    z.read_so_far += len(data)
-    return data
 
 
 def _members(z, stem, ext):
@@ -269,7 +256,7 @@ def shapefile_records(blob, stem=None):
     def member(ext):
         for n in z.namelist():
             if n.lower() == (base + ext).lower():
-                return _unzip(z, n)
+                return z.read(n)
         return None
 
     prj, dbf = member(".prj"), member(".dbf")
@@ -394,7 +381,7 @@ def _gpkg(blob, read, table=None):
         if len(names) != 1:
             raise FetchFailed("expected one GeoPackage, found %d"
                               % len(names))
-        blob = _unzip(z, names[0])
+        blob = z.read(names[0])
     fd, path = tempfile.mkstemp(suffix=".gpkg")
     try:
         with os.fdopen(fd, "wb") as fh:
@@ -506,7 +493,7 @@ def kml_records(blob):
                  and not n.startswith("__MACOSX")]
         if len(names) != 1:
             raise FetchFailed("expected one KML, found %d" % len(names))
-        blob = _unzip(z, names[0])
+        blob = z.read(names[0])
     out, folders, stack = [], [], []
     try:
         for event, el in ET.iterparse(io.BytesIO(blob),

@@ -741,7 +741,10 @@ class TheRealFolder(unittest.TestCase):
         self.assertIn("- **Before you commit a council's reply, remove the "
                       "requester's name, address and email from it.**",
                       " ".join(drop.split()))
-        for words in ("do not respond to requests from GitHub's servers",
+        for words in ("**What happens to a document.** The next order "
+                      "register check (`order-register.yml`",
+                      "python tools/order_register.py accept",
+                      "do not respond to requests from GitHub's servers",
                       "the coordinate system (crs)",
                       "A value starting with `$`", "`council`:", "`title`:"):
             self.assertIn(words, flat)

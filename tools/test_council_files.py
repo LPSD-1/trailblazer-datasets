@@ -966,6 +966,15 @@ class GeoPackageSteps(_Caps):
         self.assertEqual(len(cf.gpkg_records(data)), 5000)
 
 
+class TheModulesAccount(unittest.TestCase):
+    def test_the_docstring_names_each_budget(self):
+        flat = " ".join(cf.__doc__.split())
+        for words in ("A HOSTILE FILE IS HELD TO A BUDGET", "MAX_UNZIPPED",
+                      "trusted_schema off", "GPKG_STEPS", "MAX_GPKG_ROWS",
+                      "not a view"):
+            self.assertIn(words, flat)
+
+
 class MacosxSidecars(unittest.TestCase):
     """A zip made on a Mac carries __MACOSX/ copies of each file: they are
     not a second KML or GeoPackage."""
