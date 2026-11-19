@@ -827,5 +827,157 @@ class GeoPackageDate(unittest.TestCase):
             cf.gpkg_year(b"not a geopackage")
 
 
+class _Caps(unittest.TestCase):
+    """Run with the module's caps set small, so a synthetic bomb of a few
+    kilobytes stands in for one of gigabytes."""
+
+    CAPS = {}
+
+    def setUp(self):
+        saved = dict((k, getattr(cf, k)) for k in self.CAPS)
+        self.addCleanup(lambda: [setattr(cf, k, v) for k, v in saved.items()])
+        for k, v in self.CAPS.items():
+            setattr(cf, k, v)
+
+
+def _deflated(files):
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+        for name, data in files.items():
+            z.writestr(name, data)
+    return buf.getvalue()
+
+
+def _shapefile_zip(pad=b""):
+    return _deflated({"r.shp": shp([[A]]), "r.shx": b"",
+                      "r.dbf": dbf(FIELDS, [("Byway", "1")]),
+                      "r.prj": BNG_PRJ, "pad.txt": pad})
+
+
+class ZipBomb(_Caps):
+    """A zip whose members inflate past the cap is refused before anything
+    is inflated: one hostile download never stops the run."""
+
+    CAPS = {"MAX_UNZIPPED": 20000}
+
+    def test_each_reader_refuses_a_zip_inflating_past_the_cap(self):
+        pad = b"\0" * 30000           # deflates to a few dozen bytes
+        kml = KML.encode("utf-8")
+        for why, read, blob in (
+                ("shapefile", cf.shapefile_records, _shapefile_zip(pad)),
+                ("geopackage", cf.gpkg_records, _deflated(
+                    {"r.gpkg": gpkg([(gp(wkb_line(A)), "B", "1")]),
+                     "pad.txt": pad})),
+                ("geopackage year", cf.gpkg_year, _deflated(
+                    {"r.gpkg": gpkg([(gp(wkb_line(A)), "B", "1")]),
+                     "pad.txt": pad})),
+                ("kmz", cf.kml_records, _deflated({"doc.kml": kml,
+                                                   "pad.txt": pad}))):
+            with self.subTest(why=why):
+                self.assertLess(len(blob), 20000)
+                with self.assertRaises(FetchFailed) as got:
+                    read(blob)
+                self.assertIn("too big", str(got.exception))
+
+    def test_one_member_past_the_cap_is_refused_even_alone(self):
+        blob = _deflated({"doc.kml": KML.encode("utf-8") +
+                          b" " * 30000})
+        with self.assertRaises(FetchFailed) as got:
+            cf.kml_records(blob)
+        self.assertIn("too big", str(got.exception))
+
+    def test_a_member_that_lies_about_its_size_is_cut_off(self):
+        # The size a zip's directory states is the sender's to write: the
+        # read itself stops at the cap.
+        blob = bytearray(_deflated({"doc.kml": KML.encode("utf-8") +
+                                    b" " * 30000}))
+        for header, off in ((b"PK\x03\x04", 22), (b"PK\x01\x02", 24)):
+            at = blob.find(header)
+            blob[at + off:at + off + 4] = struct.pack("<I", 100)
+        with self.assertRaises(FetchFailed):
+            cf.kml_records(bytes(blob))
+
+    def test_a_zip_inside_the_cap_is_read(self):
+        self.assertEqual(len(cf.shapefile_records(_shapefile_zip())), 1)
+        self.assertEqual(len(cf.kml_records(_deflated(
+            {"doc.kml": KML.encode("utf-8")}))), 4)
+
+
+def _gpkg_view(sql):
+    """A GeoPackage whose one 'feature table' is the view `sql`."""
+    fd, path = tempfile.mkstemp(suffix=".gpkg")
+    os.close(fd)
+    os.remove(path)
+    conn = sqlite3.connect(path)
+    conn.execute("CREATE TABLE gpkg_geometry_columns (table_name TEXT, "
+                 "column_name TEXT, geometry_type_name TEXT, srs_id INT, "
+                 "z INT, m INT)")
+    conn.execute("INSERT INTO gpkg_geometry_columns VALUES "
+                 "('row', 'geom', 'LINESTRING', 27700, 0, 0)")
+    conn.execute("CREATE VIEW row AS " + sql)
+    conn.commit()
+    conn.close()
+    with open(path, "rb") as fh:
+        data = fh.read()
+    os.remove(path)
+    return data
+
+
+#: A view that never ends.
+_FOREVER = ("WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n) "
+            "SELECT i AS fid, NULL AS geom FROM n")
+
+
+class GeoPackageBudget(_Caps):
+    """A GeoPackage is a database the sender wrote: its feature table must
+    be a real table, and a read is held to a budget of work and rows."""
+
+    CAPS = {"MAX_GPKG_ROWS": 5}
+
+    def test_a_feature_table_that_is_a_view_is_refused(self):
+        for read in (cf.gpkg_records, cf.gpkg_year):
+            with self.subTest(read=read.__name__):
+                with self.assertRaises(FetchFailed) as got:
+                    read(_gpkg_view(_FOREVER))
+                self.assertIn("not a table", str(got.exception))
+
+    def test_too_many_rows_are_refused(self):
+        rows = [(gp(wkb_line(A)), "B", str(i)) for i in range(6)]
+        with self.assertRaises(FetchFailed) as got:
+            cf.gpkg_records(gpkg(rows))
+        self.assertIn("rows", str(got.exception))
+        self.assertEqual(len(cf.gpkg_records(gpkg(rows[:5]))), 5)
+
+
+
+class GeoPackageSteps(_Caps):
+    """The budget of work: a read that needs more is interrupted, as a
+    FetchFailed, and one inside it is read whole."""
+
+    CAPS = {"GPKG_STEPS": 3}
+
+    def test_work_past_the_budget_is_interrupted(self):
+        rows = [(gp(wkb_line(A)), "B", str(i)) for i in range(5000)]
+        data = gpkg(rows)
+        with self.assertRaises(FetchFailed) as got:
+            cf.gpkg_records(data)
+        self.assertIn("interrupted", str(got.exception))
+        cf.GPKG_STEPS = 100000
+        self.assertEqual(len(cf.gpkg_records(data)), 5000)
+
+
+class MacosxSidecars(unittest.TestCase):
+    """A zip made on a Mac carries __MACOSX/ copies of each file: they are
+    not a second KML or GeoPackage."""
+
+    def test_kmz_and_gpkg_zips_skip_macosx(self):
+        kml = KML.encode("utf-8")
+        self.assertEqual(len(cf.kml_records(zipped(
+            {"doc.kml": kml, "__MACOSX/._doc.kml": b"\0\5\26\7"}))), 4)
+        data = gpkg([(gp(wkb_line(A)), "B", "1")])
+        self.assertEqual(len(cf.gpkg_records(zipped(
+            {"r.gpkg": data, "__MACOSX/._r.gpkg": b"\0\5\26\7"}))), 1)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=1)
