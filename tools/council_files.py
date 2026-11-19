@@ -18,6 +18,24 @@ A FILE CUT SHORT OR CORRUPTED IS A FetchFailed. Every reader here is
 IndexError, a bad zip, a malformed database, nesting too deep) comes out as
 FetchFailed, so council_ways keeps the council's last good file and goes on
 to the next council, rather than one bad download stopping the run.
+
+A HOSTILE FILE IS HELD TO A BUDGET, for the same reason. A zip inflates to
+at most MAX_UNZIPPED bytes in all: the sizes it states are checked before
+anything is inflated, and zipfile stops each read at the size stated (a
+member longer than it says fails its CRC check). A
+GeoPackage is a database its sender wrote: its feature table must be a real
+table, not a view that could run for ever; the read runs with
+trusted_schema off, under a budget of GPKG_STEPS progress calls (each a
+thousand SQLite instructions), and at most MAX_GPKG_ROWS rows. A file
+with a generated or hidden column in any table is refused before anything
+else runs on it (a generated value is made as it is read, outside that
+budget, and quick_check makes every one), and the size of every value is measured
+before any is read (MAX_GPKG_VALUE each, MAX_GPKG_BYTES in all). A .dbf's
+record count and size are checked against the file before a record is
+read. A GeoPackage must pass SQLite's quick_check before
+any query on its feature table, opened read-only (so the check runs no
+CHECK constraint), with cell_size_check on and SQLite's length limit set
+to MAX_GPKG_VALUE.
 """
 import functools
 import io
@@ -32,6 +50,20 @@ import zipfile
 
 from polite_http import FetchFailed
 from council_sources import _wgs
+
+#: The most a zip may inflate to, in all: far beyond any council's rights
+#: of way network, far below what would stop a runner.
+MAX_UNZIPPED = 100 * 1024 * 1024
+#: A GeoPackage read's budget, in progress calls of 1,000 instructions.
+GPKG_STEPS = 1000000
+#: The most rows a GeoPackage feature table may hold.
+MAX_GPKG_ROWS = 1000000
+#: The most bytes one GeoPackage value may hold, and all of them together:
+#: measured before any is read.
+MAX_GPKG_VALUE = 16 * 1024 * 1024
+MAX_GPKG_BYTES = 100 * 1024 * 1024
+#: A virtual table's schema, as SQLite keeps it.
+_VIRTUAL = re.compile(r"\s*CREATE\s+VIRTUAL\s", re.IGNORECASE)
 
 
 def _refusing(reader):
@@ -185,6 +217,11 @@ def dbf_records(data, encoding="latin-1"):
         name = data[pos:pos + 11].split(b"\0", 1)[0].decode("latin-1")
         fields.append((name.strip(), data[pos + 16]))
         pos += 32
+    if size < 1 + sum(w for _n, w in fields):
+        raise FetchFailed("a .dbf record of %d bytes, shorter than its "
+                          "fields" % size)
+    if header + count * size > len(data):
+        raise FetchFailed("the .dbf ends before its %d records" % count)
     out = []
     for i in range(count):
         rec = data[header + i * size:header + (i + 1) * size]
@@ -202,6 +239,20 @@ def dbf_records(data, encoding="latin-1"):
     return out
 
 
+def _zip(blob):
+    """The zip in `blob`, refused if the sizes it states come to more than
+    MAX_UNZIPPED."""
+    try:
+        z = zipfile.ZipFile(io.BytesIO(blob))
+    except zipfile.BadZipFile as e:
+        raise FetchFailed("not a zip: %s" % e)
+    stated = sum(i.file_size for i in z.infolist())
+    if stated > MAX_UNZIPPED:
+        raise FetchFailed("a zip too big to read: it inflates to %d bytes, "
+                          "over the cap of %d" % (stated, MAX_UNZIPPED))
+    return z
+
+
 def _members(z, stem, ext):
     names = [n for n in z.namelist()
              if n.lower().endswith(ext) and not n.startswith("__MACOSX")]
@@ -215,10 +266,7 @@ def _members(z, stem, ext):
 def shapefile_records(blob, stem=None):
     """[(attributes, lines)] from a zipped shapefile. `stem` picks one
     shapefile where the zip holds several."""
-    try:
-        z = zipfile.ZipFile(io.BytesIO(blob))
-    except zipfile.BadZipFile as e:
-        raise FetchFailed("not a zip: %s" % e)
+    z = _zip(blob)
     shps = _members(z, stem, ".shp")
     if len(shps) != 1:
         raise FetchFailed("expected one shapefile%s, found %d"
@@ -347,11 +395,9 @@ def _gpkg(blob, read, table=None):
     """read(connection, (table, geometry column, srs)) on the one feature
     table of a GeoPackage, or of a zip holding one."""
     if blob[:2] == b"PK":
-        try:
-            z = zipfile.ZipFile(io.BytesIO(blob))
-        except zipfile.BadZipFile as e:
-            raise FetchFailed("not a zip: %s" % e)
-        names = [n for n in z.namelist() if n.lower().endswith(".gpkg")]
+        z = _zip(blob)
+        names = [n for n in z.namelist() if n.lower().endswith(".gpkg")
+                 and not n.startswith("__MACOSX")]
         if len(names) != 1:
             raise FetchFailed("expected one GeoPackage, found %d"
                               % len(names))
@@ -362,7 +408,49 @@ def _gpkg(blob, read, table=None):
             fh.write(blob)
         conn = sqlite3.connect("file:%s?mode=ro" % path.replace("\\", "/"),
                                uri=True)
+        spent = [0]
+
+        def budget():
+            spent[0] += 1
+            return spent[0] > GPKG_STEPS
         try:
+            conn.execute("PRAGMA trusted_schema = OFF")
+            conn.execute("PRAGMA cell_size_check = ON")
+            if hasattr(conn, "setlimit"):        # Python 3.11 and later
+                # One past the cap, so the size pass below can say which value.
+                conn.setlimit(sqlite3.SQLITE_LIMIT_LENGTH,
+                              MAX_GPKG_VALUE + 1)
+            conn.set_progress_handler(budget, 1000)
+            # quick_check computes every NOT NULL generated value, in C and
+            # outside the budget, in every table: refuse a generated or
+            # hidden column anywhere before it runs. A virtual table (an
+            # R*Tree index) holds no generated column and is not checked.
+            try:
+                tables = conn.execute("SELECT name, sql FROM sqlite_master "
+                                      "WHERE type = 'table'").fetchall()
+                hidden = ["%s.%s" % (name, c[1]) for name, sql in tables
+                          if not _VIRTUAL.match(sql or "")
+                          for c in conn.execute(
+                              'PRAGMA table_xinfo("%s")'
+                              % str(name).replace('"', '""')) if c[6]]
+            except sqlite3.DatabaseError as e:
+                raise FetchFailed("a GeoPackage whose schema cannot be "
+                                  "read: %s" % e)
+            if hidden:
+                raise FetchFailed("a table with generated or hidden "
+                                  "columns: %s" % ", ".join(hidden)[:120])
+            # A corrupt file (a page referenced twice, an overflow chain
+            # looping on itself) can make one query copy without end, and
+            # copying is not counted by the budget: SQLite's own check
+            # first, before any query on the feature table.
+            try:
+                check = conn.execute("PRAGMA quick_check").fetchall()
+            except sqlite3.DatabaseError as e:
+                raise FetchFailed("a GeoPackage failing its integrity "
+                                  "check: %s" % e)
+            if check != [("ok",)]:
+                raise FetchFailed("a GeoPackage failing its integrity "
+                                  "check: %s" % str(check[:3])[:160])
             try:
                 rows = conn.execute(
                     "SELECT table_name, column_name, srs_id "
@@ -375,7 +463,24 @@ def _gpkg(blob, read, table=None):
                 raise FetchFailed("expected one feature table%s, found %d"
                                   % (" " + table if table else "",
                                      len(rows)))
-            return read(conn, rows[0])
+            kind = conn.execute("SELECT type FROM sqlite_master WHERE "
+                                "name = ?", (rows[0][0],)).fetchall()
+            if kind != [("table",)]:
+                raise FetchFailed("the feature table %r is not a table"
+                                  % str(rows[0][0])[:80])
+            hidden = [c[1] for c in conn.execute(
+                'PRAGMA table_xinfo("%s")' % str(rows[0][0]).replace(
+                    '"', '""')) if c[6]]
+            if hidden:
+                raise FetchFailed("a feature table with generated or hidden "
+                                  "columns: %s" % ", ".join(hidden)[:120])
+            try:
+                return read(conn, rows[0])
+            except sqlite3.OperationalError as e:
+                if spent[0] > GPKG_STEPS:
+                    raise FetchFailed("a GeoPackage read interrupted: more "
+                                      "work than its budget allows")
+                raise
         finally:
             conn.close()
     finally:
@@ -410,11 +515,27 @@ def gpkg_records(blob, table=None):
             projection = "wgs84"
         else:
             raise FetchFailed("a GeoPackage in SRS %s" % srs)
-        cur = conn.execute('SELECT * FROM "%s"'
-                           % name.replace('"', '""'))
+        quoted = '"%s"' % name.replace('"', '""')
+        cols = [c[1] for c in conn.execute("PRAGMA table_info(%s)" % quoted)]
+        sizes = ", ".join('max(length(CAST("%s" AS BLOB))), '
+                          'sum(length(CAST("%s" AS BLOB)))'
+                          % ((c.replace('"', '""'),) * 2) for c in cols)
+        got = conn.execute("SELECT %s FROM (SELECT * FROM %s LIMIT %d)"
+                           % (sizes, quoted, MAX_GPKG_ROWS + 1)).fetchone()
+        biggest = max([v or 0 for v in got[0::2]] or [0])
+        total = sum(v or 0 for v in got[1::2])
+        if biggest > MAX_GPKG_VALUE or total > MAX_GPKG_BYTES:
+            raise FetchFailed("a GeoPackage holding %d bytes of values, the "
+                              "biggest %d: over the cap of %d, or %d each"
+                              % (total, biggest, MAX_GPKG_BYTES,
+                                 MAX_GPKG_VALUE))
+        cur = conn.execute("SELECT * FROM %s" % quoted)
         cols = [d[0] for d in cur.description]
         out = []
         for values in cur:
+            if len(out) >= MAX_GPKG_ROWS:
+                raise FetchFailed("a GeoPackage of more than %d rows"
+                                  % MAX_GPKG_ROWS)
             attrs = {}
             geom = None
             for col, val in zip(cols, values):
@@ -441,11 +562,9 @@ def kml_records(blob):
     are the placemark's `name`, the `folder` it sits in, and its
     ExtendedData values; KML is WGS84 by definition."""
     if blob[:2] == b"PK":
-        try:
-            z = zipfile.ZipFile(io.BytesIO(blob))
-        except zipfile.BadZipFile as e:
-            raise FetchFailed("not a zip: %s" % e)
-        names = [n for n in z.namelist() if n.lower().endswith(".kml")]
+        z = _zip(blob)
+        names = [n for n in z.namelist() if n.lower().endswith(".kml")
+                 and not n.startswith("__MACOSX")]
         if len(names) != 1:
             raise FetchFailed("expected one KML, found %d" % len(names))
         blob = z.read(names[0])

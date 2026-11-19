@@ -13,6 +13,7 @@ import sqlite3
 import struct
 import sys
 import tempfile
+import time
 import unittest
 import zipfile
 
@@ -825,6 +826,429 @@ class GeoPackageDate(unittest.TestCase):
             self.assertIsNone(cf.gpkg_year(data), why)
         with self.assertRaises(FetchFailed):
             cf.gpkg_year(b"not a geopackage")
+
+
+class _Caps(unittest.TestCase):
+    """Run with the module's caps set small, so a synthetic bomb of a few
+    kilobytes stands in for one of gigabytes."""
+
+    CAPS = {}
+
+    def setUp(self):
+        saved = dict((k, getattr(cf, k)) for k in self.CAPS)
+        self.addCleanup(lambda: [setattr(cf, k, v) for k, v in saved.items()])
+        for k, v in self.CAPS.items():
+            setattr(cf, k, v)
+
+
+def _deflated(files):
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+        for name, data in files.items():
+            z.writestr(name, data)
+    return buf.getvalue()
+
+
+def _shapefile_zip(pad=b""):
+    return _deflated({"r.shp": shp([[A]]), "r.shx": b"",
+                      "r.dbf": dbf(FIELDS, [("Byway", "1")]),
+                      "r.prj": BNG_PRJ, "pad.txt": pad})
+
+
+class ZipBomb(_Caps):
+    """A zip whose members inflate past the cap is refused before anything
+    is inflated: one hostile download never stops the run."""
+
+    CAPS = {"MAX_UNZIPPED": 20000}
+
+    def test_each_reader_refuses_a_zip_inflating_past_the_cap(self):
+        pad = b"\0" * 30000           # deflates to a few dozen bytes
+        kml = KML.encode("utf-8")
+        for why, read, blob in (
+                ("shapefile", cf.shapefile_records, _shapefile_zip(pad)),
+                ("geopackage", cf.gpkg_records, _deflated(
+                    {"r.gpkg": gpkg([(gp(wkb_line(A)), "B", "1")]),
+                     "pad.txt": pad})),
+                ("geopackage year", cf.gpkg_year, _deflated(
+                    {"r.gpkg": gpkg([(gp(wkb_line(A)), "B", "1")]),
+                     "pad.txt": pad})),
+                ("kmz", cf.kml_records, _deflated({"doc.kml": kml,
+                                                   "pad.txt": pad}))):
+            with self.subTest(why=why):
+                self.assertLess(len(blob), 20000)
+                with self.assertRaises(FetchFailed) as got:
+                    read(blob)
+                self.assertIn("too big", str(got.exception))
+
+    def test_one_member_past_the_cap_is_refused_even_alone(self):
+        blob = _deflated({"doc.kml": KML.encode("utf-8") +
+                          b" " * 30000})
+        with self.assertRaises(FetchFailed) as got:
+            cf.kml_records(blob)
+        self.assertIn("too big", str(got.exception))
+
+    def test_a_member_that_lies_about_its_size_is_cut_off(self):
+        # The size a zip's directory states is the sender's to write: the
+        # read itself stops at the cap.
+        blob = bytearray(_deflated({"doc.kml": KML.encode("utf-8") +
+                                    b" " * 30000}))
+        for header, off in ((b"PK\x03\x04", 22), (b"PK\x01\x02", 24)):
+            at = blob.find(header)
+            blob[at + off:at + off + 4] = struct.pack("<I", 100)
+        with self.assertRaises(FetchFailed):
+            cf.kml_records(bytes(blob))
+
+    def test_a_zip_inside_the_cap_is_read(self):
+        self.assertEqual(len(cf.shapefile_records(_shapefile_zip())), 1)
+        self.assertEqual(len(cf.kml_records(_deflated(
+            {"doc.kml": KML.encode("utf-8")}))), 4)
+
+
+def _gpkg_view(sql):
+    """A GeoPackage whose one 'feature table' is the view `sql`."""
+    fd, path = tempfile.mkstemp(suffix=".gpkg")
+    os.close(fd)
+    os.remove(path)
+    conn = sqlite3.connect(path)
+    conn.execute("CREATE TABLE gpkg_geometry_columns (table_name TEXT, "
+                 "column_name TEXT, geometry_type_name TEXT, srs_id INT, "
+                 "z INT, m INT)")
+    conn.execute("INSERT INTO gpkg_geometry_columns VALUES "
+                 "('row', 'geom', 'LINESTRING', 27700, 0, 0)")
+    conn.execute("CREATE VIEW row AS " + sql)
+    conn.commit()
+    conn.close()
+    with open(path, "rb") as fh:
+        data = fh.read()
+    os.remove(path)
+    return data
+
+
+#: A view that never ends.
+_FOREVER = ("WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n) "
+            "SELECT i AS fid, NULL AS geom FROM n")
+
+
+class GeoPackageBudget(_Caps):
+    """A GeoPackage is a database the sender wrote: its feature table must
+    be a real table, and a read is held to a budget of work and rows."""
+
+    CAPS = {"MAX_GPKG_ROWS": 5}
+
+    def test_a_feature_table_that_is_a_view_is_refused(self):
+        for read in (cf.gpkg_records, cf.gpkg_year):
+            with self.subTest(read=read.__name__):
+                with self.assertRaises(FetchFailed) as got:
+                    read(_gpkg_view(_FOREVER))
+                self.assertIn("not a table", str(got.exception))
+
+    def test_too_many_rows_are_refused(self):
+        rows = [(gp(wkb_line(A)), "B", str(i)) for i in range(6)]
+        with self.assertRaises(FetchFailed) as got:
+            cf.gpkg_records(gpkg(rows))
+        self.assertIn("rows", str(got.exception))
+        self.assertEqual(len(cf.gpkg_records(gpkg(rows[:5]))), 5)
+
+
+
+class GeoPackageSteps(_Caps):
+    """The budget of work: a read that needs more is interrupted, as a
+    FetchFailed, and one inside it is read whole."""
+
+    CAPS = {"GPKG_STEPS": 3}
+
+    def test_work_past_the_budget_is_interrupted(self):
+        rows = [(gp(wkb_line(A)), "B", str(i)) for i in range(5000)]
+        data = gpkg(rows)
+        with self.assertRaises(FetchFailed) as got:
+            cf.gpkg_records(data)
+        self.assertIn("interrupted", str(got.exception))
+        cf.GPKG_STEPS = 100000
+        self.assertEqual(len(cf.gpkg_records(data)), 5000)
+
+
+def _gpkg_extra(column_sql, rows=1, text="x"):
+    """A one-table GeoPackage whose table has the extra column
+    `column_sql`, and `rows` rows with PROWNo `text`."""
+    fd, path = tempfile.mkstemp(suffix=".gpkg")
+    os.close(fd)
+    os.remove(path)
+    conn = sqlite3.connect(path)
+    conn.execute("CREATE TABLE gpkg_geometry_columns (table_name TEXT, "
+                 "column_name TEXT, geometry_type_name TEXT, srs_id INT, "
+                 "z INT, m INT)")
+    conn.execute("INSERT INTO gpkg_geometry_columns VALUES "
+                 "('row', 'geom', 'LINESTRING', 27700, 0, 0)")
+    conn.execute("CREATE TABLE row (fid INTEGER PRIMARY KEY, geom BLOB, "
+                 "PROWNo TEXT%s)" % (", " + column_sql if column_sql else ""))
+    for i in range(rows):
+        conn.execute("INSERT INTO row (fid, geom, PROWNo) VALUES (?, ?, ?)",
+                     (i + 1, gp(wkb_line(A)), text))
+    conn.commit()
+    conn.close()
+    with open(path, "rb") as fh:
+        data = fh.read()
+    os.remove(path)
+    return data
+
+
+class GeoPackageValues(_Caps):
+    """A value is held to a size before it is read: a generated column, or
+    one big value, cannot make a small file fill the memory."""
+
+    CAPS = {"MAX_GPKG_VALUE": 1000, "MAX_GPKG_BYTES": 5000}
+
+    def test_a_generated_column_is_refused(self):
+        for sql in ("g BLOB AS (zeroblob(100000000)) VIRTUAL",
+                    "g BLOB AS (zeroblob(10)) STORED"):
+            with self.subTest(sql=sql):
+                for read in (cf.gpkg_records, cf.gpkg_year):
+                    with self.assertRaises(FetchFailed) as got:
+                        read(_gpkg_extra(sql))
+                    self.assertIn("generated", str(got.exception))
+
+    def test_one_value_past_the_cap_is_refused(self):
+        with self.assertRaises(FetchFailed) as got:
+            cf.gpkg_records(_gpkg_extra(None, text="x" * 1001))
+        self.assertIn("bytes", str(got.exception))
+        self.assertEqual(len(cf.gpkg_records(_gpkg_extra(
+            None, text="x" * 900))), 1)
+
+    def test_values_past_the_total_are_refused(self):
+        with self.assertRaises(FetchFailed) as got:
+            cf.gpkg_records(_gpkg_extra(None, rows=8, text="x" * 900))
+        self.assertIn("bytes", str(got.exception))
+        self.assertEqual(len(cf.gpkg_records(_gpkg_extra(
+            None, rows=4, text="x" * 900))), 4)
+
+
+class DbfHeader(unittest.TestCase):
+    """A .dbf header's record count and size are checked against the file
+    before a record is read: a tiny file cannot claim millions."""
+
+    def header(self, data, count=None, size=None):
+        data = bytearray(data)
+        c, h, s = struct.unpack("<IHH", bytes(data[4:12]))
+        data[4:12] = struct.pack("<IHH", c if count is None else count, h,
+                                 s if size is None else size)
+        return bytes(data)
+
+    def test_more_records_than_the_file_holds_are_refused(self):
+        good = dbf(FIELDS, [("Byway", "1")])
+        for count, size in ((3000000, 0), (2, None), (3000000, None)):
+            with self.subTest(count=count, size=size):
+                with self.assertRaises(FetchFailed):
+                    cf.dbf_records(self.header(good, count, size))
+
+    def test_a_record_shorter_than_its_fields_is_refused(self):
+        good = dbf(FIELDS, [("Byway", "1"), ("BOAT", "2")])
+        with self.assertRaises(FetchFailed) as got:
+            cf.dbf_records(self.header(good, size=5))
+        self.assertIn("record", str(got.exception))
+        self.assertEqual(len(cf.dbf_records(good)), 2)
+
+    def test_the_record_count_is_checked_to_the_byte(self):
+        # A .dbf need not end in its 0x1A byte: header + count * size is
+        # the whole file, and one byte less is refused.
+        rows = [("Byway", "1"), ("BOAT", "2"), ("ORPA", "3")]
+        good = dbf(FIELDS, rows)
+        self.assertEqual(len(cf.dbf_records(good[:-1])), 3)
+        with self.assertRaises(FetchFailed) as got:
+            cf.dbf_records(good[:-2])
+        self.assertIn("ends before", str(got.exception))
+        for count in (2, 3):
+            with self.subTest(count=count):
+                self.assertEqual(len(cf.dbf_records(
+                    self.header(good, count))), count)
+        with self.assertRaises(FetchFailed):
+            cf.dbf_records(self.header(good, 4))
+
+
+def _gpkg_one_leaf():
+    """A GeoPackage whose table's interior root page has every child
+    pointer aimed at one leaf: the same rows over and over, the corruption
+    that turns a pre-pass into a copy of gigabytes."""
+    data = bytearray(_gpkg_extra(None, rows=20, text="x" * 1500))
+    size = struct.unpack(">H", bytes(data[16:18]))[0]
+    fd, path = tempfile.mkstemp(suffix=".gpkg")
+    with os.fdopen(fd, "wb") as fh:
+        fh.write(bytes(data))
+    conn = sqlite3.connect(path)
+    root = conn.execute("SELECT rootpage FROM sqlite_master "
+                        "WHERE name = 'row'").fetchone()[0]
+    conn.close()
+    os.remove(path)
+    base = (root - 1) * size
+    assert data[base] == 5, "the table's root is not an interior page"
+    cells = struct.unpack(">H", bytes(data[base + 3:base + 5]))[0]
+    offsets = [struct.unpack(">H", bytes(data[base + 12 + 2 * i:
+                                             base + 14 + 2 * i]))[0]
+               for i in range(cells)]
+    leaf = bytes(data[base + offsets[0]:base + offsets[0] + 4])
+    for off in offsets:
+        data[base + off:base + off + 4] = leaf
+    data[base + 8:base + 12] = leaf
+    return bytes(data)
+
+
+class GeoPackageIntegrity(unittest.TestCase):
+    """A corrupt GeoPackage is refused by SQLite's own quick check before
+    any query on its feature table."""
+
+    def test_pages_referenced_twice_are_refused(self):
+        bad = _gpkg_one_leaf()
+        for read in (cf.gpkg_records, cf.gpkg_year):
+            with self.subTest(read=read.__name__):
+                with self.assertRaises(FetchFailed) as got:
+                    read(bad)
+                self.assertIn("integrity", str(got.exception))
+
+    def test_a_sound_file_passes_the_check(self):
+        self.assertEqual(len(cf.gpkg_records(_gpkg_extra(
+            None, rows=20, text="x" * 1500))), 20)
+
+
+#: A value as costly as SQLite's length limit allows nothing like: 16 MB
+#: made in C, outside the budget, every time one row is checked.
+_COSTLY = "printf('%.*c', 16000000 + fid % 2, fid)"
+
+
+def _gpkg_costly(column_sql, where, rows=1000):
+    """A GeoPackage with `rows` rows in the feature table 'row' and in
+    another table 'other', and `column_sql` added to the table `where`.
+    The column goes into the schema after the rows are written, so the
+    fixture is cheap to make however costly the column is to compute."""
+    data = _gpkg_extra(None, rows=rows)
+    fd, path = tempfile.mkstemp(suffix=".gpkg")
+    with os.fdopen(fd, "wb") as fh:
+        fh.write(data)
+    conn = sqlite3.connect(path)
+    conn.execute("CREATE TABLE other (fid INTEGER PRIMARY KEY, note TEXT)")
+    conn.executemany("INSERT INTO other VALUES (?, 'x')",
+                     [(i + 1,) for i in range(rows)])
+    conn.commit()
+    sql = conn.execute("SELECT sql FROM sqlite_master WHERE name = ?",
+                       (where,)).fetchone()[0]
+    conn.execute("PRAGMA writable_schema = ON")
+    conn.execute("UPDATE sqlite_master SET sql = ? WHERE name = ?",
+                 (sql[:-1] + ", " + column_sql + ")", where))
+    conn.commit()
+    conn.close()
+    with open(path, "rb") as fh:
+        data = fh.read()
+    os.remove(path)
+    return data
+
+
+class GeoPackageCostlyColumns(unittest.TestCase):
+    """A generated column in ANY table is refused before quick_check, which
+    computes every NOT NULL generated value in C, outside the budget: a
+    small file could otherwise run past the job's timeout."""
+
+    def test_a_costly_generated_column_is_refused_fast(self):
+        column = "g TEXT AS (%s) VIRTUAL NOT NULL" % _COSTLY
+        for where in ("row", "other"):
+            data = _gpkg_costly(column, where)
+            for read in (cf.gpkg_records, cf.gpkg_year):
+                with self.subTest(where=where, read=read.__name__):
+                    t = time.monotonic()
+                    with self.assertRaises(FetchFailed) as got:
+                        read(data)
+                    self.assertLess(time.monotonic() - t, 2.0)
+                    self.assertIn("generated", str(got.exception))
+                    self.assertIn("%s.g" % where, str(got.exception))
+
+    def test_a_costly_check_is_not_run_on_a_read_only_file(self):
+        # Measured: neither trusted_schema off (printf is innocuous) nor
+        # the length limit stops this; opening the file read-only does,
+        # as quick_check then skips CHECK constraints.
+        data = _gpkg_costly("CHECK (length(%s) > 0)" % _COSTLY, "other")
+        t = time.monotonic()
+        self.assertEqual(len(cf.gpkg_records(data)), 1000)
+        self.assertLess(time.monotonic() - t, 2.0)
+
+    def test_virtual_tables_are_still_read(self):
+        # Real GeoPackages carry an R*Tree virtual table and its shadow
+        # tables, and may carry a virtual table of a module this SQLite
+        # lacks (quick_check skips both): neither is refused.
+        data = _gpkg_extra(None, rows=3)
+        fd, path = tempfile.mkstemp(suffix=".gpkg")
+        with os.fdopen(fd, "wb") as fh:
+            fh.write(data)
+        conn = sqlite3.connect(path)
+        conn.execute("CREATE VIRTUAL TABLE rtree_row_geom USING "
+                     "rtree(id, minx, maxx, miny, maxy)")
+        conn.execute("PRAGMA writable_schema = ON")
+        conn.execute("INSERT INTO sqlite_master VALUES ('table', 'vx', "
+                     "'vx', 0, 'create  virtual table vx USING "
+                     "nosuchmodule(a)')")
+        conn.commit()
+        conn.close()
+        with open(path, "rb") as fh:
+            data = fh.read()
+        os.remove(path)
+        self.assertEqual(len(cf.gpkg_records(data)), 3)
+
+
+class ShippedCaps(unittest.TestCase):
+    """The caps as shipped, not rebound small: each holds at its real
+    value."""
+
+    MIB = 1024 * 1024
+
+    def test_the_caps_have_their_shipped_values(self):
+        self.assertEqual(cf.MAX_UNZIPPED, 100 * self.MIB)
+        self.assertEqual(cf.MAX_GPKG_VALUE, 16 * self.MIB)
+        # Too slow to build a real 100 MiB GeoPackage: the value is pinned.
+        self.assertEqual(cf.MAX_GPKG_BYTES, 100 * self.MIB)
+
+    def stating(self, size):
+        """A one-member zip whose directory states `size` bytes."""
+        blob = bytearray(_deflated({"doc.kml": KML.encode("utf-8")}))
+        at = blob.find(b"PK\x01\x02")
+        blob[at + 24:at + 28] = struct.pack("<I", size)
+        return bytes(blob)
+
+    def test_a_zip_stating_just_over_100_mib_is_refused(self):
+        with self.assertRaises(FetchFailed) as got:
+            cf._zip(self.stating(100 * self.MIB + 1))
+        self.assertIn("too big", str(got.exception))
+        z = cf._zip(self.stating(100 * self.MIB))
+        self.assertEqual(z.infolist()[0].file_size, 100 * self.MIB)
+
+    def test_a_value_just_over_16_mib_is_refused(self):
+        with self.assertRaises(FetchFailed) as got:
+            cf.gpkg_records(_gpkg_extra(None, text="x" * (16 * self.MIB + 1)))
+        self.assertIn("bytes", str(got.exception))
+        got = cf.gpkg_records(_gpkg_extra(None, text="x" * (16 * self.MIB)))
+        self.assertEqual(len(got), 1)
+
+
+class TheModulesAccount(unittest.TestCase):
+    def test_the_docstring_names_each_budget(self):
+        flat = " ".join(cf.__doc__.split())
+        for words in ("A HOSTILE FILE IS HELD TO A BUDGET", "MAX_UNZIPPED",
+                      "trusted_schema off", "GPKG_STEPS", "MAX_GPKG_ROWS",
+                      "not a view",
+                      "a generated or hidden column in any table is refused "
+                      "before anything else runs",
+                      "quick_check makes every one",
+                      "opened read-only (so the check runs no CHECK "
+                      "constraint)"):
+            self.assertIn(words, flat)
+
+
+class MacosxSidecars(unittest.TestCase):
+    """A zip made on a Mac carries __MACOSX/ copies of each file: they are
+    not a second KML or GeoPackage."""
+
+    def test_kmz_and_gpkg_zips_skip_macosx(self):
+        kml = KML.encode("utf-8")
+        self.assertEqual(len(cf.kml_records(zipped(
+            {"doc.kml": kml, "__MACOSX/._doc.kml": b"\0\5\26\7"}))), 4)
+        data = gpkg([(gp(wkb_line(A)), "B", "1")])
+        self.assertEqual(len(cf.gpkg_records(zipped(
+            {"r.gpkg": data, "__MACOSX/._r.gpkg": b"\0\5\26\7"}))), 1)
 
 
 if __name__ == "__main__":
