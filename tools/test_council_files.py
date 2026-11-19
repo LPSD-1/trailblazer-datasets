@@ -1047,6 +1047,22 @@ class DbfHeader(unittest.TestCase):
         self.assertIn("record", str(got.exception))
         self.assertEqual(len(cf.dbf_records(good)), 2)
 
+    def test_the_record_count_is_checked_to_the_byte(self):
+        # A .dbf need not end in its 0x1A byte: header + count * size is
+        # the whole file, and one byte less is refused.
+        rows = [("Byway", "1"), ("BOAT", "2"), ("ORPA", "3")]
+        good = dbf(FIELDS, rows)
+        self.assertEqual(len(cf.dbf_records(good[:-1])), 3)
+        with self.assertRaises(FetchFailed) as got:
+            cf.dbf_records(good[:-2])
+        self.assertIn("ends before", str(got.exception))
+        for count in (2, 3):
+            with self.subTest(count=count):
+                self.assertEqual(len(cf.dbf_records(
+                    self.header(good, count))), count)
+        with self.assertRaises(FetchFailed):
+            cf.dbf_records(self.header(good, 4))
+
 
 def _gpkg_one_leaf():
     """A GeoPackage whose table's interior root page has every child
@@ -1172,6 +1188,40 @@ class GeoPackageCostlyColumns(unittest.TestCase):
             data = fh.read()
         os.remove(path)
         self.assertEqual(len(cf.gpkg_records(data)), 3)
+
+
+class ShippedCaps(unittest.TestCase):
+    """The caps as shipped, not rebound small: each holds at its real
+    value."""
+
+    MIB = 1024 * 1024
+
+    def test_the_caps_have_their_shipped_values(self):
+        self.assertEqual(cf.MAX_UNZIPPED, 100 * self.MIB)
+        self.assertEqual(cf.MAX_GPKG_VALUE, 16 * self.MIB)
+        # Too slow to build a real 100 MiB GeoPackage: the value is pinned.
+        self.assertEqual(cf.MAX_GPKG_BYTES, 100 * self.MIB)
+
+    def stating(self, size):
+        """A one-member zip whose directory states `size` bytes."""
+        blob = bytearray(_deflated({"doc.kml": KML.encode("utf-8")}))
+        at = blob.find(b"PK\x01\x02")
+        blob[at + 24:at + 28] = struct.pack("<I", size)
+        return bytes(blob)
+
+    def test_a_zip_stating_just_over_100_mib_is_refused(self):
+        with self.assertRaises(FetchFailed) as got:
+            cf._zip(self.stating(100 * self.MIB + 1))
+        self.assertIn("too big", str(got.exception))
+        z = cf._zip(self.stating(100 * self.MIB))
+        self.assertEqual(z.infolist()[0].file_size, 100 * self.MIB)
+
+    def test_a_value_just_over_16_mib_is_refused(self):
+        with self.assertRaises(FetchFailed) as got:
+            cf.gpkg_records(_gpkg_extra(None, text="x" * (16 * self.MIB + 1)))
+        self.assertIn("bytes", str(got.exception))
+        got = cf.gpkg_records(_gpkg_extra(None, text="x" * (16 * self.MIB)))
+        self.assertEqual(len(got), 1)
 
 
 class TheModulesAccount(unittest.TestCase):
