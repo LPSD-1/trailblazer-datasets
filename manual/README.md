@@ -16,7 +16,9 @@ an Environmental Information Regulations (EIR) or Freedom of Information
    remove the requester's name, address and email from it.
 3. Add an entry for the file to `manual/<CODE>/manifest.json` (see
    "manifest.json" below). A map layer always needs one.
-4. Open a pull request to `main`. Its checks review what you added.
+4. Open a pull request to `main`. Its checks review what you added. The
+   checks do not look for personal data in the files: step 2 is still
+   yours to do.
 5. Once it is merged, the pipeline reads the file. A map layer is read on
    the next council orders run, within six hours. A document is flagged
    for review at the next order register check. Any problem with the file

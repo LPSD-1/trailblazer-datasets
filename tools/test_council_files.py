@@ -966,6 +966,87 @@ class GeoPackageSteps(_Caps):
         self.assertEqual(len(cf.gpkg_records(data)), 5000)
 
 
+def _gpkg_extra(column_sql, rows=1, text="x"):
+    """A one-table GeoPackage whose table has the extra column
+    `column_sql`, and `rows` rows with PROWNo `text`."""
+    fd, path = tempfile.mkstemp(suffix=".gpkg")
+    os.close(fd)
+    os.remove(path)
+    conn = sqlite3.connect(path)
+    conn.execute("CREATE TABLE gpkg_geometry_columns (table_name TEXT, "
+                 "column_name TEXT, geometry_type_name TEXT, srs_id INT, "
+                 "z INT, m INT)")
+    conn.execute("INSERT INTO gpkg_geometry_columns VALUES "
+                 "('row', 'geom', 'LINESTRING', 27700, 0, 0)")
+    conn.execute("CREATE TABLE row (fid INTEGER PRIMARY KEY, geom BLOB, "
+                 "PROWNo TEXT%s)" % (", " + column_sql if column_sql else ""))
+    for i in range(rows):
+        conn.execute("INSERT INTO row (fid, geom, PROWNo) VALUES (?, ?, ?)",
+                     (i + 1, gp(wkb_line(A)), text))
+    conn.commit()
+    conn.close()
+    with open(path, "rb") as fh:
+        data = fh.read()
+    os.remove(path)
+    return data
+
+
+class GeoPackageValues(_Caps):
+    """A value is held to a size before it is read: a generated column, or
+    one big value, cannot make a small file fill the memory."""
+
+    CAPS = {"MAX_GPKG_VALUE": 1000, "MAX_GPKG_BYTES": 5000}
+
+    def test_a_generated_column_is_refused(self):
+        for sql in ("g BLOB AS (zeroblob(100000000)) VIRTUAL",
+                    "g BLOB AS (zeroblob(10)) STORED"):
+            with self.subTest(sql=sql):
+                for read in (cf.gpkg_records, cf.gpkg_year):
+                    with self.assertRaises(FetchFailed) as got:
+                        read(_gpkg_extra(sql))
+                    self.assertIn("generated", str(got.exception))
+
+    def test_one_value_past_the_cap_is_refused(self):
+        with self.assertRaises(FetchFailed) as got:
+            cf.gpkg_records(_gpkg_extra(None, text="x" * 1001))
+        self.assertIn("bytes", str(got.exception))
+        self.assertEqual(len(cf.gpkg_records(_gpkg_extra(
+            None, text="x" * 900))), 1)
+
+    def test_values_past_the_total_are_refused(self):
+        with self.assertRaises(FetchFailed) as got:
+            cf.gpkg_records(_gpkg_extra(None, rows=8, text="x" * 900))
+        self.assertIn("bytes", str(got.exception))
+        self.assertEqual(len(cf.gpkg_records(_gpkg_extra(
+            None, rows=4, text="x" * 900))), 4)
+
+
+class DbfHeader(unittest.TestCase):
+    """A .dbf header's record count and size are checked against the file
+    before a record is read: a tiny file cannot claim millions."""
+
+    def header(self, data, count=None, size=None):
+        data = bytearray(data)
+        c, h, s = struct.unpack("<IHH", bytes(data[4:12]))
+        data[4:12] = struct.pack("<IHH", c if count is None else count, h,
+                                 s if size is None else size)
+        return bytes(data)
+
+    def test_more_records_than_the_file_holds_are_refused(self):
+        good = dbf(FIELDS, [("Byway", "1")])
+        for count, size in ((3000000, 0), (2, None), (3000000, None)):
+            with self.subTest(count=count, size=size):
+                with self.assertRaises(FetchFailed):
+                    cf.dbf_records(self.header(good, count, size))
+
+    def test_a_record_shorter_than_its_fields_is_refused(self):
+        good = dbf(FIELDS, [("Byway", "1"), ("BOAT", "2")])
+        with self.assertRaises(FetchFailed) as got:
+            cf.dbf_records(self.header(good, size=5))
+        self.assertIn("record", str(got.exception))
+        self.assertEqual(len(cf.dbf_records(good)), 2)
+
+
 class TheModulesAccount(unittest.TestCase):
     def test_the_docstring_names_each_budget(self):
         flat = " ".join(cf.__doc__.split())

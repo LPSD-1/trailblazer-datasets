@@ -732,7 +732,9 @@ class TheRealFolder(unittest.TestCase):
                        readme.index("## Where each file goes")]
         for n in range(1, 6):
             self.assertIn("\n%d. " % n, steps)
-        for words in ("manual/authorities.json", "pull request", "main"):
+        for words in ("manual/authorities.json", "pull request", "main",
+                      "The checks do not look for personal data",
+                      "step 2 is still yours"):
             self.assertIn(words, " ".join(steps.split()))
         # This repository is public: the rule applies to every file, so it
         # is a bullet of its own under "What to drop".
