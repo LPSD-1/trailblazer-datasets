@@ -13,6 +13,7 @@ import sqlite3
 import struct
 import sys
 import tempfile
+import time
 import unittest
 import zipfile
 
@@ -1089,6 +1090,88 @@ class GeoPackageIntegrity(unittest.TestCase):
     def test_a_sound_file_passes_the_check(self):
         self.assertEqual(len(cf.gpkg_records(_gpkg_extra(
             None, rows=20, text="x" * 1500))), 20)
+
+
+#: A value as costly as SQLite's length limit allows nothing like: 16 MB
+#: made in C, outside the budget, every time one row is checked.
+_COSTLY = "printf('%.*c', 16000000 + fid % 2, fid)"
+
+
+def _gpkg_costly(column_sql, where, rows=1000):
+    """A GeoPackage with `rows` rows in the feature table 'row' and in
+    another table 'other', and `column_sql` added to the table `where`.
+    The column goes into the schema after the rows are written, so the
+    fixture is cheap to make however costly the column is to compute."""
+    data = _gpkg_extra(None, rows=rows)
+    fd, path = tempfile.mkstemp(suffix=".gpkg")
+    with os.fdopen(fd, "wb") as fh:
+        fh.write(data)
+    conn = sqlite3.connect(path)
+    conn.execute("CREATE TABLE other (fid INTEGER PRIMARY KEY, note TEXT)")
+    conn.executemany("INSERT INTO other VALUES (?, 'x')",
+                     [(i + 1,) for i in range(rows)])
+    conn.commit()
+    sql = conn.execute("SELECT sql FROM sqlite_master WHERE name = ?",
+                       (where,)).fetchone()[0]
+    conn.execute("PRAGMA writable_schema = ON")
+    conn.execute("UPDATE sqlite_master SET sql = ? WHERE name = ?",
+                 (sql[:-1] + ", " + column_sql + ")", where))
+    conn.commit()
+    conn.close()
+    with open(path, "rb") as fh:
+        data = fh.read()
+    os.remove(path)
+    return data
+
+
+class GeoPackageCostlyColumns(unittest.TestCase):
+    """A generated column in ANY table is refused before quick_check, which
+    computes every NOT NULL generated value in C, outside the budget: a
+    small file could otherwise run past the job's timeout."""
+
+    def test_a_costly_generated_column_is_refused_fast(self):
+        column = "g TEXT AS (%s) VIRTUAL NOT NULL" % _COSTLY
+        for where in ("row", "other"):
+            data = _gpkg_costly(column, where)
+            for read in (cf.gpkg_records, cf.gpkg_year):
+                with self.subTest(where=where, read=read.__name__):
+                    t = time.monotonic()
+                    with self.assertRaises(FetchFailed) as got:
+                        read(data)
+                    self.assertLess(time.monotonic() - t, 2.0)
+                    self.assertIn("generated", str(got.exception))
+                    self.assertIn("%s.g" % where, str(got.exception))
+
+    def test_a_costly_check_is_not_run_on_a_read_only_file(self):
+        # Measured: neither trusted_schema off (printf is innocuous) nor
+        # the length limit stops this; opening the file read-only does,
+        # as quick_check then skips CHECK constraints.
+        data = _gpkg_costly("CHECK (length(%s) > 0)" % _COSTLY, "other")
+        t = time.monotonic()
+        self.assertEqual(len(cf.gpkg_records(data)), 1000)
+        self.assertLess(time.monotonic() - t, 2.0)
+
+    def test_virtual_tables_are_still_read(self):
+        # Real GeoPackages carry an R*Tree virtual table and its shadow
+        # tables, and may carry a virtual table of a module this SQLite
+        # lacks (quick_check skips both): neither is refused.
+        data = _gpkg_extra(None, rows=3)
+        fd, path = tempfile.mkstemp(suffix=".gpkg")
+        with os.fdopen(fd, "wb") as fh:
+            fh.write(data)
+        conn = sqlite3.connect(path)
+        conn.execute("CREATE VIRTUAL TABLE rtree_row_geom USING "
+                     "rtree(id, minx, maxx, miny, maxy)")
+        conn.execute("PRAGMA writable_schema = ON")
+        conn.execute("INSERT INTO sqlite_master VALUES ('table', 'vx', "
+                     "'vx', 0, 'create  virtual table vx USING "
+                     "nosuchmodule(a)')")
+        conn.commit()
+        conn.close()
+        with open(path, "rb") as fh:
+            data = fh.read()
+        os.remove(path)
+        self.assertEqual(len(cf.gpkg_records(data)), 3)
 
 
 class TheModulesAccount(unittest.TestCase):

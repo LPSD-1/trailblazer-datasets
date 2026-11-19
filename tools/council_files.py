@@ -26,14 +26,16 @@ member longer than it says fails its CRC check). A
 GeoPackage is a database its sender wrote: its feature table must be a real
 table, not a view that could run for ever; the read runs with
 trusted_schema off, under a budget of GPKG_STEPS progress calls (each a
-thousand SQLite instructions), and at most MAX_GPKG_ROWS rows. A table
-with a generated or hidden column is refused (a generated value is made as
-it is read, outside that budget), and the size of every value is measured
+thousand SQLite instructions), and at most MAX_GPKG_ROWS rows. A file
+with a generated or hidden column in any table is refused before anything
+else runs on it (a generated value is made as it is read, outside that
+budget, and quick_check makes every one), and the size of every value is measured
 before any is read (MAX_GPKG_VALUE each, MAX_GPKG_BYTES in all). A .dbf's
 record count and size are checked against the file before a record is
 read. A GeoPackage must pass SQLite's quick_check before
-any query on its feature table, with cell_size_check on and SQLite's
-length limit set to MAX_GPKG_VALUE.
+any query on its feature table, opened read-only (so the check runs no
+CHECK constraint), with cell_size_check on and SQLite's length limit set
+to MAX_GPKG_VALUE.
 """
 import functools
 import io
@@ -60,6 +62,8 @@ MAX_GPKG_ROWS = 1000000
 #: measured before any is read.
 MAX_GPKG_VALUE = 16 * 1024 * 1024
 MAX_GPKG_BYTES = 100 * 1024 * 1024
+#: A virtual table's schema, as SQLite keeps it.
+_VIRTUAL = re.compile(r"\s*CREATE\s+VIRTUAL\s", re.IGNORECASE)
 
 
 def _refusing(reader):
@@ -417,6 +421,24 @@ def _gpkg(blob, read, table=None):
                 conn.setlimit(sqlite3.SQLITE_LIMIT_LENGTH,
                               MAX_GPKG_VALUE + 1)
             conn.set_progress_handler(budget, 1000)
+            # quick_check computes every NOT NULL generated value, in C and
+            # outside the budget, in every table: refuse a generated or
+            # hidden column anywhere before it runs. A virtual table (an
+            # R*Tree index) holds no generated column and is not checked.
+            try:
+                tables = conn.execute("SELECT name, sql FROM sqlite_master "
+                                      "WHERE type = 'table'").fetchall()
+                hidden = ["%s.%s" % (name, c[1]) for name, sql in tables
+                          if not _VIRTUAL.match(sql or "")
+                          for c in conn.execute(
+                              'PRAGMA table_xinfo("%s")'
+                              % str(name).replace('"', '""')) if c[6]]
+            except sqlite3.DatabaseError as e:
+                raise FetchFailed("a GeoPackage whose schema cannot be "
+                                  "read: %s" % e)
+            if hidden:
+                raise FetchFailed("a table with generated or hidden "
+                                  "columns: %s" % ", ".join(hidden)[:120])
             # A corrupt file (a page referenced twice, an overflow chain
             # looping on itself) can make one query copy without end, and
             # copying is not counted by the budget: SQLite's own check
