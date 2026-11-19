@@ -1079,7 +1079,7 @@ def _number(value):
 def _declared_crs(data):
     """'bng', 'wgs84' or None from a GeoJSON's own `crs` member; any crs
     this reader does not know is a FetchFailed."""
-    if "crs" not in data:
+    if data.get("crs") is None:
         return None
     crs = data["crs"]
     props = crs.get("properties") if isinstance(crs, dict) else None
@@ -1280,8 +1280,7 @@ def manual_sources(root=None):
         for doc in box["docs"]:
             if doc["kind"] != "layer" or not box["authority"]:
                 continue
-            stem = re.sub(r"[^a-z0-9]+", "-",
-                          os.path.splitext(doc["name"])[0].lower()).strip("-")
+            stem = manual_inbox.layer_stem(doc["name"])
             how = manual_inbox.provenance(doc)
             supplied = doc["how"] == "supplied by the council"
             out.append({
@@ -1448,6 +1447,14 @@ def guard(previous_records, records):
     return None
 
 
+def one_line(text):
+    """`text` with its control characters (newlines among them) made
+    spaces: text a council's file or server wrote is printed in the log and
+    the report, where a line of its own starting "::" would be a command to
+    GitHub Actions."""
+    return re.sub(r"[\x00-\x1f\x7f-\x9f]+", " ", text).strip()
+
+
 def fetch_one(source, client, byways, out_dir, today, accept_shrink=False):
     """Read one source. Returns its status entry. Never raises for a fault in
     the source; a fault in OUR code still raises. `accept_shrink`: a person
@@ -1462,7 +1469,7 @@ def fetch_one(source, client, byways, out_dir, today, accept_shrink=False):
     try:
         records, candidates = source["read"](client)
     except (Refused, FetchFailed) as e:
-        entry.update({"ok": False, "error": str(e)[:300]})
+        entry.update({"ok": False, "error": one_line(str(e))[:300]})
         return entry
     served = client.take_served() if hasattr(client, "take_served") \
         else {}
@@ -1574,8 +1581,8 @@ def main(argv=None):
     # is said within six hours, in the log and in the report the
     # council-sources issue is written from - not only in the quarterly
     # order register issue. Not a source failing, so never a failed run.
-    inbox = ["manual inbox: %s" % p for box in manual_inbox.inboxes()
-             for p in box["problems"]]
+    inbox = ["manual inbox: %s" % one_line(p)
+             for box in manual_inbox.inboxes() for p in box["problems"]]
     if args.report:
         with open(args.report, "w", encoding="utf-8", newline="\n") as fh:
             for line in failures + inbox:

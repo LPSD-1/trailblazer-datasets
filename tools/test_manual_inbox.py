@@ -489,10 +489,18 @@ class Manifest(_Box):
     default."""
 
     def test_an_unreadable_manifest_is_a_loud_problem(self):
-        for text in ("{bad", "[1, 2]", '"text"', '{"files": [1]}'):
+        for text in ("{bad", "[1, 2]", '"text"', '{"files": [1]}',
+                     '{"files": null}'):
             with self.subTest(text=text):
+                # A dated PDF beside it, which would otherwise be read and
+                # credited "saved by hand".
+                with open(os.path.join(self.root, "WB",
+                                       "orders-2026-09-30.pdf"), "w") as fh:
+                    fh.write("%PDF-1.4")
                 self.put("closures-2026-09-30.geojson", CLOSURES,
                          manifest_text=text)
+                self.assertEqual(mi.documents_by_id(self.root), {})
+                self.assertEqual(cs.manual_sources(self.root), [])
                 box = self.box()
                 self.assertTrue(any("manifest.json unreadable" in p
                                     for p in box["problems"]),
@@ -576,6 +584,119 @@ class Manifest(_Box):
         self.assertTrue(any("no date" in p for p in box["problems"]),
                         box["problems"])
         self.assertIsNone(box["docs"][0]["date"])
+
+
+class SameStem(_Box):
+    """Two layers whose names differ only by extension (or by what the id
+    drops) would be one source id, the second overwriting the first: both
+    are a problem, and neither is read."""
+
+    def put_two(self, first, second):
+        layer = {"how": "eir", "date": "2026-09-30",
+                 "layer": {"id": "$REF", "vehicles": "all_users"}}
+        for name in (first, second):
+            with open(os.path.join(self.root, "WB", name), "w") as fh:
+                fh.write(json.dumps(CLOSURES))
+        with open(os.path.join(self.root, "WB", "manifest.json"), "w") as fh:
+            json.dump({"files": {first: layer, second: layer}}, fh)
+
+    def test_a_same_stem_pair_is_a_problem_and_neither_is_read(self):
+        for pair in (("closures.zip", "closures.kml"),
+                     ("closures.geojson", "closures.json"),
+                     ("Closures.geojson", "closures.kmz"),
+                     ("road closures.geojson", "road-closures.json")):
+            with self.subTest(pair=pair):
+                self.clear()
+                self.put_two(*pair)
+                box = self.box()
+                self.assertEqual(box["docs"], [])
+                self.assertEqual(cs.manual_sources(self.root), [])
+                for name in pair:
+                    self.assertTrue(any(name in p and "same" in p
+                                        for p in box["problems"]),
+                                    (name, box["problems"]))
+
+    def test_a_document_beside_a_layer_of_its_stem_is_no_clash(self):
+        self.put("closures.geojson", CLOSURES)
+        with open(os.path.join(self.root, "WB", "closures.pdf"), "w") as fh:
+            fh.write("%PDF")
+        manifest = os.path.join(self.root, "WB", "manifest.json")
+        with open(manifest) as fh:
+            data = json.load(fh)
+        data["files"]["closures.pdf"] = {"how": "eir", "date": "2026-09-30"}
+        with open(manifest, "w") as fh:
+            json.dump(data, fh)
+        box = self.box()
+        self.assertEqual(box["problems"], [])
+        self.assertEqual(len(box["docs"]), 2)
+
+    def test_a_single_layers_id_is_unchanged(self):
+        self.put("Road Closures 2026-09-30.geojson", CLOSURES)
+        self.assertEqual([s["id"] for s in cs.manual_sources(self.root)],
+                         ["manual-wb-road-closures-2026-09-30"])
+
+
+#: Just inside and just outside each edge of England and Wales, in each
+#: projection: (edge, inside point, outside point).
+BNG_EDGES = (("west", (60001.0, 170000.0), (59999.0, 170000.0)),
+             ("east", (669999.0, 170000.0), (670001.0, 170000.0)),
+             ("south", (450000.0, 1.0), (450000.0, -1.0)),
+             ("north", (450000.0, 669999.0), (450000.0, 670001.0)))
+WGS_EDGES = (("west", (-6.4999, 52.0), (-6.5001, 52.0)),
+             ("east", (1.7999, 52.0), (1.8001, 52.0)),
+             ("south", (-1.0, 49.8001), (-1.0, 49.7999)),
+             ("north", (-1.0, 55.8999), (-1.0, 55.9001)))
+
+
+class Bounds(_Box):
+    """The edges of England and Wales are where they are said to be, for
+    GeoJSON in both projections and for a council_files format (KML)."""
+
+    def geojson(self, probe, near):
+        self.clear()
+        self.put("closures.geojson", _collection(_feature(
+            [list(near), list(probe)])))
+        return cs.manual_sources(self.root)[0]["read"]
+
+    def kml(self, probe, near):
+        self.clear()
+        coords = " ".join("%r,%r,0" % p for p in (near, probe))
+        self.put("closures.kml", LayerFormats.kml(None, coords),
+                 {"layer": {"id": "$name"}})
+        return cs.manual_sources(self.root)[0]["read"]
+
+    def check(self, make, edges, near):
+        for edge, inside, outside in edges:
+            with self.subTest(edge=edge, side="inside"):
+                records, _c = make(inside, near)(None)
+                self.assertEqual(records, 1)
+            with self.subTest(edge=edge, side="outside"):
+                with self.assertRaises(FetchFailed) as got:
+                    make(outside, near)(None)
+                self.assertIn("England and Wales", str(got.exception))
+
+    def test_bng_edges_in_geojson(self):
+        self.check(self.geojson, BNG_EDGES, (450000.0, 170000.0))
+
+    def test_wgs84_edges_in_geojson(self):
+        self.check(self.geojson, WGS_EDGES, (-1.0, 52.0))
+
+    def test_wgs84_edges_in_kml(self):
+        self.check(self.kml, WGS_EDGES, (-1.0, 52.0))
+
+
+class NullCrs(_Box):
+    """`"crs": null`, in the manifest or in the file, is no crs stated."""
+
+    def test_a_null_crs_in_the_manifest_is_none(self):
+        self.put("closures.geojson", _collection(_feature(
+            [list(p) for p in LINE_BNG])), {"crs": None})
+        self.matched()
+
+    def test_a_null_crs_in_the_file_is_none(self):
+        self.put("closures.geojson", _collection(_feature(
+            [list(p) for p in LINE_WGS]), crs=None))
+        self.matched()
 
 
 class TheRealFolder(unittest.TestCase):

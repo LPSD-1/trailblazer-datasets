@@ -524,6 +524,30 @@ class InboxProblemsEveryRun(unittest.TestCase):
         self.assertEqual((code, report), (0, []))
         self.assertNotIn("::warning::", out)
 
+    def test_text_a_council_controls_cannot_forge_a_workflow_command(self):
+        # A failure's text comes from the council's file or server; a
+        # newline in it would start a line of its own, and "::error::" at
+        # the start of a line is a command to GitHub Actions.
+        forged = "bad\n::error::forged\r\n::add-mask::x\x1b[31m"
+        bad = dict(self.ok, id="bad-src", read=lambda c: (
+            _ for _ in ()).throw(FetchFailed(forged)))
+        cs.SOURCES = [bad, self.ok]
+        import manual_inbox
+        manual_inbox.inboxes = lambda root=None: [
+            {"authority": None, "automated": False, "docs": [],
+             "problems": ["manual/WB/x: " + forged]}]
+        code, out, report = self.run_main()
+        self.assertEqual(code, 0)
+        for line in out.splitlines() + report:
+            self.assertFalse(line.startswith("::error::forged") or
+                             line.startswith("::add-mask::"), line)
+            self.assertNotIn("\x1b", line)
+            self.assertNotIn("\r", line)
+        self.assertEqual(len(report), 2, report)
+        self.assertTrue(all("forged" in l for l in report))
+        with open(os.path.join(self.tmp, "status.json")) as fh:
+            self.assertNotIn("\n", json.load(fh)["bad-src"]["error"])
+
     def test_inbox_problems_do_not_count_as_sources_failing(self):
         # Every real source down still fails the run; an inbox problem
         # beside one source that reads is not "every source failed".

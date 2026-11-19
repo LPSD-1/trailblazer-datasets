@@ -177,8 +177,33 @@ def inboxes(root=MANUAL):
                     "manifest.json (see manual/README.md)" % doc["id"])
                 continue
             box["docs"].append(doc)
+        _same_stem(code, box)
         out.append(box)
     return out
+
+
+def layer_stem(name):
+    """The part of a layer's file name its source id is made from."""
+    return re.sub(r"[^a-z0-9]+", "-",
+                  os.path.splitext(name)[0].lower()).strip("-")
+
+
+def _same_stem(code, box):
+    """Layers sharing a stem would share a source id, one overwriting the
+    other's published file: each is a problem, and neither is read."""
+    seen = {}
+    for doc in box["docs"]:
+        if doc["kind"] == "layer":
+            seen.setdefault(layer_stem(doc["name"]), []).append(doc["name"])
+    clash = set(n for names in seen.values() if len(names) > 1
+                for n in names)
+    for name in sorted(clash):
+        others = [n for n in seen[layer_stem(name)] if n != name]
+        box["problems"].append(
+            "manual/%s/%s: the same name as %s but for its extension - "
+            "neither is read until one is renamed" % (code, name,
+                                                      ", ".join(others)))
+    box["docs"] = [d for d in box["docs"] if d["name"] not in clash]
 
 
 def _how(meta):
@@ -205,7 +230,8 @@ def _meta_problem(name, meta):
         return "\"layer\" is not an object (see manual/README.md)"
     if "layer" in meta and ext in DOCUMENTS:
         return "a %s file cannot be a map layer: %s" % (ext, CONVERT)
-    if "crs" in meta and (not isinstance(meta["crs"], str) or
+    if meta.get("crs") is not None and (not isinstance(meta["crs"],
+                                                       str) or
                           meta["crs"].strip().lower() not in CRS):
         return ("\"crs\": %s is not one of %s"
                 % (json.dumps(meta["crs"]), ", ".join(CRS)))
