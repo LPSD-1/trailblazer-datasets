@@ -1,6 +1,6 @@
 {
  "schema": 2,
- "generated": "2026-11-22T10:00:00Z",
+ "generated": "2026-11-22T11:50:30Z",
  "attribution": "Map and routing data \u00a9 OpenStreetMap contributors, ODbL. Byways for Bracknell Forest Council, Central Bedfordshire Council, Buckinghamshire Council, Cambridgeshire County Council, Cheshire West and Chester Council, Durham County Council, Derbyshire County Council, Dudley Metropolitan Borough Council, East Sussex County Council, Hertfordshire County Council, Kirklees Council, Lake District National Park Authority, Lancashire County Council, Leeds City Council, Northumberland County Council, Oxfordshire County Council, St Helens Council, Surrey County Council, Wokingham Borough Council, Telford & Wrekin Council, Wiltshire Council and Stockport Metropolitan Borough Council, from the councils' own layers, contain public sector information licensed under the Open Government Licence v3.0. Byways for Cheshire East Council, Devon County Council, Essex County Council and West Berkshire Council come from the councils' own layers, published without a stated licence. Other rights of way in England and Wales contain public sector information licensed under the Open Government Licence v3.0, via rowmaps.com. Contains OS data \u00a9 Crown copyright and database right 2026. Unsurfaced unclassified roads from the highway records of Devon County Council, North Yorkshire Council, Norfolk County Council, Lincolnshire County Council, Northumberland County Council, East Riding of Yorkshire Council, Oxfordshire County Council and Surrey County Council.",
  "baseUrl": "https://lpsd-1.github.io/trailblazer-datasets/",
  "overviews": [
@@ -10,24 +10,16 @@
    "format": "tbmap",
    "label": "Overview",
    "file": "containers/ways-overview.tbmap",
-   "sha256": "bdb2f175e7b36eb572619c7d98a5172a0115dd1f8aa6089aac5c6e11d0c0136e",
+   "sha256": "fe743fe867f1aab7b8e8d51cba98b54eaf89710412f10958b8132c563abf3d47",
    "bytes": 1552384,
-   "downloadBytes": 678142,
-   "signature": "mkHjwzHbknHh+7Oqb8BxdwRvAxoo6faXj32o7AIy9Gts/ewpa8co3wuNbabGVK3pj6h/fq6NgBHmoBfzyhS1BA==",
+   "downloadBytes": 678143,
+   "signature": "b/KZYm6E3L7j3rD7Md2sqRTjMr3DvXYW9kCapzl26OSYMeWsbIYkVwGPiDP52vDfN2UbtbPnHuN/mwbGlLOnBQ==",
    "minZoom": 4,
    "featureCount": 8366,
-   "generated": "2026-11-21T11:32:32Z",
-   "waysCut": "2026-11-21T11:32:32Z",
-   "build": "2026-11-21T11:32:32Z",
+   "generated": "2026-11-22T11:46:55Z",
+   "waysCut": "2026-11-22T11:46:55Z",
+   "build": "2026-11-22T11:46:55Z",
    "changesets": [
-    {
-     "from": "2026-10-30T16:11:03Z",
-     "to": "2026-11-16T23:10:30Z",
-     "file": "changes/gb-overview/20261030T161103Z-20261116T231030Z.tbchange",
-     "sha256": "eb78f97bf3ec02cd04aced53ffe2860d65cd38cce79e2f7aecab154d05183da6",
-     "bytes": 282112,
-     "signature": "LS4z+ywDp2KLAP/p/cVWkipOpXOZ0zUqcE/8BzMYhk6hM+uDt/z91oUMR9tAMlvaXRyIH5OBqpEYmSpYwFd5Dg=="
-    },
     {
      "from": "2026-11-16T23:10:30Z",
      "to": "2026-11-17T12:11:42Z",
@@ -67,6 +59,14 @@
      "sha256": "74dd9c6df2fbfe73a4b2e546bfa8dd3d21252e3de47ffd91c74c6e6badad52ec",
      "bytes": 16896,
      "signature": "Zm+bkmIwJPvA1dqIdczVPG4Xma8umoOjAwacpqAxYgRfyzjM2BNouGNGWOabWbk2DkEjmQDVKCMqFo9uX+MtCg=="
+    },
+    {
+     "from": "2026-11-21T11:32:32Z",
+     "to": "2026-11-22T11:46:55Z",
+     "file": "changes/gb-overview/20261121T113232Z-20261122T114655Z.tbchange",
+     "sha256": "a80be8c42ee8726e87abb9ba126ee2dfd136f07eece636c47c30d518f8c70380",
+     "bytes": 16896,
+     "signature": "9kY6btlZGosMhZWFAZbYIx7mKbKViUzNaMLbXqWakc1NfWv7i8tF0KVBCKDyrigHY9PqU37SUMWhWJ5xrwd8Dw=="
     }
    ]
   }
@@ -295,7 +295,7 @@
           "east": 5,
           "north": 50
          },
-         "file": "https://github.com/lpsd-1/trailblazer-datasets/releases/download/routing/E0_N45.rd5",
+         "file": "https://github.com/LPSD-1/trailblazer-datasets/releases/download/routing/E0_N45.rd5",
          "sha256": "d56bd50e79a131b6002b22bed79ef09fb1b00cb8d51e2f134cd8add716901cc4",
          "bytes": 127261650
         },
@@ -323,7 +323,7 @@
           "east": 5,
           "north": 55
          },
-         "file": "https://github.com/lpsd-1/trailblazer-datasets/releases/download/routing/E0_N50.rd5",
+         "file": "https://github.com/LPSD-1/trailblazer-datasets/releases/download/routing/E0_N50.rd5",
          "sha256": "baead719a8b5ce16f82a5e99eaeeadc9882300f556fe8b2164f473b252cd579c",
          "bytes": 79746117
         },
@@ -783,7 +783,7 @@
           "east": -5,
           "north": 50
          },
-         "file": "https://github.com/lpsd-1/trailblazer-datasets/releases/download/routing/W10_N45.rd5",
+         "file": "https://github.com/LPSD-1/trailblazer-datasets/releases/download/routing/W10_N45.rd5",
          "sha256": "bbadae4466ab6d68dffe1032feb4176a009d3a5db378727e818faff590ea347b",
          "bytes": 144971
         },
@@ -797,7 +797,7 @@
           "east": 0,
           "north": 50
          },
-         "file": "https://github.com/lpsd-1/trailblazer-datasets/releases/download/routing/W5_N45.rd5",
+         "file": "https://github.com/LPSD-1/trailblazer-datasets/releases/download/routing/W5_N45.rd5",
          "sha256": "2797283e62629fd67a87dca442335b4e8885e24a6c54fce3ae509a4cd33921c1",
          "bytes": 64221161
         },
@@ -811,7 +811,7 @@
           "east": 5,
           "north": 50
          },
-         "file": "https://github.com/lpsd-1/trailblazer-datasets/releases/download/routing/E0_N45.rd5",
+         "file": "https://github.com/LPSD-1/trailblazer-datasets/releases/download/routing/E0_N45.rd5",
          "sha256": "d56bd50e79a131b6002b22bed79ef09fb1b00cb8d51e2f134cd8add716901cc4",
          "bytes": 127261650
         },
@@ -839,7 +839,7 @@
           "east": -5,
           "north": 55
          },
-         "file": "https://github.com/lpsd-1/trailblazer-datasets/releases/download/routing/W10_N50.rd5",
+         "file": "https://github.com/LPSD-1/trailblazer-datasets/releases/download/routing/W10_N50.rd5",
          "sha256": "303c6270d85a0e2ac7dd572f190d81b7266387a3e649085889f96249ee6528f6",
          "bytes": 43319524
         },
@@ -853,7 +853,7 @@
           "east": 0,
           "north": 55
          },
-         "file": "https://github.com/lpsd-1/trailblazer-datasets/releases/download/routing/W5_N50.rd5",
+         "file": "https://github.com/LPSD-1/trailblazer-datasets/releases/download/routing/W5_N50.rd5",
          "sha256": "69382a6b46fba3a037e02b9cdb23b9d2e2d955edd37b7a953e183621bc912f4f",
          "bytes": 139616384
         },
@@ -867,7 +867,7 @@
           "east": 5,
           "north": 55
          },
-         "file": "https://github.com/lpsd-1/trailblazer-datasets/releases/download/routing/E0_N50.rd5",
+         "file": "https://github.com/LPSD-1/trailblazer-datasets/releases/download/routing/E0_N50.rd5",
          "sha256": "baead719a8b5ce16f82a5e99eaeeadc9882300f556fe8b2164f473b252cd579c",
          "bytes": 79746117
         },
@@ -1341,7 +1341,7 @@
           "east": -5,
           "north": 55
          },
-         "file": "https://github.com/lpsd-1/trailblazer-datasets/releases/download/routing/W10_N50.rd5",
+         "file": "https://github.com/LPSD-1/trailblazer-datasets/releases/download/routing/W10_N50.rd5",
          "sha256": "303c6270d85a0e2ac7dd572f190d81b7266387a3e649085889f96249ee6528f6",
          "bytes": 43319524
         },
@@ -1355,7 +1355,7 @@
           "east": -5,
           "north": 60
          },
-         "file": "https://github.com/lpsd-1/trailblazer-datasets/releases/download/routing/W10_N55.rd5",
+         "file": "https://github.com/LPSD-1/trailblazer-datasets/releases/download/routing/W10_N55.rd5",
          "sha256": "9ccd08bab55488b2b6479ea764db07dc3c55c722a9091e6c62f66d90aa80ce69",
          "bytes": 5537259
         }
@@ -1543,7 +1543,7 @@
           "east": 5,
           "north": 55
          },
-         "file": "https://github.com/lpsd-1/trailblazer-datasets/releases/download/routing/E0_N50.rd5",
+         "file": "https://github.com/LPSD-1/trailblazer-datasets/releases/download/routing/E0_N50.rd5",
          "sha256": "baead719a8b5ce16f82a5e99eaeeadc9882300f556fe8b2164f473b252cd579c",
          "bytes": 79746117
         },
@@ -1595,7 +1595,7 @@
           "east": 5,
           "north": 60
          },
-         "file": "https://github.com/lpsd-1/trailblazer-datasets/releases/download/routing/E0_N55.rd5",
+         "file": "https://github.com/LPSD-1/trailblazer-datasets/releases/download/routing/E0_N55.rd5",
          "sha256": "d3c11c99d6f33a6f5d46ddcedc9b4cfd4398185fa6ea27751a49e0f24f000bd5",
          "bytes": 40546
         },
@@ -2487,27 +2487,19 @@
          "format": "tbmap",
          "label": "Green lanes and byways - East Anglia",
          "file": "containers/ways-east-anglia.tbmap",
-         "sha256": "88a8931dde963fccd505f835cf50964e85266d5c06e58118399c9d1cb65deaee",
+         "sha256": "f157f81802c2d493aed056d8686421f843948dc5fa74f71de7c596a99760be32",
          "bytes": 10924032,
-         "downloadBytes": 4183280,
-         "signature": "s4Qs1nkSNan/NQKnXgIJsADPNbdWvAOtYIcETCr7KncU1mOaW6bsb6JJmuQ/J5btYGQHpCjexbi2EpOPMzpQAw==",
+         "downloadBytes": 4183277,
+         "signature": "QocxdcE3aJgbwOXMCv4BRDKWMHxawmQ1s4Hdlb0r+nfticgpBpyf7Iym43xBiNP1ZkUY75EK02yvRVWS3DEUAg==",
          "legacyFile": "packages/ways-east-anglia.tbpack",
          "plainBytes": 3287282,
          "featureCount": 1280,
          "legalBasis": "official",
          "note": "Byways open to all traffic - the lanes you may legally ride. Bridleways and restricted byways are not on this map: it carries only the ways a motor vehicle may use. Where none is shown, this map has not looked - it does not mean there is none on the ground.",
-         "generated": "2026-11-21T11:32:32Z",
-         "waysCut": "2026-11-21T11:32:32Z",
-         "build": "2026-11-21T11:32:32Z",
+         "generated": "2026-11-22T11:46:55Z",
+         "waysCut": "2026-11-22T11:46:55Z",
+         "build": "2026-11-22T11:46:55Z",
          "changesets": [
-          {
-           "from": "2026-10-30T16:11:03Z",
-           "to": "2026-11-16T23:10:30Z",
-           "file": "changes/gb-east-anglia/20261030T161103Z-20261116T231030Z.tbchange",
-           "sha256": "bf8dbf34b663100f846beef774708446c995ff2137c44765a3b966c8887c11f8",
-           "bytes": 1331200,
-           "signature": "M57CqWNBX4XYz6jtltOEHPatX/fnPtpmEUVEMiKDfBQW3W9H1uR0bKUw2z9ShAPcGxjCRBgHQ4Qn16xCUk73Bw=="
-          },
           {
            "from": "2026-11-16T23:10:30Z",
            "to": "2026-11-17T12:11:42Z",
@@ -2547,6 +2539,14 @@
            "sha256": "e7313b3c056c0f1fe41ea999fe4d2887569daf151a67322cda86a5b0d4f40971",
            "bytes": 1331200,
            "signature": "PHBUPqYJgIwXtL29BdXRhOZA1DvppOtDNBe5bCVhu+U1okTK2RXhcrs/RXsjGwL0ooGdhpAtlT6g2pwKP4QrCw=="
+          },
+          {
+           "from": "2026-11-21T11:32:32Z",
+           "to": "2026-11-22T11:46:55Z",
+           "file": "changes/gb-east-anglia/20261121T113232Z-20261122T114655Z.tbchange",
+           "sha256": "f59a5b20b91d19d272e408f43599146ff20425b2aac64e72f561da7a45ce72c8",
+           "bytes": 1331200,
+           "signature": "FLLb+Jpuh/qWn/cytw+ZiDyW6xa6UMgBYXKr7CcqFTem86xwAy5bP3AqQgX+qkReBwO6ZY9ybac11/StfD/hBQ=="
           }
          ]
         },
@@ -2590,25 +2590,17 @@
          "format": "tbmap",
          "label": "Overview",
          "file": "containers/ways-overview.tbmap",
-         "sha256": "bdb2f175e7b36eb572619c7d98a5172a0115dd1f8aa6089aac5c6e11d0c0136e",
+         "sha256": "fe743fe867f1aab7b8e8d51cba98b54eaf89710412f10958b8132c563abf3d47",
          "bytes": 1552384,
-         "downloadBytes": 678142,
-         "signature": "mkHjwzHbknHh+7Oqb8BxdwRvAxoo6faXj32o7AIy9Gts/ewpa8co3wuNbabGVK3pj6h/fq6NgBHmoBfzyhS1BA==",
+         "downloadBytes": 678143,
+         "signature": "b/KZYm6E3L7j3rD7Md2sqRTjMr3DvXYW9kCapzl26OSYMeWsbIYkVwGPiDP52vDfN2UbtbPnHuN/mwbGlLOnBQ==",
          "featureCount": 8366,
-         "generated": "2026-11-21T11:32:32Z",
-         "waysCut": "2026-11-21T11:32:32Z",
+         "generated": "2026-11-22T11:46:55Z",
+         "waysCut": "2026-11-22T11:46:55Z",
          "minZoom": 4,
          "legalBasis": "official",
-         "build": "2026-11-21T11:32:32Z",
+         "build": "2026-11-22T11:46:55Z",
          "changesets": [
-          {
-           "from": "2026-10-30T16:11:03Z",
-           "to": "2026-11-16T23:10:30Z",
-           "file": "changes/gb-overview/20261030T161103Z-20261116T231030Z.tbchange",
-           "sha256": "eb78f97bf3ec02cd04aced53ffe2860d65cd38cce79e2f7aecab154d05183da6",
-           "bytes": 282112,
-           "signature": "LS4z+ywDp2KLAP/p/cVWkipOpXOZ0zUqcE/8BzMYhk6hM+uDt/z91oUMR9tAMlvaXRyIH5OBqpEYmSpYwFd5Dg=="
-          },
           {
            "from": "2026-11-16T23:10:30Z",
            "to": "2026-11-17T12:11:42Z",
@@ -2648,6 +2640,14 @@
            "sha256": "74dd9c6df2fbfe73a4b2e546bfa8dd3d21252e3de47ffd91c74c6e6badad52ec",
            "bytes": 16896,
            "signature": "Zm+bkmIwJPvA1dqIdczVPG4Xma8umoOjAwacpqAxYgRfyzjM2BNouGNGWOabWbk2DkEjmQDVKCMqFo9uX+MtCg=="
+          },
+          {
+           "from": "2026-11-21T11:32:32Z",
+           "to": "2026-11-22T11:46:55Z",
+           "file": "changes/gb-overview/20261121T113232Z-20261122T114655Z.tbchange",
+           "sha256": "a80be8c42ee8726e87abb9ba126ee2dfd136f07eece636c47c30d518f8c70380",
+           "bytes": 16896,
+           "signature": "9kY6btlZGosMhZWFAZbYIx7mKbKViUzNaMLbXqWakc1NfWv7i8tF0KVBCKDyrigHY9PqU37SUMWhWJ5xrwd8Dw=="
           }
          ]
         }
@@ -2669,27 +2669,19 @@
          "format": "tbmap",
          "label": "Green lanes and byways - Midlands",
          "file": "containers/ways-midlands.tbmap",
-         "sha256": "2e8f9cd76bd1f6d583200d28bf0e6391a3fcb7c9b735968ec121670ec270a68b",
+         "sha256": "9eba164d564cfaf7d611a6ff5e1e92332fb524a46bdfbc270a5d029fce8547d3",
          "bytes": 21696512,
-         "downloadBytes": 8575606,
-         "signature": "tqGJmS3lNryyHL634xKON0lCgVjXb0vRWRBaLAbfg6zc7GhD3NLh8uDZMtUot93ksXHu84uAX+bCSpsfyPMCBQ==",
+         "downloadBytes": 8575634,
+         "signature": "en5p8wzmJ9khQxoc1OH3LzniPpm3DFgYxkzay8TZHqKraqtniQtWSI4HWl/8vUn8P90AM90+Ud1lJUXzGUrgBw==",
          "legacyFile": "packages/ways-midlands.tbpack",
          "plainBytes": 2916877,
          "featureCount": 1772,
          "legalBasis": "official",
          "note": "Byways open to all traffic - the lanes you may legally ride. Bridleways and restricted byways are not on this map: it carries only the ways a motor vehicle may use. Where none is shown, this map has not looked - it does not mean there is none on the ground.",
-         "generated": "2026-11-21T11:32:32Z",
-         "waysCut": "2026-11-21T11:32:32Z",
-         "build": "2026-11-21T11:32:32Z",
+         "generated": "2026-11-22T11:46:55Z",
+         "waysCut": "2026-11-22T11:46:55Z",
+         "build": "2026-11-22T11:46:55Z",
          "changesets": [
-          {
-           "from": "2026-10-30T16:11:03Z",
-           "to": "2026-11-16T23:10:30Z",
-           "file": "changes/gb-midlands/20261030T161103Z-20261116T231030Z.tbchange",
-           "sha256": "907a66d26530a13a65e51105d6e1588f7ac23c01f284ba105bc633776c7d0699",
-           "bytes": 1298432,
-           "signature": "+cmd31q6uxFbAVy89e4X8dN3+pn5moRfZmkp+KlQRPIC4HPJxpS0F79VpT5Pcy5dL8XMimuZ/7OAsVPAShspDw=="
-          },
           {
            "from": "2026-11-16T23:10:30Z",
            "to": "2026-11-17T12:11:42Z",
@@ -2729,6 +2721,14 @@
            "sha256": "c24db6ec9d4b8fcb9e96988f84baaf228b5b7e70e20b21fee44d4b0aa3be82c9",
            "bytes": 1294336,
            "signature": "hesUB0Tqvb/dD8BP5NfiTPG/czlI98bCotmo8yAUrITVz1ODGPf7KJFwKGLUgCnqDMYSjKDy/2S74wbn3LWDBw=="
+          },
+          {
+           "from": "2026-11-21T11:32:32Z",
+           "to": "2026-11-22T11:46:55Z",
+           "file": "changes/gb-midlands/20261121T113232Z-20261122T114655Z.tbchange",
+           "sha256": "70429e79a21971592f3265c9a802e8dd91a7d7943dcc9839b23847a7397ec885",
+           "bytes": 1294336,
+           "signature": "lBOQV/5OjK+gqSrtWBtgMaP7ijJC2ADx+0rzdQ2WG/xaJc3zN1P96gkmhXehNXrfT3TbsZUSdW1d6d3AD4PECA=="
           }
          ]
         },
@@ -2772,25 +2772,17 @@
          "format": "tbmap",
          "label": "Overview",
          "file": "containers/ways-overview.tbmap",
-         "sha256": "bdb2f175e7b36eb572619c7d98a5172a0115dd1f8aa6089aac5c6e11d0c0136e",
+         "sha256": "fe743fe867f1aab7b8e8d51cba98b54eaf89710412f10958b8132c563abf3d47",
          "bytes": 1552384,
-         "downloadBytes": 678142,
-         "signature": "mkHjwzHbknHh+7Oqb8BxdwRvAxoo6faXj32o7AIy9Gts/ewpa8co3wuNbabGVK3pj6h/fq6NgBHmoBfzyhS1BA==",
+         "downloadBytes": 678143,
+         "signature": "b/KZYm6E3L7j3rD7Md2sqRTjMr3DvXYW9kCapzl26OSYMeWsbIYkVwGPiDP52vDfN2UbtbPnHuN/mwbGlLOnBQ==",
          "featureCount": 8366,
-         "generated": "2026-11-21T11:32:32Z",
-         "waysCut": "2026-11-21T11:32:32Z",
+         "generated": "2026-11-22T11:46:55Z",
+         "waysCut": "2026-11-22T11:46:55Z",
          "minZoom": 4,
          "legalBasis": "official",
-         "build": "2026-11-21T11:32:32Z",
+         "build": "2026-11-22T11:46:55Z",
          "changesets": [
-          {
-           "from": "2026-10-30T16:11:03Z",
-           "to": "2026-11-16T23:10:30Z",
-           "file": "changes/gb-overview/20261030T161103Z-20261116T231030Z.tbchange",
-           "sha256": "eb78f97bf3ec02cd04aced53ffe2860d65cd38cce79e2f7aecab154d05183da6",
-           "bytes": 282112,
-           "signature": "LS4z+ywDp2KLAP/p/cVWkipOpXOZ0zUqcE/8BzMYhk6hM+uDt/z91oUMR9tAMlvaXRyIH5OBqpEYmSpYwFd5Dg=="
-          },
           {
            "from": "2026-11-16T23:10:30Z",
            "to": "2026-11-17T12:11:42Z",
@@ -2830,6 +2822,14 @@
            "sha256": "74dd9c6df2fbfe73a4b2e546bfa8dd3d21252e3de47ffd91c74c6e6badad52ec",
            "bytes": 16896,
            "signature": "Zm+bkmIwJPvA1dqIdczVPG4Xma8umoOjAwacpqAxYgRfyzjM2BNouGNGWOabWbk2DkEjmQDVKCMqFo9uX+MtCg=="
+          },
+          {
+           "from": "2026-11-21T11:32:32Z",
+           "to": "2026-11-22T11:46:55Z",
+           "file": "changes/gb-overview/20261121T113232Z-20261122T114655Z.tbchange",
+           "sha256": "a80be8c42ee8726e87abb9ba126ee2dfd136f07eece636c47c30d518f8c70380",
+           "bytes": 16896,
+           "signature": "9kY6btlZGosMhZWFAZbYIx7mKbKViUzNaMLbXqWakc1NfWv7i8tF0KVBCKDyrigHY9PqU37SUMWhWJ5xrwd8Dw=="
           }
          ]
         }
@@ -2930,25 +2930,17 @@
          "format": "tbmap",
          "label": "Overview",
          "file": "containers/ways-overview.tbmap",
-         "sha256": "bdb2f175e7b36eb572619c7d98a5172a0115dd1f8aa6089aac5c6e11d0c0136e",
+         "sha256": "fe743fe867f1aab7b8e8d51cba98b54eaf89710412f10958b8132c563abf3d47",
          "bytes": 1552384,
-         "downloadBytes": 678142,
-         "signature": "mkHjwzHbknHh+7Oqb8BxdwRvAxoo6faXj32o7AIy9Gts/ewpa8co3wuNbabGVK3pj6h/fq6NgBHmoBfzyhS1BA==",
+         "downloadBytes": 678143,
+         "signature": "b/KZYm6E3L7j3rD7Md2sqRTjMr3DvXYW9kCapzl26OSYMeWsbIYkVwGPiDP52vDfN2UbtbPnHuN/mwbGlLOnBQ==",
          "featureCount": 8366,
-         "generated": "2026-11-21T11:32:32Z",
-         "waysCut": "2026-11-21T11:32:32Z",
+         "generated": "2026-11-22T11:46:55Z",
+         "waysCut": "2026-11-22T11:46:55Z",
          "minZoom": 4,
          "legalBasis": "official",
-         "build": "2026-11-21T11:32:32Z",
+         "build": "2026-11-22T11:46:55Z",
          "changesets": [
-          {
-           "from": "2026-10-30T16:11:03Z",
-           "to": "2026-11-16T23:10:30Z",
-           "file": "changes/gb-overview/20261030T161103Z-20261116T231030Z.tbchange",
-           "sha256": "eb78f97bf3ec02cd04aced53ffe2860d65cd38cce79e2f7aecab154d05183da6",
-           "bytes": 282112,
-           "signature": "LS4z+ywDp2KLAP/p/cVWkipOpXOZ0zUqcE/8BzMYhk6hM+uDt/z91oUMR9tAMlvaXRyIH5OBqpEYmSpYwFd5Dg=="
-          },
           {
            "from": "2026-11-16T23:10:30Z",
            "to": "2026-11-17T12:11:42Z",
@@ -2988,6 +2980,14 @@
            "sha256": "74dd9c6df2fbfe73a4b2e546bfa8dd3d21252e3de47ffd91c74c6e6badad52ec",
            "bytes": 16896,
            "signature": "Zm+bkmIwJPvA1dqIdczVPG4Xma8umoOjAwacpqAxYgRfyzjM2BNouGNGWOabWbk2DkEjmQDVKCMqFo9uX+MtCg=="
+          },
+          {
+           "from": "2026-11-21T11:32:32Z",
+           "to": "2026-11-22T11:46:55Z",
+           "file": "changes/gb-overview/20261121T113232Z-20261122T114655Z.tbchange",
+           "sha256": "a80be8c42ee8726e87abb9ba126ee2dfd136f07eece636c47c30d518f8c70380",
+           "bytes": 16896,
+           "signature": "9kY6btlZGosMhZWFAZbYIx7mKbKViUzNaMLbXqWakc1NfWv7i8tF0KVBCKDyrigHY9PqU37SUMWhWJ5xrwd8Dw=="
           }
          ]
         }
@@ -3080,25 +3080,17 @@
          "format": "tbmap",
          "label": "Overview",
          "file": "containers/ways-overview.tbmap",
-         "sha256": "bdb2f175e7b36eb572619c7d98a5172a0115dd1f8aa6089aac5c6e11d0c0136e",
+         "sha256": "fe743fe867f1aab7b8e8d51cba98b54eaf89710412f10958b8132c563abf3d47",
          "bytes": 1552384,
-         "downloadBytes": 678142,
-         "signature": "mkHjwzHbknHh+7Oqb8BxdwRvAxoo6faXj32o7AIy9Gts/ewpa8co3wuNbabGVK3pj6h/fq6NgBHmoBfzyhS1BA==",
+         "downloadBytes": 678143,
+         "signature": "b/KZYm6E3L7j3rD7Md2sqRTjMr3DvXYW9kCapzl26OSYMeWsbIYkVwGPiDP52vDfN2UbtbPnHuN/mwbGlLOnBQ==",
          "featureCount": 8366,
-         "generated": "2026-11-21T11:32:32Z",
-         "waysCut": "2026-11-21T11:32:32Z",
+         "generated": "2026-11-22T11:46:55Z",
+         "waysCut": "2026-11-22T11:46:55Z",
          "minZoom": 4,
          "legalBasis": "official",
-         "build": "2026-11-21T11:32:32Z",
+         "build": "2026-11-22T11:46:55Z",
          "changesets": [
-          {
-           "from": "2026-10-30T16:11:03Z",
-           "to": "2026-11-16T23:10:30Z",
-           "file": "changes/gb-overview/20261030T161103Z-20261116T231030Z.tbchange",
-           "sha256": "eb78f97bf3ec02cd04aced53ffe2860d65cd38cce79e2f7aecab154d05183da6",
-           "bytes": 282112,
-           "signature": "LS4z+ywDp2KLAP/p/cVWkipOpXOZ0zUqcE/8BzMYhk6hM+uDt/z91oUMR9tAMlvaXRyIH5OBqpEYmSpYwFd5Dg=="
-          },
           {
            "from": "2026-11-16T23:10:30Z",
            "to": "2026-11-17T12:11:42Z",
@@ -3138,6 +3130,14 @@
            "sha256": "74dd9c6df2fbfe73a4b2e546bfa8dd3d21252e3de47ffd91c74c6e6badad52ec",
            "bytes": 16896,
            "signature": "Zm+bkmIwJPvA1dqIdczVPG4Xma8umoOjAwacpqAxYgRfyzjM2BNouGNGWOabWbk2DkEjmQDVKCMqFo9uX+MtCg=="
+          },
+          {
+           "from": "2026-11-21T11:32:32Z",
+           "to": "2026-11-22T11:46:55Z",
+           "file": "changes/gb-overview/20261121T113232Z-20261122T114655Z.tbchange",
+           "sha256": "a80be8c42ee8726e87abb9ba126ee2dfd136f07eece636c47c30d518f8c70380",
+           "bytes": 16896,
+           "signature": "9kY6btlZGosMhZWFAZbYIx7mKbKViUzNaMLbXqWakc1NfWv7i8tF0KVBCKDyrigHY9PqU37SUMWhWJ5xrwd8Dw=="
           }
          ]
         }
@@ -3159,27 +3159,19 @@
          "format": "tbmap",
          "label": "Green lanes and byways - The North",
          "file": "containers/ways-north.tbmap",
-         "sha256": "f159aa586d3b614d673096386a560aafa9e92557395d09c0f3bb6761ce717064",
+         "sha256": "65873a47d3a819e23482a720b8631236710287c2cf849c8e0eff513876dad55d",
          "bytes": 22441984,
-         "downloadBytes": 8718131,
-         "signature": "imdEyi7wielftTSo2E/b7dYzlBorFBbstVyesynxED+Erh08NBqLj5bbS8k1xSf4IK5EZb8cZWwuMmAUH6o6Dw==",
+         "downloadBytes": 8718139,
+         "signature": "8WtU5dXBrQdpLVkzyUjFY2CZCzraXnUlES0jH5pQ+oUKPgJkIxLmuqDMngwfuoag/dpJqrxlL1+YcNdjD8kSBw==",
          "legacyFile": "packages/ways-north.tbpack",
          "plainBytes": 3734896,
          "featureCount": 1460,
          "legalBasis": "official",
          "note": "Byways open to all traffic - the lanes you may legally ride. Bridleways and restricted byways are not on this map: it carries only the ways a motor vehicle may use. Where none is shown, this map has not looked - it does not mean there is none on the ground.",
-         "generated": "2026-11-21T11:32:32Z",
-         "waysCut": "2026-11-21T11:32:32Z",
-         "build": "2026-11-21T11:32:32Z",
+         "generated": "2026-11-22T11:46:55Z",
+         "waysCut": "2026-11-22T11:46:55Z",
+         "build": "2026-11-22T11:46:55Z",
          "changesets": [
-          {
-           "from": "2026-10-30T16:11:03Z",
-           "to": "2026-11-16T23:10:30Z",
-           "file": "changes/gb-north/20261030T161103Z-20261116T231030Z.tbchange",
-           "sha256": "302009bb9ca57b83a862b0d549e844176bcdb19dd0246899a2251eab83cfd41a",
-           "bytes": 1638400,
-           "signature": "RxcrX48Gj4VqLyONrAF4CgfH5jhiZkylsAPTnFAkKhykeu/uIElUUalggNjpExGmKHLoKzyMQaGc1Kx1fY6rAQ=="
-          },
           {
            "from": "2026-11-16T23:10:30Z",
            "to": "2026-11-17T12:11:42Z",
@@ -3219,6 +3211,14 @@
            "sha256": "a9c37ee88d8b66507f830db16f8126db18e547be6086e7d26d0d889eac21888b",
            "bytes": 1634304,
            "signature": "yXjP1emM/ibJSoBsI5gAYdwA0KneVMdzn/alE0RaTKXhk5rFnJG0attj7X1pkMxj9mN362niUAfvIFV6QC27CA=="
+          },
+          {
+           "from": "2026-11-21T11:32:32Z",
+           "to": "2026-11-22T11:46:55Z",
+           "file": "changes/gb-north/20261121T113232Z-20261122T114655Z.tbchange",
+           "sha256": "260a680898374e376e59538a5b8cc041ea760cb319e35857124985f943bccf41",
+           "bytes": 1634304,
+           "signature": "Eao6FdvcPiqAn6Tm63aG/DkqbhKm+t4Vk2jM8yRH7MO02vFq3Bd7LoCxcsIHyIB8y9KLoCPbeu4VHSfcrgmiBA=="
           }
          ]
         },
@@ -3262,25 +3262,17 @@
          "format": "tbmap",
          "label": "Overview",
          "file": "containers/ways-overview.tbmap",
-         "sha256": "bdb2f175e7b36eb572619c7d98a5172a0115dd1f8aa6089aac5c6e11d0c0136e",
+         "sha256": "fe743fe867f1aab7b8e8d51cba98b54eaf89710412f10958b8132c563abf3d47",
          "bytes": 1552384,
-         "downloadBytes": 678142,
-         "signature": "mkHjwzHbknHh+7Oqb8BxdwRvAxoo6faXj32o7AIy9Gts/ewpa8co3wuNbabGVK3pj6h/fq6NgBHmoBfzyhS1BA==",
+         "downloadBytes": 678143,
+         "signature": "b/KZYm6E3L7j3rD7Md2sqRTjMr3DvXYW9kCapzl26OSYMeWsbIYkVwGPiDP52vDfN2UbtbPnHuN/mwbGlLOnBQ==",
          "featureCount": 8366,
-         "generated": "2026-11-21T11:32:32Z",
-         "waysCut": "2026-11-21T11:32:32Z",
+         "generated": "2026-11-22T11:46:55Z",
+         "waysCut": "2026-11-22T11:46:55Z",
          "minZoom": 4,
          "legalBasis": "official",
-         "build": "2026-11-21T11:32:32Z",
+         "build": "2026-11-22T11:46:55Z",
          "changesets": [
-          {
-           "from": "2026-10-30T16:11:03Z",
-           "to": "2026-11-16T23:10:30Z",
-           "file": "changes/gb-overview/20261030T161103Z-20261116T231030Z.tbchange",
-           "sha256": "eb78f97bf3ec02cd04aced53ffe2860d65cd38cce79e2f7aecab154d05183da6",
-           "bytes": 282112,
-           "signature": "LS4z+ywDp2KLAP/p/cVWkipOpXOZ0zUqcE/8BzMYhk6hM+uDt/z91oUMR9tAMlvaXRyIH5OBqpEYmSpYwFd5Dg=="
-          },
           {
            "from": "2026-11-16T23:10:30Z",
            "to": "2026-11-17T12:11:42Z",
@@ -3320,6 +3312,14 @@
            "sha256": "74dd9c6df2fbfe73a4b2e546bfa8dd3d21252e3de47ffd91c74c6e6badad52ec",
            "bytes": 16896,
            "signature": "Zm+bkmIwJPvA1dqIdczVPG4Xma8umoOjAwacpqAxYgRfyzjM2BNouGNGWOabWbk2DkEjmQDVKCMqFo9uX+MtCg=="
+          },
+          {
+           "from": "2026-11-21T11:32:32Z",
+           "to": "2026-11-22T11:46:55Z",
+           "file": "changes/gb-overview/20261121T113232Z-20261122T114655Z.tbchange",
+           "sha256": "a80be8c42ee8726e87abb9ba126ee2dfd136f07eece636c47c30d518f8c70380",
+           "bytes": 16896,
+           "signature": "9kY6btlZGosMhZWFAZbYIx7mKbKViUzNaMLbXqWakc1NfWv7i8tF0KVBCKDyrigHY9PqU37SUMWhWJ5xrwd8Dw=="
           }
          ]
         }
@@ -3436,25 +3436,17 @@
          "format": "tbmap",
          "label": "Overview",
          "file": "containers/ways-overview.tbmap",
-         "sha256": "bdb2f175e7b36eb572619c7d98a5172a0115dd1f8aa6089aac5c6e11d0c0136e",
+         "sha256": "fe743fe867f1aab7b8e8d51cba98b54eaf89710412f10958b8132c563abf3d47",
          "bytes": 1552384,
-         "downloadBytes": 678142,
-         "signature": "mkHjwzHbknHh+7Oqb8BxdwRvAxoo6faXj32o7AIy9Gts/ewpa8co3wuNbabGVK3pj6h/fq6NgBHmoBfzyhS1BA==",
+         "downloadBytes": 678143,
+         "signature": "b/KZYm6E3L7j3rD7Md2sqRTjMr3DvXYW9kCapzl26OSYMeWsbIYkVwGPiDP52vDfN2UbtbPnHuN/mwbGlLOnBQ==",
          "featureCount": 8366,
-         "generated": "2026-11-21T11:32:32Z",
-         "waysCut": "2026-11-21T11:32:32Z",
+         "generated": "2026-11-22T11:46:55Z",
+         "waysCut": "2026-11-22T11:46:55Z",
          "minZoom": 4,
          "legalBasis": "official",
-         "build": "2026-11-21T11:32:32Z",
+         "build": "2026-11-22T11:46:55Z",
          "changesets": [
-          {
-           "from": "2026-10-30T16:11:03Z",
-           "to": "2026-11-16T23:10:30Z",
-           "file": "changes/gb-overview/20261030T161103Z-20261116T231030Z.tbchange",
-           "sha256": "eb78f97bf3ec02cd04aced53ffe2860d65cd38cce79e2f7aecab154d05183da6",
-           "bytes": 282112,
-           "signature": "LS4z+ywDp2KLAP/p/cVWkipOpXOZ0zUqcE/8BzMYhk6hM+uDt/z91oUMR9tAMlvaXRyIH5OBqpEYmSpYwFd5Dg=="
-          },
           {
            "from": "2026-11-16T23:10:30Z",
            "to": "2026-11-17T12:11:42Z",
@@ -3494,6 +3486,14 @@
            "sha256": "74dd9c6df2fbfe73a4b2e546bfa8dd3d21252e3de47ffd91c74c6e6badad52ec",
            "bytes": 16896,
            "signature": "Zm+bkmIwJPvA1dqIdczVPG4Xma8umoOjAwacpqAxYgRfyzjM2BNouGNGWOabWbk2DkEjmQDVKCMqFo9uX+MtCg=="
+          },
+          {
+           "from": "2026-11-21T11:32:32Z",
+           "to": "2026-11-22T11:46:55Z",
+           "file": "changes/gb-overview/20261121T113232Z-20261122T114655Z.tbchange",
+           "sha256": "a80be8c42ee8726e87abb9ba126ee2dfd136f07eece636c47c30d518f8c70380",
+           "bytes": 16896,
+           "signature": "9kY6btlZGosMhZWFAZbYIx7mKbKViUzNaMLbXqWakc1NfWv7i8tF0KVBCKDyrigHY9PqU37SUMWhWJ5xrwd8Dw=="
           }
          ]
         }
@@ -3519,7 +3519,7 @@
           "east": -5,
           "north": 55
          },
-         "file": "https://github.com/lpsd-1/trailblazer-datasets/releases/download/routing/W10_N50.rd5",
+         "file": "https://github.com/LPSD-1/trailblazer-datasets/releases/download/routing/W10_N50.rd5",
          "sha256": "303c6270d85a0e2ac7dd572f190d81b7266387a3e649085889f96249ee6528f6",
          "bytes": 43319524
         },
@@ -3533,7 +3533,7 @@
           "east": 0,
           "north": 55
          },
-         "file": "https://github.com/lpsd-1/trailblazer-datasets/releases/download/routing/W5_N50.rd5",
+         "file": "https://github.com/LPSD-1/trailblazer-datasets/releases/download/routing/W5_N50.rd5",
          "sha256": "69382a6b46fba3a037e02b9cdb23b9d2e2d955edd37b7a953e183621bc912f4f",
          "bytes": 139616384
         },
@@ -3547,7 +3547,7 @@
           "east": 5,
           "north": 55
          },
-         "file": "https://github.com/lpsd-1/trailblazer-datasets/releases/download/routing/E0_N50.rd5",
+         "file": "https://github.com/LPSD-1/trailblazer-datasets/releases/download/routing/E0_N50.rd5",
          "sha256": "baead719a8b5ce16f82a5e99eaeeadc9882300f556fe8b2164f473b252cd579c",
          "bytes": 79746117
         },
@@ -3561,7 +3561,7 @@
           "east": -5,
           "north": 60
          },
-         "file": "https://github.com/lpsd-1/trailblazer-datasets/releases/download/routing/W10_N55.rd5",
+         "file": "https://github.com/LPSD-1/trailblazer-datasets/releases/download/routing/W10_N55.rd5",
          "sha256": "9ccd08bab55488b2b6479ea764db07dc3c55c722a9091e6c62f66d90aa80ce69",
          "bytes": 5537259
         },
@@ -3575,7 +3575,7 @@
           "east": 0,
           "north": 60
          },
-         "file": "https://github.com/lpsd-1/trailblazer-datasets/releases/download/routing/W5_N55.rd5",
+         "file": "https://github.com/LPSD-1/trailblazer-datasets/releases/download/routing/W5_N55.rd5",
          "sha256": "014a4d15938f0ba78933215ee47c0a84bd450de6d96c581906790379be3c8411",
          "bytes": 26472051
         },
@@ -3589,7 +3589,7 @@
           "east": 5,
           "north": 60
          },
-         "file": "https://github.com/lpsd-1/trailblazer-datasets/releases/download/routing/E0_N55.rd5",
+         "file": "https://github.com/LPSD-1/trailblazer-datasets/releases/download/routing/E0_N55.rd5",
          "sha256": "d3c11c99d6f33a6f5d46ddcedc9b4cfd4398185fa6ea27751a49e0f24f000bd5",
          "bytes": 40546
         },
