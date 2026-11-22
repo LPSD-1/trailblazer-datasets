@@ -690,7 +690,7 @@
   "collected": "2026-11-16",
   "council": "Dorset Council",
   "digest": "f1f593978adb63efc100227be93729525e82082550cf934c3fbe0a85a0615bef",
-  "error": "HTTP None for https://gi.dorsetcouncil.gov.uk/geoserver/countryside/wfs?service=WFS&version=2.0.0&request=GetFeature&typeNames=countryside:v_dmmo_public&outputFormat=application/json&propertyName=dmmo",
+  "error": "HTTP 503 for https://gi.dorsetcouncil.gov.uk/geoserver/countryside/wfs?service=WFS&version=2.0.0&request=GetFeature&typeNames=countryside:v_dmmo_public&outputFormat=application/json&propertyName=dmmo_",
   "failing_since": "2026-11-22",
   "file": "dorset-dmmo-6d5361e705.json",
   "id": "dorset-dmmo",
