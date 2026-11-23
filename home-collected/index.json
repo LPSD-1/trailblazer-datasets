@@ -679,7 +679,7 @@
   "collected": "2026-11-12",
   "council": "Dorset Council",
   "digest": "fd116bb8ecb7c4437e872d6edda797c634da14c230bc1b31f2234e057b341b62",
-  "error": "HTTP None for https://gi.dorsetcouncil.gov.uk/geoserver/countryside/wfs?service=WFS&version=2.0.0&request=GetFeature&typeNames=countryside:route_closed&outputFormat=application/json: b'The read operat",
+  "error": "HTTP 503 for https://gi.dorsetcouncil.gov.uk/geoserver/countryside/wfs?service=WFS&version=2.0.0&request=GetFeature&typeNames=countryside:route_closed&outputFormat=application/json: b'<!doctype html><",
   "failing_since": "2026-11-22",
   "file": "dorset-closures-7240aa9028.json",
   "id": "dorset-closures",
