@@ -676,18 +676,18 @@
  },
  "https://gi.dorsetcouncil.gov.uk/geoserver/countryside/wfs?service=WFS&version=2.0.0&request=GetFeature&typeNames=countryside:route_closed&outputFormat=application/json": {
   "authority": "Dorset",
-  "collected": "2026-11-23",
+  "collected": "2026-11-24",
   "council": "Dorset Council",
-  "digest": "21df0534d61da0e9882bf8d46cfcd3755f10d9a04311c99978def82a0c3d810b",
+  "digest": "e0d468e34b4019456d9b49341b3f3370e9aa42c973b49a96a2ccd433a107df17",
   "file": "dorset-closures-7240aa9028.json",
   "id": "dorset-closures",
   "kind": "json"
  },
  "https://gi.dorsetcouncil.gov.uk/geoserver/countryside/wfs?service=WFS&version=2.0.0&request=GetFeature&typeNames=countryside:v_dmmo_public&outputFormat=application/json&propertyName=dmmo_ref_no,application_details,case_status,website_url,claimed_statuses,application_types,geom": {
   "authority": "Dorset",
-  "collected": "2026-11-23",
+  "collected": "2026-11-24",
   "council": "Dorset Council",
-  "digest": "078e671ab22c9cd78ef6293537a64c53b8411c64b368ee7d3e629ba03d603489",
+  "digest": "c58f5a7dcda425ab377a1610fc3b3e125b1f02c1e76ed364465035fa35ee987a",
   "file": "dorset-dmmo-6d5361e705.json",
   "id": "dorset-dmmo",
   "kind": "json"
