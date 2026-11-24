@@ -1,201 +1,201 @@
 {
- "as_of": "2026-11-23T13:29:58Z",
+ "as_of": "2026-11-24T02:36:34Z",
  "licence": "Environment Agency flood-monitoring data, OGL v3",
  "region": "north",
  "schema": 1,
  "stale_after_h": 6,
  "stations": {
   "021030": {
-   "at": "2026-11-23T12:45:00Z",
-   "m": 0.04,
+   "at": "2026-11-24T02:15:00Z",
+   "m": 0.036,
    "state": "normal",
    "typical_high_m": 1.2,
    "typical_low_m": 0.035,
-   "vs_typical_high_m": -1.16
+   "vs_typical_high_m": -1.164
   },
   "021034": {
-   "at": "2026-11-23T12:45:00Z",
-   "m": 0.458,
+   "at": "2026-11-24T02:15:00Z",
+   "m": 0.429,
    "state": "below",
    "typical_high_m": 1.879,
    "typical_low_m": 0.623,
-   "vs_typical_high_m": -1.421
+   "vs_typical_high_m": -1.45
   },
   "021040": {
-   "at": "2026-11-23T13:00:00Z",
-   "m": 0.086,
+   "at": "2026-11-24T02:15:00Z",
+   "m": 0.08,
    "state": "normal",
    "typical_high_m": 0.6,
    "typical_low_m": 0.041,
-   "vs_typical_high_m": -0.514
+   "vs_typical_high_m": -0.52
   },
   "022003": {
-   "at": "2026-11-23T06:00:00Z",
-   "m": 0.076,
+   "at": "2026-11-23T18:30:00Z",
+   "m": 0.071,
    "state": "normal",
    "typical_high_m": 1.0,
    "typical_low_m": 0.039,
-   "vs_typical_high_m": -0.924
+   "vs_typical_high_m": -0.929
   },
   "022009": {
-   "at": "2026-11-23T13:00:00Z",
-   "m": 0.404,
+   "at": "2026-11-24T02:15:00Z",
+   "m": 0.392,
    "state": "normal",
    "typical_high_m": 1.8,
    "typical_low_m": 0.261,
-   "vs_typical_high_m": -1.396
+   "vs_typical_high_m": -1.408
   },
   "022011": {
-   "at": "2026-11-23T05:45:00Z",
-   "m": 0.082,
+   "at": "2026-11-23T18:30:00Z",
+   "m": 0.078,
    "state": "normal",
    "typical_high_m": 0.95,
    "typical_low_m": 0.052,
-   "vs_typical_high_m": -0.868
+   "vs_typical_high_m": -0.872
   },
   "022014": {
-   "at": "2026-11-23T13:00:00Z",
-   "m": 0.294,
+   "at": "2026-11-24T02:15:00Z",
+   "m": 0.285,
    "state": "normal",
    "typical_high_m": 1.6,
    "typical_low_m": 0.223,
-   "vs_typical_high_m": -1.306
+   "vs_typical_high_m": -1.315
   },
   "022015": {
-   "at": "2026-11-23T13:00:00Z",
-   "m": 0.03,
+   "at": "2026-11-24T02:15:00Z",
+   "m": 0.025,
    "state": "below",
    "typical_high_m": 1.81,
    "typical_low_m": 0.064,
-   "vs_typical_high_m": -1.78
+   "vs_typical_high_m": -1.785
   },
   "022020": {
-   "at": "2026-11-23T13:00:00Z",
-   "m": 3.062,
-   "state": "normal",
+   "at": "2026-11-24T02:15:00Z",
+   "m": 3.441,
+   "state": "above",
    "typical_high_m": 3.076,
    "typical_low_m": 0.32,
-   "vs_typical_high_m": -0.014
+   "vs_typical_high_m": 0.365
   },
   "022021": {
-   "at": "2026-11-23T13:00:00Z",
-   "m": 0.291,
+   "at": "2026-11-24T02:15:00Z",
+   "m": 0.296,
    "state": "unknown",
    "typical_high_m": null,
    "typical_low_m": null,
    "vs_typical_high_m": null
   },
   "022022": {
-   "at": "2026-11-23T12:45:00Z",
-   "m": 0.087,
+   "at": "2026-11-24T02:15:00Z",
+   "m": 0.075,
    "state": "unknown",
    "typical_high_m": null,
    "typical_low_m": null,
    "vs_typical_high_m": null
   },
   "023002": {
-   "at": "2026-11-23T13:00:00Z",
-   "m": 0.296,
+   "at": "2026-11-24T02:00:00Z",
+   "m": 0.295,
    "state": "normal",
    "typical_high_m": 1.9,
    "typical_low_m": 0.215,
-   "vs_typical_high_m": -1.604
+   "vs_typical_high_m": -1.605
   },
   "023003": {
-   "at": "2026-11-23T13:00:00Z",
-   "m": 0.476,
+   "at": "2026-11-24T02:00:00Z",
+   "m": 0.647,
    "state": "normal",
    "typical_high_m": 3.35,
    "typical_low_m": 0.361,
-   "vs_typical_high_m": -2.874
+   "vs_typical_high_m": -2.703
   },
   "023008": {
-   "at": "2026-11-23T13:00:00Z",
-   "m": 0.301,
+   "at": "2026-11-24T02:15:00Z",
+   "m": 0.29,
    "state": "normal",
    "typical_high_m": 2.0,
    "typical_low_m": 0.205,
-   "vs_typical_high_m": -1.699
+   "vs_typical_high_m": -1.71
   },
   "023036": {
-   "at": "2026-11-23T13:00:00Z",
-   "m": 0.263,
+   "at": "2026-11-24T02:15:00Z",
+   "m": 0.257,
    "state": "normal",
    "typical_high_m": 1.8,
    "typical_low_m": 0.157,
-   "vs_typical_high_m": -1.537
+   "vs_typical_high_m": -1.543
   },
   "023037": {
-   "at": "2026-11-23T13:00:00Z",
-   "m": 0.065,
+   "at": "2026-11-24T02:00:00Z",
+   "m": 0.256,
    "state": "normal",
    "typical_high_m": 3.0,
    "typical_low_m": 0.032,
-   "vs_typical_high_m": -2.935
+   "vs_typical_high_m": -2.744
   },
   "023053": {
-   "at": "2026-11-23T13:00:00Z",
-   "m": 0.374,
+   "at": "2026-11-24T02:15:00Z",
+   "m": 0.375,
    "state": "normal",
    "typical_high_m": 1.95,
    "typical_low_m": 0.073,
-   "vs_typical_high_m": -1.576
+   "vs_typical_high_m": -1.575
   },
   "023057": {
-   "at": "2026-11-23T13:00:00Z",
-   "m": 0.006,
+   "at": "2026-11-24T02:00:00Z",
+   "m": 0.004,
    "state": "normal",
    "typical_high_m": 0.067,
    "typical_low_m": -0.029,
-   "vs_typical_high_m": -0.061
+   "vs_typical_high_m": -0.063
   },
   "023060": {
-   "at": "2026-11-23T13:00:00Z",
-   "m": -6.022,
+   "at": "2026-11-24T02:00:00Z",
+   "m": -6.021,
    "state": "unknown",
    "typical_high_m": null,
    "typical_low_m": null,
    "vs_typical_high_m": null
   },
   "024010": {
-   "at": "2026-11-23T12:45:00Z",
-   "m": 0.135,
+   "at": "2026-11-24T01:45:00Z",
+   "m": 0.131,
    "state": "normal",
    "typical_high_m": 1.13,
    "typical_low_m": 0.014,
-   "vs_typical_high_m": -0.995
+   "vs_typical_high_m": -0.999
   },
   "4032": {
-   "at": "2026-11-23T13:00:00Z",
-   "m": 0.243,
+   "at": "2026-11-24T02:00:00Z",
+   "m": 0.211,
    "state": "normal",
    "typical_high_m": 0.8,
    "typical_low_m": 0.15,
-   "vs_typical_high_m": -0.557
+   "vs_typical_high_m": -0.589
   },
   "4033": {
-   "at": "2026-11-23T13:00:00Z",
-   "m": 0.138,
+   "at": "2026-11-24T02:15:00Z",
+   "m": 0.139,
    "state": "unknown",
    "typical_high_m": null,
    "typical_low_m": null,
    "vs_typical_high_m": null
   },
   "4046": {
-   "at": "2026-11-23T12:45:00Z",
-   "m": 0.311,
+   "at": "2026-11-24T02:15:00Z",
+   "m": 0.309,
    "state": "normal",
    "typical_high_m": 0.59,
    "typical_low_m": 0.271,
-   "vs_typical_high_m": -0.279
+   "vs_typical_high_m": -0.281
   },
   "4895": {
-   "at": "2026-11-23T13:00:00Z",
-   "m": 0.14,
+   "at": "2026-11-24T02:15:00Z",
+   "m": 0.137,
    "state": "normal",
    "typical_high_m": 1.88,
    "typical_low_m": 0.068,
-   "vs_typical_high_m": -1.74
+   "vs_typical_high_m": -1.743
   },
   "5188": {
    "at": "2026-11-20T17:00:00Z",
@@ -206,15 +206,15 @@
    "vs_typical_high_m": null
   },
   "685502": {
-   "at": "2026-11-23T13:00:00Z",
-   "m": 0.158,
+   "at": "2026-11-24T02:15:00Z",
+   "m": 0.172,
    "state": "unknown",
    "typical_high_m": null,
    "typical_low_m": null,
    "vs_typical_high_m": null
   },
   "692370": {
-   "at": "2026-11-23T13:04:08Z",
+   "at": "2026-11-24T02:18:14Z",
    "m": 0.215,
    "state": "normal",
    "typical_high_m": 1.7,
@@ -222,191 +222,191 @@
    "vs_typical_high_m": -1.485
   },
   "710125": {
-   "at": "2026-11-23T13:04:18Z",
-   "m": 0.29,
+   "at": "2026-11-24T02:19:14Z",
+   "m": 0.283,
    "state": "below",
    "typical_high_m": 0.81,
    "typical_low_m": 0.3,
-   "vs_typical_high_m": -0.52
+   "vs_typical_high_m": -0.527
   },
   "710151": {
-   "at": "2026-11-23T13:04:52Z",
-   "m": 0.139,
+   "at": "2026-11-24T02:19:52Z",
+   "m": 0.127,
    "state": "normal",
    "typical_high_m": 1.4,
    "typical_low_m": 0.105,
-   "vs_typical_high_m": -1.261
+   "vs_typical_high_m": -1.273
   },
   "722242": {
-   "at": "2026-11-23T13:03:55Z",
-   "m": 0.532,
+   "at": "2026-11-24T02:19:32Z",
+   "m": 0.528,
    "state": "normal",
    "typical_high_m": 2.7,
    "typical_low_m": 0.215,
-   "vs_typical_high_m": -2.168
+   "vs_typical_high_m": -2.172
   },
   "730100": {
-   "at": "2026-11-23T13:00:00Z",
-   "m": 0.383,
+   "at": "2026-11-24T02:15:00Z",
+   "m": 0.379,
    "state": "normal",
    "typical_high_m": 1.0,
    "typical_low_m": 0.258,
-   "vs_typical_high_m": -0.617
+   "vs_typical_high_m": -0.621
   },
   "730203": {
-   "at": "2026-11-23T13:05:55Z",
-   "m": 0.214,
+   "at": "2026-11-24T02:20:54Z",
+   "m": 0.211,
    "state": "normal",
    "typical_high_m": 1.2,
    "typical_low_m": 0.132,
-   "vs_typical_high_m": -0.986
+   "vs_typical_high_m": -0.989
   },
   "731013": {
-   "at": "2026-11-23T13:07:05Z",
-   "m": 0.393,
+   "at": "2026-11-24T02:22:02Z",
+   "m": 0.385,
    "state": "normal",
    "typical_high_m": 1.1,
    "typical_low_m": 0.195,
-   "vs_typical_high_m": -0.707
+   "vs_typical_high_m": -0.715
   },
   "735225": {
-   "at": "2026-11-23T13:00:00Z",
-   "m": 0.38,
+   "at": "2026-11-24T02:15:00Z",
+   "m": 0.371,
    "state": "normal",
    "typical_high_m": 1.0,
    "typical_low_m": 0.228,
-   "vs_typical_high_m": -0.62
+   "vs_typical_high_m": -0.629
   },
   "738345": {
-   "at": "2026-11-23T13:05:17Z",
-   "m": 0.162,
+   "at": "2026-11-24T02:21:33Z",
+   "m": 0.163,
    "state": "normal",
    "typical_high_m": 1.1,
    "typical_low_m": 0.15,
-   "vs_typical_high_m": -0.938
+   "vs_typical_high_m": -0.937
   },
   "743008": {
-   "at": "2026-11-23T09:02:31Z",
-   "m": 0.323,
+   "at": "2026-11-23T15:02:30Z",
+   "m": 0.319,
    "state": "normal",
    "typical_high_m": 0.85,
    "typical_low_m": 0.25,
-   "vs_typical_high_m": -0.527
+   "vs_typical_high_m": -0.531
   },
   "760101": {
-   "at": "2026-11-23T13:02:35Z",
-   "m": 0.214,
+   "at": "2026-11-24T02:16:57Z",
+   "m": 0.204,
    "state": "normal",
    "typical_high_m": 1.4,
    "typical_low_m": 0.072,
-   "vs_typical_high_m": -1.186
+   "vs_typical_high_m": -1.196
   },
   "761102": {
-   "at": "2026-11-23T13:00:00Z",
-   "m": 19.45,
+   "at": "2026-11-24T02:15:00Z",
+   "m": 19.4,
    "state": "below",
    "typical_high_m": 31.39,
    "typical_low_m": 21.556,
-   "vs_typical_high_m": -11.94
+   "vs_typical_high_m": -11.99
   },
   "F0513": {
-   "at": "2026-11-23T13:00:00Z",
-   "m": 0.081,
+   "at": "2026-11-24T02:15:00Z",
+   "m": 0.08,
    "state": "normal",
    "typical_high_m": 0.56,
    "typical_low_m": 0.061,
-   "vs_typical_high_m": -0.479
+   "vs_typical_high_m": -0.48
   },
   "F1240": {
-   "at": "2026-11-23T12:45:00Z",
-   "m": 0.161,
+   "at": "2026-11-24T02:15:00Z",
+   "m": 0.16,
    "state": "normal",
    "typical_high_m": 0.8,
    "typical_low_m": 0.08,
-   "vs_typical_high_m": -0.639
+   "vs_typical_high_m": -0.64
   },
   "F1906": {
-   "at": "2026-11-23T13:00:00Z",
-   "m": 0.426,
+   "at": "2026-11-24T02:15:00Z",
+   "m": 0.414,
    "state": "normal",
    "typical_high_m": 2.2,
    "typical_low_m": 0.3,
-   "vs_typical_high_m": -1.774
+   "vs_typical_high_m": -1.786
   },
   "F2290": {
-   "at": "2026-11-23T12:30:00Z",
-   "m": 0.144,
+   "at": "2026-11-24T02:00:00Z",
+   "m": 0.139,
    "state": "normal",
    "typical_high_m": 0.6,
    "typical_low_m": 0.068,
-   "vs_typical_high_m": -0.456
+   "vs_typical_high_m": -0.461
   },
   "F25110": {
-   "at": "2026-11-23T12:45:00Z",
-   "m": 0.051,
+   "at": "2026-11-24T02:15:00Z",
+   "m": 0.052,
    "state": "normal",
    "typical_high_m": 0.41,
    "typical_low_m": 0.042,
-   "vs_typical_high_m": -0.359
+   "vs_typical_high_m": -0.358
   },
   "F3509": {
-   "at": "2026-11-23T13:00:00Z",
-   "m": 0.114,
+   "at": "2026-11-24T02:00:00Z",
+   "m": 0.109,
    "state": "normal",
    "typical_high_m": 0.8,
    "typical_low_m": 0.045,
-   "vs_typical_high_m": -0.686
+   "vs_typical_high_m": -0.691
   },
   "F3523": {
-   "at": "2026-11-23T13:00:00Z",
-   "m": 0.287,
+   "at": "2026-11-24T02:00:00Z",
+   "m": 0.267,
    "state": "normal",
    "typical_high_m": 1.5,
    "typical_low_m": 0.073,
-   "vs_typical_high_m": -1.213
+   "vs_typical_high_m": -1.233
   },
   "L0407": {
-   "at": "2026-11-23T12:45:00Z",
-   "m": 0.397,
+   "at": "2026-11-24T02:15:00Z",
+   "m": 0.394,
    "state": "normal",
    "typical_high_m": 0.8,
    "typical_low_m": 0.125,
-   "vs_typical_high_m": -0.403
+   "vs_typical_high_m": -0.406
   },
   "L1527": {
-   "at": "2026-11-23T13:00:00Z",
-   "m": 0.281,
+   "at": "2026-11-24T02:00:00Z",
+   "m": 0.28,
    "state": "normal",
    "typical_high_m": 1.45,
    "typical_low_m": 0.043,
-   "vs_typical_high_m": -1.169
+   "vs_typical_high_m": -1.17
   },
   "L1602": {
-   "at": "2026-11-23T13:00:00Z",
-   "m": 0.095,
+   "at": "2026-11-24T02:00:00Z",
+   "m": 0.075,
    "state": "below",
    "typical_high_m": 2.4,
    "typical_low_m": 0.16,
-   "vs_typical_high_m": -2.305
+   "vs_typical_high_m": -2.325
   },
   "L1970": {
-   "at": "2026-11-23T12:30:00Z",
-   "m": 0.169,
+   "at": "2026-11-24T02:00:00Z",
+   "m": 0.157,
    "state": "normal",
    "typical_high_m": 0.582,
    "typical_low_m": 0.057,
-   "vs_typical_high_m": -0.413
+   "vs_typical_high_m": -0.425
   },
   "L2312": {
-   "at": "2026-11-23T13:00:00Z",
-   "m": 0.126,
+   "at": "2026-11-24T02:15:00Z",
+   "m": 0.115,
    "state": "normal",
    "typical_high_m": 2.5,
    "typical_low_m": 0.0,
-   "vs_typical_high_m": -2.374
+   "vs_typical_high_m": -2.385
   },
   "L2314": {
-   "at": "2026-11-23T12:45:00Z",
+   "at": "2026-11-24T01:45:00Z",
    "m": 0.208,
    "state": "below",
    "typical_high_m": 1.2,
@@ -414,12 +414,12 @@
    "vs_typical_high_m": -0.992
   },
   "L2926": {
-   "at": "2026-11-23T13:00:00Z",
-   "m": 0.337,
+   "at": "2026-11-24T02:15:00Z",
+   "m": 0.338,
    "state": "normal",
    "typical_high_m": 1.4,
    "typical_low_m": 0.1,
-   "vs_typical_high_m": -1.063
+   "vs_typical_high_m": -1.062
   }
  }
 }
