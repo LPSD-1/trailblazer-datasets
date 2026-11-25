@@ -1156,7 +1156,8 @@
   },
   {
    "authority": "West Berkshire",
-   "form": "permanent",
+   "end": "2027-04-30",
+   "form": "temporary",
    "geometry": {
     "coordinates": [
      [
@@ -1217,6 +1218,7 @@
    "id": "15|BUCK/50/1",
    "match": "geometry",
    "ref": "BUCK/50/1",
+   "start": "2024-11-01",
    "title": "Omnibus seasonal closure to 3+ wheel motor vehicles 2026-2027",
    "url": "https://www.westberks.gov.uk/prowrestrictions",
    "vehicles": "motor_vehicles",
@@ -2567,84 +2569,68 @@
    "geometry": {
     "coordinates": [
      [
-      -1.16491,
-      51.42589
+      [
+       -1.16491,
+       51.42589
+      ],
+      [
+       -1.16491,
+       51.42608
+      ]
      ],
      [
-      -1.16491,
-      51.42608
+      [
+       -1.1649,
+       51.42609
+      ],
+      [
+       -1.16487,
+       51.42619
+      ],
+      [
+       -1.16478,
+       51.42654
+      ],
+      [
+       -1.16472,
+       51.42675
+      ],
+      [
+       -1.1647,
+       51.42697
+      ],
+      [
+       -1.16471,
+       51.42724
+      ],
+      [
+       -1.16472,
+       51.42745
+      ],
+      [
+       -1.16476,
+       51.42767
+      ],
+      [
+       -1.1648,
+       51.42785
+      ],
+      [
+       -1.16484,
+       51.42798
+      ],
+      [
+       -1.16488,
+       51.42814
+      ]
      ]
     ],
-    "type": "LineString"
+    "type": "MultiLineString"
    },
    "id": "15|BUCK/66/4",
    "match": "geometry",
    "ref": "BUCK/66/4",
    "start": "2024-11-01",
-   "title": "Omnibus seasonal closure to 3+ wheel motor vehicles 2026-2027",
-   "url": "https://www.westberks.gov.uk/prowrestrictions",
-   "vehicles": "motor_vehicles",
-   "ways": [
-    "WB-66/4-87c3f87811",
-    "WB-66/5-2197dbb341"
-   ],
-   "where": "BUCK 66"
-  },
-  {
-   "authority": "West Berkshire",
-   "form": "permanent",
-   "geometry": {
-    "coordinates": [
-     [
-      -1.1649,
-      51.42609
-     ],
-     [
-      -1.16487,
-      51.42619
-     ],
-     [
-      -1.16478,
-      51.42654
-     ],
-     [
-      -1.16472,
-      51.42675
-     ],
-     [
-      -1.1647,
-      51.42697
-     ],
-     [
-      -1.16471,
-      51.42724
-     ],
-     [
-      -1.16472,
-      51.42745
-     ],
-     [
-      -1.16476,
-      51.42767
-     ],
-     [
-      -1.1648,
-      51.42785
-     ],
-     [
-      -1.16484,
-      51.42798
-     ],
-     [
-      -1.16488,
-      51.42814
-     ]
-    ],
-    "type": "LineString"
-   },
-   "id": "15|BUCK/66/5",
-   "match": "geometry",
-   "ref": "BUCK/66/5",
    "title": "Omnibus seasonal closure to 3+ wheel motor vehicles 2026-2027",
    "url": "https://www.westberks.gov.uk/prowrestrictions",
    "vehicles": "motor_vehicles",
@@ -6345,7 +6331,7 @@
    "where": "STRE 20"
   }
  ],
- "records": 83,
+ "records": 84,
  "review": [],
  "source": {
   "authority": "West Berkshire",
